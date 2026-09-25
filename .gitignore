@@ -1,0 +1,28 @@
+# dependencies
+node_modules/
+
+# build output
+.next/
+out/
+build/
+next-env.d.ts
+*.tsbuildinfo
+
+# local database (never commit learner data)
+data/
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
+*.db
+
+# env / secrets
+.env
+.env.*
+!.env.example
+
+# logs / os
+npm-debug.log*
+.DS_Store
+coverage/
+test-results/
