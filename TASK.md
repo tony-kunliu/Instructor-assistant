@@ -2,7 +2,7 @@
 
 ## Current task
 
-**CBT&A Lesson Checklist MVP** — branch `feature/cbta-checklist`
+**CBT&A Lesson Checklist MVP** (status: done, awaiting review) — branch `feature/cbta-checklist`
 
 Allow a driving instructor to complete the ACT CBT&A Lesson Checklist on an
 iPhone in roughly 30–60 seconds after each lesson.
