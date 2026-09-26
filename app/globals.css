@@ -30,6 +30,7 @@ html, body {
 }
 
 .topbar { display: flex; align-items: center; gap: 10px; padding: 6px 4px 12px; }
+.signed-in-as { margin-left: auto; font-size: 12px; color: var(--muted); font-weight: 600; }
 .topbar div { display: flex; flex-direction: column; }
 .topbar strong { font-size: 17px; }
 .topbar small { color: var(--gold); font-weight: 600; font-size: 12px; letter-spacing: .02em; }

@@ -53,6 +53,85 @@ discipline. If this round fails, restore to exactly this state.
 Production: **not deployed**. Production requires separate, explicit
 authorization from Tony (merging to `main` does not imply this).
 
+## Instructor Identity V1 — Cloudflare Access wired up (this session, follow-up round)
+
+Tony enabled Cloudflare Zero Trust Access in the dashboard (the one-time
+manual step the previous round was blocked on). Re-verified via `GET
+/accounts/:id/access/apps` — no longer `access.api.error.not_enabled`, so
+the rest of this round is done entirely via API/CLI, per instruction not to
+have Tony do anything Claude can safely automate.
+
+- **Access Application created** (`POST /accounts/:id/access/apps`):
+  `self_hosted` app named "Instructor Assistant Staging", domain
+  `instructor-assistant.kunliu-work.workers.dev` (the Worker's own
+  workers.dev hostname — no custom zone exists on this account). App id
+  `d63c5b8e-b4d5-4ce0-815e-0381381d709d`, AUD
+  `dbaecdf29cb50d215f3edbb3b260b2c85209db78728fb19e3c53c39c5d9759e3`. Team
+  domain (auto-provisioned when Tony enabled Access): `actgds.
+  cloudflareaccess.com`.
+- **Access Policy created**: `decision: allow`, `include` = exactly
+  Tony's and Anna's real emails (the same two provided in the previous
+  round) — no other email can authenticate against this app at all. No
+  identity provider was explicitly configured; Access's built-in
+  "One-time PIN" email login is used by default, which is enough for two
+  named individuals and adds no new third-party dependency.
+- **Verified live immediately after creating the app** — an unauthenticated
+  `curl` to the Staging URL now gets a `302` redirect to `https://actgds.
+  cloudflareaccess.com/cdn-cgi/access/login/...` *before* the request ever
+  reaches the Worker. This is a stronger perimeter than before: Access now
+  blocks at Cloudflare's edge, ahead of both the app and the existing Basic
+  Auth middleware.
+- **`lib/access.ts` (new):** `verifyAccessIdentity(request)` — reads the
+  `Cf-Access-Jwt-Assertion` header Cloudflare Access attaches to any
+  request that passed its policy, and verifies it ourselves (RS256
+  signature against Access's own JWKS at `https://actgds.
+  cloudflareaccess.com/cdn-cgi/access/certs`, `aud` + `iss` checked) before
+  ever trusting the `email` claim inside it — never trusts the header at
+  face value, exactly as instructed. Uses `jose` (new dependency) for JWT
+  verification, the same library Cloudflare's own Access docs recommend
+  for Workers. Returns `null` when the header is absent (local dev, or any
+  request not behind this Access app) so nothing breaks outside of
+  Staging.
+- **`middleware.ts` rewritten** to two independent layers: (1) Access
+  identity, verified as above and mapped to an instructor via
+  `findInstructorByEmail` — an Access-passed request whose email has no
+  matching *active* instructor gets `403` here too (defense in depth
+  beyond Access's own policy; still never auto-creates an instructor for
+  an unrecognized identity); on success, the resolved instructor id/name
+  are set as trusted `x-instructor-id`/`x-instructor-name` request headers
+  forwarded to route handlers (never client-submitted — set here, after
+  our own verification). (2) HTTP Basic Auth, **kept exactly as before,
+  not removed** — the cautious migration order from the previous round's
+  STATUS.md said not to retire it until the identity path is proven; both
+  gates are independent, so if Access is ever misconfigured, Basic Auth
+  alone still protects the app, and if Basic Auth secrets are ever lost,
+  Access alone still does.
+- **Lesson attribution now automatic through Access**, not just
+  passable-by-hand: `lib/api.ts#readJsonWithActor` overrides any
+  client-submitted `actingInstructorId` in the request body with the
+  trusted `x-instructor-id` header whenever one is present, so a signed-in
+  Tony/Anna's lesson creates/edits are attributed correctly without the
+  client needing to know or send anything about identity itself. A request
+  with no Access identity (local dev, tests) falls back to whatever the
+  body says, unchanged from the previous round.
+- **`GET /api/me` (new)** + a minimal "Signed in as `<name>`" line in the
+  app's topbar (`app/driver-app.tsx`) — reads the same trusted headers,
+  shows nothing when there's no Access identity for this request. No
+  profile/settings page, per instruction.
+- **Verification:** `npm run build` / `npm test`: PASS (61/61 — 6 new
+  tests in `tests/access.test.ts` covering: no-header → `null`; a
+  correctly signed token verifies and extracts the email; wrong audience
+  rejected; expired token rejected; a token signed by a different key
+  (forged signature) rejected; a verified token with no `email` claim
+  rejected. Uses a locally generated RSA key pair + `jose`'s
+  `createLocalJWKSet` to simulate Access's JWKS without depending on the
+  real Access service in tests). All 55 pre-existing tests (including last
+  round's `tests/instructor-identity.test.ts`) still pass unchanged.
+- **Not built:** an identity provider beyond Access's default One-time PIN
+  (not needed for two named individuals); any UI beyond the one-line
+  "Signed in as"; removal of Basic Auth (deliberately kept, per the
+  migration order).
+
 ## Instructor Identity V1 — data model + lesson attribution (this session)
 
 Goal (per Tony's instruction): Cloudflare Access → authenticated email →
