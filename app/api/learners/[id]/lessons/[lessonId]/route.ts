@@ -1,4 +1,4 @@
-import { handle, readJson } from "@/lib/api.ts";
+import { handle, readJsonWithActor } from "@/lib/api.ts";
 import { getD1 } from "@/lib/db.ts";
 import { getLesson, getLessonCompetencySelections, getProgressExcludingLesson, getTotals, updateLesson } from "@/lib/repo.ts";
 
@@ -22,7 +22,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   const { id, lessonId } = await params;
   return handle(async () => {
     const db = getD1();
-    const result = await updateLesson(db, id, lessonId, await readJson(request));
+    const result = await updateLesson(db, id, lessonId, await readJsonWithActor(request));
     const { adiSignature: _adi, learnerSignature: _learner, ...summary } = result.lesson;
     const totals = await getTotals(db, id);
     return { lesson: summary, totals, progress: result.progress, completion: result.completion, invalidated: result.invalidated };

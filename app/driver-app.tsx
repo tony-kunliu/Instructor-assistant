@@ -161,6 +161,7 @@ export default function DriverApp() {
   const [editLoading, setEditLoading] = useState(false);
   const [editStatus, setEditStatus] = useState<string | null>(null);
   const [invalidation, setInvalidation] = useState<MilestoneInvalidation | null>(null);
+  const [signedInAs, setSignedInAs] = useState<string | null>(null);
 
   const totals = detail?.totals ?? EMPTY_TOTALS;
 
@@ -186,12 +187,14 @@ export default function DriverApp() {
   useEffect(() => {
     void (async () => {
       try {
-        const [learnerData, instructorData] = await Promise.all([
+        const [learnerData, instructorData, meData] = await Promise.all([
           api<{ learners: Learner[] }>("/api/learners"),
           api<{ instructors: Instructor[] }>("/api/instructors"),
+          api<{ instructor: { id: string; fullName: string } | null }>("/api/me"),
         ]);
         setLearners(learnerData.learners);
         setInstructors(instructorData.instructors);
+        setSignedInAs(meData.instructor?.fullName ?? null);
         const last = storage.get(LAST_LEARNER_KEY);
         if (last && learnerData.learners.some((l) => l.id === last)) await loadLearner(last);
         else if (!learnerData.learners.length) setAddingLearner(true);
@@ -373,6 +376,7 @@ export default function DriverApp() {
           <strong>ACTGDS Driver</strong>
           <small>CBT&amp;A Lesson Checklist</small>
         </div>
+        {signedInAs ? <span className="signed-in-as">Signed in as {signedInAs}</span> : null}
       </header>
 
       <section className="card picker">
