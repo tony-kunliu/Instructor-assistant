@@ -2,6 +2,8 @@
 
 Mobile-first instructor app (PWA) for **ACT Golden Driving School**.
 
+GitHub repo: `tony-kunliu/instructor-assistant`
+
 The first MVP does one thing: let an instructor complete the **ACT CBT&A
 Lesson Checklist** on an iPhone right after each driving lesson.
 
