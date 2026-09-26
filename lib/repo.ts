@@ -83,24 +83,76 @@ function toLesson(row: Row): Lesson {
     learnerSignature: (row.learner_signature as string) ?? null,
     createdAt: String(row.created_at),
     updatedAt: (row.updated_at as string) ?? null,
+    updatedByInstructorId: (row.updated_by_instructor_id as string) ?? null,
+    updatedByInstructorName: (row.updated_by_instructor_name as string) ?? null,
   };
 }
 
 // ── Instructors ──────────────────────────────────────────────────────────
 
+function toInstructor(row: Row): Instructor {
+  return {
+    id: String(row.id),
+    fullName: String(row.full_name),
+    adiNumber: (row.adi_number as string) ?? null,
+    email: (row.email as string) ?? null,
+    status: (row.status as Instructor["status"]) ?? "active",
+  };
+}
+
 export async function listInstructors(db: D1Database): Promise<Instructor[]> {
-  const { results } = await db.prepare("SELECT id, full_name, adi_number FROM instructors ORDER BY full_name").all<Row>();
-  return results.map((row) => ({ id: String(row.id), fullName: String(row.full_name), adiNumber: (row.adi_number as string) ?? null }));
+  const { results } = await db.prepare("SELECT id, full_name, adi_number, email, status FROM instructors ORDER BY full_name").all<Row>();
+  return results.map(toInstructor);
+}
+
+/** Active instructors only — for a "who is performing this" attribution selector (Instructor Identity V1). */
+export async function listActiveInstructors(db: D1Database): Promise<Instructor[]> {
+  return (await listInstructors(db)).filter((instructor) => instructor.status === "active");
+}
+
+/**
+ * Maps a verified email to its instructor record — the lookup Cloudflare
+ * Access identity resolution (Instructor Identity V1, STEP 3/4) will call
+ * once wired up, given the authenticated email from Access's own verified
+ * JWT (never a client-submitted header). Returns null for an unknown or
+ * inactive email — the caller must then refuse app access, never
+ * auto-create an instructor for an unrecognized identity.
+ */
+export async function findInstructorByEmail(db: D1Database, email: string): Promise<Instructor | null> {
+  const trimmed = email.trim();
+  if (!trimmed) return null;
+  const row = await db.prepare("SELECT id, full_name, adi_number, email, status FROM instructors WHERE lower(email) = lower(?)").bind(trimmed).first<Row>();
+  if (!row) return null;
+  const instructor = toInstructor(row);
+  return instructor.status === "active" ? instructor : null;
+}
+
+/**
+ * Validates that `actingInstructorId` (if supplied) refers to an existing,
+ * active instructor — the app never trusts a client-submitted name/email as
+ * identity, only a real instructor id already in the database (Instructor
+ * Identity V1; Cloudflare Access itself, which will supply this id via a
+ * verified email→instructor lookup, is not yet wired up — see STATUS.md).
+ * Returns null when omitted, so existing callers that don't pass it are
+ * unaffected.
+ */
+async function resolveActingInstructorId(db: D1Database, actingInstructorId: unknown): Promise<string | null> {
+  if (actingInstructorId === undefined || actingInstructorId === null || actingInstructorId === "") return null;
+  const id = String(actingInstructorId);
+  const row = await db.prepare("SELECT id, status FROM instructors WHERE id = ?").bind(id).first<Row>();
+  if (!row) throw new ValidationError("Acting instructor not found.");
+  if (row.status !== "active") throw new ValidationError("Acting instructor is not active.");
+  return id;
 }
 
 /** Fills in (or corrects) an instructor's ADI number — needed on the official CBT&A PDF checklist. */
 export async function updateInstructorAdiNumber(db: D1Database, instructorId: string, adiNumber: unknown): Promise<Instructor> {
   const value = text(adiNumber, 40);
   if (!value) throw new ValidationError("ADI number is required.");
-  const existing = await db.prepare("SELECT id, full_name FROM instructors WHERE id = ?").bind(instructorId).first<Row>();
+  const existing = await db.prepare("SELECT id, full_name, email, status FROM instructors WHERE id = ?").bind(instructorId).first<Row>();
   if (!existing) throw new NotFoundError("Instructor not found.");
   await db.prepare("UPDATE instructors SET adi_number = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?").bind(value, instructorId).run();
-  return { id: instructorId, fullName: String(existing.full_name), adiNumber: value };
+  return { ...toInstructor(existing), adiNumber: value };
 }
 
 async function findOrCreateInstructor(db: D1Database, name: string): Promise<string> {
@@ -188,14 +240,22 @@ export async function getTotals(db: D1Database, learnerId: string): Promise<Tota
   };
 }
 
+// LEFT JOIN: updated_by_instructor_id is NULL for never-edited lessons (and
+// for lessons edited before Instructor Identity V1 shipped) — the editor's
+// display name is then left null too ("Last edited by <name>" UI just omits
+// that line), never guessed.
+const UPDATED_BY_JOIN = "LEFT JOIN instructors ub ON ub.id = lessons.updated_by_instructor_id";
+
 /** Lessons newest first. Signatures are omitted from the list to keep it light. */
 export async function listLessons(db: D1Database, learnerId: string): Promise<Lesson[]> {
   const { results } = await db
     .prepare(
-      `SELECT id, learner_id, instructor_id, lesson_no, lesson_date, start_time, finish_time, start_odometer, finish_odometer,
-              duration_minutes, distance_km, cumulative_minutes, cumulative_km, taught, competencies_assessed, achieved,
-              location, comments, NULL AS adi_signature, NULL AS learner_signature, created_at, updated_at
-       FROM lessons WHERE learner_id = ? ORDER BY lesson_no DESC`,
+      `SELECT lessons.id, lessons.learner_id, lessons.instructor_id, lessons.lesson_no, lessons.lesson_date, lessons.start_time, lessons.finish_time,
+              lessons.start_odometer, lessons.finish_odometer, lessons.duration_minutes, lessons.distance_km, lessons.cumulative_minutes, lessons.cumulative_km,
+              lessons.taught, lessons.competencies_assessed, lessons.achieved, lessons.location, lessons.comments,
+              NULL AS adi_signature, NULL AS learner_signature, lessons.created_at, lessons.updated_at,
+              lessons.updated_by_instructor_id, ub.full_name AS updated_by_instructor_name
+       FROM lessons ${UPDATED_BY_JOIN} WHERE lessons.learner_id = ? ORDER BY lessons.lesson_no DESC`,
     )
     .bind(learnerId)
     .all<Row>();
@@ -204,12 +264,18 @@ export async function listLessons(db: D1Database, learnerId: string): Promise<Le
 
 /** All of a learner's saved lessons, oldest first, with real signatures — for the CBT&A PDF export (never partial/draft data). */
 export async function listLessonsForExport(db: D1Database, learnerId: string): Promise<Lesson[]> {
-  const { results } = await db.prepare("SELECT * FROM lessons WHERE learner_id = ? ORDER BY lesson_no ASC").bind(learnerId).all<Row>();
+  const { results } = await db
+    .prepare(`SELECT lessons.*, ub.full_name AS updated_by_instructor_name FROM lessons ${UPDATED_BY_JOIN} WHERE learner_id = ? ORDER BY lesson_no ASC`)
+    .bind(learnerId)
+    .all<Row>();
   return results.map(toLesson);
 }
 
 export async function getLesson(db: D1Database, learnerId: string, lessonId: string): Promise<Lesson> {
-  const row = await db.prepare("SELECT * FROM lessons WHERE id = ? AND learner_id = ?").bind(lessonId, learnerId).first<Row>();
+  const row = await db
+    .prepare(`SELECT lessons.*, ub.full_name AS updated_by_instructor_name FROM lessons ${UPDATED_BY_JOIN} WHERE lessons.id = ? AND lessons.learner_id = ?`)
+    .bind(lessonId, learnerId)
+    .first<Row>();
   if (!row) throw new NotFoundError("Lesson not found.");
   return toLesson(row);
 }
@@ -248,6 +314,11 @@ export async function createLesson(db: D1Database, learnerId: string, input: Les
   }
   const achievedIds = assessedIds.filter((id) => achievedResults[id] === "achieved");
 
+  // The instructor who actually taught/created this lesson (Instructor
+  // Identity V1) — falls back to the learner's own instructor when not
+  // supplied, preserving prior behavior for callers that don't pass it.
+  const actingInstructorId = (await resolveActingInstructorId(db, input.actingInstructorId)) ?? learner.instructorId;
+
   const id = crypto.randomUUID();
   // Lesson number and cumulative totals are derived from the current totals,
   // read just before the insert. Same D1 limitation as above: this is two
@@ -266,7 +337,7 @@ export async function createLesson(db: D1Database, learnerId: string, input: Les
     .bind(
       id,
       learnerId,
-      learner.instructorId,
+      actingInstructorId,
       totals.lessonCount + 1,
       lessonDate,
       startTime,
@@ -372,6 +443,11 @@ export async function updateLesson(db: D1Database, learnerId: string, lessonId: 
   }
   const achievedIds = assessedIds.filter((id) => achievedResults[id] === "achieved");
 
+  // Instructor performing this edit (Instructor Identity V1). Omitted (or
+  // not yet resolvable, e.g. before Cloudflare Access is wired up) leaves
+  // updated_by_instructor_id exactly as it was — never guessed.
+  const actingInstructorId = await resolveActingInstructorId(db, input.actingInstructorId);
+
   const location = text(input.location, 200);
   const comments = text(input.comments, 3000);
   const taughtDisplay = formatIdList(taughtIds);
@@ -432,7 +508,8 @@ export async function updateLesson(db: D1Database, learnerId: string, lessonId: 
       `UPDATE lessons SET lesson_date = ?, start_time = ?, finish_time = ?, start_odometer = ?, finish_odometer = ?,
          duration_minutes = ?, distance_km = ?, cumulative_minutes = ?, cumulative_km = ?,
          taught = ?, competencies_assessed = ?, achieved = ?, location = ?, comments = ?,
-         adi_signature = ?, learner_signature = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+         adi_signature = ?, learner_signature = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+         updated_by_instructor_id = COALESCE(?, updated_by_instructor_id)
        WHERE id = ?`,
     )
     .bind(
@@ -452,6 +529,7 @@ export async function updateLesson(db: D1Database, learnerId: string, lessonId: 
       comments,
       adiSignature,
       learnerSignature,
+      actingInstructorId,
       lessonId,
     );
 

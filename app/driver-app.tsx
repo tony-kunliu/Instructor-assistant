@@ -245,7 +245,11 @@ export default function DriverApp() {
       });
       storage.set(LAST_INSTRUCTOR_KEY, learnerDraft.instructorName.trim());
       setLearners((current) => [...current, learner].sort((a, b) => a.fullName.localeCompare(b.fullName)));
-      setInstructors((current) => current.some((i) => i.id === learner.instructorId) ? current : [...current, { id: learner.instructorId, fullName: learner.instructorName, adiNumber: null }]);
+      setInstructors((current) =>
+        current.some((i) => i.id === learner.instructorId)
+          ? current
+          : [...current, { id: learner.instructorId, fullName: learner.instructorName, adiNumber: null, email: null, status: "active" }],
+      );
       setAddingLearner(false);
       setLearnerDraft(emptyLearner);
       await loadLearner(learner.id);
@@ -574,7 +578,12 @@ export default function DriverApp() {
                       {lesson.competenciesAssessed ? <p><b>Assessed:</b> {lesson.competenciesAssessed}</p> : null}
                       {lesson.achieved ? <p><b>Achieved:</b> {lesson.achieved}</p> : null}
                       {lesson.comments ? <p><b>Comments:</b> {lesson.comments}</p> : null}
-                      {lesson.updatedAt ? <p className="h-edited">Edited {lesson.updatedAt}</p> : null}
+                      {lesson.updatedAt ? (
+                        <p className="h-edited">
+                          Edited {lesson.updatedAt}
+                          {lesson.updatedByInstructorName ? ` · Last edited by ${lesson.updatedByInstructorName}` : ""}
+                        </p>
+                      ) : null}
                     </li>
                   ),
                 )}

@@ -4,8 +4,8 @@ import { readFileSync } from "node:fs";
 import { openTestD1 } from "../lib/db.ts";
 import { SCHEMA_SQL } from "../lib/schema.ts";
 
-test("migrations/0001+0002+0003 match lib/schema.ts (no drift between the two)", () => {
-  const migrationFiles = ["0001_init.sql", "0002_add_competency_events.sql", "0003_add_lesson_updated_at.sql"];
+test("migrations/0001+0002+0003+0004 match lib/schema.ts (no drift between the two)", () => {
+  const migrationFiles = ["0001_init.sql", "0002_add_competency_events.sql", "0003_add_lesson_updated_at.sql", "0004_instructor_identity.sql"];
   const migrations = migrationFiles.map((name) => readFileSync(new URL(`../migrations/${name}`, import.meta.url), "utf8"));
   const normalize = (sql: string) => sql.replace(/--.*$/gm, "").replace(/\s+/g, " ").trim();
   assert.equal(normalize(migrations.join("\n")), normalize(SCHEMA_SQL));
@@ -27,7 +27,7 @@ test("D1 adapter: prepare/bind/first/all/run/batch behave like the real D1Databa
 
   // all() returns { results }
   await db.prepare("INSERT INTO instructors (id, full_name) VALUES (?, ?)").bind("i2", "Bea Instructor").run();
-  const { results } = await db.prepare("SELECT id FROM instructors ORDER BY id").all<{ id: string }>();
+  const { results } = await db.prepare("SELECT id FROM instructors WHERE id IN ('i1', 'i2') ORDER BY id").all<{ id: string }>();
   assert.deepEqual(results.map((r) => r.id), ["i1", "i2"]);
 
   // batch() applies all statements atomically
@@ -36,6 +36,7 @@ test("D1 adapter: prepare/bind/first/all/run/batch behave like the real D1Databa
     db.prepare("INSERT INTO instructors (id, full_name) VALUES (?, ?)").bind("i4", "Di Instructor"),
   ]);
   assert.equal(batchResults.length, 2);
+  // +2 for the seeded Tony/Anna instructors (lib/schema.ts — Instructor Identity V1).
   const countRow = await db.prepare("SELECT COUNT(*) AS n FROM instructors").first<{ n: number }>();
-  assert.equal(countRow?.n, 4);
+  assert.equal(countRow?.n, 6);
 });
