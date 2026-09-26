@@ -10,11 +10,13 @@ continuation page), header fields (with a new ADI-number fill-in prompt when
 missing), Taught/Assessed/Achieved verbatim, signatures scaled to fit,
 overflow handled via an appendix page (never truncated), Chinese/English
 mixed text, and page numbers throughout. Built on `feature/cbta-pdf-export`
-from `staging`, merged back into `staging`, Cloudflare Staging redeployed.
-Not merged into `main` (needs Tony's authorization) and Production was not
-touched. See STATUS.md for full detail, including a real bug (font `locl`
-feature corrupting digit widths) found and fixed via this round's own visual
-QA before it shipped.
+from `staging`, merged back into `staging` (`ee9633c`), Cloudflare Staging
+redeployed (Version ID `aa3c1c09-9892-4855-82d2-0e7fb1940d94`) and
+remote-verified against real D1 with isolated, fully-cleaned-up test data —
+Tony's real learners confirmed untouched. Not merged into `main` (needs
+Tony's authorization) and Production was not touched. See STATUS.md for full
+detail, including a real bug (font `locl` feature corrupting digit widths)
+found and fixed via this round's own visual QA before it shipped.
 
 **Explicitly out of scope this round (per instruction, roadmap only):**
 

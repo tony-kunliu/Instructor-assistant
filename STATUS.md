@@ -89,6 +89,20 @@ with their saved lesson history, built entirely client-side with pdf-lib.
   emulated-browser verification only — Tony's own on-device check (opening
   the downloaded PDF on his iPhone) is still needed before treating mobile
   PDF viewing/saving as fully confirmed.
+- **Deployed and remote-QA'd:** merged into `staging` as `ee9633c`
+  (feature commit `013a805`), deployed to Cloudflare Staging
+  (`https://instructor-assistant.kunliu-work.workers.dev`, Version ID
+  `aa3c1c09-9892-4855-82d2-0e7fb1940d94`). Verified against the real,
+  live D1 database using an isolated, clearly-named test learner/
+  instructor/lesson (`ZZ_QA_TEST_DELETE_ME` / `ZZ_QA_INSTRUCTOR_DELETE_ME`):
+  confirmed the unauthenticated export endpoint returns 401, confirmed
+  `GET /api/learners/:id/export` returns the correct real data (including
+  the ADI number set via the new PATCH endpoint and both real signature
+  images), and built a real PDF from that live export response — rendered
+  and visually checked, correct. All QA test rows were then deleted from
+  the remote D1 (`competency_events` → `lessons` → `learners` →
+  `instructors`), and Tony's real learners ("Kun Liu", "V1test") were
+  confirmed still present and untouched, both before and after.
 
 ## CBT&A V3 — history lesson editing + corrected Final Drive gating — merged into `staging`
 
