@@ -199,6 +199,48 @@ export function competencyLabel(id: string): string {
   return id;
 }
 
+/**
+ * Official competency titles from the ACT government's own CBT&A
+ * Assessment Standards (Road Transport (Driver Licensing) Issue of a
+ * Provisional Car Licence by an Accredited Driving Instructor Assessment
+ * Standards 2020, Notifiable Instrument NI2020-703, Schedule 1) — provided
+ * directly by Tony. Display-only: never stored, never used in any
+ * comparison/validation logic, so it cannot affect persisted `taught`/
+ * `competencies_assessed`/`achieved` text or existing history.
+ */
+const COMPETENCY_FULL_NAMES: Readonly<Record<string, string>> = {
+  "1": "Vehicle Controls",
+  "2": "Cabin Drill",
+  "3": "Starting Up Procedure",
+  "4": "Moving Off Procedure",
+  "5": "Gear Changing / Clutch Operation",
+  "6": "Steering Control & Vehicle Positioning",
+  "7": "Turns, Left and Right",
+  "8": "Speed Control",
+  "9": "Slowing Procedure",
+  "10": "Stopping Procedure",
+  "11": "Hill Starts",
+  "12": "Give Way Rules",
+  "13": "Reversing",
+  "14": "Right Angle Parking (Front In)",
+  "15": "Reverse Parallel Parking",
+  "16": "U-Turns",
+  "17": "Turning Around on the Road (e.g. Three Point Turn)",
+  "18": "Lane Changing, Merging, & Form One Lane",
+  "19": "Overtaking",
+  "20": "Observation Skills, Visual Searching and Scanning, Hazard Recognition",
+  "21": "Compliance with the System of Vehicle Control",
+  "22": "Vulnerable Road Users; Observation Skills, Recognition and Risk Management",
+  [FINAL_DRIVE_23]: "Driving on Busy Roads and Unfamiliar Roads",
+  [REVIEW_1_17]: "The student demonstrates Competencies 1 to 17",
+  [REVIEW_1_22]: "The student demonstrates Competencies 1 to 22",
+};
+
+/** The full official title for a competency/review id, or null if unrecognized. Display-only (see above). */
+export function competencyFullName(id: string): string | null {
+  return COMPETENCY_FULL_NAMES[id] ?? null;
+}
+
 function sortKey(id: string): number {
   const n = Number(id);
   if (!Number.isNaN(n)) return n;

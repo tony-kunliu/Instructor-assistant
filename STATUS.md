@@ -55,6 +55,37 @@ discipline. If this round fails, restore to exactly this state.
 Production: **not deployed**. Production requires separate, explicit
 authorization from Tony (merging to `main` does not imply this).
 
+## Official CBT&A competency full names — display only
+
+Tony provided the official ACT government document (*Road Transport
+(Driver Licensing) Issue of a Provisional Car Licence by an Accredited
+Driving Instructor Assessment Standards 2020*, Notifiable Instrument
+NI2020-703, Schedule 1), which lists the full title of every competency
+1-22, Review 1, Review 2, and Competency 23. This closes out the
+long-standing "no official competency names available" limitation noted
+since the CBT&A V2 round.
+
+- **`lib/competency.ts#competencyFullName(id)`** (new) maps every id to its
+  official title verbatim from the document (e.g. `"1"` → "Vehicle
+  Controls", `FINAL_DRIVE_23` → "Driving on Busy Roads and Unfamiliar
+  Roads"). **Display-only** — it is never stored, never used in any
+  validation/comparison logic, so it cannot affect persisted `taught`/
+  `competencies_assessed`/`achieved` text, existing history, or any test
+  that already passed. `competencyLabel` (numbers / "Review 1-17" / "23
+  Final Drive", used for all persisted text and the PDF export) is
+  completely unchanged.
+- **UI:** `CompetencyPicker` chips now carry a `title` tooltip with the
+  full name (harmless on desktop, a no-op on iPhone where tooltips don't
+  fire — kept anyway since it costs nothing). The real, mobile-usable
+  delivery is a new collapsed `<details>` legend on the CBT&A Progress
+  card ("What do the numbers mean?") listing every competency's official
+  name — tap to expand, zero layout impact when collapsed, no risk to the
+  existing compact 375px-width chip grid.
+- **Verification:** `npm run build` / `npm test`: PASS (65/65 — one new
+  test asserts every id in `ALL_ASSESSABLE_IDS` has a non-empty full name,
+  spot-checks a couple of exact strings, and confirms the bare string
+  `"23"` (as opposed to the `FINAL_DRIVE_23` id) correctly has no entry).
+
 ## Instructor Identity V1 — Basic Auth retired; Cloudflare Access is now the sole gate
 
 Tony authorized this once both his and Anna's real Access logins were
