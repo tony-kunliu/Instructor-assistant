@@ -16,6 +16,9 @@ data/
 *.sqlite-shm
 *.db
 
+# local Cloudflare D1 / Workers emulation (Miniflare state)
+.wrangler/
+
 # env / secrets
 .env
 .env.*
