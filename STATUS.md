@@ -42,18 +42,31 @@ discipline. If this round fails, restore to exactly this state.
 | Branch | Commit | State |
 | --- | --- | --- |
 | `main` | `98aa0c047d9b99d309c531cddb81555f8444ab43` | Working rules / docs baseline only. CBT&A MVP, D1 storage, Cloudflare deployment, CBT&A V2/V3, and PDF export not yet merged in. Not deployed. |
-| `staging` | `ad89cd5` | CBT&A Lesson Checklist MVP + D1-compatible storage + live Cloudflare Staging deployment + CBT&A V2 structured competency selection + CBT&A V3 history editing / corrected Final Drive gating + official CBT&A PDF export + Instructor Identity V1 (data model + lesson attribution). |
+| `staging` | `d13e7e7` | CBT&A Lesson Checklist MVP + D1-compatible storage + live Cloudflare Staging deployment + CBT&A V2 structured competency selection + CBT&A V3 history editing / corrected Final Drive gating + official CBT&A PDF export + Instructor Identity V1 (data model + lesson attribution + Cloudflare Access identity). |
 | `feature/cbta-checklist` | `e7e2c3d93902d286e2bcd03e8ac08541cd6f7186` | CBT&A Lesson Checklist MVP — complete, merged into `staging`. Not yet merged into `main`. |
 | `feature/d1-storage` | `87b40be6258924329ae85f888be6322ef3a00ca4` | D1-compatible storage migration — complete, merged into `staging`. Not yet merged into `main`. |
 | `feature/cbta-competency-selection` | `b2734f5c9b6cbe6d9d5ff85c3fdf16fc74e42adb` | CBT&A V2 structured competency selection — complete, merged into `staging`. Not yet merged into `main`. |
 | `feature/history-edit-and-finaldrive-gating` | `d1b01ef` | CBT&A V3 history lesson editing + corrected Final Drive 23 / Review gating — complete, merged into `staging`. Not yet merged into `main`. |
 | `feature/cbta-pdf-export` | `013a805` | Official ADI CBT&A Checklist PDF export — complete, merged into `staging`. Not yet merged into `main`. |
-| `feature/instructor-identity` | `8ae6a01` | Instructor Identity V1 data model + lesson attribution (Cloudflare Access itself deferred — see STATUS.md section) — complete, merged into `staging`. Not yet merged into `main`. |
+| `feature/instructor-identity` | `8ae6a01` | Instructor Identity V1 data model + lesson attribution (Cloudflare Access itself deferred that round — see STATUS.md section) — complete, merged into `staging`. Not yet merged into `main`. |
+| `feature/instructor-identity-access` | `ab39ab4` | Cloudflare Access wired up: Access Application + policy, JWT verification, email→instructor mapping, automatic lesson attribution — complete, merged into `staging`. Not yet merged into `main`. |
 
 Production: **not deployed**. Production requires separate, explicit
 authorization from Tony (merging to `main` does not imply this).
 
 ## Instructor Identity V1 — Cloudflare Access wired up (this session, follow-up round)
+
+**Rollback baseline for this round:** previous known-good `staging` HEAD
+`81d9b74`, previous known-good Cloudflare Worker deployment Version ID
+`92537c0a-b47a-4b60-ae40-465132e22c8e` (both confirmed still present in
+`wrangler deployments list`/git history — nothing was force-pushed or
+deleted). No D1 migration in this round, so the D1 baseline is unchanged
+from the previous round's record above. If this round needs reverting:
+redeploy Version `92537c0a...` (or `staging@81d9b74`) — this also fully
+restores plain-Basic-Auth-only access, since deleting/disabling the new
+Access Application (or just leaving the old Worker version live, which
+never checks for the Access header) is all that's needed; no data migration
+touches learner/lesson data either way.
 
 Tony enabled Cloudflare Zero Trust Access in the dashboard (the one-time
 manual step the previous round was blocked on). Re-verified via `GET
@@ -131,6 +144,44 @@ have Tony do anything Claude can safely automate.
   (not needed for two named individuals); any UI beyond the one-line
   "Signed in as"; removal of Basic Auth (deliberately kept, per the
   migration order).
+- **Real ADI numbers set:** Tony provided his own (`604`) and Anna's
+  (`358`) directly in this session; set on the seeded Tony/Anna instructor
+  rows via direct D1 update (`wrangler d1 execute --remote`) — real data he
+  gave, not fabricated. **Notable, not acted on:** Tony's ADI number (604)
+  is identical to the pre-existing `ADI601` row's `adi_number` — this is
+  circumstantial evidence `ADI601` may be Tony's own historical instructor
+  record from before this identity system existed, but per instruction not
+  to guess/merge historical data, `ADI601` was left completely untouched;
+  flagged here for Tony to confirm.
+- **Deployed:** merged into `staging` (`7cc4886` + a small follow-up test
+  commit), deployed to Cloudflare Staging via `npm run cf:deploy` (Version
+  ID `ac54eaea-ab97-4220-8fe6-80521b0d37bc`). No new D1 migration this round
+  (schema unchanged from last round's `0004`).
+- **Remote QA — what could and couldn't be exercised live:** an
+  unauthenticated request to the Staging URL now gets a `302` to Access's
+  own login page *before* reaching the Worker at all (confirmed live,
+  replacing the previous round's `401`-from-Basic-Auth-alone behavior with
+  a stronger perimeter) — this also means Basic Auth-only automation (the
+  method used for every previous round's remote QA, including this
+  project's own `curl -u`) can no longer reach the app at all once Access
+  is in front, which is the intended, correct outcome.
+  **What was verified live:** Access blocks everyone without one of the
+  two allowed emails (above); the real deployed instructor rows carry the
+  correct emails; the exact JWT-verification-and-email-mapping code that
+  runs in production was verified against real RSA signatures in
+  `tests/access.test.ts` (not mocked away) covering the full space of
+  outcomes (valid token, wrong audience, expired, forged signature, missing
+  email claim); the header-override logic that makes attribution automatic
+  was verified in `tests/api.test.ts`; and the underlying
+  instructor_id/updated_by_instructor_id database behavior itself was
+  already proven against this same live D1 in the previous round (unchanged
+  this round).
+  **What could not be verified live, and why:** actually completing a
+  Cloudflare Access login as Tony or as Anna (receiving the one-time PIN
+  email and finishing the browser login flow) requires access to their real
+  email inboxes, which this session does not have and should not attempt to
+  obtain. This is the one remaining acceptance step only Tony and Anna can
+  each do themselves — see "Tony manual action required" below.
 
 ## Instructor Identity V1 — data model + lesson attribution (this session)
 
@@ -599,23 +650,22 @@ Verification:
 
 ## Known limitations
 
-- No instructor authentication yet in the app itself (Basic Auth on the
-  Staging URL is a perimeter measure, not per-instructor login) — do not
-  expose Production publicly without this.
-- Zero Trust Access not yet enabled on the Cloudflare account (see above) —
-  Basic Auth is an interim stand-in for Staging only.
-- **Instructor Identity V1 is data-model-only this round** — no UI sources
-  `actingInstructorId` yet (nothing to source real, verified identity from
-  without Cloudflare Access), so today's app UI still behaves exactly as
-  before this round (lessons created via the UI still default to the
-  learner's own instructor; history edits via the UI still don't set
-  `updated_by_instructor_id`). The backend is ready and tested
-  (`tests/instructor-identity.test.ts`) for the moment Access supplies a
-  verified email → `lib/repo.ts#findInstructorByEmail` → `actingInstructorId`.
+- **Instructor Identity V1 is now fully wired end to end**: Cloudflare
+  Access (self-hosted app + policy restricted to Tony's/Anna's emails) →
+  verified JWT → `findInstructorByEmail` → automatic lesson/history
+  attribution and a "Signed in as `<name>`" line. Basic Auth is
+  **deliberately kept as a second, independent gate** — not yet removed,
+  per the cautious migration order recorded earlier in this file.
+- Only Tony and Anna have been actually verified live end-to-end signing in
+  through the real Access login (email one-time PIN) — this session cannot
+  do that itself (no access to their email inboxes); see "Tony manual
+  action required" in TASK.md.
 - Pre-existing production instructor rows (`ADI601`, `ADI604`) have `email:
   null` — nobody has confirmed which real person those correspond to, so
-  no email was guessed onto them. They'll need a real email set (e.g. via
-  the existing `PATCH /api/instructors/:id`-style endpoint, once extended,
+  no email was guessed onto them (though see the ADI-number coincidence
+  noted above — Tony's real ADI 604 matches `ADI601`'s `adi_number`).
+  They'll need a real email set (e.g. via the existing
+  `PATCH /api/instructors/:id`-style endpoint, once extended,
   or directly) once Tony confirms their identity.
 - No public production deployment.
 - Saved lessons can be edited (CBT&A V3) but not deleted.
