@@ -1,36 +1,67 @@
 # STATUS.md
 
-_Last updated: 2026-09-25_
+_Last updated: 2026-09-26_
 
-| Branch | State |
-| --- | --- |
-| `main` | Project skeleton and working rules. Not deployed. |
-| `staging` | Same as `main`. |
-| `feature/cbta-checklist` | CBT&A Lesson Checklist MVP — complete, build + tests pass. Awaiting review / merge to `staging`. |
+Repo: `tony-kunliu/instructor-assistant`
 
-Production: **not deployed**. Production requires separate approval.
+| Branch | Commit | State |
+| --- | --- | --- |
+| `main` | `edeab503bcd84e4dd0907cdc49c61dfc8762855b` | Project skeleton and working rules only. Not deployed. |
+| `staging` | `edeab503bcd84e4dd0907cdc49c61dfc8762855b` | Same as `main`. |
+| `feature/cbta-checklist` | `234c959ed6994c9797cb69d5fcebbb1afda5a9ac` | CBT&A Lesson Checklist MVP — complete, not yet merged into `staging`/`main`. |
 
-## CBT&A Checklist MVP — done
+Production: **not deployed**. Production requires separate, explicit
+authorization from Tony (merging to `main` does not imply this).
 
-- Learners (all CBT&A header fields + instructor), lessons, instructors in SQLite.
-- Start Lesson / End Lesson stamp Canberra time; times editable if needed.
-- Auto-calculated: lesson number, duration, km, cumulative hours/km.
-- Previous finish odometer pre-fills the next start odometer.
-- ADI + learner signature pads (both required to save).
-- In-progress lesson kept on the device (survives a page reload).
-- Lesson history per learner.
-- Verified in an emulated iPhone 13 browser: learner → Lesson #1 → Lesson #2,
-  totals 2h 30m / 70 km, no horizontal overflow.
+## CBT&A Checklist MVP (`feature/cbta-checklist`) — complete
+
+Implemented:
+
+- Learner creation / selection
+- Start Lesson
+- End Lesson
+- Lesson number (auto-incrementing)
+- Date
+- Start / finish time
+- Start / finish odometer
+- Automatic duration
+- Automatic lesson km
+- Cumulative hours
+- Cumulative km
+- Taught (free text)
+- Competencies Assessed (free text)
+- Achieved (free text)
+- Location
+- Comments
+- ADI signature
+- Learner signature
+- Lesson history
+- Previous lesson's finish odometer carried forward as next start odometer
+
+Verification:
+
+- `npm run build`: PASS
+- `npm test`: 10/10 PASS
+- End-to-end QA in an emulated iPhone 13 browser: PASS
+  - Lesson #1 → Lesson #2 workflow: PASS
+  - Reload persistence: PASS
+  - No horizontal overflow: PASS
 
 ## Known limitations
 
-- **No login yet.** Anyone who can reach the URL can use it. Do not expose it
-  publicly until instructor authentication is added.
-- Needs a Node server with a persistent disk for the SQLite file (not yet
-  Cloudflare/D1). Schema is plain SQL so it can move to D1.
-- No offline mode / service worker yet; the app needs a connection to save.
-- Lessons cannot be edited or deleted after saving.
-- A lesson crossing midnight is rejected (finish must be after start).
-- Taught / Competencies Assessed / Achieved are free text until the official
-  ACT CBT&A competency list is verified.
-- Home-screen icon is SVG only (iOS may show a generic icon).
+- No instructor authentication yet — do not expose publicly.
+- `node:sqlite` requires a Node server with persistent disk storage (not yet
+  Cloudflare D1). Schema is plain SQL so it can move to D1 later.
+- No public production deployment.
+- Saved lessons cannot be edited or deleted.
+- No offline mode / service worker.
+- iOS home-screen icon is a basic SVG placeholder.
+
+## Old ACTGDS (`tony-kunliu/actgds.com`) cleanup
+
+- Old Issue #2 ("ACTGDS Driver — CBT&A Checklist MVP"): **closed**, with a
+  comment pointing to this repo.
+- Old `feature/driver-cbta-checklist` branch: **retained** — branch deletion
+  was attempted but the available credentials/tooling did not have permission
+  to delete a remote ref. Left untouched as instructed.
+- ACTGDS Production: **unchanged**.
