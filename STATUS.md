@@ -54,7 +54,35 @@ discipline. If this round fails, restore to exactly this state.
 Production: **not deployed**. Production requires separate, explicit
 authorization from Tony (merging to `main` does not imply this).
 
-## Instructor Identity V1 — Anna's Access login blocked (this session, second follow-up)
+## Instructor Identity V1 — Tony and Anna both verified live via real Cloudflare Access login ✅
+
+**Resolved.** Tony added the "One-time PIN" identity provider himself
+(Zero Trust dashboard → Identity provider integrations → "+ Add an
+identity provider" → One-time PIN), then Anna completed the real login
+flow end to end: entered her email → received a one-time code → entered
+it → **the app correctly showed "Signed in as Anna"** in the topbar. This
+is the real, live confirmation (not a unit test) that:
+- Access's own policy correctly let her authenticate (only her and Tony's
+  emails can, per the "Tony and Anna only" policy).
+- `lib/access.ts`'s JWT verification correctly validated her real
+  Access-issued JWT.
+- `findInstructorByEmail` correctly mapped her verified email to the
+  "Anna" instructor record.
+- The trusted `x-instructor-id`/`x-instructor-name` headers correctly
+  reached the app and rendered "Signed in as Anna".
+
+Both Tony's and Anna's identity paths are now fully proven end to end —
+this closes out the only item the previous rounds couldn't verify
+themselves (no access to either person's email inbox). The second prompt
+Anna saw after entering her Access code (a username/password dialog) is
+the existing Basic Auth gate, working exactly as designed — kept as an
+independent second layer, not a bug.
+
+Both identity providers now exist on the account: "Cloudflare" (account-
+member login, works for Tony as account owner) and "One-time PIN" (email
+code, works for anyone Access's policy allows — this is what let Anna in).
+
+## Instructor Identity V1 — Anna's Access login blocked (this session, second follow-up) — RESOLVED, see above
 
 Tony tested the real Access login: his own email (account owner) worked and
 correctly showed "Signed in as Tony". Anna's did not — her login screen

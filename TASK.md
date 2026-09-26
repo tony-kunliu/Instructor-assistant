@@ -2,46 +2,45 @@
 
 No active development task.
 
-**Completed this session (second follow-up to Instructor Identity V1):**
-diagnosed why Anna could not sign in through Cloudflare Access while Tony
-could. Root cause confirmed via API: this Zero Trust account has **no
-login method configured at all** — the only fallback, "Login with
-Cloudflare", requires actual Cloudflare account membership, which Tony (the
-account owner) has and Anna doesn't. The Access Application and Policy
-created in the previous round are correct and not the problem. Creating a
-login method (identity provider) requires a Zero Trust permission scope the
-current API token doesn't have, and this session does not expand its own
-token permissions to work around that — so this one step needs Tony
-himself. Asked Tony which login method he wanted; **he chose email
-One-Time PIN.**
+**Completed this session:** Instructor Identity V1 is now fully working end
+to end, verified live by Tony and Anna themselves. The earlier blocker
+(Anna's Cloudflare Access login only offering "Sign in with Cloudflare",
+which requires Cloudflare account membership she doesn't have) was fixed by
+Tony adding the "One-time PIN" identity provider in the Zero Trust
+dashboard — a one-time, ~1 minute step only he could do. Anna then
+completed a real login (email → one-time code → in) and the app correctly
+showed **"Signed in as Anna"**. Combined with Tony's earlier successful
+login ("Signed in as Tony"), both named instructors' identity paths are now
+proven against the real, deployed system — not just unit tests. No code
+changes were needed this round; this was Cloudflare-side configuration only.
 
-No code changes were needed this round — this was a Cloudflare
-configuration gap, not an app bug.
+**Current live state:**
+- Cloudflare Access (self-hosted app + "Tony and Anna only" policy) sits in
+  front of the Worker, with two login methods available: "Cloudflare"
+  (account-member login) and "One-time PIN" (email code — this is what
+  makes Anna's access work).
+- Basic Auth is **still active** as an independent second gate (unchanged,
+  not yet retired).
+- Lesson/history attribution is automatic for whoever is actually signed
+  in via Access.
 
-**Follow-up for Tony (not done, needs his action):**
+**Two decisions now ready for Tony (previously conditioned on this exact
+outcome — now unblocked):**
 
-1. **Add the One-Time PIN login method** (one-time, ~1 minute, dashboard
-   only — cannot be done via the current API token): Cloudflare Zero Trust
-   dashboard → **Settings → Authentication → Login methods → Add → select
-   "One-time PIN" → Save.** Nothing else needs to change — the existing
-   Access Application already accepts any configured login method.
-2. **Have Anna try signing in again** after that — she should now get an
-   email with a one-time PIN code instead of the Cloudflare-account-only
-   screen, and the topbar should show "Signed in as Anna" once she's in.
-3. Once both of you have confirmed the Access login path works, decide
-   whether to retire Basic Auth (still kept as a second gate today).
-4. Decide when to authorize merging `staging` into `main` — Tony said this
-   can happen once Anna's login is working.
+1. **Retire Basic Auth?** The migration order from earlier rounds said not
+   to remove it until both people's Access login was proven — that's now
+   done. Tony can say the word and Basic Auth can be removed from
+   `middleware.ts` next round (Access + the app-level instructor mapping
+   would become the sole gate).
+2. **Authorize merging `staging` into `main`?** Tony previously said this
+   could happen "once Anna's login works" — it now does. Still needs his
+   explicit go-ahead per this repo's branch rules before it happens.
 
-**Already confirmed by Tony, no action needed:**
+**Follow-up for Tony:**
 
-- His own ADI number (604) — already set on the "Tony" instructor record.
-- The pre-existing `ADI601` row ("not important, maybe my own typo") —
-  left untouched rather than deleted, since deletion is irreversible and
-  wasn't required by this task.
-- PDF export tested fine on his own iPhone — no issue.
+- Reply with a decision on the two items above (or "not yet" on either).
+- Everything else from earlier rounds (PDF export tested fine on his
+  iPhone, ADI numbers set, `ADI601` left untouched as a likely-harmless
+  typo) is already closed out.
 
-**Explicitly out of scope this round:** no code was touched; this was pure
-diagnosis + a data question already answered by Tony.
-
-等待 Tony 完成 One-Time PIN 设置后确认 Anna 可登录，再指定下一任务。
+等待 Tony 对以上两项决定，或指定下一任务。
