@@ -45,6 +45,7 @@ function toLearner(row: Row): Learner {
     id: String(row.id),
     instructorId: String(row.instructor_id),
     instructorName: String(row.instructor_name ?? ""),
+    instructorAdiNumber: (row.instructor_adi_number as string) ?? null,
     fullName: String(row.full_name),
     address: (row.address as string) ?? null,
     phone: (row.phone as string) ?? null,
@@ -88,8 +89,18 @@ function toLesson(row: Row): Lesson {
 // ── Instructors ──────────────────────────────────────────────────────────
 
 export async function listInstructors(db: D1Database): Promise<Instructor[]> {
-  const { results } = await db.prepare("SELECT id, full_name FROM instructors ORDER BY full_name").all<Row>();
-  return results.map((row) => ({ id: String(row.id), fullName: String(row.full_name) }));
+  const { results } = await db.prepare("SELECT id, full_name, adi_number FROM instructors ORDER BY full_name").all<Row>();
+  return results.map((row) => ({ id: String(row.id), fullName: String(row.full_name), adiNumber: (row.adi_number as string) ?? null }));
+}
+
+/** Fills in (or corrects) an instructor's ADI number — needed on the official CBT&A PDF checklist. */
+export async function updateInstructorAdiNumber(db: D1Database, instructorId: string, adiNumber: unknown): Promise<Instructor> {
+  const value = text(adiNumber, 40);
+  if (!value) throw new ValidationError("ADI number is required.");
+  const existing = await db.prepare("SELECT id, full_name FROM instructors WHERE id = ?").bind(instructorId).first<Row>();
+  if (!existing) throw new NotFoundError("Instructor not found.");
+  await db.prepare("UPDATE instructors SET adi_number = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?").bind(value, instructorId).run();
+  return { id: instructorId, fullName: String(existing.full_name), adiNumber: value };
 }
 
 async function findOrCreateInstructor(db: D1Database, name: string): Promise<string> {
@@ -103,7 +114,7 @@ async function findOrCreateInstructor(db: D1Database, name: string): Promise<str
 // ── Learners ─────────────────────────────────────────────────────────────
 
 const LEARNER_SELECT = `
-  SELECT l.*, i.full_name AS instructor_name
+  SELECT l.*, i.full_name AS instructor_name, i.adi_number AS instructor_adi_number
   FROM learners l JOIN instructors i ON i.id = l.instructor_id`;
 
 export async function listLearners(db: D1Database): Promise<Learner[]> {
@@ -188,6 +199,12 @@ export async function listLessons(db: D1Database, learnerId: string): Promise<Le
     )
     .bind(learnerId)
     .all<Row>();
+  return results.map(toLesson);
+}
+
+/** All of a learner's saved lessons, oldest first, with real signatures — for the CBT&A PDF export (never partial/draft data). */
+export async function listLessonsForExport(db: D1Database, learnerId: string): Promise<Lesson[]> {
+  const { results } = await db.prepare("SELECT * FROM lessons WHERE learner_id = ? ORDER BY lesson_no ASC").bind(learnerId).all<Row>();
   return results.map(toLesson);
 }
 

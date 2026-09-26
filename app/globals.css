@@ -112,6 +112,8 @@ html, body {
 
 .odo { margin-bottom: 6px; }
 .hint { margin: 0 0 6px; font-size: 13px; color: var(--go); }
+.export-pdf { margin-top: 10px; }
+.export-adi-prompt .field { margin-bottom: 8px; }
 .derived { margin: 0 0 14px; font-size: 14px; color: var(--muted); }
 .derived b { color: var(--ink); }
 

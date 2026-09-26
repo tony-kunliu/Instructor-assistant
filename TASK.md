@@ -2,38 +2,35 @@
 
 No active development task.
 
-**Completed this session (CBT&A V3):** history lesson editing (every field
-editable except lesson number/duration/distance/cumulative totals, which
-always recalculate; cascading recalculation to subsequent lessons;
-carry-forward odometer consistency checks; signature invalidation on any
-content change, enforced server-side; `lessons.updated_at` tracking) plus a
-correction to 23 Final Drive gating (now correctly Locked until Competency
-1-22 + Review 1-17 + Review 1-22 are all Achieved) and automatic rollback of
-Review 1-17 / Review 1-22 / Final Drive 23 / CBT&A Completed if an edit
-invalidates their prerequisites, with a clear UI warning. Built on
-`feature/history-edit-and-finaldrive-gating` from `staging`, merged back
-into `staging`, Cloudflare Staging redeployed with migration 0003 applied.
+**Completed this session:** one-click export of the official ACT CBT&A
+Checklist PDF (form 10,044 (7/2002)) for a learner, filled with their saved
+lesson history, generated entirely client-side with pdf-lib against the
+exact template Tony supplied. Correct pagination (5 rows page 1, 6 per
+continuation page), header fields (with a new ADI-number fill-in prompt when
+missing), Taught/Assessed/Achieved verbatim, signatures scaled to fit,
+overflow handled via an appendix page (never truncated), Chinese/English
+mixed text, and page numbers throughout. Built on `feature/cbta-pdf-export`
+from `staging`, merged back into `staging`, Cloudflare Staging redeployed.
 Not merged into `main` (needs Tony's authorization) and Production was not
-touched. See STATUS.md for full detail.
+touched. See STATUS.md for full detail, including a real bug (font `locl`
+feature corrupting digit widths) found and fixed via this round's own visual
+QA before it shipped.
 
 **Explicitly out of scope this round (per instruction, roadmap only):**
 
-- PDF export (future: fill the official ACT CBT&A Checklist PDF format from
-  lesson records).
-- GPS / Drive Tracking V1 (Start Lesson → GPS tracking → End Lesson →
-  actual GPS distance, duration, moving/stopped time, route).
-- Drive Intelligence V2 (roundabout / intersection / traffic-light / stop /
-  give-way / speed-zone / motorway analysis from GPS data).
-- Instructor / Learner / Parent login, booking, CRM, AI, voice input,
-  native iOS/Android apps. (Lesson edits are timestamped via `updated_at`
-  but not attributed to a specific logged-in person — no login system was
-  built, per instruction.)
+- Anything beyond the PDF export itself: no GPS, no login, no website sync,
+  no notifications, no booking, no UI redesign, no unrelated optimization.
+- This session's other work is happening in a separate repo (actgds.com
+  CRM) — not touched here, per instruction.
 
 **Follow-up for Tony (not done, needs his action):**
 
+- **Open the exported PDF on your own iPhone** to confirm it opens/saves
+  correctly on a real device — this round's mobile verification was an
+  emulated iPhone 13 viewport in a headless browser, not a real device.
 - Enable Cloudflare Zero Trust Access in the dashboard (one-time, manual —
   cannot be done via API token) so Basic Auth on Staging can be replaced
-  with a proper Access application.
+  with a proper Access application. (Carried over from earlier rounds.)
 - Confirm the official CBT&A competency full names/content once available
   (currently only official numbering 1-22 / Review 1-17 / Review 1-22 / 23
   Final Drive is used — nothing invented, per AGENTS.md).

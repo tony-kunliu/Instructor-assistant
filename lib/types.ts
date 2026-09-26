@@ -4,12 +4,15 @@ export type LicenceStage = "learner" | "p1" | "p2" | "full";
 export type Instructor = {
   id: string;
   fullName: string;
+  adiNumber: string | null;
 };
 
 export type Learner = {
   id: string;
   instructorId: string;
   instructorName: string;
+  /** The instructor's ADI number, needed on the official CBT&A PDF checklist — often not yet filled in. */
+  instructorAdiNumber: string | null;
   fullName: string;
   address: string | null;
   phone: string | null;
