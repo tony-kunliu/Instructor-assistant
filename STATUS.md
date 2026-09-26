@@ -6,14 +6,98 @@ Repo: `tony-kunliu/instructor-assistant`
 
 | Branch | Commit | State |
 | --- | --- | --- |
-| `main` | `98aa0c047d9b99d309c531cddb81555f8444ab43` | Working rules / docs baseline only. CBT&A MVP, D1 storage, Cloudflare deployment and CBT&A V2 competency selection not yet merged in. Not deployed. |
-| `staging` | (pending merge of `feature/cbta-competency-selection`) | CBT&A Lesson Checklist MVP + D1-compatible storage + live Cloudflare Staging deployment + CBT&A V2 structured competency selection. |
+| `main` | `98aa0c047d9b99d309c531cddb81555f8444ab43` | Working rules / docs baseline only. CBT&A MVP, D1 storage, Cloudflare deployment, CBT&A V2 competency selection and V3 history editing not yet merged in. Not deployed. |
+| `staging` | (pending merge of `feature/history-edit-and-finaldrive-gating`) | CBT&A Lesson Checklist MVP + D1-compatible storage + live Cloudflare Staging deployment + CBT&A V2 structured competency selection + CBT&A V3 history editing / corrected Final Drive gating. |
 | `feature/cbta-checklist` | `e7e2c3d93902d286e2bcd03e8ac08541cd6f7186` | CBT&A Lesson Checklist MVP — complete, merged into `staging`. Not yet merged into `main`. |
 | `feature/d1-storage` | `87b40be6258924329ae85f888be6322ef3a00ca4` | D1-compatible storage migration — complete, merged into `staging`. Not yet merged into `main`. |
-| `feature/cbta-competency-selection` | (this session) | CBT&A V2 structured competency selection — complete, merged into `staging`. Not yet merged into `main`. |
+| `feature/cbta-competency-selection` | `b2734f5c9b6cbe6d9d5ff85c3fdf16fc74e42adb` | CBT&A V2 structured competency selection — complete, merged into `staging`. Not yet merged into `main`. |
+| `feature/history-edit-and-finaldrive-gating` | (this session) | CBT&A V3 history lesson editing + corrected Final Drive 23 / Review gating — complete, merged into `staging`. Not yet merged into `main`. |
 
 Production: **not deployed**. Production requires separate, explicit
 authorization from Tony (merging to `main` does not imply this).
+
+## CBT&A V3 — history lesson editing + corrected Final Drive gating — merged into `staging`
+
+Two things, both requested together by Tony as one round:
+
+**1. Every history lesson is now editable** (previously write-once).
+`PATCH /api/learners/:id/lessons/:lessonId` (`lib/repo.ts#updateLesson`)
+lets an instructor fix a past lesson's Date, Start/Finish time, Start/Finish
+odometer, Taught, Assessed, Achieved, Location and Comments.
+
+- **Never user-editable, always recalculated:** Lesson number (stays as
+  assigned at creation), Duration, Distance, Cumulative hours, Cumulative
+  km. Editing one lesson's time/odometer recalculates its own duration/
+  distance and cascades a recomputed cumulative total through every
+  subsequent lesson (running sum in `lesson_no` order) — all committed in
+  one atomic `db.batch()` with the swapped competency events.
+- **Carry-forward / consistency protection:** since the odometer is one
+  physical instrument, an edit is rejected if it would make this lesson's
+  start odometer less than the previous lesson's finish odometer, or this
+  lesson's finish odometer exceed the next lesson's start odometer.
+- **Signature invalidation:** changing any of Date / Start-Finish time /
+  Start-Finish odometer / Taught / Assessed / Achieved / Location /
+  Comments invalidates both existing signatures — the edit is rejected
+  unless both a new ADI signature and a new Learner signature are supplied
+  and are byte-different from the previous ones (proof they were actually
+  redrawn, not resubmitted). Enforced server-side
+  (`lib/repo.ts#updateLesson`), not just hidden in the UI.
+- **`lessons.updated_at`** (new nullable column, `migrations/
+  0003_add_lesson_updated_at.sql`) records when a lesson was last edited;
+  `null` until first edited. No login system was built for this (per
+  instruction) — edits aren't attributed to a specific person, only timed.
+- **Automatic milestone rollback:** progress (Review 1-17 / Review 1-22 /
+  23 Final Drive / CBT&A Completed) is always *derived fresh* from the full
+  competency-event history on every read (`lib/competency.ts
+  #computeProgress`), never cached — so editing an earlier lesson to remove
+  a competency's Achieved status automatically invalidates any
+  later-recorded Review/Final-Drive/Completed milestone that depended on
+  it, the moment progress is next computed. `updateLesson` diffs
+  before/after progress and returns an explicit `invalidated` report
+  (`{ review1_17, review1_22, finalDrive23, completed }`); the UI shows a
+  clear warning banner on the Progress card naming exactly what was rolled
+  back and reset to Locked/Ready.
+
+**2. Corrected 23 Final Drive gating** (this was wrong in the V2 round —
+Final Drive had no lock at all). Now: 23 Final Drive is **Locked** until
+Competency 1-22 are all Achieved **and** Review 1-17 is Achieved **and**
+Review 1-22 is Achieved; only then is it **Ready to assess**. Review 1-17
+and Review 1-22's own gating is unchanged (1-17 all Achieved unlocks
+Review 1-17; 1-22 all Achieved + Review 1-17 Achieved unlocks Review
+1-22) but is now re-validated the same way on every read (see above), not
+just at the moment it was first assessed.
+
+**Tests:** `tests/history-edit.test.ts` (new) covers editable fields
+taking effect, lesson-number/duration/distance/cumulative always being
+recalculated regardless of what's smuggled into the input, cascading
+cumulative recalculation to subsequent lessons, carry-forward odometer
+consistency rejection, signature invalidation (same signature resubmitted
+→ rejected; only one of the two redrawn → rejected; both redrawn →
+accepted; no protected field changed → no forced re-sign), an edit that
+retroactively invalidates an already-Achieved Review 1-17 (with the
+`invalidated` flag and rollback both verified), and that an unrelated edit
+reports no invalidation. `tests/competency.test.ts` gained the corrected
+Final Drive 23 gating tests (locked until fully unlocked; achieves +
+completes only after unlock) replacing the old ungated version. All
+pre-existing tests (CBT&A V2 rules, Lesson #1/#2 duration/distance/
+cumulative/odometer-carry-forward) still pass unchanged.
+
+**Bug caught by this round's own mobile E2E, fixed before it shipped:**
+the CompetencyPicker refactor for 3-state Final Drive initially had
+`specialStatus()` fall through to Final Drive's lock status for *any*
+unmatched id — which included every core competency 1-22, disabling their
+Assessed chip entirely whenever Final Drive was locked (i.e. almost
+always). Fixed to return `null`/not-special for non-special ids before
+this ever reached Staging.
+
+**Verification:** `npm run build` / `npm test`: PASS (31/31). Full mobile
+E2E (iPhone 13 viewport): create Lesson #1 → edit its finish odometer (a
+protected field) → save rejected without re-signing → save rejected with
+only one signature redrawn → both redrawn → saved → duration/distance
+recalculated correctly (odometer 1000→1030 became 30 km, up from 10 km) →
+history shows the new `Edited <timestamp>` line → Final Drive 23 correctly
+shows "Locked · N competencies remaining" (previously wrongly "Ready to
+assess") → no horizontal overflow at 390px width.
 
 ## CBT&A V2 — structured competency selection — merged into `staging`
 

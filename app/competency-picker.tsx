@@ -27,10 +27,19 @@ function toggle(list: string[], id: string): string[] {
   return list.includes(id) ? list.filter((x) => x !== id) : [...list, id];
 }
 
+/** The three special assessments' validated status lives in their own progress sub-object, not the raw
+ * per-competency map — a Review/Final Drive achieved in the past can be rolled back to locked/ready by a
+ * later edit that invalidates its prerequisites (see lib/competency.ts#computeProgress). Only applies to
+ * REVIEW_1_17 / REVIEW_1_22 / FINAL_DRIVE_23 — core competencies 1-22 are never "special locked". */
+function specialStatus(id: string, progress: LearnerProgress): "locked" | "ready" | "achieved" | null {
+  if (id === REVIEW_1_17) return progress.review1_17.status;
+  if (id === REVIEW_1_22) return progress.review1_22.status;
+  if (id === FINAL_DRIVE_23) return progress.finalDrive23.status;
+  return null;
+}
+
 function specialLocked(id: string, progress: LearnerProgress): boolean {
-  if (id === REVIEW_1_17) return progress.review1_17.status === "locked";
-  if (id === REVIEW_1_22) return progress.review1_22.status === "locked";
-  return false;
+  return specialStatus(id, progress) === "locked";
 }
 
 export default function CompetencyPicker({ progress, taughtIds, assessedIds, achievedResults, onChangeTaught, onChangeAssessed, onChangeAchieved }: Props) {
@@ -101,7 +110,7 @@ export default function CompetencyPicker({ progress, taughtIds, assessedIds, ach
         </div>
         <div className="chip-row special">
           {SPECIAL_ASSESSMENTS.map((id) => {
-            const achieved = progress.competencies[id]?.achieved === true;
+            const achieved = specialStatus(id, progress) === "achieved";
             const locked = specialLocked(id, progress);
             return (
               <button

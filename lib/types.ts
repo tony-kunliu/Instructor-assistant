@@ -44,6 +44,7 @@ export type Lesson = {
   adiSignature: string | null;
   learnerSignature: string | null;
   createdAt: string;
+  updatedAt: string | null;
 };
 
 /** Set once 23 Final Drive is Assessed + Achieved (see lib/competency.ts). */

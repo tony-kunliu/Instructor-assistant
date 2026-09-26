@@ -7,7 +7,7 @@
 //                               accounts reference these ids.
 // None of those features exist yet.
 
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS instructors (
@@ -76,4 +76,6 @@ CREATE TABLE IF NOT EXISTS competency_events (
 );
 CREATE INDEX IF NOT EXISTS competency_events_learner_idx ON competency_events (learner_id, competency_id);
 CREATE INDEX IF NOT EXISTS competency_events_lesson_idx ON competency_events (lesson_id);
+
+ALTER TABLE lessons ADD COLUMN updated_at TEXT;
 `;

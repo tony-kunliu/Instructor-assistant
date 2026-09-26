@@ -39,7 +39,7 @@ export type LearnerProgress = {
   achievedCount: number;
   review1_17: { status: ReviewState; remaining: number };
   review1_22: { status: ReviewState; remaining: number; review1_17Achieved: boolean };
-  finalDrive23: { status: "ready" | "achieved" };
+  finalDrive23: { status: ReviewState; remaining: number; review1_17Achieved: boolean; review1_22Achieved: boolean };
   completed: boolean;
 };
 
@@ -72,21 +72,37 @@ export function computeProgress(events: readonly CompetencyEvent[]): LearnerProg
   const achievedCount = CORE_COMPETENCY_IDS.filter((id) => byId[id].achieved).length;
   const first17Remaining = first17.filter((id) => !byId[id].achieved).length;
   const allRemaining = CORE_COMPETENCY_IDS.filter((id) => !byId[id].achieved).length;
-  const review1_17Achieved = byId[REVIEW_1_17].achieved;
-  const review1_22Achieved = byId[REVIEW_1_22].achieved;
-  const finalDriveAchieved = byId[FINAL_DRIVE_23].achieved;
 
-  const review1_17Status: ReviewState = review1_17Achieved ? "achieved" : first17Remaining === 0 ? "ready" : "locked";
-  const review1_22Status: ReviewState =
-    review1_22Achieved ? "achieved" : allRemaining === 0 && review1_17Achieved ? "ready" : "locked";
+  // A Review/Final Drive is only genuinely "achieved" while its prerequisites
+  // still hold *now* — an Assessed+Achieved event that happened in the past
+  // is a historical fact (kept in `byId` for audit), but if a later edit to
+  // an earlier lesson removes one of the underlying competency achievements,
+  // the review's achieved status must fall back to whatever the gate
+  // currently allows (locked/ready), not stay stuck as "achieved" on stale
+  // data. This is what lets an edit automatically roll back an invalidated
+  // Review 1-17 / Review 1-22 / 23 Final Drive / CBT&A Completed milestone.
+  const review1_17EverAchieved = byId[REVIEW_1_17].achieved;
+  const review1_17GateOpen = first17Remaining === 0;
+  const review1_17Valid = review1_17EverAchieved && review1_17GateOpen;
+  const review1_17Status: ReviewState = review1_17Valid ? "achieved" : review1_17GateOpen ? "ready" : "locked";
+
+  const review1_22EverAchieved = byId[REVIEW_1_22].achieved;
+  const review1_22GateOpen = allRemaining === 0 && review1_17Valid;
+  const review1_22Valid = review1_22EverAchieved && review1_22GateOpen;
+  const review1_22Status: ReviewState = review1_22Valid ? "achieved" : review1_22GateOpen ? "ready" : "locked";
+
+  const finalDrive23EverAchieved = byId[FINAL_DRIVE_23].achieved;
+  const finalDrive23GateOpen = allRemaining === 0 && review1_17Valid && review1_22Valid;
+  const finalDrive23Valid = finalDrive23EverAchieved && finalDrive23GateOpen;
+  const finalDrive23Status: ReviewState = finalDrive23Valid ? "achieved" : finalDrive23GateOpen ? "ready" : "locked";
 
   return {
     competencies: byId,
     achievedCount,
     review1_17: { status: review1_17Status, remaining: first17Remaining },
-    review1_22: { status: review1_22Status, remaining: allRemaining, review1_17Achieved },
-    finalDrive23: { status: finalDriveAchieved ? "achieved" : "ready" },
-    completed: finalDriveAchieved,
+    review1_22: { status: review1_22Status, remaining: allRemaining, review1_17Achieved: review1_17Valid },
+    finalDrive23: { status: finalDrive23Status, remaining: allRemaining, review1_17Achieved: review1_17Valid, review1_22Achieved: review1_22Valid },
+    completed: finalDrive23Valid,
   };
 }
 
@@ -111,6 +127,27 @@ export function parseAchievedResults(value: unknown): Record<string, AssessmentR
 }
 
 export class CompetencyRuleError extends Error {}
+
+/** Milestones that flipped from Achieved/Completed to not, as a side effect of editing an earlier lesson. */
+export type MilestoneInvalidation = {
+  review1_17: boolean;
+  review1_22: boolean;
+  finalDrive23: boolean;
+  completed: boolean;
+};
+
+export function diffInvalidatedMilestones(before: LearnerProgress, after: LearnerProgress): MilestoneInvalidation {
+  return {
+    review1_17: before.review1_17.status === "achieved" && after.review1_17.status !== "achieved",
+    review1_22: before.review1_22.status === "achieved" && after.review1_22.status !== "achieved",
+    finalDrive23: before.finalDrive23.status === "achieved" && after.finalDrive23.status !== "achieved",
+    completed: before.completed && !after.completed,
+  };
+}
+
+export function hasInvalidatedMilestone(invalidation: MilestoneInvalidation): boolean {
+  return invalidation.review1_17 || invalidation.review1_22 || invalidation.finalDrive23 || invalidation.completed;
+}
 
 /**
  * Enforce, server-side, every CBT&A V2 rule for a single lesson's
@@ -138,6 +175,9 @@ export function validateLessonCompetencies(
   }
   if (input.assessedIds.includes(REVIEW_1_22) && progress.review1_22.status === "locked") {
     throw new CompetencyRuleError("Review 1-22 is locked until Competency 1-22 and Review 1-17 are all achieved.");
+  }
+  if (input.assessedIds.includes(FINAL_DRIVE_23) && progress.finalDrive23.status === "locked") {
+    throw new CompetencyRuleError("23 Final Drive is locked until Competency 1-22, Review 1-17 and Review 1-22 are all achieved.");
   }
 
   for (const id of input.assessedIds) {
