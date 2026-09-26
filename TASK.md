@@ -2,72 +2,46 @@
 
 No active development task.
 
-**Completed this session (follow-up to Instructor Identity V1):** Cloudflare
-Zero Trust Access is now fully wired up. Tony enabled Access in the
-dashboard (the one-time manual step the previous round was blocked on);
-everything after that was done via API/CLI: created the Access Application
-+ a policy restricted to exactly Tony's and Anna's real emails, verified
-the Access JWT server-side (`lib/access.ts`, using `jose`), and mapped the
-verified email to an instructor record (`lib/repo.ts#findInstructorByEmail`,
-built last round). Lesson creation and history edits are now automatically
-attributed to whoever is actually signed in via Access — no manual
-`actingInstructorId` needed from the client anymore when Access identity is
-present. Added a minimal "Signed in as `<name>`" line and `GET /api/me`.
-Basic Auth is deliberately **kept** as an independent second gate this
-round, not removed. Built on `feature/instructor-identity-access` (+ a
-small test-only follow-up branch) from `staging`, merged back into
-`staging` (`d13e7e7`), Cloudflare Staging redeployed (Version
-`ac54eaea-ab97-4220-8fe6-80521b0d37bc`). Not merged into `main` and
-Production was not touched. See STATUS.md for full detail.
+**Completed this session (second follow-up to Instructor Identity V1):**
+diagnosed why Anna could not sign in through Cloudflare Access while Tony
+could. Root cause confirmed via API: this Zero Trust account has **no
+login method configured at all** — the only fallback, "Login with
+Cloudflare", requires actual Cloudflare account membership, which Tony (the
+account owner) has and Anna doesn't. The Access Application and Policy
+created in the previous round are correct and not the problem. Creating a
+login method (identity provider) requires a Zero Trust permission scope the
+current API token doesn't have, and this session does not expand its own
+token permissions to work around that — so this one step needs Tony
+himself. Asked Tony which login method he wanted; **he chose email
+One-Time PIN.**
 
-**Real data provided by Tony this round:** his own ADI number (604) and
-Anna's (358) — both set on their instructor records via direct D1 update
-(not through fabrication). **Worth Tony's attention:** his ADI number (604)
-is identical to the pre-existing `ADI601` instructor row's `adi_number` —
-circumstantial evidence that row may be his own historical record, but it
-was left untouched since nothing was confirmed, per instruction not to
-guess/merge historical data.
+No code changes were needed this round — this was a Cloudflare
+configuration gap, not an app bug.
 
-**What this session could not verify, and why (needs Tony's/Anna's own
-action):** actually completing a real Cloudflare Access login as Tony or
-Anna (receiving the one-time-PIN email and finishing the browser flow)
-requires access to their real email inboxes, which this session does not
-have. Everything up to that point was verified: Access blocks anyone else
-(confirmed live — an unauthenticated request now gets redirected to
-Access's own login page before the Worker even runs); the exact
-JWT-verification and email→instructor mapping code that will run for a real
-login was tested against real RSA-signed tokens (`tests/access.test.ts`);
-and the attribution override logic was tested directly
-(`tests/api.test.ts`).
+**Follow-up for Tony (not done, needs his action):**
 
-**Explicitly out of scope this round (per instruction, roadmap only):**
+1. **Add the One-Time PIN login method** (one-time, ~1 minute, dashboard
+   only — cannot be done via the current API token): Cloudflare Zero Trust
+   dashboard → **Settings → Authentication → Login methods → Add → select
+   "One-time PIN" → Save.** Nothing else needs to change — the existing
+   Access Application already accepts any configured login method.
+2. **Have Anna try signing in again** after that — she should now get an
+   email with a one-time PIN code instead of the Cloudflare-account-only
+   screen, and the topbar should show "Signed in as Anna" once she's in.
+3. Once both of you have confirmed the Access login path works, decide
+   whether to retire Basic Auth (still kept as a second gate today).
+4. Decide when to authorize merging `staging` into `main` — Tony said this
+   can happen once Anna's login is working.
 
-- A full employee management system, roles/permissions matrix, or an
-  identity provider beyond Access's built-in email one-time PIN.
-- Learner/parent login, ACTGDS website integration, Booking/Cal.com, CRM,
-  GPS, Drive Intelligence, AI, voice input, billing, unrelated UI redesign.
-- This session's other work is happening in a separate repo (actgds.com
-  CRM) — not touched here, per instruction.
+**Already confirmed by Tony, no action needed:**
 
-**Follow-up for Tony (not done, needs his/Anna's action):**
+- His own ADI number (604) — already set on the "Tony" instructor record.
+- The pre-existing `ADI601` row ("not important, maybe my own typo") —
+  left untouched rather than deleted, since deletion is irreversible and
+  wasn't required by this task.
+- PDF export tested fine on his own iPhone — no issue.
 
-- **You and Anna should each sign in once** at
-  `https://instructor-assistant.kunliu-work.workers.dev` — you'll be
-  redirected to a Cloudflare Access login (enter your email, then the
-  one-time PIN code sent to it), then Basic Auth's own prompt (existing
-  credentials, unchanged). Confirm the topbar shows "Signed in as Tony" /
-  "Signed in as Anna", and that a newly created or edited lesson is
-  attributed to the right person. This is the one remaining acceptance
-  step this session couldn't perform itself.
-- Confirm whether the pre-existing `ADI601` instructor row is in fact your
-  own historical record (see the ADI-number coincidence above) — nothing
-  was auto-merged.
-- Confirm which real instructor `ADI604` corresponds to, if anyone.
-- Decide when Basic Auth can be retired now that Access is live (per the
-  migration order: only after both of you have confirmed the Access login
-  path works).
-- Open the exported CBT&A PDF on your own iPhone (carried over from an
-  earlier round — still not done).
-- Decide when to authorize merging `staging` into `main`.
+**Explicitly out of scope this round:** no code was touched; this was pure
+diagnosis + a data question already answered by Tony.
 
-等待 Tony 指定下一任务。
+等待 Tony 完成 One-Time PIN 设置后确认 Anna 可登录，再指定下一任务。

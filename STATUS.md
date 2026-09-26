@@ -54,6 +54,49 @@ discipline. If this round fails, restore to exactly this state.
 Production: **not deployed**. Production requires separate, explicit
 authorization from Tony (merging to `main` does not imply this).
 
+## Instructor Identity V1 — Anna's Access login blocked (this session, second follow-up)
+
+Tony tested the real Access login: his own email (account owner) worked and
+correctly showed "Signed in as Tony". Anna's did not — her login screen
+only offered "Sign in with Cloudflare" with the message "Cloudflare
+sign-in is restricted to members of the account."
+
+**Root cause, confirmed via API:** `GET /accounts/:id/access/identity_
+providers` returns an empty list — **no login method has ever been
+configured** on this Zero Trust account beyond the built-in "Login with
+Cloudflare" fallback, which only works for people who are themselves
+members of this Cloudflare account (Tony, as the account owner, is; Anna
+is not). This is not a bug in the app or in the Access Application/Policy
+created earlier this session — those are correct — it's simply that no
+actual login method exists yet for anyone outside the Cloudflare account.
+
+**Could not be fixed via API this session:** creating an identity provider
+requires a Zero Trust "Identity Providers" permission scope that the
+current API token does not have (`POST .../access/identity_providers` →
+`403 auth.forbidden`, same for `GET .../access/organizations`) — a
+different, narrower scope than the "Access: Apps and Policies" permission
+the token does have (which is why creating the Access Application and
+Policy earlier worked fine). Per instruction, this session does not expand
+its own Cloudflare API token permissions to work around this.
+
+**Asked Tony directly** whether he wanted email One-Time PIN (fastest, no
+external dependency) or a real "Sign in with Google" (needs a Google Cloud
+OAuth client Tony would create himself) — **Tony chose email One-Time
+PIN.** This needs one small one-time dashboard step only Tony can do (the
+token can't, and this session won't broaden its own permissions to make
+itself able to): Zero Trust dashboard → **Settings → Authentication →
+Login methods → Add → One-time PIN → Save.** No other configuration is
+needed — the existing Access Application's `allowed_idps` is already `[]`
+(meaning "any configured login method"), so this alone should immediately
+let Anna sign in with a code emailed to her.
+
+**Left untouched, per Tony's own answer:** the `ADI601` instructor row
+(Tony called it "not important, possibly my own typo" and said either
+deleting it or leaving it is fine) — left exactly as-is rather than
+deleted, since deletion is irreversible and nothing about this task
+required removing it. Tony also confirmed ADI number 604 is his (already
+set on the "Tony" instructor row last round); no change needed there.
+
 ## Instructor Identity V1 — Cloudflare Access wired up (this session, follow-up round)
 
 **Rollback baseline for this round:** previous known-good `staging` HEAD
