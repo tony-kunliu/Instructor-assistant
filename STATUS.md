@@ -54,6 +54,38 @@ discipline. If this round fails, restore to exactly this state.
 Production: **not deployed**. Production requires separate, explicit
 authorization from Tony (merging to `main` does not imply this).
 
+## Instructor Identity V1 — Basic Auth retired; Cloudflare Access is now the sole gate
+
+Tony authorized this once both his and Anna's real Access logins were
+verified working (see below). `middleware.ts` no longer checks
+`STAGING_BASIC_AUTH_USER`/`STAGING_BASIC_AUTH_PASSWORD` at all — Cloudflare
+Access (self_hosted app + "Tony and Anna only" policy) is the only gate on
+the Staging URL now.
+
+- **Fail closed, not open:** in the deployed Worker (`env.DB` present), a
+  request with no verified Access identity at all is now rejected with
+  `403` outright, rather than silently passing through — this Worker has
+  no other route for traffic to reach it except through Access for this
+  exact hostname, so a missing identity here would mean Access wasn't
+  actually in front for some reason, which must fail closed. Outside the
+  deployed Worker (local dev/build/tests), this check is skipped since
+  nothing is publicly exposed there.
+- The rest of the identity logic (JWT verification, email→instructor
+  mapping, trusted header forwarding, 403 for an unrecognized/inactive
+  email) is unchanged from the previous round.
+- The `STAGING_BASIC_AUTH_USER`/`STAGING_BASIC_AUTH_PASSWORD` Worker
+  secrets themselves were **not deleted** (`wrangler secret delete` was not
+  run) — they're simply unused by the app now. Left in place as a quick
+  rollback lever: reverting `middleware.ts` to the previous version would
+  immediately bring Basic Auth back without needing to re-set the secrets.
+- **Verification:** `npm run build` / `npm test`: PASS (64/64, unchanged —
+  this round only removed the Basic Auth branch and enforced fail-closed
+  behavior for a missing Access identity in the deployed Worker; no new
+  test surface was introduced). Live: unauthenticated request still gets
+  redirected to Access's login page (Access itself, ahead of the Worker,
+  is unaffected by this change) — the Basic Auth secondary prompt that
+  used to follow a successful Access login is gone.
+
 ## Instructor Identity V1 — Tony and Anna both verified live via real Cloudflare Access login ✅
 
 **Resolved.** Tony added the "One-time PIN" identity provider himself
