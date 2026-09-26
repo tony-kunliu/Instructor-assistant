@@ -1,0 +1,26 @@
+name = "instructor-assistant"
+main = ".open-next/worker.js"
+compatibility_date = "2025-01-01"
+compatibility_flags = ["nodejs_compat", "global_fetch_strictly_public"]
+
+[assets]
+directory = ".open-next/assets"
+binding = "ASSETS"
+
+# Self-reference service binding required by the OpenNext Cloudflare adapter
+# (used for ISR/tag-cache revalidation); the service name must match `name`.
+[[services]]
+binding = "WORKER_SELF_REFERENCE"
+service = "instructor-assistant"
+
+# D1 binding for Instructor / Learner / Lesson storage.
+#
+# Created via `wrangler d1 create instructor-assistant-db` (account:
+# Kunliu.work@gmail.com, region ENAM). Local development and tests never
+# need this real id: `wrangler d1 migrations apply DB --local` runs
+# entirely offline against Miniflare's local D1 emulation.
+[[d1_databases]]
+binding = "DB"
+database_name = "instructor-assistant-db"
+database_id = "7611cd7e-2331-4372-bbe3-86bcc093d26d"
+migrations_dir = "migrations"

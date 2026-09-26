@@ -10,9 +10,13 @@ Lesson Checklist** on an iPhone right after each driving lesson.
 ## Stack
 
 - Next.js (App Router) + React + TypeScript
-- SQLite via Node's built-in `node:sqlite` (no ORM, no extra DB dependency).
-  The schema is plain SQL (`lib/schema.ts`) so it can move to Cloudflare D1
-  (the main ACTGDS site's database) without changes.
+- **Storage: D1-compatible.** `lib/repo.ts` only talks to the `D1Database`
+  interface (`lib/d1-types.ts`) — the same shape as a real Cloudflare D1
+  binding. Schema/migration: `migrations/0001_init.sql` (plain SQL, applied
+  with `wrangler d1 migrations apply DB`). Locally (dev/test) it runs against
+  `lib/d1-sqlite.ts`, a local D1-compatible adapter backed by `node:sqlite` —
+  no code change needed to run against real D1 in a Cloudflare Worker, only
+  swapping the binding in `lib/db.ts#getD1()`.
 - Installable PWA (web manifest, iOS home-screen meta)
 
 ## Requirements
@@ -23,13 +27,17 @@ Lesson Checklist** on an iPhone right after each driving lesson.
 
 ```bash
 npm install
-npm run dev        # http://localhost:3000
+npm run db:migrate:local   # apply schema to the local D1 emulator (Miniflare, offline)
+npm run dev                # http://localhost:3000
 npm run build
 npm test
 ```
 
-The database file is created automatically at `data/actgds-driver.sqlite`
-(override with `ACTGDS_DRIVER_DB=/path/to/file.sqlite`). It is git-ignored.
+The local database file is created automatically at
+`data/actgds-driver.sqlite` (override with
+`ACTGDS_DRIVER_DB=/path/to/file.sqlite`). It is git-ignored. Deploying with a
+real Cloudflare D1 database requires Cloudflare account credentials — see
+`wrangler.toml` and `STATUS.md`.
 
 ## Branches
 
