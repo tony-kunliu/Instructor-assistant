@@ -11,7 +11,7 @@ Lesson Checklist** on an iPhone right after each driving lesson.
 
 - Next.js (App Router) + React + TypeScript
 - SQLite via Node's built-in `node:sqlite` (no ORM, no extra DB dependency).
-  The schema is plain SQL (`db/schema.sql`) so it can move to Cloudflare D1
+  The schema is plain SQL (`lib/schema.ts`) so it can move to Cloudflare D1
   (the main ACTGDS site's database) without changes.
 - Installable PWA (web manifest, iOS home-screen meta)
 
