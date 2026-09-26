@@ -4,6 +4,32 @@ _Last updated: 2026-09-26_
 
 Repo: `tony-kunliu/instructor-assistant`
 
+## Rollback baseline — recorded before `feature/instructor-identity` (Instructor Identity V1)
+
+Recorded before any change in this round, per AGENTS.md-style rollback
+discipline. If this round fails, restore to exactly this state.
+
+- **Previous known-good `staging` HEAD:** `b6b749f` (docs-only commit
+  recording the CBT&A PDF export remote QA).
+- **Previous known-good Cloudflare Worker deployment:** Version ID
+  `aa3c1c09-9892-4855-82d2-0e7fb1940d94` (`instructor-assistant`, deployed
+  2026-09-26T11:15:46Z) — confirmed still the active/live deployment via
+  `wrangler deployments list` immediately before this round started.
+- **D1 migrations:** `wrangler d1 migrations list instructor-assistant-db
+  --remote` → "No migrations to apply" — all of `0001_init.sql`,
+  `0002_add_competency_events.sql`, `0003_add_lesson_updated_at.sql` are
+  applied and the remote database is up to date with no pending migration.
+- **Basic Auth confirmed working:** unauthenticated `GET /` → `401`;
+  authenticated `GET /` (with the existing Basic Auth credentials) → `200`.
+- **Rollback path if this round needs to be reverted:** redeploy Worker
+  Version `aa3c1c09-9892-4855-82d2-0e7fb1940d94` via `wrangler rollback` (or
+  redeploy from `staging` at `b6b749f`); D1 migrations are additive-only so
+  no migration rollback is needed to restore this baseline; Basic Auth
+  middleware/secrets are untouched by this round until explicitly replaced,
+  so restoring the old Worker version alone restores Basic Auth protection.
+  No existing `learner`/`lesson` data is touched by this round, so no data
+  rollback is ever needed.
+
 | Branch | Commit | State |
 | --- | --- | --- |
 | `main` | `98aa0c047d9b99d309c531cddb81555f8444ab43` | Working rules / docs baseline only. CBT&A MVP, D1 storage, Cloudflare deployment, CBT&A V2/V3, and PDF export not yet merged in. Not deployed. |
