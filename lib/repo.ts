@@ -1,6 +1,19 @@
 import { distanceKm, durationMinutes, EMPTY_TOTALS, parseOdometer, type Totals } from "./calc.ts";
-import type { D1Database } from "./d1-types.ts";
-import type { Instructor, Learner, LearnerInput, Lesson, LessonInput } from "./types.ts";
+import {
+  ALL_ASSESSABLE_IDS,
+  CORE_COMPETENCY_IDS,
+  CompetencyRuleError,
+  FINAL_DRIVE_23,
+  computeProgress,
+  formatIdList,
+  parseAchievedResults,
+  parseIdList,
+  validateLessonCompetencies,
+  type CompetencyEvent,
+  type LearnerProgress,
+} from "./competency.ts";
+import type { D1Database, D1PreparedStatement } from "./d1-types.ts";
+import type { CompletionSummary, Instructor, Learner, LearnerInput, Lesson, LessonInput } from "./types.ts";
 
 export class ValidationError extends Error {}
 export class NotFoundError extends Error {}
@@ -197,6 +210,18 @@ export async function createLesson(db: D1Database, learnerId: string, input: Les
   if (!adiSignature) throw new ValidationError("ADI signature is required.");
   if (!learnerSignature) throw new ValidationError("Learner signature is required.");
 
+  const taughtIds = parseIdList(input.taughtIds, CORE_COMPETENCY_IDS);
+  const assessedIds = parseIdList(input.assessedIds, ALL_ASSESSABLE_IDS);
+  const achievedResults = parseAchievedResults(input.achievedResults);
+  const progress = await getLearnerProgress(db, learnerId);
+  try {
+    validateLessonCompetencies({ taughtIds, assessedIds, achievedResults }, progress);
+  } catch (error) {
+    if (error instanceof CompetencyRuleError) throw new ValidationError(error.message);
+    throw error;
+  }
+  const achievedIds = assessedIds.filter((id) => achievedResults[id] === "achieved");
+
   const id = crypto.randomUUID();
   // Lesson number and cumulative totals are derived from the current totals,
   // read just before the insert. Same D1 limitation as above: this is two
@@ -205,7 +230,7 @@ export async function createLesson(db: D1Database, learnerId: string, input: Les
   // silently corrupting totals, for the same single-instructor-at-a-time
   // usage pattern.
   const totals = await getTotals(db, learnerId);
-  await db
+  const lessonInsert = db
     .prepare(
       `INSERT INTO lessons (id, learner_id, instructor_id, lesson_no, lesson_date, start_time, finish_time,
          start_odometer, finish_odometer, duration_minutes, distance_km, cumulative_minutes, cumulative_km,
@@ -226,16 +251,73 @@ export async function createLesson(db: D1Database, learnerId: string, input: Les
       distance,
       totals.totalMinutes + duration,
       totals.totalKm + distance,
-      text(input.taught, 2000),
-      text(input.competenciesAssessed, 2000),
-      text(input.achieved, 2000),
+      formatIdList(taughtIds),
+      formatIdList(assessedIds),
+      formatIdList(achievedIds),
       text(input.location, 200),
       text(input.comments, 3000),
       adiSignature,
       learnerSignature,
-    )
-    .run();
+    );
+
+  const eventInsert = (competencyId: string, action: "taught" | "assessed", result: string | null): D1PreparedStatement =>
+    db
+      .prepare("INSERT INTO competency_events (id, learner_id, lesson_id, competency_id, action, result) VALUES (?, ?, ?, ?, ?, ?)")
+      .bind(crypto.randomUUID(), learnerId, id, competencyId, action, result);
+
+  const eventStatements = [
+    ...taughtIds.map((competencyId) => eventInsert(competencyId, "taught", null)),
+    ...assessedIds.map((competencyId) => eventInsert(competencyId, "assessed", achievedResults[competencyId])),
+  ];
+  // db.batch() runs as a single atomic transaction on both the real D1
+  // binding and the local node:sqlite adapter (see lib/d1-sqlite.ts) — the
+  // lesson row and its competency events are committed together or not at all.
+  await db.batch([lessonInsert, ...eventStatements]);
 
   const row = await db.prepare("SELECT * FROM lessons WHERE id = ?").bind(id).first<Row>();
   return toLesson(row as Row);
+}
+
+// ── CBT&A V2 competency progress ────────────────────────────────────────
+
+export async function getCompetencyEvents(db: D1Database, learnerId: string): Promise<CompetencyEvent[]> {
+  const { results } = await db
+    .prepare("SELECT competency_id, action, result, lesson_id, created_at FROM competency_events WHERE learner_id = ? ORDER BY created_at ASC")
+    .bind(learnerId)
+    .all<Row>();
+  return results.map((row) => ({
+    competencyId: String(row.competency_id),
+    action: row.action as CompetencyEvent["action"],
+    result: (row.result as CompetencyEvent["result"]) ?? null,
+    lessonId: String(row.lesson_id),
+    createdAt: String(row.created_at),
+  }));
+}
+
+export async function getLearnerProgress(db: D1Database, learnerId: string): Promise<LearnerProgress> {
+  return computeProgress(await getCompetencyEvents(db, learnerId));
+}
+
+/** Set once 23 Final Drive has been Assessed + Achieved for this learner, else null. */
+export async function getCompletionSummary(db: D1Database, learnerId: string): Promise<CompletionSummary | null> {
+  const row = await db
+    .prepare(
+      `SELECT e.created_at AS completed_at, l.lesson_no, l.cumulative_minutes, l.cumulative_km, i.full_name AS instructor_name
+       FROM competency_events e
+       JOIN lessons l ON l.id = e.lesson_id
+       JOIN instructors i ON i.id = l.instructor_id
+       WHERE e.learner_id = ? AND e.competency_id = ? AND e.action = 'assessed' AND e.result = 'achieved'
+       ORDER BY e.created_at ASC LIMIT 1`,
+    )
+    .bind(learnerId, FINAL_DRIVE_23)
+    .first<Row>();
+  if (!row) return null;
+  return {
+    completedAt: String(row.completed_at),
+    completingLessonNo: Number(row.lesson_no),
+    instructorName: String(row.instructor_name),
+    totalLessons: Number(row.lesson_no),
+    cumulativeHours: Math.round((Number(row.cumulative_minutes) / 60) * 10) / 10,
+    cumulativeKm: Number(row.cumulative_km),
+  };
 }

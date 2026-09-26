@@ -7,7 +7,7 @@
 //                               accounts reference these ids.
 // None of those features exist yet.
 
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS instructors (
@@ -64,4 +64,16 @@ CREATE TABLE IF NOT EXISTS lessons (
   created_at             TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   UNIQUE (learner_id, lesson_no)
 );
+
+CREATE TABLE IF NOT EXISTS competency_events (
+  id             TEXT PRIMARY KEY,
+  learner_id     TEXT NOT NULL REFERENCES learners (id),
+  lesson_id      TEXT NOT NULL REFERENCES lessons (id),
+  competency_id  TEXT NOT NULL,
+  action         TEXT NOT NULL CHECK (action IN ('taught', 'assessed')),
+  result         TEXT CHECK (result IN ('achieved', 'not_achieved')),
+  created_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+CREATE INDEX IF NOT EXISTS competency_events_learner_idx ON competency_events (learner_id, competency_id);
+CREATE INDEX IF NOT EXISTS competency_events_lesson_idx ON competency_events (lesson_id);
 `;
