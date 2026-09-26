@@ -6,13 +6,63 @@ Repo: `tony-kunliu/instructor-assistant`
 
 | Branch | Commit | State |
 | --- | --- | --- |
-| `main` | `98aa0c047d9b99d309c531cddb81555f8444ab43` | Working rules / docs baseline only. CBT&A MVP and D1 storage not yet merged in. Not deployed. |
-| `staging` | `8f99151180e4d56f60a8953e8f0338251a9d9b68` | CBT&A Lesson Checklist MVP + D1-compatible storage merged in for integration QA. Not deployed. |
+| `main` | `98aa0c047d9b99d309c531cddb81555f8444ab43` | Working rules / docs baseline only. CBT&A MVP, D1 storage and Cloudflare deployment not yet merged in. Not deployed. |
+| `staging` | (pending merge of `claude/cloudflare-d1-staging-vgxscm`) | CBT&A Lesson Checklist MVP + D1-compatible storage + live Cloudflare Staging deployment. |
 | `feature/cbta-checklist` | `e7e2c3d93902d286e2bcd03e8ac08541cd6f7186` | CBT&A Lesson Checklist MVP — complete, merged into `staging`. Not yet merged into `main`. |
 | `feature/d1-storage` | `87b40be6258924329ae85f888be6322ef3a00ca4` | D1-compatible storage migration — complete, merged into `staging`. Not yet merged into `main`. |
 
 Production: **not deployed**. Production requires separate, explicit
 authorization from Tony (merging to `main` does not imply this).
+
+## Cloudflare Staging deployment — live
+
+The D1 storage migration is now wired to a real Cloudflare account and
+deployed for QA (this was previously **BLOCKED, needs Tony** — see below for
+what changed).
+
+- **D1 database:** `instructor-assistant-db` (region ENAM), created via
+  `wrangler d1 create`. `migrations/0001_init.sql` applied with
+  `wrangler d1 migrations apply DB --remote` — verified live (`instructors`,
+  `learners`, `lessons` tables present via `wrangler d1 execute`).
+- **Real binding wired:** `lib/db.ts#getD1()` now returns the real `env.DB`
+  D1 binding when running inside the deployed Worker (via
+  `@opennextjs/cloudflare`'s `getCloudflareContext()`), falling back to the
+  existing local `node:sqlite` adapter for `next dev`/`next build`/`npm
+  test` — `lib/repo.ts` is unchanged, exactly as designed.
+- **Deploy adapter added:** `@opennextjs/cloudflare` (OpenNext for
+  Cloudflare) — the standard way to run a Next.js app on Cloudflare Workers.
+  This required bumping `next` from `16.2.6` to `16.3.6` to satisfy the
+  adapter's peer range (`>=16.3.3`); no other Next.js behavior change.
+  New files: `open-next.config.ts`, `middleware.ts`. `wrangler.toml` gained
+  `main`, `[assets]`, and a `WORKER_SELF_REFERENCE` service binding required
+  by the adapter.
+- **Staging URL:** `https://instructor-assistant.kunliu-work.workers.dev`
+  (Cloudflare account: `Kunliu.work@gmail.com`).
+- **Access protection:** Cloudflare Zero Trust **Access is not enabled on
+  this Cloudflare account** — enabling it needs a one-time manual step in
+  the dashboard (choosing a Zero Trust team name / plan) that an API token
+  cannot do. As an interim measure until Tony does that one-time setup, the
+  Staging URL is protected by **HTTP Basic Auth** (`middleware.ts`), with
+  the username/password stored only as Cloudflare Worker secrets
+  (`STAGING_BASIC_AUTH_USER` / `STAGING_BASIC_AUTH_PASSWORD`, set via
+  `wrangler secret put` — never committed to git). Credentials were shared
+  with Tony directly in chat, not in this repo.
+  **Follow-up needed from Tony:** enable Zero Trust Access in the Cloudflare
+  dashboard once, then this session (or a future one) can replace Basic Auth
+  with a proper Access application restricted to Tony's email.
+- **Remote QA performed against the live deployment:**
+  - `npm run build` / `npm test`: PASS (12/12) after the `next` bump and
+    adapter integration.
+  - Unauthenticated request to `/` and `/api/learners`: **401** (Basic Auth
+    enforced).
+  - Authenticated request: **200**, app renders correctly.
+  - Created a test instructor/learner/lesson through the live API against
+    the real remote D1 database: lesson numbering, duration (90 min),
+    distance (45 km), and cumulative totals all computed correctly by
+    `lib/repo.ts` against the real `env.DB` binding.
+  - Test data was deleted afterward (`DELETE FROM lessons/learners/
+    instructors` via `wrangler d1 execute --remote`) — the Staging database
+    is empty, ready for Tony's own QA.
 
 ## D1-compatible storage — merged into `staging`
 
@@ -38,16 +88,10 @@ app; the unique constraints on `instructors.full_name` and
 `lessons(learner_id, lesson_no)` still turn a race into a clear error rather
 than silent data corruption.
 
-**Deployment status: BLOCKED, needs Tony.** Actually running this against a
-real Cloudflare D1 database and deploying a Staging/QA environment Tony can
-open on his iPhone needs Cloudflare account credentials (e.g. a
-`CLOUDFLARE_API_TOKEN` added as an environment secret) that this session does
-not have — outbound network to `api.cloudflare.com` works, but there is no
-account to authenticate as, so `wrangler d1 create`, `wrangler d1 migrations
-apply --remote`, and any deploy command are not possible from here. No
-public deployment was attempted without this. `wrangler.toml`'s
-`database_id` is a placeholder Tony needs to replace with a real D1
-database's id once created.
+**Deployment status: DEPLOYED to Cloudflare Staging.** See "Cloudflare
+Staging deployment — live" above for the full picture (previously blocked on
+Cloudflare account credentials; those were added to this environment and the
+deployment is now done).
 
 ## CBT&A Checklist MVP — merged into `staging`
 
@@ -90,13 +134,20 @@ Verification:
 
 ## Known limitations
 
-- No instructor authentication yet — do not expose publicly.
-- Storage is D1-compatible (see above) but not yet wired to a real
-  Cloudflare D1 database — blocked on Cloudflare credentials.
+- No instructor authentication yet in the app itself (Basic Auth on the
+  Staging URL is a perimeter measure, not per-instructor login) — do not
+  expose Production publicly without this.
+- Zero Trust Access not yet enabled on the Cloudflare account (see above) —
+  Basic Auth is an interim stand-in for Staging only.
 - No public production deployment.
 - Saved lessons cannot be edited or deleted.
 - No offline mode / service worker.
 - iOS home-screen icon is a basic SVG placeholder.
+- `npm audit` on the pre-existing dependency set showed 2 high / 1 critical
+  advisories before this session's `next` version bump; the bump to
+  `16.3.6` (needed for the Cloudflare adapter) incidentally resolved all of
+  them (`npm audit`: 0 vulnerabilities as of this deploy) — noted here per
+  AGENTS.md §6, not something separately fixed.
 
 ## Old ACTGDS (`tony-kunliu/actgds.com`) cleanup
 
