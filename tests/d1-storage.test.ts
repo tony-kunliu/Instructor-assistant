@@ -4,10 +4,11 @@ import { readFileSync } from "node:fs";
 import { openTestD1 } from "../lib/db.ts";
 import { SCHEMA_SQL } from "../lib/schema.ts";
 
-test("migrations/0001_init.sql matches lib/schema.ts (no drift between the two)", () => {
-  const migration = readFileSync(new URL("../migrations/0001_init.sql", import.meta.url), "utf8");
+test("migrations/0001+0002 match lib/schema.ts (no drift between the two)", () => {
+  const migration1 = readFileSync(new URL("../migrations/0001_init.sql", import.meta.url), "utf8");
+  const migration2 = readFileSync(new URL("../migrations/0002_add_competency_events.sql", import.meta.url), "utf8");
   const normalize = (sql: string) => sql.replace(/--.*$/gm, "").replace(/\s+/g, " ").trim();
-  assert.equal(normalize(migration), normalize(SCHEMA_SQL));
+  assert.equal(normalize(migration1 + "\n" + migration2), normalize(SCHEMA_SQL));
 });
 
 test("D1 adapter: prepare/bind/first/all/run/batch behave like the real D1Database API", async () => {

@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { openTestD1 } from "../lib/db.ts";
-import { createLearner, createLesson, getTotals, listLearners, listLessons, ValidationError } from "../lib/repo.ts";
+import { createLearner, createLesson, getLearnerProgress, getTotals, listLearners, listLessons, ValidationError } from "../lib/repo.ts";
 
 const SIG = "data:image/png;base64,iVBORw0KGgo=";
 
@@ -46,9 +46,7 @@ test("lesson #1 then lesson #2: numbering, duration, km, cumulative totals, carr
     lessonDate: "2026-09-25",
     startTime: "09:00",
     startOdometer: "45210",
-    taught: "Pre-drive checks, moving off",
-    competenciesAssessed: "Moving off",
-    achieved: "Moving off",
+    taughtIds: ["1", "2"],
     location: "Belconnen",
     comments: "Good first lesson",
     adiSignature: SIG,
@@ -66,7 +64,7 @@ test("lesson #1 then lesson #2: numbering, duration, km, cumulative totals, carr
 
   let history = await listLessons(db, learner.id);
   assert.equal(history.length, 1);
-  assert.equal(history[0].taught, "Pre-drive checks, moving off");
+  assert.equal(history[0].taught, "1, 2");
   assert.equal(history[0].location, "Belconnen");
 
   // Next lesson: previous finish odometer is available as the start odometer.
@@ -80,7 +78,9 @@ test("lesson #1 then lesson #2: numbering, duration, km, cumulative totals, carr
     finishTime: "15:45",
     startOdometer: String(afterFirst.lastFinishOdometer),
     finishOdometer: "45280",
-    taught: "Roundabouts",
+    taughtIds: ["3"],
+    assessedIds: ["1"],
+    achievedResults: { "1": "achieved" },
     location: "Gungahlin",
     adiSignature: SIG,
     learnerSignature: SIG,
@@ -94,7 +94,15 @@ test("lesson #1 then lesson #2: numbering, duration, km, cumulative totals, carr
 
   history = await listLessons(db, learner.id);
   assert.deepEqual(history.map((l) => l.lessonNo), [2, 1]);
+  assert.equal(history[0].taught, "3");
+  assert.equal(history[0].competenciesAssessed, "1");
+  assert.equal(history[0].achieved, "1");
   assert.deepEqual(await getTotals(db, learner.id), { lessonCount: 2, totalMinutes: 150, totalKm: 70, lastFinishOdometer: 45280 });
+
+  const progress = await getLearnerProgress(db, learner.id);
+  assert.equal(progress.competencies["1"].achieved, true);
+  assert.equal(progress.competencies["2"].taughtCount, 1);
+  assert.equal(progress.competencies["3"].taughtCount, 1);
 });
 
 test("totals are per learner", async () => {

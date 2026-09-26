@@ -46,6 +46,16 @@ export type Lesson = {
   createdAt: string;
 };
 
+/** Set once 23 Final Drive is Assessed + Achieved (see lib/competency.ts). */
+export type CompletionSummary = {
+  completedAt: string;
+  completingLessonNo: number;
+  instructorName: string;
+  totalLessons: number;
+  cumulativeHours: number;
+  cumulativeKm: number;
+};
+
 export type LearnerInput = {
   fullName?: unknown;
   address?: unknown;
@@ -65,9 +75,12 @@ export type LessonInput = {
   finishTime?: unknown;
   startOdometer?: unknown;
   finishOdometer?: unknown;
-  taught?: unknown;
-  competenciesAssessed?: unknown;
-  achieved?: unknown;
+  /** Competency ids (from CORE_COMPETENCY_IDS) taught this lesson — see lib/competency.ts. */
+  taughtIds?: unknown;
+  /** Competency ids (from ALL_ASSESSABLE_IDS) assessed this lesson. */
+  assessedIds?: unknown;
+  /** Assessment result per assessed id this lesson: "achieved" | "not_achieved". */
+  achievedResults?: unknown;
   location?: unknown;
   comments?: unknown;
   adiSignature?: unknown;

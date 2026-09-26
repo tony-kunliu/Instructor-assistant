@@ -6,13 +6,78 @@ Repo: `tony-kunliu/instructor-assistant`
 
 | Branch | Commit | State |
 | --- | --- | --- |
-| `main` | `98aa0c047d9b99d309c531cddb81555f8444ab43` | Working rules / docs baseline only. CBT&A MVP, D1 storage and Cloudflare deployment not yet merged in. Not deployed. |
-| `staging` | (pending merge of `claude/cloudflare-d1-staging-vgxscm`) | CBT&A Lesson Checklist MVP + D1-compatible storage + live Cloudflare Staging deployment. |
+| `main` | `98aa0c047d9b99d309c531cddb81555f8444ab43` | Working rules / docs baseline only. CBT&A MVP, D1 storage, Cloudflare deployment and CBT&A V2 competency selection not yet merged in. Not deployed. |
+| `staging` | (pending merge of `feature/cbta-competency-selection`) | CBT&A Lesson Checklist MVP + D1-compatible storage + live Cloudflare Staging deployment + CBT&A V2 structured competency selection. |
 | `feature/cbta-checklist` | `e7e2c3d93902d286e2bcd03e8ac08541cd6f7186` | CBT&A Lesson Checklist MVP — complete, merged into `staging`. Not yet merged into `main`. |
 | `feature/d1-storage` | `87b40be6258924329ae85f888be6322ef3a00ca4` | D1-compatible storage migration — complete, merged into `staging`. Not yet merged into `main`. |
+| `feature/cbta-competency-selection` | (this session) | CBT&A V2 structured competency selection — complete, merged into `staging`. Not yet merged into `main`. |
 
 Production: **not deployed**. Production requires separate, explicit
 authorization from Tony (merging to `main` does not imply this).
+
+## CBT&A V2 — structured competency selection — merged into `staging`
+
+Replaces free-text Taught / Competencies Assessed / Achieved with a
+mobile chip-based picker and full server-side rule enforcement. Rules
+implemented exactly as specified by Tony (no invented competency names —
+only official numbering 1–22, Review 1-17, Review 1-22, 23 Final Drive):
+
+- Every learner has Competency 1–22, each trackable as Taught / Assessed /
+  Achieved. A competency can be Taught repeatedly across different lessons
+  (full history kept); the same lesson can never Taught + Assess the same
+  competency; Achieved requires the competency to be Assessed in that same
+  lesson; once Achieved, a competency can no longer be Taught (server
+  validated, not just hidden in the UI).
+- Review 1-17 unlocks once Competency 1-17 are all Achieved. Review 1-22
+  unlocks once Competency 1-22 are all Achieved **and** Review 1-17 is
+  Achieved. Both have Assessed/Achieved only, no Taught. Locked reviews are
+  rejected server-side even if the UI is bypassed.
+- 23 Final Drive keeps its existing (ungated) Assessed/Achieved-only
+  behavior — no new unlock rule invented, per instruction. Assessed +
+  Achieved marks the learner's CBT&A as Completed and records
+  completed-at, the completing lesson, instructor, total lessons,
+  cumulative hours and cumulative km (derived from `competency_events` +
+  the completing lesson's own cumulative totals — no extra table needed).
+- **Data model:** new `competency_events` table (`migrations/
+  0002_add_competency_events.sql`, kept in sync with `lib/schema.ts` — see
+  `tests/d1-storage.test.ts`) records every Taught/Assessed event
+  individually (learner, lesson, competency, action, result, timestamp).
+  Progress is derived from this full history (`lib/competency.ts`), so
+  "how many times was X taught, and when" stays answerable. The lesson
+  row's existing `taught` / `competencies_assessed` / `achieved` text
+  columns are kept (now server-computed from the structured ids, e.g.
+  `"3, 8, 12"`) so old lesson history, the history view and any future PDF
+  export keep working unchanged.
+- **UI:** number chips (`app/competency-picker.tsx`) for Taught and
+  Assessed, mutually exclusive and achieved-aware; an Assessment Result
+  step (Achieved / Not achieved) only for competencies Assessed this
+  lesson; a learner-level `CBT&A Progress` card (`app/competency-
+  progress.tsx`) with a 1-22 grid, Review 1-17 / Review 1-22 / Final Drive
+  23 status, and a Completed banner. No PDF export, no GPS/Drive
+  Intelligence, no login/booking/AI/voice — out of scope this round, per
+  instruction (roadmap only, in TASK.md history).
+- **Tests:** `tests/competency.test.ts` covers repeated Taught across
+  lessons, Taught/Assessed mutual exclusion, Achieved requiring Assessed in
+  the same lesson, no re-Taught after Achieved, Review 1-17 locked/unlocked,
+  Review 1-22 locked (1-22 achieved but Review 1-17 not) and unlocked, and
+  Final Drive 23 → Completed with a correct completion summary.
+  `tests/workflow.test.ts` (existing Lesson #1/#2 duration/distance/
+  cumulative/odometer-carry-forward assertions) still passes unchanged in
+  substance, updated only to call the new structured `taughtIds`/
+  `assessedIds`/`achievedResults` fields instead of free text.
+- **Verification:** `npm run build` / `npm test`: PASS (22/22). Full mobile
+  E2E (iPhone 13 viewport, Playwright, temporary local install — not added
+  as a project dependency): select learner → Start Lesson → pick Taught →
+  pick Assessed → mark Achieved → End Lesson → sign → Save → reload →
+  verified history and CBT&A Progress card both correct. No horizontal
+  overflow at 390px width (`scrollWidth === clientWidth`).
+- **Local dev note:** `next.config.ts`'s `initOpenNextCloudflareForDev()`
+  (added for the Cloudflare deployment) means `next dev` now talks to a
+  local Miniflare-emulated D1, not the `node:sqlite` fallback — so a fresh
+  clone needs `wrangler d1 migrations apply DB --local` once before
+  `next dev` will work. `npm test` is unaffected (it calls `openTestD1()`
+  directly). Documented here since it was discovered while running this
+  round's mobile E2E; not itself part of this round's task.
 
 ## Cloudflare Staging deployment — live
 
@@ -148,6 +213,13 @@ Verification:
   `16.3.6` (needed for the Cloudflare adapter) incidentally resolved all of
   them (`npm audit`: 0 vulnerabilities as of this deploy) — noted here per
   AGENTS.md §6, not something separately fixed.
+- Next.js 16's dev server auto-appends an "agent rules" block to `AGENTS.md`
+  on `next dev` startup (a first-party Next.js feature, see `node_modules/
+  next/dist/server/lib/generate-agent-files.js`). Discovered while running
+  this round's local E2E and discarded before committing — `AGENTS.md` is
+  Tony's governance doc, not something a dev-tool side effect should
+  silently rewrite. Noted per AGENTS.md §6; not fixed (nothing to fix, just
+  don't commit it).
 
 ## Old ACTGDS (`tony-kunliu/actgds.com`) cleanup
 

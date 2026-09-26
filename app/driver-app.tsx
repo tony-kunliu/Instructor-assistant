@@ -13,7 +13,10 @@ import {
   parseTime,
   type Totals,
 } from "@/lib/calc.ts";
-import type { Instructor, Learner, Lesson } from "@/lib/types.ts";
+import type { AssessmentResult, LearnerProgress } from "@/lib/competency.ts";
+import type { CompletionSummary, Instructor, Learner, Lesson } from "@/lib/types.ts";
+import CompetencyPicker from "./competency-picker.tsx";
+import CompetencyProgressCard from "./competency-progress.tsx";
 import SignaturePad from "./signature-pad.tsx";
 
 type LessonDraft = {
@@ -22,9 +25,9 @@ type LessonDraft = {
   finishTime: string;
   startOdometer: string;
   finishOdometer: string;
-  taught: string;
-  competenciesAssessed: string;
-  achieved: string;
+  taughtIds: string[];
+  assessedIds: string[];
+  achievedResults: Record<string, AssessmentResult>;
   location: string;
   comments: string;
   adiSignature: string;
@@ -44,7 +47,7 @@ type LearnerDraft = {
   instructorName: string;
 };
 
-type Detail = { learner: Learner; totals: Totals; lessons: Lesson[] };
+type Detail = { learner: Learner; totals: Totals; lessons: Lesson[]; progress: LearnerProgress; completion: CompletionSummary | null };
 
 const emptyLearner: LearnerDraft = {
   fullName: "",
@@ -66,9 +69,9 @@ function freshLesson(startOdometer: number | null): LessonDraft {
     finishTime: "",
     startOdometer: startOdometer === null ? "" : String(startOdometer),
     finishOdometer: "",
-    taught: "",
-    competenciesAssessed: "",
-    achieved: "",
+    taughtIds: [],
+    assessedIds: [],
+    achievedResults: {},
     location: "",
     comments: "",
     adiSignature: "",
@@ -211,13 +214,12 @@ export default function DriverApp() {
     setSaving(true);
     setStatus(null);
     try {
-      const result = await api<{ lesson: Lesson; totals: Totals }>(`/api/learners/${encodeURIComponent(detail.learner.id)}/lessons`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(draft),
-      });
+      const result = await api<{ lesson: Lesson; totals: Totals; progress: LearnerProgress; completion: CompletionSummary | null }>(
+        `/api/learners/${encodeURIComponent(detail.learner.id)}/lessons`,
+        { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(draft) },
+      );
       storage.remove(draftKey(detail.learner.id));
-      setDetail({ ...detail, totals: result.totals, lessons: [result.lesson, ...detail.lessons] });
+      setDetail({ ...detail, totals: result.totals, progress: result.progress, completion: result.completion, lessons: [result.lesson, ...detail.lessons] });
       setDraft(freshLesson(result.totals.lastFinishOdometer));
       setStatus({ kind: "ok", text: `Lesson #${result.lesson.lessonNo} saved.` });
       window.scrollTo({ top: 0, behavior: "smooth" });
@@ -242,6 +244,7 @@ export default function DriverApp() {
   const elapsed = startedMinutes !== null && nowMinutes !== null && nowMinutes >= startedMinutes ? nowMinutes - startedMinutes : null;
   const phase: "ready" | "running" | "ended" = !draft?.startTime ? "ready" : !draft.finishTime ? "running" : "ended";
   const lessonNo = nextLessonNo(totals);
+  const competencyComplete = draft ? draft.assessedIds.every((id) => id in draft.achievedResults) : true;
 
   const learnerField = (key: keyof LearnerDraft, value: string) => setLearnerDraft((current) => ({ ...current, [key]: value }));
 
@@ -319,6 +322,8 @@ export default function DriverApp() {
             </p>
           </section>
 
+          <CompetencyProgressCard progress={detail.progress} completion={detail.completion} />
+
           <section className="card lesson">
             {phase === "ready" ? (
               <button type="button" className="btn huge go" onClick={startLesson}>Start Lesson</button>
@@ -352,10 +357,17 @@ export default function DriverApp() {
 
             {phase !== "ready" ? (
               <>
+                <CompetencyPicker
+                  progress={detail.progress}
+                  taughtIds={draft.taughtIds}
+                  assessedIds={draft.assessedIds}
+                  achievedResults={draft.achievedResults}
+                  onChangeTaught={(ids) => setDraft((current) => (current ? { ...current, taughtIds: ids } : current))}
+                  onChangeAssessed={(ids) => setDraft((current) => (current ? { ...current, assessedIds: ids } : current))}
+                  onChangeAchieved={(results) => setDraft((current) => (current ? { ...current, achievedResults: results } : current))}
+                />
+
                 <div className="grid">
-                  <label className="field full"><span>Taught</span><textarea rows={2} value={draft.taught} onChange={(e) => setField("taught", e.target.value)} /></label>
-                  <label className="field full"><span>Competencies Assessed</span><textarea rows={2} value={draft.competenciesAssessed} onChange={(e) => setField("competenciesAssessed", e.target.value)} /></label>
-                  <label className="field full"><span>Achieved</span><textarea rows={2} value={draft.achieved} onChange={(e) => setField("achieved", e.target.value)} /></label>
                   <label className="field full"><span>Location</span><input value={draft.location} onChange={(e) => setField("location", e.target.value)} placeholder="Belconnen, Gungahlin…" /></label>
                   <label className="field full"><span>Comments</span><textarea rows={2} value={draft.comments} onChange={(e) => setField("comments", e.target.value)} /></label>
                 </div>
@@ -372,8 +384,8 @@ export default function DriverApp() {
                 <SignaturePad label="ADI signature" value={draft.adiSignature} onChange={(value) => setField("adiSignature", value)} />
                 <SignaturePad label="Learner signature" value={draft.learnerSignature} onChange={(value) => setField("learnerSignature", value)} />
 
-                <button type="button" className="btn huge save" disabled={saving || phase !== "ended"} onClick={() => void saveLesson()}>
-                  {saving ? "Saving…" : phase === "ended" ? `Save Lesson #${lessonNo}` : "Save (tap End Lesson first)"}
+                <button type="button" className="btn huge save" disabled={saving || phase !== "ended" || !competencyComplete} onClick={() => void saveLesson()}>
+                  {saving ? "Saving…" : phase !== "ended" ? "Save (tap End Lesson first)" : !competencyComplete ? "Mark Achieved / Not achieved for each Assessed item" : `Save Lesson #${lessonNo}`}
                 </button>
                 <button type="button" className="link danger" onClick={discardLesson}>Discard this lesson</button>
               </>
