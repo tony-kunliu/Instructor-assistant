@@ -3,6 +3,13 @@ import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { verifyAccessIdentity } from "./lib/access.ts";
 import { findInstructorByEmail } from "./lib/repo.ts";
 
+declare global {
+  interface CloudflareEnv {
+    /** The Cloudflare Access Application `aud` protecting *this* environment's hostname — differs per environment (Staging vs. Production each have their own Access app). Set via `[vars]`/`[env.production.vars]` in wrangler.toml. */
+    ACCESS_AUD?: string;
+  }
+}
+
 /**
  * Cloudflare Access is now the sole access-control gate (Instructor
  * Identity V1, STEP 7 — Basic Auth retired once Tony and Anna had each
@@ -35,7 +42,7 @@ export async function middleware(request: NextRequest): Promise<NextResponse> {
 
   let identity: Awaited<ReturnType<typeof verifyAccessIdentity>>;
   try {
-    identity = await verifyAccessIdentity(request);
+    identity = env.ACCESS_AUD ? await verifyAccessIdentity(request, undefined, env.ACCESS_AUD) : await verifyAccessIdentity(request);
   } catch {
     return new NextResponse("Could not verify Cloudflare Access identity.", { status: 403 });
   }

@@ -55,6 +55,86 @@ discipline. If this round fails, restore to exactly this state.
 Production: **not deployed**. Production requires separate, explicit
 authorization from Tony (merging to `main` does not imply this).
 
+## ADI601 merged into the real "Tony" instructor record
+
+Tony explicitly confirmed and re-authorized this (after the first attempt
+was auto-denied by this session's own sandboxing as a direct write to
+shared production data — a safety classifier decision, not a policy this
+project set). Executed directly against the live D1 via `wrangler d1
+execute --remote`:
+
+1. `learners.instructor_id` for "Kun Liu" repointed from `ADI601` to
+   "Tony".
+2. `lessons.instructor_id` and `lessons.updated_by_instructor_id` for
+   `ADI601`'s 2 lessons repointed to "Tony".
+3. The now-empty `ADI601` instructor row deleted.
+
+No learner or lesson row was deleted or altered beyond the foreign key —
+"Kun Liu"'s full lesson history is intact, just correctly attributed.
+`ADI604`/the "V1test" learner were deliberately left alone (see the
+Production section below — that pairing reads as Tony's own test data to
+leave behind, not something to merge).
+
+## Production deployment — live
+
+Tony authorized starting Production this session, chose to discard
+Staging's test data (a fresh, empty Production database), and confirmed
+`actgds.com` is his real driving-school domain — but that domain's
+Cloudflare zone is **not on this account** (`GET /zones` returns empty for
+`Kunliu.work@gmail.com`'s account, both unfiltered and filtered to
+`actgds.com`), and it's actively being worked on by a separate agent in
+the `actgds.com` repo, which this project must never touch. Routing
+`actgds.com/instructor-assistant` to this Worker therefore needs either
+zone access this session doesn't have, or coordination on the `actgds.com`
+side (adding a Worker Route or reverse-proxy rule there) — **not done this
+round**; flagged to Tony rather than attempted. In the meantime, Production
+is live on its own `workers.dev` subdomain, fully protected, ready to be
+pointed at a real domain later without any data loss.
+
+- **Separate Production D1 database**: `instructor-assistant-db-production`
+  (`wrangler d1 create`), all 4 migrations applied fresh — **never** copied
+  from Staging, so it starts empty except for the seeded Tony/Anna
+  instructor rows (same as Staging's seed). No Staging data (including
+  "Kun Liu"'s real history) was carried over; if Tony wants that later,
+  it's a deliberate one-time export/import, not automatic.
+- **Separate Worker**: `wrangler.toml` gained an `[env.production]` block
+  (name `instructor-assistant-production`, its own D1 binding, its own
+  `WORKER_SELF_REFERENCE` service binding) — deployed via `wrangler deploy
+  --env production`. Live at
+  `https://instructor-assistant-production.kunliu-work.workers.dev`.
+- **Separate Cloudflare Access Application + Policy**, mirroring Staging's
+  exactly: `self_hosted` app for the new hostname, "Tony and Anna only"
+  email policy (app id `88a90d21-bb3d-4984-89bf-16a336b2a451`, AUD
+  `5d77a5074b7a9436e7610db2937f4108d9fd60a97d6c9243421fb44909ce288b`). No
+  new identity provider was needed — the account-level "One-time PIN"
+  Tony added for Staging is available to any Access app on the account.
+- **Bug caught before Tony ever tried logging in**: `lib/access.ts` had
+  Staging's Access Application `aud` hardcoded — a real login against
+  Production would have verified against the wrong audience and always
+  failed (fail-secure, not a security hole, but Production would have been
+  unusable for its own legitimate users). Fixed by making the audience a
+  Worker var (`ACCESS_AUD`, set per environment in `wrangler.toml`,
+  `env.access.ts#verifyAccessIdentity`'s existing `audience` parameter now
+  actually used) rather than a hardcoded constant. Existing tests already
+  cover the "wrong audience is rejected" path generically, since it's the
+  same mechanism.
+- **Verified no exposure window during setup**: immediately after the bare
+  Production Worker was deployed but *before* its Access Application
+  existed, an unauthenticated request already got `403` — not from Access,
+  but from this app's own fail-closed middleware (added when Basic Auth
+  was retired: no verified identity in the deployed Worker → refuse
+  outright). Confirmed live via `curl`.
+- **Verification:** `npm run build` / `npm test`: PASS (65/65, unchanged
+  logic — this was a config/wiring fix, no new test surface needed beyond
+  what already exists). `wrangler deploy --env production --dry-run`
+  confirmed the right bindings (Production D1, its own service binding,
+  assets inherited from the top-level config) before the real deploy.
+- **Not done:** the real `actgds.com/instructor-assistant` routing (see
+  above — needs Tony's decision/coordination, not a code task); a data
+  migration from Staging (deliberately skipped per Tony's own "discard
+  test data" instruction); mobile E2E re-run against Production
+  specifically (identical code path to Staging, already covered there).
+
 ## Official CBT&A competency full names — display only
 
 Tony provided the official ACT government document (*Road Transport

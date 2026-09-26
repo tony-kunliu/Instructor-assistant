@@ -7,6 +7,13 @@ compatibility_flags = ["nodejs_compat", "global_fetch_strictly_public"]
 directory = ".open-next/assets"
 binding = "ASSETS"
 
+# The Cloudflare Access Application `aud` protecting this Worker's own
+# hostname (Instructor Identity V1) — not a secret, just an identifier
+# Access itself exposes in its own login redirect. Each environment has
+# its own Access Application (one per hostname), hence its own aud here.
+[vars]
+ACCESS_AUD = "dbaecdf29cb50d215f3edbb3b260b2c85209db78728fb19e3c53c39c5d9759e3"
+
 # Self-reference service binding required by the OpenNext Cloudflare adapter
 # (used for ISR/tag-cache revalidation); the service name must match `name`.
 [[services]]
@@ -23,4 +30,25 @@ service = "instructor-assistant"
 binding = "DB"
 database_name = "instructor-assistant-db"
 database_id = "7611cd7e-2331-4372-bbe3-86bcc093d26d"
+migrations_dir = "migrations"
+
+# Production environment — a separate Worker (its own workers.dev URL) and
+# a separate, empty D1 database (never the Staging one; Tony explicitly
+# asked to start Production fresh, discarding Staging's test data).
+# Final routing (a custom domain such as actgds.com/instructor-assistant,
+# vs. this Worker's own workers.dev URL) is still pending — see TASK.md.
+[env.production]
+name = "instructor-assistant-production"
+
+[env.production.vars]
+ACCESS_AUD = "5d77a5074b7a9436e7610db2937f4108d9fd60a97d6c9243421fb44909ce288b"
+
+[[env.production.services]]
+binding = "WORKER_SELF_REFERENCE"
+service = "instructor-assistant-production"
+
+[[env.production.d1_databases]]
+binding = "DB"
+database_name = "instructor-assistant-db-production"
+database_id = "b2f52cb6-e9cd-4ac4-82d9-90b1b7e75ed3"
 migrations_dir = "migrations"
