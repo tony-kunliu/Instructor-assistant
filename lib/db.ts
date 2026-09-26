@@ -1,19 +1,25 @@
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { sqliteAsD1 } from "./d1-sqlite.ts";
 import type { D1Database } from "./d1-types.ts";
 import { SCHEMA_SQL, SCHEMA_VERSION } from "./schema.ts";
+
+declare global {
+  interface CloudflareEnv {
+    DB: D1Database;
+  }
+}
 
 /**
  * The storage layer (`lib/repo.ts`) only depends on the `D1Database`
  * interface, so it runs unmodified against either backend:
  *
- *  - In a Cloudflare Worker, `getD1()` should return the real `env.DB` D1
- *    binding (see `migrations/0001_init.sql` — apply it with
- *    `wrangler d1 migrations apply DB`). Wiring the real binding in still
- *    needs Cloudflare account credentials this environment doesn't have
- *    (see STATUS.md).
+ *  - In the deployed Cloudflare Worker (via `@opennextjs/cloudflare`),
+ *    `getD1()` returns the real `env.DB` D1 binding declared in
+ *    `wrangler.toml` (see `migrations/0001_init.sql`, applied with
+ *    `wrangler d1 migrations apply DB --remote`).
  *  - Everywhere else (local `next dev`/`next start`, `npm test`) it returns
  *    a local D1-compatible adapter backed by `node:sqlite`, using the exact
  *    same schema (`migrations/0001_init.sql`, mirrored from
@@ -38,6 +44,12 @@ const globalForDb = globalThis as typeof globalThis & { __actgdsDriverD1?: D1Dat
 
 /** Shared app database (cached across dev hot reloads). */
 export function getD1(): D1Database {
+  try {
+    const { env } = getCloudflareContext();
+    if (env.DB) return env.DB;
+  } catch {
+    // Not running inside a Cloudflare Worker (e.g. `next build`, `npm test`) — fall through to local sqlite.
+  }
   if (!globalForDb.__actgdsDriverD1) {
     const file = process.env.ACTGDS_DRIVER_DB || path.join(process.cwd(), "data", "actgds-driver.sqlite");
     globalForDb.__actgdsDriverD1 = sqliteAsD1(openLocalDatabase(file));
