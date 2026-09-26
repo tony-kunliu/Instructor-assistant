@@ -43,6 +43,94 @@ discipline. If this round fails, restore to exactly this state.
 Production: **not deployed**. Production requires separate, explicit
 authorization from Tony (merging to `main` does not imply this).
 
+## Instructor Identity V1 — data model + lesson attribution (this session)
+
+Goal (per Tony's instruction): Cloudflare Access → authenticated email →
+Instructor record → lesson/history edit attribution, first batch Tony +
+Anna only. **This round's actual scope, per Tony's own decision when asked
+mid-round: data model + lesson/history attribution only — Cloudflare
+Access itself is deferred.**
+
+- **Why Access is deferred:** Cloudflare Zero Trust Access is **not yet
+  enabled** on this account (`Kunliu.work@gmail.com`) — confirmed via
+  `GET /accounts/:id/access/apps` → `access.api.error.not_enabled: ...
+  click the 'Enable Access' button`. Enabling it is a one-time manual
+  dashboard action Cloudflare requires from the account owner and cannot be
+  done via API token. When asked how to proceed, Tony chose: do the data
+  model and lesson attribution now, leave Access itself for a later round.
+  No Cloudflare API token permissions were expanded to work around this.
+- **Data model (additive, `migrations/0004_instructor_identity.sql`):**
+  - `instructors.status` (`'active' | 'inactive'`, app-validated, defaults
+    to `'active'`) — lets an instructor be deactivated without deleting
+    history.
+  - `lessons.updated_by_instructor_id` (nullable, `REFERENCES
+    instructors`) — which instructor last edited a history lesson.
+  - Seeds exactly two named instructor rows, **Tony** and **Anna**, with
+    the real login emails Tony provided directly in this session
+    (`Kunliu.work@gmail.com` / `yapingqu.work@gmail.com`) — this is the
+    email→instructor config the future Access integration will read.
+    **Existing instructor rows are untouched**: the real production
+    instructors already in the database (`ADI601`, `ADI604`) are not
+    renamed, merged, or guessed into "Tony"/"Anna" — per instruction, and
+    verified by test (`tests/instructor-identity.test.ts`, "does not touch
+    any pre-existing instructor row").
+  - `lib/repo.ts#findInstructorByEmail` — the exact lookup a future
+    Cloudflare Access JWT-verified-email step will call once wired up;
+    unknown or inactive emails resolve to `null`, and the caller must
+    refuse app access rather than auto-create an instructor for them (no
+    such caller exists yet, since there's no Access integration this
+    round — this is the function it will call).
+- **Lesson attribution (`lib/repo.ts`):**
+  - `createLesson` / `updateLesson` accept an optional `actingInstructorId`
+    on the request body. If supplied, it must reference an existing,
+    *active* instructor (`resolveActingInstructorId` — never trusts a
+    client-submitted name/email, only a real instructor id already in the
+    database) or the request is rejected with a `ValidationError`.
+  - **Create:** `actingInstructorId`, if supplied, becomes the lesson's
+    `instructor_id` (who actually taught it); omitted falls back to the
+    learner's own instructor, exactly as before — fully backward
+    compatible with existing callers/tests.
+  - **Edit:** `actingInstructorId`, if supplied, is written to
+    `updated_by_instructor_id`; **omitted leaves it exactly as it was**
+    (`COALESCE` in the `UPDATE`) — never cleared, never guessed, per
+    instruction. Editing someone else's lesson never rewrites the
+    original `instructor_id`.
+  - `listLessons` / `listLessonsForExport` / `getLesson` now also return
+    `updatedByInstructorId` + `updatedByInstructorName` (`LEFT JOIN` —
+    `null` for never-edited lessons or lessons edited before this shipped,
+    never guessed). History UI shows "Edited `<timestamp>` · Last edited
+    by `<name>`" when known (`app/driver-app.tsx`).
+  - **No client identity is trusted for security** — nothing about
+    `actingInstructorId` is used as an access-control decision this round;
+    Basic Auth remains the only perimeter protection (unchanged), so this
+    field is bookkeeping/attribution only, not authentication, until real
+    Cloudflare Access is wired in.
+- **Not built this round, per Tony's own scope decision:** the Cloudflare
+  Access application itself (can't be configured via API until Access is
+  enabled — confirmed above); any "Signed in as Tony/Anna" UI (would need
+  real Access-verified identity to be honest, not a stand-in selector);
+  wiring `actingInstructorId` into the app UI automatically (there is
+  nothing yet to source it from without Access) — the backend plumbing is
+  ready and tested, waiting for the identity source.
+- **Verification:** `npm run build` / `npm test`: PASS (55/55 — 14 new
+  tests in `tests/instructor-identity.test.ts` covering: Tony/Anna email
+  resolution (case-insensitive), unknown/inactive email resolves to
+  nothing, lesson creation attributed to Tony vs Anna vs the old
+  fallback-to-learner's-instructor behavior, a rejected unknown
+  `actingInstructorId` on both create and edit, an edit by one instructor
+  never rewriting another lesson's original `instructor_id`, `updated_at`
+  +`updatedByInstructorId`/`Name` surfaced correctly after an edit, a
+  second edit with no `actingInstructorId` preserving the prior
+  attribution rather than clearing it, and pre-existing instructor rows
+  left untouched). All pre-existing suites (competency rules, PDF export,
+  history edit, odometer/cumulative math, signatures) still pass
+  unchanged, after two small test updates for the two new seeded
+  instructor rows always being present (`tests/d1-storage.test.ts`'s row
+  count and id-ordering assertions).
+- **Not yet deployed to Staging / remote-QA'd** at the point this section
+  was written — see the delivery steps immediately below for the actual
+  outcome, and TASK.md for the current status line.
+
 ## CBT&A PDF export — merged into `staging`
 
 One-click export of the official ACT "Competency Based Training and

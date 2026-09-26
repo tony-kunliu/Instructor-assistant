@@ -1,10 +1,14 @@
 export type Transmission = "manual" | "auto";
 export type LicenceStage = "learner" | "p1" | "p2" | "full";
 
+export type InstructorStatus = "active" | "inactive";
+
 export type Instructor = {
   id: string;
   fullName: string;
   adiNumber: string | null;
+  email: string | null;
+  status: InstructorStatus;
 };
 
 export type Learner = {
@@ -48,6 +52,9 @@ export type Lesson = {
   learnerSignature: string | null;
   createdAt: string;
   updatedAt: string | null;
+  /** Instructor who last edited this lesson (Instructor Identity V1) — null if never edited, or edited before attribution existed. */
+  updatedByInstructorId: string | null;
+  updatedByInstructorName: string | null;
 };
 
 /** Set once 23 Final Drive is Assessed + Achieved (see lib/competency.ts). */
@@ -89,4 +96,6 @@ export type LessonInput = {
   comments?: unknown;
   adiSignature?: unknown;
   learnerSignature?: unknown;
+  /** Which instructor actually performed this create/edit (Instructor Identity V1) — must be an existing, active instructor id. Optional: omitted requests keep prior behavior (create falls back to the learner's own instructor; edit leaves updatedByInstructorId unchanged). */
+  actingInstructorId?: unknown;
 };

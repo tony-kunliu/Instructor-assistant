@@ -7,7 +7,7 @@
 //                               accounts reference these ids.
 // None of those features exist yet.
 
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS instructors (
@@ -78,4 +78,13 @@ CREATE INDEX IF NOT EXISTS competency_events_learner_idx ON competency_events (l
 CREATE INDEX IF NOT EXISTS competency_events_lesson_idx ON competency_events (lesson_id);
 
 ALTER TABLE lessons ADD COLUMN updated_at TEXT;
+
+ALTER TABLE instructors ADD COLUMN status TEXT NOT NULL DEFAULT 'active';
+ALTER TABLE lessons ADD COLUMN updated_by_instructor_id TEXT REFERENCES instructors (id);
+
+INSERT INTO instructors (id, full_name, email, status)
+VALUES
+  ('a1f3b6c2-2f1a-4b8e-9c6a-1a2b3c4d5e01', 'Tony', 'Kunliu.work@gmail.com', 'active'),
+  ('a1f3b6c2-2f1a-4b8e-9c6a-1a2b3c4d5e02', 'Anna', 'yapingqu.work@gmail.com', 'active')
+ON CONFLICT (id) DO UPDATE SET email = excluded.email, status = excluded.status;
 `;

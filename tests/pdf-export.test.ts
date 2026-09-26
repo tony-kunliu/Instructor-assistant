@@ -52,6 +52,8 @@ function lesson(n: number, overrides: Partial<Lesson> = {}): Lesson {
     learnerSignature: SIG,
     createdAt: new Date().toISOString(),
     updatedAt: null,
+    updatedByInstructorId: null,
+    updatedByInstructorName: null,
     ...overrides,
   };
 }
