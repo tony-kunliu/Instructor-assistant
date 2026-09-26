@@ -6,14 +6,19 @@ Repo: `tony-kunliu/instructor-assistant`
 
 | Branch | Commit | State |
 | --- | --- | --- |
-| `main` | `edeab503bcd84e4dd0907cdc49c61dfc8762855b` | Project skeleton and working rules only. Not deployed. |
-| `staging` | `edeab503bcd84e4dd0907cdc49c61dfc8762855b` | Same as `main`. |
-| `feature/cbta-checklist` | `234c959ed6994c9797cb69d5fcebbb1afda5a9ac` | CBT&A Lesson Checklist MVP — complete, not yet merged into `staging`/`main`. |
+| `main` | `98aa0c047d9b99d309c531cddb81555f8444ab43` | Working rules / docs baseline only. CBT&A MVP not yet merged in. Not deployed. |
+| `staging` | `ae1bc410aaadffdaf0a30e1c47cbe8ff5f8a4f16` | CBT&A Lesson Checklist MVP merged in for integration QA. Not deployed. |
+| `feature/cbta-checklist` | `e7e2c3d93902d286e2bcd03e8ac08541cd6f7186` | CBT&A Lesson Checklist MVP — complete, merged into `staging`. Not yet merged into `main`. |
 
 Production: **not deployed**. Production requires separate, explicit
 authorization from Tony (merging to `main` does not imply this).
 
-## CBT&A Checklist MVP (`feature/cbta-checklist`) — complete
+## CBT&A Checklist MVP — merged into `staging`
+
+Merged from `feature/cbta-checklist` into `staging` for integration QA
+(commit `ae1bc41`). Re-verified on `staging` after merge: `npm run build`
+PASS, `npm test` 10/10 PASS. Not yet merged into `main`; `main` still
+requires Tony's explicit authorization for that step.
 
 Implemented:
 
