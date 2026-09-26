@@ -29,16 +29,26 @@ discipline. If this round fails, restore to exactly this state.
   so restoring the old Worker version alone restores Basic Auth protection.
   No existing `learner`/`lesson` data is touched by this round, so no data
   rollback is ever needed.
+- **Rollback path verified available (not exercised — Staging was left
+  running, not deliberately broken to test this):** `wrangler deployments
+  list` after this round's deploy still shows Version
+  `aa3c1c09-9892-4855-82d2-0e7fb1940d94` in the account's deployment
+  history, so `wrangler rollback` (or redeploying `staging` at `b6b749f`)
+  remains available if ever needed. This round's own new deployment is
+  Version `92537c0a-b47a-4b60-ae40-465132e22c8e` (see "Instructor Identity
+  V1" section below for the full record) — that's the new baseline if a
+  future round needs to roll back only past *this* round instead.
 
 | Branch | Commit | State |
 | --- | --- | --- |
 | `main` | `98aa0c047d9b99d309c531cddb81555f8444ab43` | Working rules / docs baseline only. CBT&A MVP, D1 storage, Cloudflare deployment, CBT&A V2/V3, and PDF export not yet merged in. Not deployed. |
-| `staging` | (pending merge of `feature/cbta-pdf-export`) | CBT&A Lesson Checklist MVP + D1-compatible storage + live Cloudflare Staging deployment + CBT&A V2 structured competency selection + CBT&A V3 history editing / corrected Final Drive gating + official CBT&A PDF export. |
+| `staging` | `ad89cd5` | CBT&A Lesson Checklist MVP + D1-compatible storage + live Cloudflare Staging deployment + CBT&A V2 structured competency selection + CBT&A V3 history editing / corrected Final Drive gating + official CBT&A PDF export + Instructor Identity V1 (data model + lesson attribution). |
 | `feature/cbta-checklist` | `e7e2c3d93902d286e2bcd03e8ac08541cd6f7186` | CBT&A Lesson Checklist MVP — complete, merged into `staging`. Not yet merged into `main`. |
 | `feature/d1-storage` | `87b40be6258924329ae85f888be6322ef3a00ca4` | D1-compatible storage migration — complete, merged into `staging`. Not yet merged into `main`. |
 | `feature/cbta-competency-selection` | `b2734f5c9b6cbe6d9d5ff85c3fdf16fc74e42adb` | CBT&A V2 structured competency selection — complete, merged into `staging`. Not yet merged into `main`. |
 | `feature/history-edit-and-finaldrive-gating` | `d1b01ef` | CBT&A V3 history lesson editing + corrected Final Drive 23 / Review gating — complete, merged into `staging`. Not yet merged into `main`. |
-| `feature/cbta-pdf-export` | (this session) | Official ADI CBT&A Checklist PDF export — complete, merged into `staging`. Not yet merged into `main`. |
+| `feature/cbta-pdf-export` | `013a805` | Official ADI CBT&A Checklist PDF export — complete, merged into `staging`. Not yet merged into `main`. |
+| `feature/instructor-identity` | `8ae6a01` | Instructor Identity V1 data model + lesson attribution (Cloudflare Access itself deferred — see STATUS.md section) — complete, merged into `staging`. Not yet merged into `main`. |
 
 Production: **not deployed**. Production requires separate, explicit
 authorization from Tony (merging to `main` does not imply this).
@@ -127,9 +137,34 @@ Access itself is deferred.**
   unchanged, after two small test updates for the two new seeded
   instructor rows always being present (`tests/d1-storage.test.ts`'s row
   count and id-ordering assertions).
-- **Not yet deployed to Staging / remote-QA'd** at the point this section
-  was written — see the delivery steps immediately below for the actual
-  outcome, and TASK.md for the current status line.
+- **Deployed and remote-QA'd:** merged into `staging` as `ad89cd5`
+  (feature commit `8ae6a01`), migration `0004_instructor_identity.sql`
+  applied to the real remote D1, deployed to Cloudflare Staging via
+  `npm run cf:deploy` (Version ID `92537c0a-b47a-4b60-ae40-465132e22c8e`).
+  Verified against the real, live D1 database using an isolated,
+  clearly-named test learner (`ZZ_QA_IDENTITY_TEST_DELETE_ME`, owned by a
+  throwaway `ZZ_QA_FILE_INSTRUCTOR_DELETE_ME` — deliberately *not* Tony or
+  Anna, so the test actually exercises cross-instructor attribution):
+  - Unauthenticated `GET /` and `GET /api/learners` → `401` (unchanged).
+  - `GET /api/instructors` (authenticated) shows the real seeded Tony/Anna
+    rows with their real emails, alongside the untouched `ADI601`/`ADI604`
+    rows.
+  - **E:** lesson created with `actingInstructorId` = Tony's real remote id
+    → `instructor_id` = Tony.
+  - **F:** lesson created with `actingInstructorId` = Anna's real remote id
+    → `instructor_id` = Anna.
+  - **G:** Anna edited Tony's Lesson #1 (real PATCH against real D1) →
+    `instructor_id` stayed Tony's, `updated_by_instructor_id` became
+    Anna's — verified directly in the API response.
+  - **H:** the learner's lesson list shows `updatedByInstructorName:
+    "Anna"` on the edited lesson, `null` on the never-edited one.
+  - CBT&A PDF export (existing feature) still returns `200` with correct
+    data for this multi-lesson, multi-instructor-attributed learner — no
+    regression.
+  - All QA rows (2 lessons, 1 learner, 1 throwaway instructor) were then
+    deleted from the remote D1; Tony's real learners ("Kun Liu", "V1test")
+    and the real Tony/Anna/ADI601/ADI604 instructor rows were confirmed
+    present and unchanged both before and after.
 
 ## CBT&A PDF export — merged into `staging`
 
@@ -490,6 +525,19 @@ Verification:
   expose Production publicly without this.
 - Zero Trust Access not yet enabled on the Cloudflare account (see above) —
   Basic Auth is an interim stand-in for Staging only.
+- **Instructor Identity V1 is data-model-only this round** — no UI sources
+  `actingInstructorId` yet (nothing to source real, verified identity from
+  without Cloudflare Access), so today's app UI still behaves exactly as
+  before this round (lessons created via the UI still default to the
+  learner's own instructor; history edits via the UI still don't set
+  `updated_by_instructor_id`). The backend is ready and tested
+  (`tests/instructor-identity.test.ts`) for the moment Access supplies a
+  verified email → `lib/repo.ts#findInstructorByEmail` → `actingInstructorId`.
+- Pre-existing production instructor rows (`ADI601`, `ADI604`) have `email:
+  null` — nobody has confirmed which real person those correspond to, so
+  no email was guessed onto them. They'll need a real email set (e.g. via
+  the existing `PATCH /api/instructors/:id`-style endpoint, once extended,
+  or directly) once Tony confirms their identity.
 - No public production deployment.
 - Saved lessons can be edited (CBT&A V3) but not deleted.
 - No offline mode / service worker.
