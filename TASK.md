@@ -2,45 +2,47 @@
 
 No active development task.
 
-**Completed this session:** Instructor Identity V1 is now fully working end
-to end, verified live by Tony and Anna themselves. The earlier blocker
-(Anna's Cloudflare Access login only offering "Sign in with Cloudflare",
-which requires Cloudflare account membership she doesn't have) was fixed by
-Tony adding the "One-time PIN" identity provider in the Zero Trust
-dashboard — a one-time, ~1 minute step only he could do. Anna then
-completed a real login (email → one-time code → in) and the app correctly
-showed **"Signed in as Anna"**. Combined with Tony's earlier successful
-login ("Signed in as Tony"), both named instructors' identity paths are now
-proven against the real, deployed system — not just unit tests. No code
-changes were needed this round; this was Cloudflare-side configuration only.
+**Completed this session:** with Tony's explicit authorization ("都可以
+继续"), both remaining decisions from Instructor Identity V1 were acted on:
 
-**Current live state:**
-- Cloudflare Access (self-hosted app + "Tony and Anna only" policy) sits in
-  front of the Worker, with two login methods available: "Cloudflare"
-  (account-member login) and "One-time PIN" (email code — this is what
-  makes Anna's access work).
-- Basic Auth is **still active** as an independent second gate (unchanged,
-  not yet retired).
-- Lesson/history attribution is automatic for whoever is actually signed
-  in via Access.
+1. **Basic Auth retired.** `middleware.ts` no longer checks
+   `STAGING_BASIC_AUTH_USER`/`PASSWORD` — Cloudflare Access is now the sole
+   gate on Staging. A request reaching the deployed Worker with no verified
+   Access identity now fails closed (`403`), rather than silently passing
+   through, since this Worker has no other route Access doesn't sit in
+   front of. The Basic Auth secrets themselves were left in place (not
+   deleted) as a quick rollback lever. Built on `feature/retire-basic-auth`
+   from `staging`, merged back (`07704d8`), deployed to Cloudflare Staging
+   (Version `201cdf7e-7a5e-443b-9b12-028a8f22547c`), and re-confirmed live
+   that unauthenticated requests are still correctly blocked.
+2. **`staging` merged into `main`**, per Tony's explicit authorization —
+   this repo's governance requires that for every merge into `main`, and
+   it was given this round.
 
-**Two decisions now ready for Tony (previously conditioned on this exact
-outcome — now unblocked):**
+**Production was not touched** — merging to `main` does not imply
+Production deployment, and this session did not deploy to Production or
+receive separate authorization to do so.
 
-1. **Retire Basic Auth?** The migration order from earlier rounds said not
-   to remove it until both people's Access login was proven — that's now
-   done. Tony can say the word and Basic Auth can be removed from
-   `middleware.ts` next round (Access + the app-level instructor mapping
-   would become the sole gate).
-2. **Authorize merging `staging` into `main`?** Tony previously said this
-   could happen "once Anna's login works" — it now does. Still needs his
-   explicit go-ahead per this repo's branch rules before it happens.
+**State of the app now:** CBT&A Lesson Checklist (creation, editing,
+history), CBT&A V2/V3 competency rules and Final Drive gating, the official
+CBT&A PDF export, and Instructor Identity V1 (Cloudflare Access login for
+Tony and Anna, automatic lesson/history attribution, Basic Auth retired)
+are all live on Cloudflare Staging and now also reflected in `main`.
 
-**Follow-up for Tony:**
+**Explicitly out of scope this round:** no new features — this was purely
+finishing the two decisions Tony had deferred, plus the merge he
+authorized.
 
-- Reply with a decision on the two items above (or "not yet" on either).
-- Everything else from earlier rounds (PDF export tested fine on his
-  iPhone, ADI numbers set, `ADI601` left untouched as a likely-harmless
-  typo) is already closed out.
+**Follow-up for Tony (not done, needs his action):**
 
-等待 Tony 对以上两项决定，或指定下一任务。
+- Confirm whether the pre-existing `ADI604` instructor row corresponds to
+  a real person (still unconfirmed from an earlier round; `ADI601` was
+  already addressed — left untouched, per Tony's own answer).
+- Decide when (and if) to authorize an actual Production deployment —
+  separate, explicit authorization still required per AGENTS.md; nothing
+  about this round changes that.
+- Confirm the official CBT&A competency full names/content once available
+  (still only official numbering 1-22 / Review 1-17 / Review 1-22 / 23
+  Final Drive is used — nothing invented).
+
+等待 Tony 指定下一任务。

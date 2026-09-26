@@ -42,14 +42,15 @@ discipline. If this round fails, restore to exactly this state.
 | Branch | Commit | State |
 | --- | --- | --- |
 | `main` | `98aa0c047d9b99d309c531cddb81555f8444ab43` | Working rules / docs baseline only. CBT&A MVP, D1 storage, Cloudflare deployment, CBT&A V2/V3, and PDF export not yet merged in. Not deployed. |
-| `staging` | `d13e7e7` | CBT&A Lesson Checklist MVP + D1-compatible storage + live Cloudflare Staging deployment + CBT&A V2 structured competency selection + CBT&A V3 history editing / corrected Final Drive gating + official CBT&A PDF export + Instructor Identity V1 (data model + lesson attribution + Cloudflare Access identity). |
+| `staging` | `07704d8` | CBT&A Lesson Checklist MVP + D1-compatible storage + live Cloudflare Staging deployment + CBT&A V2 structured competency selection + CBT&A V3 history editing / corrected Final Drive gating + official CBT&A PDF export + Instructor Identity V1 (data model + lesson attribution + Cloudflare Access identity, Basic Auth retired). |
 | `feature/cbta-checklist` | `e7e2c3d93902d286e2bcd03e8ac08541cd6f7186` | CBT&A Lesson Checklist MVP — complete, merged into `staging`. Not yet merged into `main`. |
 | `feature/d1-storage` | `87b40be6258924329ae85f888be6322ef3a00ca4` | D1-compatible storage migration — complete, merged into `staging`. Not yet merged into `main`. |
 | `feature/cbta-competency-selection` | `b2734f5c9b6cbe6d9d5ff85c3fdf16fc74e42adb` | CBT&A V2 structured competency selection — complete, merged into `staging`. Not yet merged into `main`. |
 | `feature/history-edit-and-finaldrive-gating` | `d1b01ef` | CBT&A V3 history lesson editing + corrected Final Drive 23 / Review gating — complete, merged into `staging`. Not yet merged into `main`. |
 | `feature/cbta-pdf-export` | `013a805` | Official ADI CBT&A Checklist PDF export — complete, merged into `staging`. Not yet merged into `main`. |
 | `feature/instructor-identity` | `8ae6a01` | Instructor Identity V1 data model + lesson attribution (Cloudflare Access itself deferred that round — see STATUS.md section) — complete, merged into `staging`. Not yet merged into `main`. |
-| `feature/instructor-identity-access` | `ab39ab4` | Cloudflare Access wired up: Access Application + policy, JWT verification, email→instructor mapping, automatic lesson attribution — complete, merged into `staging`. Not yet merged into `main`. |
+| `feature/instructor-identity-access` | `ab39ab4` | Cloudflare Access wired up: Access Application + policy, JWT verification, email→instructor mapping, automatic lesson attribution — complete, merged into `staging`. |
+| `feature/retire-basic-auth` | `ec58ac0` | Basic Auth retired; Cloudflare Access is now the sole gate, fail-closed on a missing identity in the deployed Worker — complete, merged into `staging`. |
 
 Production: **not deployed**. Production requires separate, explicit
 authorization from Tony (merging to `main` does not imply this).
@@ -85,6 +86,12 @@ the Staging URL now.
   redirected to Access's login page (Access itself, ahead of the Worker,
   is unaffected by this change) — the Basic Auth secondary prompt that
   used to follow a successful Access login is gone.
+- **Deployed:** merged into `staging` (`07704d8`), deployed to Cloudflare
+  Staging via `npm run cf:deploy` (Version ID
+  `201cdf7e-7a5e-443b-9b12-028a8f22547c`). Re-confirmed live post-deploy:
+  an unauthenticated request still gets redirected to Access's login page
+  before reaching the Worker at all — removing Basic Auth did not weaken
+  protection, since Access was always the outer gate.
 
 ## Instructor Identity V1 — Tony and Anna both verified live via real Cloudflare Access login ✅
 
