@@ -1,4 +1,4 @@
-import { CORE_COMPETENCY_IDS, type LearnerProgress, type MilestoneInvalidation, type ReviewState } from "@/lib/competency.ts";
+import { ALL_ASSESSABLE_IDS, CORE_COMPETENCY_IDS, competencyFullName, competencyLabel, type LearnerProgress, type MilestoneInvalidation, type ReviewState } from "@/lib/competency.ts";
 import type { CompletionSummary } from "@/lib/types.ts";
 
 function invalidationMessage(invalidated: MilestoneInvalidation): string | null {
@@ -60,6 +60,16 @@ export default function CompetencyProgressCard({ progress, completion, invalidat
           <b>{finalDriveLabel(progress.finalDrive23)}</b>
         </li>
       </ul>
+      <details className="comp-legend">
+        <summary>What do the numbers mean? (official ACT CBT&amp;A competency names)</summary>
+        <ul>
+          {ALL_ASSESSABLE_IDS.map((id) => (
+            <li key={id}>
+              <b>{competencyLabel(id)}</b> — {competencyFullName(id)}
+            </li>
+          ))}
+        </ul>
+      </details>
       {completion ? (
         <p className="status ok">
           CBT&amp;A Completed — Lesson #{completion.completingLessonNo} · {completion.instructorName} · {completion.totalLessons} lessons ·{" "}
