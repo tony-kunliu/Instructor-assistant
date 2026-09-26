@@ -89,6 +89,26 @@ task.
 committed. (Documentation-only changes don't require a build, but must still
 be reviewed for accuracy against the current remote state.)
 
+## 9. Claude Code model selection
+
+- **Default: Claude Sonnet 5** for day-to-day work — feature development,
+  bug fixes, UI, API, tests, build, documentation, ordinary refactors, Git
+  operations, and staging QA.
+- **Escalate to the latest available Claude Opus** (prefer **Claude Opus
+  5.5** if the current environment offers it; otherwise the latest available
+  Opus) only for:
+  - complex architecture decisions
+  - major database changes / migrations
+  - hard-to-locate bugs
+  - repeated failed fix attempts
+  - changes that cross multiple subsystems
+  - large-scale refactors
+  - security review
+  - important code review before Production
+  - long-running autonomous coding sessions
+- Do not default to Opus just because it is more capable. Once the escalated
+  task is done, switch back to Sonnet 5 for ordinary work.
+
 ## Project rules (CBT&A Checklist)
 
 - Do **not** invent an official CBT&A competency list. `Taught`,
