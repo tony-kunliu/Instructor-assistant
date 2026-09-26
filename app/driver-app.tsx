@@ -13,7 +13,7 @@ import {
   parseTime,
   type Totals,
 } from "@/lib/calc.ts";
-import type { AssessmentResult, LearnerProgress } from "@/lib/competency.ts";
+import type { AssessmentResult, LearnerProgress, MilestoneInvalidation } from "@/lib/competency.ts";
 import type { CompletionSummary, Instructor, Learner, Lesson } from "@/lib/types.ts";
 import CompetencyPicker from "./competency-picker.tsx";
 import CompetencyProgressCard from "./competency-progress.tsx";
@@ -79,6 +79,43 @@ function freshLesson(startOdometer: number | null): LessonDraft {
   };
 }
 
+type LessonSelections = { taughtIds: string[]; assessedIds: string[]; achievedResults: Record<string, AssessmentResult> };
+
+function lessonToDraft(lesson: Lesson, selections: LessonSelections): LessonDraft {
+  return {
+    lessonDate: lesson.lessonDate,
+    startTime: lesson.startTime,
+    finishTime: lesson.finishTime,
+    startOdometer: String(lesson.startOdometer),
+    finishOdometer: String(lesson.finishOdometer),
+    taughtIds: selections.taughtIds,
+    assessedIds: selections.assessedIds,
+    achievedResults: selections.achievedResults,
+    location: lesson.location ?? "",
+    comments: lesson.comments ?? "",
+    adiSignature: lesson.adiSignature ?? "",
+    learnerSignature: lesson.learnerSignature ?? "",
+  };
+}
+
+const sameIds = (a: string[], b: string[]) => a.length === b.length && [...a].sort().join() === [...b].sort().join();
+
+/** Fields whose change invalidates existing signatures — mirrors lib/repo.ts#updateLesson's SIGNATURE_PROTECTED_FIELDS. */
+function contentChanged(a: LessonDraft, b: LessonDraft): boolean {
+  return (
+    a.lessonDate !== b.lessonDate ||
+    a.startTime !== b.startTime ||
+    a.finishTime !== b.finishTime ||
+    a.startOdometer !== b.startOdometer ||
+    a.finishOdometer !== b.finishOdometer ||
+    !sameIds(a.taughtIds, b.taughtIds) ||
+    !sameIds(a.assessedIds, b.assessedIds) ||
+    JSON.stringify(a.achievedResults) !== JSON.stringify(b.achievedResults) ||
+    a.location !== b.location ||
+    a.comments !== b.comments
+  );
+}
+
 // Per-device conveniences only (the database is the record). Wrapped so a
 // private window or blocked storage never breaks the app.
 const storage = {
@@ -116,12 +153,22 @@ export default function DriverApp() {
   const [clock, setClock] = useState(() => localNow().time);
   const finishOdoRef = useRef<HTMLInputElement>(null);
 
+  const [editingLessonId, setEditingLessonId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState<LessonDraft | null>(null);
+  const [editOriginal, setEditOriginal] = useState<LessonDraft | null>(null);
+  const [editProgress, setEditProgress] = useState<LearnerProgress | null>(null);
+  const [editLoading, setEditLoading] = useState(false);
+  const [editStatus, setEditStatus] = useState<string | null>(null);
+  const [invalidation, setInvalidation] = useState<MilestoneInvalidation | null>(null);
+
   const totals = detail?.totals ?? EMPTY_TOTALS;
 
   const loadLearner = useCallback(async (id: string) => {
     setSelectedId(id);
     setDetail(null);
     setDraft(null);
+    cancelEditLesson();
+    setInvalidation(null);
     if (!id) return;
     storage.set(LAST_LEARNER_KEY, id);
     try {
@@ -230,6 +277,71 @@ export default function DriverApp() {
     }
   };
 
+  const startEditLesson = async (lessonId: string) => {
+    if (!detail) return;
+    setEditingLessonId(lessonId);
+    setEditDraft(null);
+    setEditStatus(null);
+    setEditLoading(true);
+    try {
+      const data = await api<{ lesson: Lesson; selections: LessonSelections; progressExcludingThisLesson: LearnerProgress }>(
+        `/api/learners/${encodeURIComponent(detail.learner.id)}/lessons/${encodeURIComponent(lessonId)}`,
+      );
+      const draft = lessonToDraft(data.lesson, data.selections);
+      setEditDraft(draft);
+      setEditOriginal(draft);
+      setEditProgress(data.progressExcludingThisLesson);
+    } catch (error) {
+      setEditStatus((error as Error).message);
+    } finally {
+      setEditLoading(false);
+    }
+  };
+
+  const cancelEditLesson = () => {
+    setEditingLessonId(null);
+    setEditDraft(null);
+    setEditOriginal(null);
+    setEditProgress(null);
+    setEditStatus(null);
+  };
+
+  const setEditFieldValue = (updater: (current: LessonDraft) => LessonDraft) => {
+    setEditDraft((current) => {
+      if (!current || !editOriginal) return current;
+      const next = updater(current);
+      // Any protected-field change invalidates both signatures (CBT&A V3 rule
+      // 5) — clear them here too so the instructor is visibly forced to
+      // redraw; the server enforces this independently regardless.
+      if (contentChanged(editOriginal, next) && (next.adiSignature === editOriginal.adiSignature || next.learnerSignature === editOriginal.learnerSignature)) {
+        return { ...next, adiSignature: "", learnerSignature: "" };
+      }
+      return next;
+    });
+  };
+
+  const saveEditLesson = async () => {
+    if (!detail || !editingLessonId || !editDraft) return;
+    setSaving(true);
+    setEditStatus(null);
+    try {
+      const result = await api<{ lesson: Lesson; totals: Totals; progress: LearnerProgress; completion: CompletionSummary | null; invalidated: MilestoneInvalidation }>(
+        `/api/learners/${encodeURIComponent(detail.learner.id)}/lessons/${encodeURIComponent(editingLessonId)}`,
+        { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(editDraft) },
+      );
+      // Editing a lesson can shift every subsequent lesson's cumulative
+      // totals, so re-fetch the whole learner rather than patch one row.
+      await loadLearner(detail.learner.id);
+      setInvalidation(result.invalidated);
+      cancelEditLesson();
+      setStatus({ kind: "ok", text: "Lesson updated." });
+    } catch (error) {
+      setEditStatus((error as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const openAddLearner = () => {
     setLearnerDraft({ ...emptyLearner, instructorName: storage.get(LAST_INSTRUCTOR_KEY) ?? instructors[0]?.fullName ?? "" });
     setAddingLearner(true);
@@ -322,7 +434,7 @@ export default function DriverApp() {
             </p>
           </section>
 
-          <CompetencyProgressCard progress={detail.progress} completion={detail.completion} />
+          <CompetencyProgressCard progress={detail.progress} completion={detail.completion} invalidated={invalidation} />
 
           <section className="card lesson">
             {phase === "ready" ? (
@@ -396,23 +508,74 @@ export default function DriverApp() {
             <h2>History</h2>
             {!detail.lessons.length ? <p className="empty">No lessons yet.</p> : (
               <ol>
-                {detail.lessons.map((lesson) => (
-                  <li key={lesson.id} data-testid="history-row">
-                    <div className="h-top">
-                      <span className="h-no">#{lesson.lessonNo}</span>
-                      <span>{lesson.lessonDate} · {lesson.startTime}–{lesson.finishTime}</span>
-                    </div>
-                    <div className="h-nums">
-                      <span>{formatMinutes(lesson.durationMinutes)} · {lesson.distanceKm} km</span>
-                      <span>Total {formatMinutes(lesson.cumulativeMinutes)} · {lesson.cumulativeKm} km</span>
-                    </div>
-                    <div className="h-odo">Odo {lesson.startOdometer} → {lesson.finishOdometer}{lesson.location ? ` · ${lesson.location}` : ""}</div>
-                    {lesson.taught ? <p><b>Taught:</b> {lesson.taught}</p> : null}
-                    {lesson.competenciesAssessed ? <p><b>Assessed:</b> {lesson.competenciesAssessed}</p> : null}
-                    {lesson.achieved ? <p><b>Achieved:</b> {lesson.achieved}</p> : null}
-                    {lesson.comments ? <p><b>Comments:</b> {lesson.comments}</p> : null}
-                  </li>
-                ))}
+                {detail.lessons.map((lesson) =>
+                  editingLessonId === lesson.id ? (
+                    <li key={lesson.id} className="h-editing">
+                      {editLoading || !editDraft || !editProgress ? (
+                        <p className="empty">Loading…</p>
+                      ) : (
+                        <>
+                          <h3>Editing Lesson #{lesson.lessonNo}</h3>
+                          {editStatus ? <p className="status error">{editStatus}</p> : null}
+                          <div className="grid">
+                            <label className="field"><span>Date</span><input type="date" value={editDraft.lessonDate} onChange={(e) => setEditFieldValue((d) => ({ ...d, lessonDate: e.target.value }))} /></label>
+                            <label className="field"><span>Location</span><input value={editDraft.location} onChange={(e) => setEditFieldValue((d) => ({ ...d, location: e.target.value }))} /></label>
+                            <label className="field"><span>Start time</span><input type="time" value={editDraft.startTime} onChange={(e) => setEditFieldValue((d) => ({ ...d, startTime: e.target.value }))} /></label>
+                            <label className="field"><span>Finish time</span><input type="time" value={editDraft.finishTime} onChange={(e) => setEditFieldValue((d) => ({ ...d, finishTime: e.target.value }))} /></label>
+                            <label className="field"><span>Start odometer (km)</span><input type="text" inputMode="numeric" pattern="[0-9]*" value={editDraft.startOdometer} onChange={(e) => setEditFieldValue((d) => ({ ...d, startOdometer: e.target.value.replace(/\D/g, "") }))} /></label>
+                            <label className="field"><span>Finish odometer (km)</span><input type="text" inputMode="numeric" pattern="[0-9]*" value={editDraft.finishOdometer} onChange={(e) => setEditFieldValue((d) => ({ ...d, finishOdometer: e.target.value.replace(/\D/g, "") }))} /></label>
+                          </div>
+                          <p className="derived">
+                            Recalculated: <b>{(() => { const m = durationMinutes(editDraft.startTime, editDraft.finishTime); return m !== null ? formatMinutes(m) : "—"; })()}</b> ·{" "}
+                            <b>{(() => { const k = distanceKm(parseOdometer(editDraft.startOdometer), parseOdometer(editDraft.finishOdometer)); return k !== null ? `${k} km` : "—"; })()}</b>
+                            {" "}(lesson number, duration, distance and cumulative totals are always recalculated, never typed)
+                          </p>
+
+                          <CompetencyPicker
+                            progress={editProgress}
+                            taughtIds={editDraft.taughtIds}
+                            assessedIds={editDraft.assessedIds}
+                            achievedResults={editDraft.achievedResults}
+                            onChangeTaught={(ids) => setEditFieldValue((d) => ({ ...d, taughtIds: ids }))}
+                            onChangeAssessed={(ids) => setEditFieldValue((d) => ({ ...d, assessedIds: ids }))}
+                            onChangeAchieved={(results) => setEditFieldValue((d) => ({ ...d, achievedResults: results }))}
+                          />
+
+                          <label className="field full"><span>Comments</span><textarea rows={2} value={editDraft.comments} onChange={(e) => setEditFieldValue((d) => ({ ...d, comments: e.target.value }))} /></label>
+
+                          {editOriginal && contentChanged(editOriginal, editDraft) ? (
+                            <p className="hint danger">Content changed — both signatures were cleared. Please redraw both before saving.</p>
+                          ) : null}
+                          <SignaturePad label="ADI signature" value={editDraft.adiSignature} onChange={(value) => setEditFieldValue((d) => ({ ...d, adiSignature: value }))} />
+                          <SignaturePad label="Learner signature" value={editDraft.learnerSignature} onChange={(value) => setEditFieldValue((d) => ({ ...d, learnerSignature: value }))} />
+
+                          <button type="button" className="btn huge save" disabled={saving || !editDraft.assessedIds.every((id) => id in editDraft.achievedResults)} onClick={() => void saveEditLesson()}>
+                            {saving ? "Saving…" : "Save changes"}
+                          </button>
+                          <button type="button" className="link" onClick={cancelEditLesson}>Cancel</button>
+                        </>
+                      )}
+                    </li>
+                  ) : (
+                    <li key={lesson.id} data-testid="history-row">
+                      <div className="h-top">
+                        <span className="h-no">#{lesson.lessonNo}</span>
+                        <span>{lesson.lessonDate} · {lesson.startTime}–{lesson.finishTime}</span>
+                        <button type="button" className="link h-edit" onClick={() => void startEditLesson(lesson.id)}>Edit</button>
+                      </div>
+                      <div className="h-nums">
+                        <span>{formatMinutes(lesson.durationMinutes)} · {lesson.distanceKm} km</span>
+                        <span>Total {formatMinutes(lesson.cumulativeMinutes)} · {lesson.cumulativeKm} km</span>
+                      </div>
+                      <div className="h-odo">Odo {lesson.startOdometer} → {lesson.finishOdometer}{lesson.location ? ` · ${lesson.location}` : ""}</div>
+                      {lesson.taught ? <p><b>Taught:</b> {lesson.taught}</p> : null}
+                      {lesson.competenciesAssessed ? <p><b>Assessed:</b> {lesson.competenciesAssessed}</p> : null}
+                      {lesson.achieved ? <p><b>Achieved:</b> {lesson.achieved}</p> : null}
+                      {lesson.comments ? <p><b>Comments:</b> {lesson.comments}</p> : null}
+                      {lesson.updatedAt ? <p className="h-edited">Edited {lesson.updatedAt}</p> : null}
+                    </li>
+                  ),
+                )}
               </ol>
             )}
           </section>

@@ -113,12 +113,28 @@ test("H: Review 1-22 unlocks once 1-22 are achieved and Review 1-17 is achieved"
   assert.equal(after.review1_22.status, "achieved");
 });
 
-test("I: Final Drive 23 Assessed + Achieved marks CBT&A completed, with a recorded completion summary", async () => {
+test("I: Final Drive 23 is locked until 1-22, Review 1-17 and Review 1-22 are all achieved", async () => {
+  const { db, learner } = await setup();
+  await assert.rejects(
+    () => createLesson(db, learner.id, lessonAt(1, { assessedIds: [FINAL_DRIVE_23], achievedResults: { [FINAL_DRIVE_23]: "achieved" } })),
+    /23 Final Drive is locked/,
+  );
+});
+
+test("J: Final Drive 23 Assessed + Achieved (after full unlock) marks CBT&A completed, with a recorded completion summary", async () => {
   const { db, learner } = await setup();
   const before = await getCompletionSummary(db, learner.id);
   assert.equal(before, null);
 
-  const lesson = await createLesson(db, learner.id, lessonAt(1, { assessedIds: [FINAL_DRIVE_23], achievedResults: { [FINAL_DRIVE_23]: "achieved" } }));
+  const ids = Array.from({ length: 22 }, (_, i) => String(i + 1));
+  let next = await achieveCompetencies(db, learner.id, ids);
+  next = await achieveCompetencies(db, learner.id, [REVIEW_1_17], next);
+  next = await achieveCompetencies(db, learner.id, [REVIEW_1_22], next);
+
+  const progressBefore = await getLearnerProgress(db, learner.id);
+  assert.equal(progressBefore.finalDrive23.status, "ready");
+
+  const lesson = await createLesson(db, learner.id, lessonAt(next, { assessedIds: [FINAL_DRIVE_23], achievedResults: { [FINAL_DRIVE_23]: "achieved" } }));
   const progress = await getLearnerProgress(db, learner.id);
   assert.equal(progress.completed, true);
   assert.equal(progress.finalDrive23.status, "achieved");
@@ -127,7 +143,7 @@ test("I: Final Drive 23 Assessed + Achieved marks CBT&A completed, with a record
   assert.ok(summary);
   assert.equal(summary?.completingLessonNo, lesson.lessonNo);
   assert.equal(summary?.instructorName, "Test Instructor");
-  assert.equal(summary?.totalLessons, 1);
+  assert.equal(summary?.totalLessons, lesson.lessonNo);
   assert.equal(summary?.cumulativeKm, lesson.cumulativeKm);
 });
 
