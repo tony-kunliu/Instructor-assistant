@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { openTestD1 } from "../lib/db.ts";
 import { createLearner, createLesson, getCompletionSummary, getLearnerProgress } from "../lib/repo.ts";
-import { FINAL_DRIVE_23, REVIEW_1_17, REVIEW_1_22 } from "../lib/competency.ts";
+import { ALL_ASSESSABLE_IDS, FINAL_DRIVE_23, REVIEW_1_17, REVIEW_1_22, competencyFullName } from "../lib/competency.ts";
 
 const SIG = "data:image/png;base64,iVBORw0KGgo=";
 const BASE = { lessonDate: "2026-09-25", startOdometer: "0", adiSignature: SIG, learnerSignature: SIG };
@@ -151,4 +151,15 @@ test("taughtIds silently drops ids that aren't a core competency (e.g. a special
   const { db, learner } = await setup();
   const lesson = await createLesson(db, learner.id, lessonAt(1, { taughtIds: [REVIEW_1_17, "8"] }));
   assert.equal(lesson.taught, "8");
+});
+
+test("competencyFullName returns the official ACT government CBT&A title for every competency/review id, display-only", () => {
+  for (const id of ALL_ASSESSABLE_IDS) {
+    const name = competencyFullName(id);
+    assert.ok(name && name.length > 0, `expected a full name for ${id}`);
+  }
+  assert.equal(competencyFullName("1"), "Vehicle Controls");
+  assert.equal(competencyFullName("23"), null, "23 Final Drive uses the FINAL_DRIVE_23 id, not the bare string '23'");
+  assert.equal(competencyFullName(FINAL_DRIVE_23), "Driving on Busy Roads and Unfamiliar Roads");
+  assert.equal(competencyFullName("not-a-real-id"), null);
 });

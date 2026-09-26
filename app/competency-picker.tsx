@@ -5,6 +5,7 @@ import {
   FINAL_DRIVE_23,
   REVIEW_1_17,
   REVIEW_1_22,
+  competencyFullName,
   competencyLabel,
   sortCompetencyIds,
   type AssessmentResult,
@@ -80,6 +81,7 @@ export default function CompetencyPicker({ progress, taughtIds, assessedIds, ach
                 className={`chip${taughtIds.includes(id) ? " selected" : ""}${achieved ? " achieved" : ""}`}
                 disabled={taughtDisabled(id)}
                 aria-pressed={taughtIds.includes(id)}
+                title={competencyFullName(id) ?? undefined}
                 onClick={() => handleTaughtClick(id)}
               >
                 {id}
@@ -101,6 +103,7 @@ export default function CompetencyPicker({ progress, taughtIds, assessedIds, ach
                 className={`chip${assessedIds.includes(id) ? " selected" : ""}${achieved ? " achieved" : ""}`}
                 disabled={assessedDisabled(id)}
                 aria-pressed={assessedIds.includes(id)}
+                title={competencyFullName(id) ?? undefined}
                 onClick={() => handleAssessedClick(id)}
               >
                 {id}
@@ -119,6 +122,7 @@ export default function CompetencyPicker({ progress, taughtIds, assessedIds, ach
                 className={`chip wide${assessedIds.includes(id) ? " selected" : ""}${achieved ? " achieved" : ""}${locked ? " locked" : ""}`}
                 disabled={assessedDisabled(id)}
                 aria-pressed={assessedIds.includes(id)}
+                title={competencyFullName(id) ?? undefined}
                 onClick={() => handleAssessedClick(id)}
               >
                 {competencyLabel(id)}
@@ -135,7 +139,7 @@ export default function CompetencyPicker({ progress, taughtIds, assessedIds, ach
           <ul className="result-list">
             {sortCompetencyIds(assessedIds).map((id) => (
               <li key={id}>
-                <span>{competencyLabel(id)}</span>
+                <span title={competencyFullName(id) ?? undefined}>{competencyLabel(id)}</span>
                 <span className="result-buttons">
                   <button type="button" className={`btn small${achievedResults[id] === "achieved" ? " primary" : " ghost"}`} onClick={() => setResult(id, "achieved")}>
                     Achieved
