@@ -1,0 +1,16 @@
+name = "instructor-assistant"
+compatibility_date = "2025-01-01"
+
+# D1 binding for Instructor / Learner / Lesson storage.
+#
+# `database_id` below is a placeholder. Real deployment needs a Cloudflare
+# account: run `wrangler d1 create instructor-assistant-db` and paste the
+# returned database_id here (Tony to do this — this environment has no
+# Cloudflare credentials). Local development and tests never need a real
+# id: `wrangler d1 migrations apply DB --local` runs entirely offline
+# against Miniflare's local D1 emulation.
+[[d1_databases]]
+binding = "DB"
+database_name = "instructor-assistant-db"
+database_id = "REPLACE_WITH_REAL_D1_DATABASE_ID"
+migrations_dir = "migrations"

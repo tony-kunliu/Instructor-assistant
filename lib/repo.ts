@@ -1,5 +1,5 @@
-import type { DatabaseSync } from "node:sqlite";
 import { distanceKm, durationMinutes, EMPTY_TOTALS, parseOdometer, type Totals } from "./calc.ts";
+import type { D1Database } from "./d1-types.ts";
 import type { Instructor, Learner, LearnerInput, Lesson, LessonInput } from "./types.ts";
 
 export class ValidationError extends Error {}
@@ -69,30 +69,18 @@ function toLesson(row: Row): Lesson {
   };
 }
 
-function transaction<T>(db: DatabaseSync, work: () => T): T {
-  db.exec("BEGIN IMMEDIATE");
-  try {
-    const result = work();
-    db.exec("COMMIT");
-    return result;
-  } catch (error) {
-    db.exec("ROLLBACK");
-    throw error;
-  }
-}
-
 // ── Instructors ──────────────────────────────────────────────────────────
 
-export function listInstructors(db: DatabaseSync): Instructor[] {
-  const rows = db.prepare("SELECT id, full_name FROM instructors ORDER BY full_name").all() as Row[];
-  return rows.map((row) => ({ id: String(row.id), fullName: String(row.full_name) }));
+export async function listInstructors(db: D1Database): Promise<Instructor[]> {
+  const { results } = await db.prepare("SELECT id, full_name FROM instructors ORDER BY full_name").all<Row>();
+  return results.map((row) => ({ id: String(row.id), fullName: String(row.full_name) }));
 }
 
-function findOrCreateInstructor(db: DatabaseSync, name: string): string {
-  const existing = db.prepare("SELECT id FROM instructors WHERE lower(full_name) = lower(?)").get(name) as Row | undefined;
+async function findOrCreateInstructor(db: D1Database, name: string): Promise<string> {
+  const existing = await db.prepare("SELECT id FROM instructors WHERE lower(full_name) = lower(?)").bind(name).first<Row>();
   if (existing) return String(existing.id);
   const id = crypto.randomUUID();
-  db.prepare("INSERT INTO instructors (id, full_name) VALUES (?, ?)").run(id, name);
+  await db.prepare("INSERT INTO instructors (id, full_name) VALUES (?, ?)").bind(id, name).run();
   return id;
 }
 
@@ -102,18 +90,18 @@ const LEARNER_SELECT = `
   SELECT l.*, i.full_name AS instructor_name
   FROM learners l JOIN instructors i ON i.id = l.instructor_id`;
 
-export function listLearners(db: DatabaseSync): Learner[] {
-  const rows = db.prepare(`${LEARNER_SELECT} WHERE l.archived_at IS NULL ORDER BY l.full_name COLLATE NOCASE`).all() as Row[];
-  return rows.map(toLearner);
+export async function listLearners(db: D1Database): Promise<Learner[]> {
+  const { results } = await db.prepare(`${LEARNER_SELECT} WHERE l.archived_at IS NULL ORDER BY l.full_name COLLATE NOCASE`).all<Row>();
+  return results.map(toLearner);
 }
 
-export function getLearner(db: DatabaseSync, id: string): Learner {
-  const row = db.prepare(`${LEARNER_SELECT} WHERE l.id = ?`).get(id) as Row | undefined;
+export async function getLearner(db: D1Database, id: string): Promise<Learner> {
+  const row = await db.prepare(`${LEARNER_SELECT} WHERE l.id = ?`).bind(id).first<Row>();
   if (!row) throw new NotFoundError("Learner not found.");
   return toLearner(row);
 }
 
-export function createLearner(db: DatabaseSync, input: LearnerInput): Learner {
+export async function createLearner(db: D1Database, input: LearnerInput): Promise<Learner> {
   const fullName = text(input.fullName, 120);
   if (!fullName) throw new ValidationError("Student name is required.");
   const instructorName = text(input.instructorName, 120);
@@ -122,12 +110,19 @@ export function createLearner(db: DatabaseSync, input: LearnerInput): Learner {
   const transmission = transmissionRaw === "manual" || transmissionRaw === "auto" ? transmissionRaw : null;
 
   const id = crypto.randomUUID();
-  transaction(db, () => {
-    const instructorId = findOrCreateInstructor(db, instructorName);
-    db.prepare(
+  // Note: D1 has no read-then-write transaction across separate calls (only
+  // db.batch() for pre-built, independent statements), so find-or-create is
+  // two sequential round trips rather than one atomic unit. The unique index
+  // on instructors(lower(full_name)) still prevents duplicate rows outright
+  // (a concurrent race would surface as a constraint error, not silent
+  // duplication) — acceptable for this single-instructor-at-a-time app.
+  const instructorId = await findOrCreateInstructor(db, instructorName);
+  await db
+    .prepare(
       `INSERT INTO learners (id, instructor_id, full_name, address, phone, dob, licence_number, licence_expiry, eligibility, transmission, school_work)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    ).run(
+    )
+    .bind(
       id,
       instructorId,
       fullName,
@@ -139,21 +134,24 @@ export function createLearner(db: DatabaseSync, input: LearnerInput): Learner {
       text(input.eligibility, 120),
       transmission,
       text(input.schoolWork, 160),
-    );
-  });
+    )
+    .run();
   return getLearner(db, id);
 }
 
 // ── Lessons ──────────────────────────────────────────────────────────────
 
-export function getTotals(db: DatabaseSync, learnerId: string): Totals {
-  const row = db.prepare(
-    `SELECT COUNT(*) AS lesson_count,
-            COALESCE(SUM(duration_minutes), 0) AS total_minutes,
-            COALESCE(SUM(distance_km), 0) AS total_km,
-            (SELECT finish_odometer FROM lessons WHERE learner_id = ? ORDER BY lesson_no DESC LIMIT 1) AS last_finish
-     FROM lessons WHERE learner_id = ?`,
-  ).get(learnerId, learnerId) as Row | undefined;
+export async function getTotals(db: D1Database, learnerId: string): Promise<Totals> {
+  const row = await db
+    .prepare(
+      `SELECT COUNT(*) AS lesson_count,
+              COALESCE(SUM(duration_minutes), 0) AS total_minutes,
+              COALESCE(SUM(distance_km), 0) AS total_km,
+              (SELECT finish_odometer FROM lessons WHERE learner_id = ? ORDER BY lesson_no DESC LIMIT 1) AS last_finish
+       FROM lessons WHERE learner_id = ?`,
+    )
+    .bind(learnerId, learnerId)
+    .first<Row>();
   if (!row) return EMPTY_TOTALS;
   return {
     lessonCount: Number(row.lesson_count),
@@ -164,18 +162,21 @@ export function getTotals(db: DatabaseSync, learnerId: string): Totals {
 }
 
 /** Lessons newest first. Signatures are omitted from the list to keep it light. */
-export function listLessons(db: DatabaseSync, learnerId: string): Lesson[] {
-  const rows = db.prepare(
-    `SELECT id, learner_id, instructor_id, lesson_no, lesson_date, start_time, finish_time, start_odometer, finish_odometer,
-            duration_minutes, distance_km, cumulative_minutes, cumulative_km, taught, competencies_assessed, achieved,
-            location, comments, NULL AS adi_signature, NULL AS learner_signature, created_at
-     FROM lessons WHERE learner_id = ? ORDER BY lesson_no DESC`,
-  ).all(learnerId) as Row[];
-  return rows.map(toLesson);
+export async function listLessons(db: D1Database, learnerId: string): Promise<Lesson[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT id, learner_id, instructor_id, lesson_no, lesson_date, start_time, finish_time, start_odometer, finish_odometer,
+              duration_minutes, distance_km, cumulative_minutes, cumulative_km, taught, competencies_assessed, achieved,
+              location, comments, NULL AS adi_signature, NULL AS learner_signature, created_at
+       FROM lessons WHERE learner_id = ? ORDER BY lesson_no DESC`,
+    )
+    .bind(learnerId)
+    .all<Row>();
+  return results.map(toLesson);
 }
 
-export function createLesson(db: DatabaseSync, learnerId: string, input: LessonInput): Lesson {
-  const learner = getLearner(db, learnerId);
+export async function createLesson(db: D1Database, learnerId: string, input: LessonInput): Promise<Lesson> {
+  const learner = await getLearner(db, learnerId);
 
   const lessonDate = isoDate(input.lessonDate);
   if (!lessonDate) throw new ValidationError("Lesson date is required.");
@@ -197,15 +198,21 @@ export function createLesson(db: DatabaseSync, learnerId: string, input: LessonI
   if (!learnerSignature) throw new ValidationError("Learner signature is required.");
 
   const id = crypto.randomUUID();
-  transaction(db, () => {
-    // Lesson number and cumulative totals are derived inside the transaction.
-    const totals = getTotals(db, learnerId);
-    db.prepare(
+  // Lesson number and cumulative totals are derived from the current totals,
+  // read just before the insert. Same D1 limitation as above: this is two
+  // sequential calls, not one atomic transaction. `UNIQUE (learner_id,
+  // lesson_no)` still rejects a colliding lesson_no outright rather than
+  // silently corrupting totals, for the same single-instructor-at-a-time
+  // usage pattern.
+  const totals = await getTotals(db, learnerId);
+  await db
+    .prepare(
       `INSERT INTO lessons (id, learner_id, instructor_id, lesson_no, lesson_date, start_time, finish_time,
          start_odometer, finish_odometer, duration_minutes, distance_km, cumulative_minutes, cumulative_km,
          taught, competencies_assessed, achieved, location, comments, adi_signature, learner_signature)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    ).run(
+    )
+    .bind(
       id,
       learnerId,
       learner.instructorId,
@@ -226,9 +233,9 @@ export function createLesson(db: DatabaseSync, learnerId: string, input: LessonI
       text(input.comments, 3000),
       adiSignature,
       learnerSignature,
-    );
-  });
+    )
+    .run();
 
-  const row = db.prepare("SELECT * FROM lessons WHERE id = ?").get(id) as Row;
-  return toLesson(row);
+  const row = await db.prepare("SELECT * FROM lessons WHERE id = ?").bind(id).first<Row>();
+  return toLesson(row as Row);
 }

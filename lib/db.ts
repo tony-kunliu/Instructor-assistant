@@ -1,10 +1,25 @@
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { sqliteAsD1 } from "./d1-sqlite.ts";
+import type { D1Database } from "./d1-types.ts";
 import { SCHEMA_SQL, SCHEMA_VERSION } from "./schema.ts";
 
-/** Open (and migrate) a database. Use ":memory:" in tests. */
-export function openDatabase(file: string): DatabaseSync {
+/**
+ * The storage layer (`lib/repo.ts`) only depends on the `D1Database`
+ * interface, so it runs unmodified against either backend:
+ *
+ *  - In a Cloudflare Worker, `getD1()` should return the real `env.DB` D1
+ *    binding (see `migrations/0001_init.sql` — apply it with
+ *    `wrangler d1 migrations apply DB`). Wiring the real binding in still
+ *    needs Cloudflare account credentials this environment doesn't have
+ *    (see STATUS.md).
+ *  - Everywhere else (local `next dev`/`next start`, `npm test`) it returns
+ *    a local D1-compatible adapter backed by `node:sqlite`, using the exact
+ *    same schema (`migrations/0001_init.sql`, mirrored from
+ *    `lib/schema.ts`), so behaviour matches D1 in both places.
+ */
+function openLocalDatabase(file: string): DatabaseSync {
   if (file !== ":memory:") mkdirSync(path.dirname(file), { recursive: true });
   const db = new DatabaseSync(file);
   db.exec("PRAGMA foreign_keys = ON;");
@@ -14,13 +29,18 @@ export function openDatabase(file: string): DatabaseSync {
   return db;
 }
 
-const globalForDb = globalThis as typeof globalThis & { __actgdsDriverDb?: DatabaseSync };
+/** Build a fresh D1-compatible database for tests. Use ":memory:". */
+export function openTestD1(file: string): D1Database {
+  return sqliteAsD1(openLocalDatabase(file));
+}
+
+const globalForDb = globalThis as typeof globalThis & { __actgdsDriverD1?: D1Database };
 
 /** Shared app database (cached across dev hot reloads). */
-export function getDb(): DatabaseSync {
-  if (!globalForDb.__actgdsDriverDb) {
+export function getD1(): D1Database {
+  if (!globalForDb.__actgdsDriverD1) {
     const file = process.env.ACTGDS_DRIVER_DB || path.join(process.cwd(), "data", "actgds-driver.sqlite");
-    globalForDb.__actgdsDriverDb = openDatabase(file);
+    globalForDb.__actgdsDriverD1 = sqliteAsD1(openLocalDatabase(file));
   }
-  return globalForDb.__actgdsDriverDb;
+  return globalForDb.__actgdsDriverD1;
 }
