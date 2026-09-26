@@ -17,6 +17,7 @@ import type { AssessmentResult, LearnerProgress, MilestoneInvalidation } from "@
 import type { CompletionSummary, Instructor, Learner, Lesson } from "@/lib/types.ts";
 import CompetencyPicker from "./competency-picker.tsx";
 import CompetencyProgressCard from "./competency-progress.tsx";
+import ExportPdfButton from "./export-pdf-button.tsx";
 import SignaturePad from "./signature-pad.tsx";
 
 type LessonDraft = {
@@ -244,7 +245,7 @@ export default function DriverApp() {
       });
       storage.set(LAST_INSTRUCTOR_KEY, learnerDraft.instructorName.trim());
       setLearners((current) => [...current, learner].sort((a, b) => a.fullName.localeCompare(b.fullName)));
-      setInstructors((current) => current.some((i) => i.id === learner.instructorId) ? current : [...current, { id: learner.instructorId, fullName: learner.instructorName }]);
+      setInstructors((current) => current.some((i) => i.id === learner.instructorId) ? current : [...current, { id: learner.instructorId, fullName: learner.instructorName, adiNumber: null }]);
       setAddingLearner(false);
       setLearnerDraft(emptyLearner);
       await loadLearner(learner.id);
@@ -432,6 +433,7 @@ export default function DriverApp() {
                 detail.learner.licenceExpiry ? `exp ${detail.learner.licenceExpiry}` : null,
                 `ADI ${detail.learner.instructorName}`].filter(Boolean).join(" · ")}
             </p>
+            <ExportPdfButton learnerId={detail.learner.id} lessonCount={detail.lessons.length} />
           </section>
 
           <CompetencyProgressCard progress={detail.progress} completion={detail.completion} invalidated={invalidation} />

@@ -6,15 +6,89 @@ Repo: `tony-kunliu/instructor-assistant`
 
 | Branch | Commit | State |
 | --- | --- | --- |
-| `main` | `98aa0c047d9b99d309c531cddb81555f8444ab43` | Working rules / docs baseline only. CBT&A MVP, D1 storage, Cloudflare deployment, CBT&A V2 competency selection and V3 history editing not yet merged in. Not deployed. |
-| `staging` | (pending merge of `feature/history-edit-and-finaldrive-gating`) | CBT&A Lesson Checklist MVP + D1-compatible storage + live Cloudflare Staging deployment + CBT&A V2 structured competency selection + CBT&A V3 history editing / corrected Final Drive gating. |
+| `main` | `98aa0c047d9b99d309c531cddb81555f8444ab43` | Working rules / docs baseline only. CBT&A MVP, D1 storage, Cloudflare deployment, CBT&A V2/V3, and PDF export not yet merged in. Not deployed. |
+| `staging` | (pending merge of `feature/cbta-pdf-export`) | CBT&A Lesson Checklist MVP + D1-compatible storage + live Cloudflare Staging deployment + CBT&A V2 structured competency selection + CBT&A V3 history editing / corrected Final Drive gating + official CBT&A PDF export. |
 | `feature/cbta-checklist` | `e7e2c3d93902d286e2bcd03e8ac08541cd6f7186` | CBT&A Lesson Checklist MVP — complete, merged into `staging`. Not yet merged into `main`. |
 | `feature/d1-storage` | `87b40be6258924329ae85f888be6322ef3a00ca4` | D1-compatible storage migration — complete, merged into `staging`. Not yet merged into `main`. |
 | `feature/cbta-competency-selection` | `b2734f5c9b6cbe6d9d5ff85c3fdf16fc74e42adb` | CBT&A V2 structured competency selection — complete, merged into `staging`. Not yet merged into `main`. |
-| `feature/history-edit-and-finaldrive-gating` | (this session) | CBT&A V3 history lesson editing + corrected Final Drive 23 / Review gating — complete, merged into `staging`. Not yet merged into `main`. |
+| `feature/history-edit-and-finaldrive-gating` | `d1b01ef` | CBT&A V3 history lesson editing + corrected Final Drive 23 / Review gating — complete, merged into `staging`. Not yet merged into `main`. |
+| `feature/cbta-pdf-export` | (this session) | Official ADI CBT&A Checklist PDF export — complete, merged into `staging`. Not yet merged into `main`. |
 
 Production: **not deployed**. Production requires separate, explicit
 authorization from Tony (merging to `main` does not imply this).
+
+## CBT&A PDF export — merged into `staging`
+
+One-click export of the official ACT "Competency Based Training and
+Assessment Lesson Checklist" (form 10,044 (7/2002)) for a learner, filled
+with their saved lesson history, built entirely client-side with pdf-lib.
+
+- **Template fidelity:** the exact PDF Tony supplied is committed at
+  `public/pdf-template/adi-cbta-checklist.pdf` and its pages are *copied*
+  into the output (never redrawn) — page size, orientation, columns,
+  header and first-page/continuation-page structure are all the original
+  template's own. Page 1 holds 5 lesson rows (with the ADI/student header);
+  every continuation page holds 6. Geometry (column x-bounds, row
+  y-offsets, header field boxes) was measured directly from the template's
+  own vector rects/text and lives as pure data in `lib/pdf-layout.ts`.
+- **Data exported:** ADI name/number, student details, Date/Lesson No.,
+  Start/Finish time + cumulative hours, Start/Finish odometer + cumulative
+  km, Taught/Assessed/Achieved (verbatim — old free-text lesson records are
+  never reinterpreted into competency events), Location/Comments, the
+  matching ADI/Learner signature images (scaled to fit each cell, aspect
+  ratio preserved, never stretched or reused across lessons), and page
+  numbers on every page. Review 1-17 / Review 1-22 / 23 Final Drive already
+  render as distinct text labels (not plain numbers) since that's how
+  `lib/competency.ts#competencyLabel` formats them — visually distinct in
+  the PDF automatically.
+- **Only saved data, current version:** exports the learner's saved lessons
+  in `lesson_no` order via a new `listLessonsForExport` (never a draft);
+  since it queries the database fresh each time, editing a history lesson
+  (CBT&A V3) and exporting again reflects the new odometer/time/cumulative/
+  content/signatures immediately — verified directly.
+- **Missing ADI number handled explicitly:** `instructors.adi_number`
+  existed in the schema but was never surfaced anywhere in the app. Now
+  exposed on `Instructor`/`Learner` and editable via a new `PATCH /api/
+  instructors/:id`. If missing when exporting, the UI shows a one-field
+  prompt to fill it in before the PDF is built — no fabricated data.
+- **Nothing silently cut:** a Taught/Assessed/Achieved/Location/Comments
+  value that doesn't fit its cell gets a "(see Additional Notes page)"
+  marker and its full, untruncated text on an appendix page (labelled by
+  lesson number and field), continuing the same page-number sequence as
+  the main checklist. English and Chinese render correctly in the same
+  cell (word-wrap for Latin, character-by-character fallback for unspaced
+  CJK runs) via an embedded, licensed CJK font (Noto Sans CJK SC, SIL OFL
+  1.1, `public/fonts/`).
+- **Access:** the new `GET /api/learners/:id/export` (and everything else)
+  sits behind the same site-wide Basic Auth as the rest of the app (see
+  `middleware.ts`) — no public PDF link is ever created, and no data is
+  sent to a third-party PDF service (pdf-lib runs entirely in the
+  requesting browser).
+- **A real, non-obvious bug found and fixed by this round's own visual QA:**
+  the embedded CJK font substitutes digits for context-dependent alternate
+  glyphs via the OpenType `locl` (localized forms) feature, which pdf-lib's
+  declared PDF `/W` width table doesn't cover — every digit rendered with a
+  large, wrong gap after it. Caught by actually rendering sample PDFs to
+  images and reading them (not just checking the file was produced), and
+  confirmed independently in two unrelated PDF renderers (poppler and
+  Chromium's PDFium) before concluding it wasn't a viewer quirk. Fixed by
+  embedding with `{ features: { locl: false } }`; a regression test
+  (`tests/pdf-export.test.ts`) encodes the root cause directly.
+- **Verification:** `npm run build` / `npm test`: PASS (41/41, new
+  `tests/pdf-export.test.ts` covers 0/1/5/6/11/12-lesson pagination, an
+  empty-lesson-list rejection, an overflow-appendix case, and the digit/
+  `locl` regression). Sample PDFs for every row count were rendered to
+  images and read page by page — header fields, cumulative math, mixed
+  Chinese/English text, Review/Final-Drive labels, two independently
+  distinguishable signatures per lesson, and the appendix page all
+  verified correct, with no overlap, cropping, or misalignment across
+  pages. Full mobile E2E (iPhone 13 viewport) against the real running
+  app: 0-lesson message shown correctly; missing-ADI-number prompt shown;
+  saving it triggers a real PDF download (verified as a valid `%PDF-...`
+  file); a second export (ADI number now set) downloads directly. This is
+  emulated-browser verification only — Tony's own on-device check (opening
+  the downloaded PDF on his iPhone) is still needed before treating mobile
+  PDF viewing/saving as fully confirmed.
 
 ## CBT&A V3 — history lesson editing + corrected Final Drive gating — merged into `staging`
 
@@ -289,9 +363,14 @@ Verification:
 - Zero Trust Access not yet enabled on the Cloudflare account (see above) —
   Basic Auth is an interim stand-in for Staging only.
 - No public production deployment.
-- Saved lessons cannot be edited or deleted.
+- Saved lessons can be edited (CBT&A V3) but not deleted.
 - No offline mode / service worker.
 - iOS home-screen icon is a basic SVG placeholder.
+- The embedded CJK font for PDF export (`public/fonts/NotoSansSC-Regular.otf`)
+  is ~16 MB, needed for full Chinese character coverage and only fetched by
+  the browser when Export is actually clicked (not part of the main app
+  bundle); the *exported* PDF itself stays small since only the glyphs
+  actually used get embedded.
 - `npm audit` on the pre-existing dependency set showed 2 high / 1 critical
   advisories before this session's `next` version bump; the bump to
   `16.3.6` (needed for the Cloudflare adapter) incidentally resolved all of
