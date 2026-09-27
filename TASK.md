@@ -13,6 +13,10 @@ should coordinated QA against a real (non-production) webhook URL/secret
 begin. Not started automatically — waiting for Tony's go-ahead per
 `AGENTS.md` §11.
 
+**Coordination Issue:** UPDATED — posted the SENDER ALIGNED handshake at
+https://github.com/tony-kunliu/actgds.com/issues/3#issuecomment-5855418499
+(commit `52ffde6`).
+
 **Waiting on Other Repo:** ACTGDS Receiver final ACK/cross-review of this
 Sender's alignment (Issue #3). Beyond that, ACTGDS still needs the
 human-only step of linking a real Instructor Assistant `learner_id` (via

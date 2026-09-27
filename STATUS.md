@@ -249,6 +249,9 @@ matched exactly.
   anywhere for real, configuring a real webhook URL/secret, connecting to
   a real ACTGDS receiver, historical lesson backfill, live-firing the Cron
   Trigger.
+- **Cross-repo handshake posted:** [Issue #3 comment](https://github.com/tony-kunliu/actgds.com/issues/3#issuecomment-5855418499)
+  (commit `52ffde6`, `STATUS: SENDER ALIGNED`) — ACK'd the canonical hash
+  and commit, per ACTGDS's own FROM/REPO/BRANCH/COMMIT/... handoff format.
 
 ## Rollback baseline — recorded before `feature/instructor-identity` (Instructor Identity V1)
 
