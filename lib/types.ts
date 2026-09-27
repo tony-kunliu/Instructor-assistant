@@ -77,7 +77,8 @@ export type LearnerInput = {
   eligibility?: unknown;
   transmission?: unknown;
   schoolWork?: unknown;
-  instructorName?: unknown;
+  /** Must be an existing, active instructor id — free-text instructor names/auto-creation are no longer accepted (see lib/repo.ts#createLearner). */
+  instructorId?: unknown;
 };
 
 export type LessonInput = {

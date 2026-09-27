@@ -45,7 +45,8 @@ type LearnerDraft = {
   eligibility: string;
   transmission: string;
   schoolWork: string;
-  instructorName: string;
+  /** Must be an existing, active instructor's id — selected from a dropdown, never free-typed (see lib/repo.ts#createLearner). */
+  instructorId: string;
 };
 
 type Detail = { learner: Learner; totals: Totals; lessons: Lesson[]; progress: LearnerProgress; completion: CompletionSummary | null };
@@ -60,7 +61,7 @@ const emptyLearner: LearnerDraft = {
   eligibility: "",
   transmission: "",
   schoolWork: "",
-  instructorName: "",
+  instructorId: "",
 };
 
 function freshLesson(startOdometer: number | null): LessonDraft {
@@ -162,6 +163,7 @@ export default function DriverApp() {
   const [editStatus, setEditStatus] = useState<string | null>(null);
   const [invalidation, setInvalidation] = useState<MilestoneInvalidation | null>(null);
   const [signedInAs, setSignedInAs] = useState<string | null>(null);
+  const [signedInInstructorId, setSignedInInstructorId] = useState<string | null>(null);
 
   const totals = detail?.totals ?? EMPTY_TOTALS;
 
@@ -195,6 +197,7 @@ export default function DriverApp() {
         setLearners(learnerData.learners);
         setInstructors(instructorData.instructors);
         setSignedInAs(meData.instructor?.fullName ?? null);
+        setSignedInInstructorId(meData.instructor?.id ?? null);
         const last = storage.get(LAST_LEARNER_KEY);
         if (last && learnerData.learners.some((l) => l.id === last)) await loadLearner(last);
         else if (!learnerData.learners.length) setAddingLearner(true);
@@ -246,13 +249,8 @@ export default function DriverApp() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify(learnerDraft),
       });
-      storage.set(LAST_INSTRUCTOR_KEY, learnerDraft.instructorName.trim());
+      storage.set(LAST_INSTRUCTOR_KEY, learner.instructorId);
       setLearners((current) => [...current, learner].sort((a, b) => a.fullName.localeCompare(b.fullName)));
-      setInstructors((current) =>
-        current.some((i) => i.id === learner.instructorId)
-          ? current
-          : [...current, { id: learner.instructorId, fullName: learner.instructorName, adiNumber: null, email: null, status: "active" }],
-      );
       setAddingLearner(false);
       setLearnerDraft(emptyLearner);
       await loadLearner(learner.id);
@@ -351,7 +349,11 @@ export default function DriverApp() {
   };
 
   const openAddLearner = () => {
-    setLearnerDraft({ ...emptyLearner, instructorName: storage.get(LAST_INSTRUCTOR_KEY) ?? instructors[0]?.fullName ?? "" });
+    // Default to the signed-in instructor (Cloudflare Access); with no Access
+    // identity (local dev), fall back to whoever this device last picked,
+    // then the first active instructor — always still changeable via the dropdown.
+    const defaultInstructorId = signedInInstructorId ?? storage.get(LAST_INSTRUCTOR_KEY) ?? instructors[0]?.id ?? "";
+    setLearnerDraft({ ...emptyLearner, instructorId: instructors.some((i) => i.id === defaultInstructorId) ? defaultInstructorId : "" });
     setAddingLearner(true);
     setStatus(null);
   };
@@ -414,8 +416,10 @@ export default function DriverApp() {
             </label>
             <label className="field full"><span>School / Work</span><input value={learnerDraft.schoolWork} onChange={(e) => learnerField("schoolWork", e.target.value)} /></label>
             <label className="field full"><span>Instructor *</span>
-              <input list="instructor-list" value={learnerDraft.instructorName} onChange={(e) => learnerField("instructorName", e.target.value)} autoComplete="off" />
-              <datalist id="instructor-list">{instructors.map((i) => <option key={i.id} value={i.fullName} />)}</datalist>
+              <select value={learnerDraft.instructorId} onChange={(e) => learnerField("instructorId", e.target.value)}>
+                <option value="">Select instructor…</option>
+                {instructors.map((i) => <option key={i.id} value={i.id}>{i.fullName}</option>)}
+              </select>
             </label>
           </div>
           <button type="button" className="btn primary block" disabled={saving} onClick={() => void addLearner()}>

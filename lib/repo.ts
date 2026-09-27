@@ -155,14 +155,6 @@ export async function updateInstructorAdiNumber(db: D1Database, instructorId: st
   return { ...toInstructor(existing), adiNumber: value };
 }
 
-async function findOrCreateInstructor(db: D1Database, name: string): Promise<string> {
-  const existing = await db.prepare("SELECT id FROM instructors WHERE lower(full_name) = lower(?)").bind(name).first<Row>();
-  if (existing) return String(existing.id);
-  const id = crypto.randomUUID();
-  await db.prepare("INSERT INTO instructors (id, full_name) VALUES (?, ?)").bind(id, name).run();
-  return id;
-}
-
 // ── Learners ─────────────────────────────────────────────────────────────
 
 const LEARNER_SELECT = `
@@ -183,19 +175,16 @@ export async function getLearner(db: D1Database, id: string): Promise<Learner> {
 export async function createLearner(db: D1Database, input: LearnerInput): Promise<Learner> {
   const fullName = text(input.fullName, 120);
   if (!fullName) throw new ValidationError("Student name is required.");
-  const instructorName = text(input.instructorName, 120);
-  if (!instructorName) throw new ValidationError("Instructor is required.");
+  // Instructor must already exist and be active — no free-text name, no
+  // auto-creation. Reuses the same existing-and-active check as lesson
+  // attribution, just made required here (an omitted/unknown/inactive id
+  // throws ValidationError -> 400, never silently creates an instructor row).
+  const instructorId = await resolveActingInstructorId(db, input.instructorId);
+  if (!instructorId) throw new ValidationError("Instructor is required.");
   const transmissionRaw = String(input.transmission ?? "").trim().toLowerCase();
   const transmission = transmissionRaw === "manual" || transmissionRaw === "auto" ? transmissionRaw : null;
 
   const id = crypto.randomUUID();
-  // Note: D1 has no read-then-write transaction across separate calls (only
-  // db.batch() for pre-built, independent statements), so find-or-create is
-  // two sequential round trips rather than one atomic unit. The unique index
-  // on instructors(lower(full_name)) still prevents duplicate rows outright
-  // (a concurrent race would surface as a constraint error, not silent
-  // duplication) — acceptable for this single-instructor-at-a-time app.
-  const instructorId = await findOrCreateInstructor(db, instructorName);
   await db
     .prepare(
       `INSERT INTO learners (id, instructor_id, full_name, address, phone, dob, licence_number, licence_expiry, eligibility, transmission, school_work)

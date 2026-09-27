@@ -1,16 +1,20 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { openTestD1 } from "../lib/db.ts";
-import { createLearner, createLesson, getLearnerProgress, listLessons, updateLesson } from "../lib/repo.ts";
+import { createLearner, createLesson, findInstructorByEmail, getLearnerProgress, listLessons, updateLesson } from "../lib/repo.ts";
 import { REVIEW_1_17 } from "../lib/competency.ts";
 
 const SIG_A = "data:image/png;base64,iVBORw0KGgoAAAA1";
 const SIG_B = "data:image/png;base64,iVBORw0KGgoAAAA2";
 const SIG_C = "data:image/png;base64,iVBORw0KGgoAAAA3";
 
+// Seeded by lib/schema.ts — see tests/instructor-identity.test.ts.
+const TONY_EMAIL = "Kunliu.work@gmail.com";
+
 async function setup() {
   const db = openTestD1(":memory:");
-  const learner = await createLearner(db, { fullName: "Edit Test Learner", instructorName: "Edit Test Instructor" });
+  const tony = await findInstructorByEmail(db, TONY_EMAIL);
+  const learner = await createLearner(db, { fullName: "Edit Test Learner", instructorId: tony?.id });
   return { db, learner };
 }
 
