@@ -1,34 +1,63 @@
 # TASK.md
 
-**Current Task:** Sender Contract + Reliability Alignment — **Completed**
-(on `feature/actgds-integration-v1`; see below for exactly what
-"completed" does and doesn't include).
+**Current Task:** History Edit downstream integration propagation fix —
+**Completed** (on `feature/actgds-integration-v1`; see below for exactly
+what "completed" does and doesn't include).
 
-**Next Recommended Task:** ACTGDS (Work) performs a final cross-repo
-compatibility review of this Sender branch — confirm the schema hash match
-(`c43d28164bb1c5c0e316e2d2f1cee77ad627508ef7dca4d58516adab8852b7e6`),
-review `lib/integration/` and the atomicity/retry changes, and post their
-own ACK in Issue #3. Only after that, and Tony's separate authorization,
+**Next Recommended Task:** ACTGDS (Work) repeats its focused cross-repo
+compatibility review against this fix (new commit — see report), since
+their prior review found the History Edit propagation blocker and marked
+Sender status `BLOCKED`. Confirm the reproduction now passes, the
+canonical hash is still unchanged, and no regressions in the previously
+PASS-ed areas. Only after their PASS and Tony's separate authorization
 should coordinated QA against a real (non-production) webhook URL/secret
 begin. Not started automatically — waiting for Tony's go-ahead per
 `AGENTS.md` §11.
 
-**Coordination Issue:** UPDATED — posted the SENDER ALIGNED handshake at
-https://github.com/tony-kunliu/actgds.com/issues/3#issuecomment-5855418499
-(commit `52ffde6`).
+**Coordination Issue:** UPDATED — see the FROM: Claude / Instructor
+Assistant Sender comment in
+https://github.com/tony-kunliu/actgds.com/issues/3 for this round's
+handoff (posted after this commit).
 
-**Waiting on Other Repo:** ACTGDS Receiver final ACK/cross-review of this
-Sender's alignment (Issue #3). Beyond that, ACTGDS still needs the
-human-only step of linking a real Instructor Assistant `learner_id` (via
-the "Copy ID" button) to a real ACTGDS student record before any live data
-could flow meaningfully — that's Tony's manual CRM step, not something
-either repo automates.
+**Waiting on Other Repo:** `tony-kunliu/actgds.com` Issue #3 — ACTGDS
+(Work) repeats its focused cross-repo compatibility review of this fix.
+Beyond that, ACTGDS still needs the human-only step of linking a real
+Instructor Assistant `learner_id` (via the "Copy ID" button) to a real
+ACTGDS student record before any live data could flow meaningfully —
+that's Tony's manual CRM step, not something either repo automates.
 
 **Tony Manual Action Required:** NONE this round. (Later, turning this on
 for real will need: `wrangler secret put ACTGDS_WEBHOOK_SECRET` per
 environment, setting a real `ACTGDS_WEBHOOK_URL`, and flipping
 `ACTGDS_INTEGRATION_ENABLED` to `"true"` — none of that is done or asked
 for yet.)
+
+**Completed this session (History Edit downstream integration propagation fix):**
+
+Read ACTGDS's cross-repo review comment first (Issue #3, `STATUS: BLOCKED`,
+independently re-fetched Sender HEAD `f2aedf5`) before changing anything,
+per instruction. Reproduced their exact blocker as a test against the
+pre-fix code first (genuinely failed — 6/8 new assertions), then fixed it:
+`lib/repo.ts#updateLesson` now also enqueues a propagated `lesson.upserted`
+event, in the same atomic `db.batch()` as the edit, for every downstream
+lesson that has already entered the Integration domain (at least one prior
+`integration_outbox` row for its lesson_id) — using that lesson's own
+content and a `source_updated_at` guaranteed strictly newer than its prior
+version. A downstream lesson never previously exported is still never
+backfilled. 8 new tests (`tests/integration-history-edit-propagation.test.ts`,
+covering the exact Work reproduction, multiple downstream lessons, no-
+backfill, mixed exported/unexported, strict version monotonicity, each
+lesson's own competency data, progress-snapshot propagation from a
+competency-only edit, and atomic rollback including the propagated
+events); full suite 109/109 PASS (101 prior + 8 new); `npm run build`
+PASS. Canonical schema/hash unchanged; only a documentation wording fix
+(retry cadence is minimum eligibility, not exact timing, per Work's
+non-blocker note) — no code change to retry/HMAC/event-id/Cron, which
+were not touched this round beyond re-running their existing tests. Not
+merged into `staging`/`main`; nothing deployed; no real secret/webhook
+configured; migration `0005` not applied to any remote D1; ACTGDS repo
+untouched (read-only). Full detail in STATUS.md's "History Edit downstream
+Integration propagation fix" section.
 
 **Completed this session (Sender Contract + Reliability Alignment):**
 

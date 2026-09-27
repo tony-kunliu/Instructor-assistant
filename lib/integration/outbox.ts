@@ -75,6 +75,36 @@ export async function listOutboxRowsForLearner(db: D1Database, learnerId: string
   return results.map(toOutboxRow);
 }
 
+/**
+ * For a set of lesson ids, the most recent `source_updated_at` this outbox has ever recorded for each —
+ * regardless of that event's current status (pending/delivered/permanent_failure), any prior event at all
+ * means the lesson has already entered the Integration domain (see History Edit downstream propagation:
+ * lib/repo.ts#updateLesson). A lesson id with no entry in the returned map has never been exported and must
+ * never be backfilled just because an earlier lesson was edited.
+ */
+export async function latestSourceUpdatedAtByLesson(db: D1Database, lessonIds: readonly string[]): Promise<Map<string, string>> {
+  const result = new Map<string, string>();
+  if (lessonIds.length === 0) return result;
+  const placeholders = lessonIds.map(() => "?").join(", ");
+  const { results } = await db
+    .prepare(`SELECT lesson_id, MAX(source_updated_at) AS latest FROM integration_outbox WHERE lesson_id IN (${placeholders}) GROUP BY lesson_id`)
+    .bind(...lessonIds)
+    .all<Row>();
+  for (const row of results) result.set(String(row.lesson_id), String(row.latest));
+  return result;
+}
+
+/**
+ * The receiver upserts on (lesson_id, source_updated_at) — reusing or undercutting a lesson's existing
+ * version is silently ignored as `stale_ignored`, which would look like a successful propagation while
+ * actually fixing nothing. Guarantees the returned timestamp is strictly newer than `latestExistingIso`
+ * (if any), never assuming `candidateIso` (typically "now") already is.
+ */
+export function ensureStrictlyNewerSourceUpdatedAt(candidateIso: string, latestExistingIso: string | null): string {
+  if (!latestExistingIso) return candidateIso;
+  return new Date(candidateIso).getTime() > new Date(latestExistingIso).getTime() ? candidateIso : new Date(new Date(latestExistingIso).getTime() + 1).toISOString();
+}
+
 export async function markOutboxDelivered(db: D1Database, id: string, nowIso: string): Promise<void> {
   await db.prepare("UPDATE integration_outbox SET status = 'delivered', delivered_at = ? WHERE id = ?").bind(nowIso, id).run();
 }

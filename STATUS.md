@@ -15,18 +15,18 @@ Repo: `tony-kunliu/instructor-assistant`
   Access "Sign out" link. This round's ACTGDS integration work is on its
   own feature branch, **not yet merged into `staging`**.
 - **`feature/actgds-integration-v1`** (off `staging@c862ba5`): ACTGDS
-  Integration V1 sender, now **Contract Alignment + Reliability
-  Alignment complete**: canonical schema copied byte-for-byte from ACTGDS
-  (`contract_schema_sha256` `c43d28164bb1c5c0e316e2d2f1cee77ad627508ef7dca4d58516adab8852b7e6`,
-  confirmed against their Issue #3 handoff), event_id immutability fixed
-  (retries resend the exact stored raw bytes, never re-serialized), the
-  outbox enqueue is now in the *same* atomic `db.batch()` as the lesson
-  write (closes the durability gap the first Sender round left open), and
-  a Cloudflare Cron Trigger + wrapper Worker entry
-  (`worker/scheduled-entry.ts`) sweep due retries periodically. Disabled by
-  default (`ACTGDS_INTEGRATION_ENABLED=false`); no real webhook URL/secret
-  configured; not merged, not deployed. See "ACTGDS Integration V1 —
-  Contract + Reliability Alignment" below for full detail.
+  Integration V1 sender. Contract Alignment + Reliability Alignment
+  complete (canonical schema byte-identical, event-id immutability fixed,
+  atomic outbox enqueue, periodic retry sweep), **and now the History Edit
+  downstream-propagation blocker ACTGDS's cross-repo review found is also
+  fixed**: editing an earlier lesson now propagates a fresh
+  `lesson.upserted` event to every already-exported downstream lesson
+  whose cumulative totals or progress snapshot changed, atomically with
+  the edit itself — no more permanently-stale ACTGDS mirrors for lessons
+  after the one actually edited. Disabled by default
+  (`ACTGDS_INTEGRATION_ENABLED=false`); no real webhook URL/secret
+  configured; not merged, not deployed. See "History Edit downstream
+  Integration propagation fix" below for full detail.
 - **Staging Worker** live version: `9939629c-7886-4338-9126-a70f8e330b91`.
   **Production Worker** live version: `a5708df9-5dcf-4c10-b26b-212fb4bf9a3f`.
   Both D1s (`instructor-assistant-db`, `instructor-assistant-db-production`)
@@ -128,6 +128,107 @@ entirely inert until explicitly turned on per environment.
   anywhere, configuring a real webhook URL/secret, connecting to a real
   ACTGDS receiver, historical lesson backfill, and the Cron Trigger wiring
   noted above.
+
+## History Edit downstream Integration propagation fix (same feature branch, follow-up round)
+
+**Rollback baseline recorded before this round:** identical to the previous
+round's (`main` `8bae4e4`, `staging` `c862ba5`, Staging Worker
+`9939629c-7886-4338-9126-a70f8e330b91`, Production Worker
+`a5708df9-5dcf-4c10-b26b-212fb4bf9a3f`, both D1s at migration `0004`) —
+still nothing live to roll back; this round only advances
+`feature/actgds-integration-v1` itself.
+
+**The blocker**, found by ACTGDS (Work) in real cross-repo behavioral
+testing (both Sender and Receiver code, isolated in-memory DBs, synthetic
+secret — see their [Issue #3 report](https://github.com/tony-kunliu/actgds.com/issues/3#issuecomment-5855527779)):
+`updateLesson` always recalculates every downstream lesson's
+`cumulative_minutes`/`cumulative_km` in this app's own database (existing,
+correct behavior — see CBT&A V3 history editing), but only ever produced a
+fresh `lesson.upserted` outbox event for the *directly edited* lesson.
+Editing Lesson #1 (60 min/10 km → 90 min/15 km) after both Lesson #1 and
+an already-exported Lesson #2 had been delivered left Lesson #2's ACTGDS
+mirror permanently stuck at its stale 120 min/20 km — no cron sweep could
+ever fix it, because no new event for Lesson #2 was ever created to retry.
+
+- **Fix:** `lib/repo.ts#updateLesson` now also builds a propagated
+  `lesson.upserted` outbox INSERT for every downstream lesson (`lesson_no`
+  greater than the edited lesson's) that has **already entered the
+  Integration domain** — defined as: at least one existing
+  `integration_outbox` row for that lesson's id, in *any* status
+  (pending, delivered, or permanent_failure). A downstream lesson with no
+  prior event is left untouched — giving it one now would be silent
+  historical backfill, which this contract has always explicitly
+  forbidden, and remains forbidden. New helper:
+  `lib/integration/outbox.ts#latestSourceUpdatedAtByLesson` (one query,
+  batched over every downstream lesson id) tells the fix which downstream
+  lessons qualify.
+- **Content correctness:** each propagated event carries that downstream
+  lesson's *own* `lesson_date`/`start_time`/`finish_time`/`instructor_id`/
+  `taught`/`assessed`/`achieved` (reconstructed from its own
+  `competency_events`, already fetched once earlier in the function as
+  `otherLessonsEvents`) and its own newly recalculated cumulative totals
+  (captured per-lesson in a `downstreamNewCumulative` map while the
+  existing cumulative-update loop runs) — never a copy of the edited
+  lesson's content. The learner-wide `progress` snapshot in every
+  propagated event is the same freshly recomputed `after` snapshot the
+  direct edit's own event already uses, so a competency-only edit to an
+  earlier lesson (no duration/distance change) still correctly refreshes
+  every already-exported downstream lesson's `progress` field even when
+  its own `cumulative_*` numbers didn't move.
+- **Strictly newer `source_updated_at`:** new helper
+  `lib/integration/outbox.ts#ensureStrictlyNewerSourceUpdatedAt` guarantees
+  each propagated event's version is strictly greater than whatever this
+  outbox has already recorded for that lesson id — never assumed just
+  because it's "now" (two edits executed within the same millisecond, or
+  clock oddities, would otherwise risk the receiver's `stale_ignored`
+  outcome, which looks like a successful propagation while silently fixing
+  nothing).
+- **Atomicity preserved:** every propagated INSERT is built (instructor
+  name lookup + payload construction) *before* the batch, exactly like the
+  direct edit's own outbox row, and pushed into the *same*
+  `db.batch([...])` call — the edited lesson, its competency events,
+  every downstream lesson's cumulative update, the direct edit's own
+  event, and every propagated downstream event all commit together or not
+  at all. A new failure-injection test (`tests/
+  integration-history-edit-propagation.test.ts` test H) proves this with
+  real persisted-state checks (not just a batch-call count): a forced
+  `db.batch()` failure leaves neither Lesson #1's edit, Lesson #2's
+  cumulative change, nor any new outbox row — direct or propagated —
+  behind.
+- **Regression proof, as required:** the exact scenario ACTGDS reproduced
+  (test A) was run against the *pre-fix* code first (`git stash` on
+  `lib/repo.ts`/`lib/integration/outbox.ts`, tests re-run, restored
+  afterward) — 6 of the 8 new tests genuinely FAIL on the old
+  implementation and PASS on the fix, not just written to already pass.
+- **Verification:** `npm run build` / `npm test`: PASS (**109/109** — the
+  101 tests from the previous two rounds unchanged, plus 8 new in
+  `tests/integration-history-edit-propagation.test.ts` covering: A) the
+  exact Work reproduction end-to-end including a simulated receiver
+  mirror correction; B) propagation to multiple downstream lessons (#2
+  *and* #3, not just the next one); C) no backfill when the downstream
+  lesson was never exported; D) mixed exported/unexported downstream
+  lessons propagate correctly to only the exported one; E) strictly
+  increasing `source_updated_at` across repeated edits; F) a downstream
+  event carries its own competency data, never the edited lesson's; G)
+  progress-snapshot propagation from a competency-only edit; H) atomic
+  rollback covering downstream propagation. Canonical schema untouched —
+  `docs/integrations/lesson-upserted-v1.schema.json` unchanged,
+  `contract_schema_sha256` still
+  `c43d28164bb1c5c0e316e2d2f1cee77ad627508ef7dca4d58516adab8852b7e6`.
+  Retry/HMAC/event-id/Cron code paths untouched this round — only their
+  existing regression tests were re-run to confirm they still pass, per
+  instruction not to rewrite already-reviewed code without cause.
+- **Documentation correction (no code change):** clarified in
+  `docs/integrations/actgds-instructor-assistant-v1.md`'s Retry schedule
+  section, per Work's non-blocker note, that the 1m/5m/30m/2h/12h backoff
+  values are *minimum retry eligibility*, not exact execution times — the
+  actual retry happens at the next 5-minute Cron sweep at or after that
+  eligibility, so e.g. "+1 min" can land up to roughly +6 min in practice.
+- **Not done, deliberately:** merging into `staging`/`main`, deploying
+  anywhere for real, configuring a real webhook URL/secret, connecting to
+  a real ACTGDS receiver, applying migration `0005` to any remote D1,
+  modifying the canonical contract, modifying the ACTGDS repo (read-only
+  inspection only).
 
 ## ACTGDS Integration V1 — Contract + Reliability Alignment (same feature branch, follow-up round)
 

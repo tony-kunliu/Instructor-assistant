@@ -100,11 +100,18 @@ save/edit commits (via the caller-supplied `IntegrationHooks.schedule` —
 `ExecutionContext.waitUntil` in the real deployed Worker, so a slow/
 unreachable webhook can't hold up or crash the request). Durability itself
 comes from the outbox, not the immediate attempt. On a retryable failure,
-backoff: immediate → 1 min → 5 min → 30 min → 2 hr → 12 hr, then
-`permanent_failure` (6 attempts total). A separate periodic sweep
-(`worker/scheduled-entry.ts`'s Cloudflare Cron Trigger, every 5 minutes —
-see STATUS.md for what's verified about this and what isn't) calls the
-same `processDueOutbox` function so a retry scheduled for later doesn't
+backoff sets `next_attempt_at` to immediate → 1 min → 5 min → 30 min → 2 hr
+→ 12 hr, then `permanent_failure` (6 attempts total) — **these are minimum
+retry eligibility offsets, not exact execution deadlines.** A row only
+actually gets retried at the next Cron sweep at or after its
+`next_attempt_at`, and the sweep itself runs every 5 minutes
+(`worker/scheduled-entry.ts`'s Cloudflare Cron Trigger — see STATUS.md for
+what's verified about this and what isn't). A "+1 min" eligibility can
+therefore land anywhere up to roughly +6 min in practice (the 1-minute
+offset plus up to another ~5 minutes waiting for the next sweep), and
+runtime delays can add a little more — never earlier than eligibility,
+routinely somewhat later. The same `processDueOutbox` function runs the
+sweep, so a retry scheduled for later doesn't
 sit waiting for an unrelated future lesson save to (accidentally) trigger
 it again.
 

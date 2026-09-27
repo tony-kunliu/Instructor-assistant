@@ -16,7 +16,7 @@ import {
 } from "./competency.ts";
 import type { D1Database, D1PreparedStatement } from "./d1-types.ts";
 import { buildLessonUpsertedPayload, type BuildLessonUpsertedInput } from "./integration/contract.ts";
-import { insertOutboxRowStatement } from "./integration/outbox.ts";
+import { ensureStrictlyNewerSourceUpdatedAt, insertOutboxRowStatement, latestSourceUpdatedAtByLesson } from "./integration/outbox.ts";
 import { processDueOutbox } from "./integration/sender.ts";
 import type { IntegrationHooks } from "./integration/types.ts";
 import type { CompletionSummary, Instructor, Learner, LearnerInput, Lesson, LessonInput } from "./types.ts";
@@ -585,8 +585,12 @@ export async function updateLesson(db: D1Database, learnerId: string, lessonId: 
     .prepare("SELECT COALESCE(SUM(duration_minutes), 0) AS m, COALESCE(SUM(distance_km), 0) AS k FROM lessons WHERE learner_id = ? AND lesson_no < ?")
     .bind(learnerId, existing.lessonNo)
     .first<Row>();
+  // Full row shape (not just duration/distance) — a downstream lesson that
+  // already has its own Integration event needs its own lesson_date/
+  // start_time/finish_time/instructor to build a correct propagated event
+  // (see the ACTGDS History Edit downstream-propagation fix below).
   const { results: laterLessons } = await db
-    .prepare("SELECT id, duration_minutes, distance_km FROM lessons WHERE learner_id = ? AND lesson_no > ? ORDER BY lesson_no ASC")
+    .prepare("SELECT id, lesson_no, lesson_date, start_time, finish_time, duration_minutes, distance_km, instructor_id, created_at FROM lessons WHERE learner_id = ? AND lesson_no > ? ORDER BY lesson_no ASC")
     .bind(learnerId, existing.lessonNo)
     .all<Row>();
 
@@ -627,10 +631,15 @@ export async function updateLesson(db: D1Database, learnerId: string, lessonId: 
     );
 
   const cumulativeUpdates: D1PreparedStatement[] = [];
+  // lesson_id -> its own recalculated cumulative totals, for the ACTGDS
+  // downstream-propagation events built below (never the edited lesson's
+  // own totals — each downstream lesson gets its own).
+  const downstreamNewCumulative = new Map<string, { minutes: number; km: number }>();
   for (const row of laterLessons) {
     runningMinutes += Number(row.duration_minutes);
     runningKm += Number(row.distance_km);
     cumulativeUpdates.push(db.prepare("UPDATE lessons SET cumulative_minutes = ?, cumulative_km = ? WHERE id = ?").bind(runningMinutes, runningKm, row.id));
+    downstreamNewCumulative.set(String(row.id), { minutes: runningMinutes, km: runningKm });
   }
 
   const deleteOldEvents = db.prepare("DELETE FROM competency_events WHERE lesson_id = ?").bind(lessonId);
@@ -676,10 +685,72 @@ export async function updateLesson(db: D1Database, learnerId: string, lessonId: 
     progress: after,
   });
 
+  // ACTGDS History Edit downstream propagation (bug fix — see
+  // docs/integrations/actgds-instructor-assistant-v1.md and
+  // tony-kunliu/actgds.com Issue #3): editing this lesson changes every
+  // downstream lesson's cumulative_minutes/km (above) and can change the
+  // learner-wide progress snapshot every already-exported lesson's payload
+  // carries — but only a downstream lesson that has *already* entered the
+  // Integration domain (at least one existing integration_outbox row for
+  // its lesson_id, in any status: pending, delivered, or
+  // permanent_failure) gets a fresh event. A downstream lesson with no
+  // prior event is left alone — giving it one now would be silent
+  // historical backfill, which this contract explicitly forbids. Each
+  // propagated event carries that downstream lesson's *own* content (its
+  // own taught/assessed/achieved, its own instructor) — never the edited
+  // lesson's — and a source_updated_at guaranteed strictly newer than any
+  // version already recorded for that lesson_id, so the receiver never
+  // silently treats it as stale.
+  const downstreamOutboxInserts: D1PreparedStatement[] = [];
+  if (integration?.config.enabled && laterLessons.length > 0) {
+    const downstreamLessonIds = laterLessons.map((row) => String(row.id));
+    const latestByLesson = await latestSourceUpdatedAtByLesson(db, downstreamLessonIds);
+    for (const row of laterLessons) {
+      const downstreamLessonId = String(row.id);
+      const latestExisting = latestByLesson.get(downstreamLessonId);
+      if (latestExisting === undefined) continue; // never exported before — never backfilled now
+
+      const ownEvents = otherLessonsEvents.filter((event) => event.lessonId === downstreamLessonId);
+      const ownTaughtIds = ownEvents.filter((event) => event.action === "taught").map((event) => event.competencyId);
+      const ownAssessedEvents = ownEvents.filter((event) => event.action === "assessed");
+      const ownAssessedIds = ownAssessedEvents.map((event) => event.competencyId);
+      const ownAchievedIds = ownAssessedEvents.filter((event) => event.result === "achieved").map((event) => event.competencyId);
+      const cumulative = downstreamNewCumulative.get(downstreamLessonId)!;
+
+      const downstreamInsert = await prepareIntegrationOutboxInsert(db, integration, {
+        learnerId,
+        instructorId: String(row.instructor_id),
+        lesson: {
+          id: downstreamLessonId,
+          lessonNo: Number(row.lesson_no),
+          lessonDate: String(row.lesson_date),
+          startTime: String(row.start_time),
+          finishTime: String(row.finish_time),
+          durationMinutes: Number(row.duration_minutes),
+          distanceKm: Number(row.distance_km),
+          cumulativeMinutes: cumulative.minutes,
+          cumulativeKm: cumulative.km,
+          createdAt: String(row.created_at),
+          updatedAt: ensureStrictlyNewerSourceUpdatedAt(nowIso, latestExisting),
+        },
+        taughtIds: ownTaughtIds,
+        assessedIds: ownAssessedIds,
+        achievedIds: ownAchievedIds,
+        progress: after,
+      });
+      if (downstreamInsert) downstreamOutboxInserts.push(downstreamInsert);
+    }
+  }
+
   // One atomic transaction: the edited lesson, every downstream lesson's
-  // recomputed cumulative totals, the swapped competency events, and (when
-  // integration is enabled) its outbox row commit together or not at all.
-  await db.batch([updateEditedLesson, deleteOldEvents, ...eventInserts, ...cumulativeUpdates, ...(outboxInsert ? [outboxInsert] : [])]);
+  // recomputed cumulative totals, the swapped competency events, the
+  // direct edit's own outbox row, and every downstream lesson's propagated
+  // outbox row (when integration is enabled) commit together or not at
+  // all — a failure anywhere in this list rolls back the whole edit,
+  // including every downstream lesson's cumulative totals and events, so
+  // there is never a state where some downstream mirrors advanced and
+  // others (or their outbox events) silently didn't.
+  await db.batch([updateEditedLesson, deleteOldEvents, ...eventInserts, ...cumulativeUpdates, ...(outboxInsert ? [outboxInsert] : []), ...downstreamOutboxInserts]);
 
   const [updatedLesson, completion] = await Promise.all([getLesson(db, learnerId, lessonId), getCompletionSummary(db, learnerId)]);
 
