@@ -1,6 +1,36 @@
 # TASK.md
 
-No active development task.
+**Current Task:** Fix GitHub Actions CI PR #2 so the real TypeScript test
+suite actually runs — **Completed** (branch `ci/add-github-actions`, PR #2,
+not merged).
+
+**Next Recommended Task:** Tony reviews and approves PR #2, then merges it
+into `staging` (base already retargeted from `main` to `staging`). After
+that, continue with Phase A (STATUS.md/TASK.md length cleanup — explicitly
+deferred, not started this round).
+
+**Waiting on Other Repo:** NONE.
+
+**Tony Manual Action Required:** Review/approve/merge
+https://github.com/tony-kunliu/Instructor-assistant/pull/2 into `staging`
+when ready. Not merged automatically this round.
+
+**Completed this session (ci/add-github-actions fix):**
+
+Root cause confirmed (not guessed): CI's pinned `node-version: "22.13"`
+resolves to `22.13.1`, which requires an explicit opt-in to run `.ts`
+files — `npm test` failed with `ERR_UNKNOWN_FILE_EXTENSION` on every `.ts`
+test file in the first real Actions run, so no TypeScript test ever
+actually started (typecheck had passed because `tsc` handles `.ts` natively
+regardless). Fixed by adding Node's official `--experimental-strip-types`
+flag (stable since Node 22.6.0) to the `test` script — kept the declared
+`engines` floor (`>=22.13.0`) unchanged, no CI Node-version bump, no new
+test framework, no test files skipped/filtered. PR #2 base retargeted
+`main` → `staging`. Re-verified against a real (not simulated) GitHub
+Actions run: `npm ci` PASS, `npm run typecheck` PASS, `npm test` **69/69
+PASS**, `npm run build` PASS, overall workflow **success**. No merge, no
+deploy, no Production change. Full detail in STATUS.md's "GitHub Actions CI
+fixed and verified" section.
 
 **Completed this session (access-logout-button):**
 
