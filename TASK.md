@@ -1,22 +1,22 @@
 # TASK.md
 
-**Current Task:** History Edit downstream integration propagation fix —
+**Current Task:** Direct edit source-version monotonicity fix —
 **Completed** (on `feature/actgds-integration-v1`; see below for exactly
 what "completed" does and doesn't include).
 
 **Next Recommended Task:** ACTGDS (Work) repeats its focused cross-repo
-compatibility review against this fix (new commit — see report), since
-their prior review found the History Edit propagation blocker and marked
-Sender status `BLOCKED`. Confirm the reproduction now passes, the
-canonical hash is still unchanged, and no regressions in the previously
-PASS-ed areas. Only after their PASS and Tony's separate authorization
-should coordinated QA against a real (non-production) webhook URL/secret
-begin. Not started automatically — waiting for Tony's go-ahead per
-`AGENTS.md` §11.
+compatibility review against this new commit (`1797af9`), since their
+re-review found the direct-edit-after-propagation version collision and
+marked Sender status `BLOCKED`. Confirm the deterministic reproduction now
+passes, the canonical hash is still unchanged, and no regressions in the
+previously PASS-ed areas. Only after their PASS and Tony's separate
+authorization should coordinated QA against a real (non-production)
+webhook URL/secret begin. Not started automatically — waiting for Tony's
+go-ahead per `AGENTS.md` §11.
 
-**Coordination Issue:** UPDATED —
-https://github.com/tony-kunliu/actgds.com/issues/3#issuecomment-5855675637
-(`STATUS: HISTORY EDIT BLOCKER FIXED — READY FOR RE-REVIEW`, commit `40ef035`).
+**Coordination Issue:** to be updated with this round's handshake comment
+on https://github.com/tony-kunliu/actgds.com/issues/3 (`STATUS: DIRECT
+EDIT VERSION BLOCKER FIXED — READY FOR RE-REVIEW`, commit `1797af9`).
 
 **Waiting on Other Repo:** `tony-kunliu/actgds.com` Issue #3 — ACTGDS
 (Work) repeats its focused cross-repo compatibility review of this fix.
@@ -30,6 +30,38 @@ for real will need: `wrangler secret put ACTGDS_WEBHOOK_SECRET` per
 environment, setting a real `ACTGDS_WEBHOOK_URL`, and flipping
 `ACTGDS_INTEGRATION_ENABLED` to `"true"` — none of that is done or asked
 for yet.)
+
+**Completed this session (Direct edit source-version monotonicity fix):**
+
+Read ACTGDS's latest re-review comment first (Issue #3, `STATUS: BLOCKED`,
+independently re-fetched Sender HEAD `ad08830`) before changing anything,
+per instruction. It confirmed the previous History Edit propagation fix
+(`40ef035`) now `PASS — FIX VERIFIED`, but found one narrower follow-up
+bug: `lib/repo.ts#updateLesson`'s direct-edit path computed its own
+`source_updated_at` from plain `nowIso`, never checking prior versions
+recorded for its own `lesson_id` — so a lesson that had previously been a
+downstream *propagation* target could later collide with that version if
+directly edited within the same millisecond, causing the receiver's
+`stale_ignored` no-op while the Sender still reported delivery, leaving the
+mirror permanently stale with nothing pending to retry. Fixed by having the
+direct-edit path look up `latestSourceUpdatedAtByLesson` for its own
+`lesson_id` (combined into the same query the downstream path already
+used) and apply the existing `ensureStrictlyNewerSourceUpdatedAt` helper —
+no new helper written, atomicity preserved (single `db.batch()`,
+version lookup stays a pre-batch read). 2 new tests
+(`tests/integration-history-edit-propagation.test.ts`, tests I and J) using
+a new controllable-clock test helper (`tests/helpers/fake-clock.ts`) to
+force the exact millisecond collision deterministically, mirroring Work's
+own reproduction numbers; verified genuinely broken against the pre-fix
+code first via `git stash`. Full suite 111/111 PASS (109 prior + 2 new);
+`npm run build` PASS. Canonical schema/hash unchanged; only a short new
+doc section added (`docs/integrations/actgds-instructor-assistant-v1.md`,
+"Per-lesson source_updated_at monotonicity") — no schema/contract-semantics
+change. HMAC/event-id/retry classification/Cron/Receiver code untouched
+this round. Not merged into `staging`/`main`; nothing deployed; no real
+secret/webhook configured; migration `0005` not applied to any remote D1;
+ACTGDS repo untouched (read-only). Full detail in STATUS.md's "Direct edit
+source_updated_at monotonicity fix" section.
 
 **Completed this session (History Edit downstream integration propagation fix):**
 

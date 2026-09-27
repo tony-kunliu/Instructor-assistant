@@ -14,19 +14,23 @@ Repo: `tony-kunliu/instructor-assistant`
 - **`staging`**: `c862ba5` — `main` plus the instructor-dropdown fix and the
   Access "Sign out" link. This round's ACTGDS integration work is on its
   own feature branch, **not yet merged into `staging`**.
-- **`feature/actgds-integration-v1`** (off `staging@c862ba5`): ACTGDS
-  Integration V1 sender. Contract Alignment + Reliability Alignment
-  complete (canonical schema byte-identical, event-id immutability fixed,
-  atomic outbox enqueue, periodic retry sweep), **and now the History Edit
-  downstream-propagation blocker ACTGDS's cross-repo review found is also
-  fixed**: editing an earlier lesson now propagates a fresh
-  `lesson.upserted` event to every already-exported downstream lesson
-  whose cumulative totals or progress snapshot changed, atomically with
-  the edit itself — no more permanently-stale ACTGDS mirrors for lessons
-  after the one actually edited. Disabled by default
-  (`ACTGDS_INTEGRATION_ENABLED=false`); no real webhook URL/secret
-  configured; not merged, not deployed. See "History Edit downstream
-  Integration propagation fix" below for full detail.
+- **`feature/actgds-integration-v1`** (off `staging@c862ba5`, now at
+  `1797af9`): ACTGDS Integration V1 sender. Contract Alignment + Reliability
+  Alignment complete (canonical schema byte-identical, event-id
+  immutability fixed, atomic outbox enqueue, periodic retry sweep), the
+  History Edit downstream-propagation blocker is fixed (editing an earlier
+  lesson propagates a fresh `lesson.upserted` event to every
+  already-exported downstream lesson), and **now the follow-up "direct edit
+  after propagation" version-collision blocker ACTGDS's re-review found is
+  also fixed**: `updateLesson`'s direct-edit path now checks the latest
+  `source_updated_at` already recorded for its own `lesson_id` (not just
+  what downstream lessons check), so a lesson that was itself a downstream
+  propagation target still gets a strictly newer version when later edited
+  directly — no more same-millisecond version collisions silently accepted
+  by the receiver as `stale_ignored` while the Sender reports delivered.
+  Disabled by default (`ACTGDS_INTEGRATION_ENABLED=false`); no real webhook
+  URL/secret configured; not merged, not deployed. See "Direct edit
+  source_updated_at monotonicity fix" below for full detail.
 - **Staging Worker** live version: `9939629c-7886-4338-9126-a70f8e330b91`.
   **Production Worker** live version: `a5708df9-5dcf-4c10-b26b-212fb4bf9a3f`.
   Both D1s (`instructor-assistant-db`, `instructor-assistant-db-production`)
@@ -128,6 +132,87 @@ entirely inert until explicitly turned on per environment.
   anywhere, configuring a real webhook URL/secret, connecting to a real
   ACTGDS receiver, historical lesson backfill, and the Cron Trigger wiring
   noted above.
+
+## Direct edit source_updated_at monotonicity fix (same feature branch, follow-up round)
+
+**Rollback baseline recorded before this round:** identical to the History
+Edit propagation round's (`main` `8bae4e4`, `staging` `c862ba5`, Staging
+Worker `9939629c-7886-4338-9126-a70f8e330b91`, Production Worker
+`a5708df9-5dcf-4c10-b26b-212fb4bf9a3f`, both D1s through migration `0004`
+only). Nothing in this round touches `staging`, `main`, or either deployed
+Worker/database.
+
+ACTGDS (Work) re-reviewed the History Edit propagation fix (Issue #3,
+commit `40ef035`) and found it correct, but surfaced one narrower follow-up
+bug: `lib/repo.ts#updateLesson`'s direct-edit path built its own outbox
+event's `updatedAt` from plain `nowIso`, without ever checking prior
+versions already recorded for that same `lesson_id` — unlike the downstream
+propagation path (added in the previous round) which already did this
+correctly for *other* lessons. If a lesson had previously been the
+*target* of a propagated event (because an earlier lesson was edited) and
+was later edited *directly* within the same millisecond, the new direct
+event's `source_updated_at` could equal (or, under clock skew, even
+predate) that propagated version. The receiver's own upsert rule treats an
+equal/older version as a no-op (`stale_ignored`, still `HTTP 200`), so the
+Sender marked the delivery successful while the receiver's mirror silently
+never changed — a durable divergence with zero pending outbox rows left for
+any retry to repair.
+
+**Fix:** `updateLesson` now looks up `latestSourceUpdatedAtByLesson` for
+`[lessonId, ...downstreamLessonIds]` in one combined query (reusing the
+existing helper — no new helper written), and computes the direct edit's
+own `source_updated_at` via the same `ensureStrictlyNewerSourceUpdatedAt`
+the downstream path already used, keyed by the *edited lesson's own*
+`lesson_id`. The pre-existing downstream propagation loop now reuses this
+same lookup instead of re-querying. `lessons.updated_at` (the real DB
+column, set via `strftime('%Y-%m-%dT%H:%M:%fZ', 'now')` directly in SQL)
+was not touched — it remains the genuine user-visible edit timestamp,
+entirely separate from the Integration payload's `source_updated_at` wire
+version.
+
+**Verification:** reproduced Work's exact millisecond-boundary scenario as
+two new tests (`tests/integration-history-edit-propagation.test.ts`, tests
+I and J) using a new `tests/helpers/fake-clock.ts` — a controllable `Date`
+override, restored after each test, so the collision is deterministic
+rather than depending on real wall-clock timing. Verified genuinely broken
+against the pre-fix code first (`git stash push -- lib/repo.ts`, both new
+tests failed exactly as Work described — direct edit version equaled the
+propagated version it collided with — then `git stash pop` to restore the
+fix). Test I mirrors Work's own reproduction numbers exactly (Lesson #2
+ends at 90 min/20 km direct, on top of Lesson #1's edited 120 min/20 km, for
+cumulative 210 min/40 km) and asserts: the direct edit's version is
+strictly newer than (specifically exactly +1ms past) the propagated version
+it previously collided with; the simulated receiver mirror (built from the
+fake receiver's captured requests, applying the contract's own
+highest-version-wins upsert rule — real ACTGDS receiver code is out of
+scope/another repo) actually advances to match the Sender's persisted
+state, rather than staying stale; and zero outbox rows are left pending.
+Test J confirms two rapid direct edits at the identical controlled clock
+value still get strictly increasing versions (existing behavior for the
+create case, now also true for a lesson previously touched by propagation).
+
+Full suite: 111/111 PASS (109 from the previous round + 2 new). `npm run
+build` PASS. Canonical schema unchanged — `jq -cS . docs/integrations/
+lesson-upserted-v1.schema.json | sha256sum` still
+`c43d28164bb1c5c0e316e2d2f1cee77ad627508ef7dca4d58516adab8852b7e6`. Only
+other change: a short new "Per-lesson source_updated_at monotonicity"
+section added to `docs/integrations/actgds-instructor-assistant-v1.md`
+documenting this invariant — no change to the JSON Schema or any other
+contract semantics. HMAC, event-id immutability, retry classification,
+200/202/409 handling, Cron config, and Receiver code were not touched this
+round.
+
+**Known Issues (recorded, not fixed this round, per AGENTS.md §6):**
+Work's non-blocking observation still stands — a location/comments-only
+History Edit still emits propagated events for every already-exported
+downstream lesson even when cumulative totals and progress didn't change
+(correct data, no private content exported; possible future optimization
+only).
+
+**Not done, deliberately:** merging into `staging`/`main`, deploying
+anywhere, configuring a real webhook URL/secret, connecting to a real
+ACTGDS receiver, historical lesson backfill, any redesign of Integration V1
+or its contract.
 
 ## History Edit downstream Integration propagation fix (same feature branch, follow-up round)
 
