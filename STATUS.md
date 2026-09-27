@@ -4,6 +4,122 @@ _Last updated: 2026-09-27_
 
 Repo: `tony-kunliu/instructor-assistant`
 
+## Current Snapshot (read this first — everything below is history)
+
+- **`main`**: `8bae4e4` — trusted baseline, every feature through Production
+  deployment. Does not include `feature/learner-instructor-select`,
+  `feature/access-logout-button`, or this round's
+  `feature/actgds-integration-v1` yet (none authorized to merge into `main`
+  so far).
+- **`staging`**: `c862ba5` — `main` plus the instructor-dropdown fix and the
+  Access "Sign out" link. This round's ACTGDS integration work is on its
+  own feature branch, **not yet merged into `staging`**.
+- **`feature/actgds-integration-v1`** (this round, off `staging@c862ba5`):
+  ACTGDS Integration V1 sender — contract docs, schema, durable outbox,
+  HMAC signing, retry, learner Integration ID UI. Disabled by default
+  (`ACTGDS_INTEGRATION_ENABLED=false`); no real webhook URL/secret
+  configured; not merged, not deployed. See "ACTGDS Integration V1 —
+  Sender (feature branch, not yet merged)" below for full detail.
+- **Staging Worker** live version: `9939629c-7886-4338-9126-a70f8e330b91`.
+  **Production Worker** live version: `a5708df9-5dcf-4c10-b26b-212fb4bf9a3f`.
+  Both D1s (`instructor-assistant-db`, `instructor-assistant-db-production`)
+  fully migrated through `0004` — **not** `0005` (this round's outbox
+  migration lives only on the feature branch, unapplied anywhere remote).
+- Ecosystem boundary rules (Instructor Assistant ↔ ACTGDS Website) now live
+  in `AGENTS.md` §10; long-term shared direction in
+  `docs/ECOSYSTEM_ROADMAP.md`.
+
+## ACTGDS Integration V1 — Sender (feature branch, not yet merged)
+
+**Rollback baseline recorded before this round:** `main` at `8bae4e4`,
+`staging` at `c862ba5`; Staging Worker version
+`9939629c-7886-4338-9126-a70f8e330b91`; Production Worker version
+`a5708df9-5dcf-4c10-b26b-212fb4bf9a3f`; both D1s fully migrated through
+`0004`, no pending migrations. Nothing in this round touches `staging`,
+`main`, or either deployed Worker/database — this baseline is recorded for
+completeness, not because a rollback is needed (there is nothing live to
+roll back).
+
+Implements the sender half of `actgds-instructor-assistant/v1` (see
+`docs/integrations/actgds-instructor-assistant-v1.md`): Instructor
+Assistant emits a `lesson.upserted` event on every lesson create/edit, kept
+entirely inert until explicitly turned on per environment.
+
+- **Contract & schema:** `docs/integrations/
+  actgds-instructor-assistant-v1.md` (human-readable contract) and
+  `docs/integrations/lesson-upserted-v1.schema.json` (JSON Schema,
+  `additionalProperties: false` at every level so an accidental extra field
+  — e.g. a PII leak — fails schema validation, not just a code review).
+  **`contract_schema_sha256`:**
+  `6335f5897731d75799fad59dfff2556eb188abaa2b47c13cdd847a994351ad7e`
+  (`jq -cS . docs/integrations/lesson-upserted-v1.schema.json | sha256sum`)
+  — the ACTGDS side must produce the exact same hash from its own copy of
+  this file before the two systems can safely interoperate.
+- **Durable outbox** (`migrations/0005_integration_outbox.sql`,
+  `integration_outbox` table): `lib/integration/outbox.ts`. A lesson
+  save/edit's own D1 write is never blocked or failed by the integration —
+  see the "atomicity trade-off" note in `lib/repo.ts#deliverIntegrationEvent`
+  for exactly which two steps are and aren't in the same `db.batch()`
+  transaction, and why (the outbox insert needs the learner's *post-write*
+  progress snapshot, so it can't be folded into the same batch as the
+  lesson/competency_events write that produces that snapshot; documented
+  as a real gap, not glossed over — a crash in that narrow window loses the
+  event, not the lesson).
+- **HMAC signing:** `lib/integration/hmac.ts`, Web Crypto (`crypto.subtle`)
+  only — no Node-only APIs, so it runs identically in the Cloudflare
+  Workers runtime and in `npm test`. Signs `"<unix-seconds>.<raw body>"`
+  with HMAC-SHA256, `v1=<hex>` header format.
+- **Retry:** `lib/integration/sender.ts`. Backoff after each failed attempt:
+  1 min → 5 min → 30 min → 2 hr → 12 hr, then `permanent_failure` (6
+  attempts total, immediate + 5 retries). 200/202 delivered (a 202 with a
+  `pending_link` body still counts delivered); 429/5xx/network-error
+  retryable; 400/401/403/other-4xx permanent. Best-effort immediate
+  delivery is scheduled via the caller-supplied `IntegrationHooks.schedule`
+  hook — the real deployed Worker uses `ExecutionContext.waitUntil`
+  (`lib/integration/context.ts#integrationHooksFromRequestContext`) so a
+  slow/unreachable webhook can't hold up or crash the request; tests supply
+  a synchronous capture instead. **Not wired up this round:** an actual
+  Cloudflare Cron Trigger to sweep `processDueOutbox` periodically for rows
+  whose immediate attempt failed — the retry *logic* is fully implemented
+  and tested (`lib/integration/sender.ts#processDueOutbox`), but nothing
+  currently calls it on a schedule in the deployed Worker. Deliberately out
+  of scope: deploying anything this round is explicitly not authorized, and
+  wiring a real `scheduled` handler into the OpenNext Cloudflare adapter is
+  its own small task, not needed until this feature actually goes live.
+  Flagged as a known gap, not hidden.
+- **Data minimization enforced by the schema itself**
+  (`additionalProperties: false`) and independently verified by test D —
+  the wire payload's `learner` object contains nothing but `learner_id`;
+  no name/phone/email/address/DOB/licence/signatures/comments/PDF/raw GPS
+  ever leaves this app in this event.
+- **Learner Integration ID UI:** `app/driver-app.tsx` — the current
+  learner's `id` shown with a "Copy ID" button, for Tony to paste into the
+  ACTGDS CRM when he links a learner to a real student by hand (the *only*
+  linking mechanism — no auto-match by name/phone/email exists or is
+  planned; see `AGENTS.md` §10).
+- **Config:** `ACTGDS_INTEGRATION_ENABLED` (default `"false"`),
+  `ACTGDS_WEBHOOK_URL`, `ACTGDS_WEBHOOK_SECRET`, `ACTGDS_INTEGRATION_ENV` —
+  `lib/integration/config.ts`. `wrangler.toml` sets
+  `ACTGDS_INTEGRATION_ENABLED=false` and the correct
+  `ACTGDS_INTEGRATION_ENV` per environment (both non-secret); no real
+  `ACTGDS_WEBHOOK_URL`/`ACTGDS_WEBHOOK_SECRET` configured anywhere this
+  round, per instruction. A misconfigured (enabled but missing URL/secret)
+  state degrades gracefully — the sender treats it as a retryable
+  `missing_webhook_config` outcome, never throwing.
+- **No historical backfill:** only lessons created/edited after
+  integration is enabled for an environment ever produce an event.
+- **Verification:** `npm run build` / `npm test`: PASS (86/86 — the 69
+  pre-existing tests unchanged plus 17 new covering requirements A-N from
+  this round's spec, including an isolated fake in-process receiver —
+  `tests/helpers/fake-actgds-receiver.ts` — that never touches a real
+  network host). `wrangler d1 migrations apply DB --local` confirms
+  `0005_integration_outbox.sql` applies cleanly (local/offline only — never
+  run against Staging or Production's real D1 this round).
+- **Not done, deliberately:** merging into `staging`/`main`, deploying
+  anywhere, configuring a real webhook URL/secret, connecting to a real
+  ACTGDS receiver, historical lesson backfill, and the Cron Trigger wiring
+  noted above.
+
 ## Rollback baseline — recorded before `feature/instructor-identity` (Instructor Identity V1)
 
 Recorded before any change in this round, per AGENTS.md-style rollback

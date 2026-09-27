@@ -7,7 +7,7 @@
 //                               accounts reference these ids.
 // None of those features exist yet.
 
-export const SCHEMA_VERSION = 4;
+export const SCHEMA_VERSION = 5;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS instructors (
@@ -87,4 +87,22 @@ VALUES
   ('a1f3b6c2-2f1a-4b8e-9c6a-1a2b3c4d5e01', 'Tony', 'Kunliu.work@gmail.com', 'active'),
   ('a1f3b6c2-2f1a-4b8e-9c6a-1a2b3c4d5e02', 'Anna', 'yapingqu.work@gmail.com', 'active')
 ON CONFLICT (id) DO UPDATE SET email = excluded.email, status = excluded.status;
+
+CREATE TABLE IF NOT EXISTS integration_outbox (
+  id                TEXT PRIMARY KEY,
+  event_id          TEXT NOT NULL UNIQUE,
+  event_type        TEXT NOT NULL,
+  learner_id        TEXT NOT NULL,
+  lesson_id         TEXT NOT NULL,
+  source_updated_at TEXT NOT NULL,
+  payload_json      TEXT NOT NULL,
+  status            TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'delivered', 'permanent_failure')),
+  attempt_count     INTEGER NOT NULL DEFAULT 0,
+  next_attempt_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  last_error_code   TEXT,
+  created_at        TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  delivered_at      TEXT
+);
+CREATE INDEX IF NOT EXISTS integration_outbox_status_idx ON integration_outbox (status, next_attempt_at);
+CREATE INDEX IF NOT EXISTS integration_outbox_lesson_idx ON integration_outbox (lesson_id);
 `;

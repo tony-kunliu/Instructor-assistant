@@ -111,10 +111,72 @@ be reviewed for accuracy against the current remote state.)
 
 ## Project rules (CBT&A Checklist)
 
-- Do **not** invent an official CBT&A competency list. `Taught`,
-  `Competencies Assessed` and `Achieved` remain free-text until the official
-  ACT list is verified.
+- The official CBT&A competency list (1-22, Review 1-17, Review 1-22, 23
+  Final Drive) has been verified — Tony provided the ACT government's own
+  document (see `lib/competency.ts#competencyFullName`). `Taught`,
+  `Competencies Assessed` and `Achieved` use this official numbering; the
+  full official titles are display-only and never affect persisted/validated
+  data.
 - iPhone first: every screen must work at 375px width with no horizontal
   scroll.
 - Values that can be derived (duration, km, cumulative totals, lesson number)
   must be calculated, never typed by the instructor.
+
+## 10. Ecosystem boundaries (Instructor Assistant ↔ ACTGDS Website)
+
+Two separate systems, two separate repos, two separate databases. Neither
+reads or writes the other's database directly, and neither ever shares a D1
+instance. This is permanent, not a phase-one shortcut.
+
+- **ACTGDS Website** (`tony-kunliu/actgds.com`) is the **Customer / Student
+  Identity source of truth**: student identity, name, phone, email, address,
+  CRM, website account, Booking/Cal.com, student-facing presentation,
+  notifications.
+- **Instructor Assistant** (this repo) is the **Teaching / Lesson source of
+  truth**: instructor lessons, CBT&A competencies, Review 1-17, Review 1-22,
+  Final Drive 23, odometer, hours/km, signatures, PDF export, and future
+  GPS/Driving Journey data.
+
+Permanent integration principles:
+
+- Never auto-match a learner/student across systems by name, phone, or
+  email. The only cross-system identity link is an explicit, versioned
+  `learner_id` a human (Tony) links by hand in the ACTGDS CRM.
+- ACTGDS never re-implements the CBT&A engine; Instructor Assistant never
+  manages customer contact details (that stays ACTGDS's job even for
+  learners who also exist here).
+- Any cross-system interface is versioned (a `contract_version` field,
+  bumped on any breaking change) and changed in lockstep across both repos —
+  never a silent, one-sided change.
+- A lesson save/edit in this app must never fail, block, or degrade because
+  the website integration is down, slow, unconfigured, or misconfigured.
+  Integration delivery is always best-effort and asynchronous relative to
+  the user-visible save.
+- Secrets (webhook signing keys, tokens) are never committed or logged.
+- Cross-system payloads carry only what the other system actually needs for
+  its own job — never more (see the specific integration contract doc for
+  what's excluded).
+
+See `docs/ECOSYSTEM_ROADMAP.md` for the longer-term shared direction and
+`docs/integrations/` for the versioned contracts themselves.
+
+## 11. End-of-task self-memory rules
+
+At the end of every task, before reporting to Tony:
+
+1. **Update `STATUS.md`** with the actual current state: branch/commit,
+   deploy/DB state, known issues. Keep a "Current Snapshot" near the top so
+   a future agent isn't misled by older history further down the file.
+2. **Update `TASK.md`** to explicitly include:
+   - `Current Task:` — Completed / Partial / Blocked
+   - `Next Recommended Task:` — what to do next and why
+   - `Waiting on Other Repo:` — what the ACTGDS side (or this side) needs to
+     finish first, if anything
+   - `Tony Manual Action Required:` — or `NONE` if there isn't one
+3. The final report to Tony must proactively state a **"下一步建议" (next
+   step recommendation)** — never leave him to guess what's next.
+4. **Never** auto-start the next recommended task. Always stop and wait for
+   Tony's explicit go-ahead, even when the next step seems obvious.
+
+This exists so Tony never has to re-explain the project's direction from
+scratch to whichever agent picks up the next task.

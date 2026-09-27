@@ -360,6 +360,18 @@ export default function DriverApp() {
     }
   };
 
+  // The ACTGDS Website links this learner's Integration ID by hand in its
+  // own CRM (see docs/integrations/actgds-instructor-assistant-v1.md) — this
+  // app never attempts to auto-match or look up a student itself.
+  const copyIntegrationId = async (id: string) => {
+    try {
+      await navigator.clipboard.writeText(id);
+      setStatus({ kind: "ok", text: "Integration ID copied." });
+    } catch {
+      setStatus({ kind: "error", text: `Could not copy automatically — Integration ID: ${id}` });
+    }
+  };
+
   const openAddLearner = () => {
     // Default to the signed-in instructor (Cloudflare Access); with no Access
     // identity (local dev), fall back to whoever this device last picked,
@@ -461,6 +473,10 @@ export default function DriverApp() {
                 detail.learner.licenceNumber ? `Licence ${detail.learner.licenceNumber}` : null,
                 detail.learner.licenceExpiry ? `exp ${detail.learner.licenceExpiry}` : null,
                 `ADI ${detail.learner.instructorName}`].filter(Boolean).join(" · ")}
+            </p>
+            <p className="meta integration-id">
+              Integration ID: <code>{detail.learner.id}</code>
+              <button type="button" className="link" onClick={() => void copyIntegrationId(detail.learner.id)}>Copy ID</button>
             </p>
             <ExportPdfButton learnerId={detail.learner.id} lessonCount={detail.lessons.length} />
           </section>

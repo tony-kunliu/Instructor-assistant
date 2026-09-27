@@ -107,6 +107,9 @@ html, body {
 .totals dd { margin: 0; font-size: 19px; font-weight: 700; }
 .totals em { font-style: normal; font-size: 13px; color: var(--muted); font-weight: 500; }
 .meta { margin: 0; font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
+.integration-id { margin-top: 4px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.integration-id code { font-size: 12px; background: #f0eee9; border-radius: 6px; padding: 2px 6px; overflow-wrap: anywhere; }
+.integration-id .link { padding: 2px 0; font-size: 12px; }
 
 .timebar { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 12px; text-align: center; }
 .timebar div { background: #f7f5f1; border-radius: 10px; padding: 8px 4px; }

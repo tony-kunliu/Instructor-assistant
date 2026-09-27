@@ -15,6 +15,10 @@ import {
   type MilestoneInvalidation,
 } from "./competency.ts";
 import type { D1Database, D1PreparedStatement } from "./d1-types.ts";
+import { buildLessonUpsertedPayload } from "./integration/contract.ts";
+import { enqueueOutboxRow } from "./integration/outbox.ts";
+import { processDueOutbox } from "./integration/sender.ts";
+import type { IntegrationHooks } from "./integration/types.ts";
 import type { CompletionSummary, Instructor, Learner, LearnerInput, Lesson, LessonInput } from "./types.ts";
 
 export class ValidationError extends Error {}
@@ -269,7 +273,50 @@ export async function getLesson(db: D1Database, learnerId: string, lessonId: str
   return toLesson(row);
 }
 
-export async function createLesson(db: D1Database, learnerId: string, input: LessonInput): Promise<Lesson> {
+/**
+ * ACTGDS Integration V1 (see docs/integrations/actgds-instructor-assistant-v1.md):
+ * enqueues a durable outbox row for this lesson and schedules a best-effort
+ * immediate delivery attempt. A no-op when `integration` is omitted or
+ * disabled — the default for every caller that doesn't pass it, so this
+ * never affects existing behavior (see AGENTS.md §10).
+ *
+ * Trade-off, documented rather than hidden: the outbox enqueue happens as
+ * its own statement AFTER the lesson/competency_events write has already
+ * committed (not folded into that same db.batch()), because it needs the
+ * learner's post-write progress snapshot to build an accurate payload. This
+ * is the same class of "two sequential D1 calls, not one transaction"
+ * limitation already documented elsewhere in this file (find-or-create,
+ * totals-then-insert) — a crash in the narrow window between the lesson
+ * commit and this enqueue would save the lesson without producing an
+ * integration event for it, recoverable only by a future manual resend,
+ * not automatically. This never blocks or fails the lesson save itself.
+ */
+async function deliverIntegrationEvent(
+  db: D1Database,
+  integration: IntegrationHooks | undefined,
+  params: { learnerId: string; instructorId: string; lesson: Lesson; taughtIds: string[]; assessedIds: string[]; achievedIds: string[]; progress: LearnerProgress },
+): Promise<void> {
+  if (!integration?.config.enabled) return;
+  const instructorRow = await db.prepare("SELECT full_name FROM instructors WHERE id = ?").bind(params.instructorId).first<Row>();
+  const payload = buildLessonUpsertedPayload({
+    environment: integration.config.environment,
+    learnerId: params.learnerId,
+    instructorId: params.instructorId,
+    instructorDisplayName: String(instructorRow?.full_name ?? ""),
+    lesson: params.lesson,
+    taughtIds: params.taughtIds,
+    assessedIds: params.assessedIds,
+    achievedIds: params.achievedIds,
+    progress: params.progress,
+  });
+  await enqueueOutboxRow(db, payload);
+  const fetchImpl = integration.fetchImpl ?? fetch;
+  const attempt = () => processDueOutbox(db, integration.config, fetchImpl).then(() => undefined);
+  if (integration.schedule) integration.schedule(attempt);
+  else void attempt();
+}
+
+export async function createLesson(db: D1Database, learnerId: string, input: LessonInput, integration?: IntegrationHooks): Promise<Lesson> {
   const learner = await getLearner(db, learnerId);
 
   const lessonDate = isoDate(input.lessonDate);
@@ -361,7 +408,14 @@ export async function createLesson(db: D1Database, learnerId: string, input: Les
   await db.batch([lessonInsert, ...eventStatements]);
 
   const row = await db.prepare("SELECT * FROM lessons WHERE id = ?").bind(id).first<Row>();
-  return toLesson(row as Row);
+  const lesson = toLesson(row as Row);
+
+  if (integration?.config.enabled) {
+    const progressAfter = await getLearnerProgress(db, learnerId);
+    await deliverIntegrationEvent(db, integration, { learnerId, instructorId: actingInstructorId, lesson, taughtIds, assessedIds, achievedIds, progress: progressAfter });
+  }
+
+  return lesson;
 }
 
 /** Fields that, if changed, invalidate both existing signatures (CBT&A V3 rule 5). */
@@ -386,7 +440,7 @@ export type UpdateLessonResult = {
  * The before/after diff is returned so the caller can surface a clear
  * warning when that happens.
  */
-export async function updateLesson(db: D1Database, learnerId: string, lessonId: string, input: LessonInput): Promise<UpdateLessonResult> {
+export async function updateLesson(db: D1Database, learnerId: string, lessonId: string, input: LessonInput, integration?: IntegrationHooks): Promise<UpdateLessonResult> {
   const existing = await getLesson(db, learnerId, lessonId);
 
   const lessonDate = isoDate(input.lessonDate);
@@ -545,6 +599,11 @@ export async function updateLesson(db: D1Database, learnerId: string, lessonId: 
   await db.batch([updateEditedLesson, deleteOldEvents, ...eventInserts, ...cumulativeUpdates]);
 
   const [updatedLesson, after, completion] = await Promise.all([getLesson(db, learnerId, lessonId), getLearnerProgress(db, learnerId), getCompletionSummary(db, learnerId)]);
+
+  if (integration?.config.enabled) {
+    // The lesson's own instructor_id (never the transient editor) is who this teaching record belongs to.
+    await deliverIntegrationEvent(db, integration, { learnerId, instructorId: updatedLesson.instructorId, lesson: updatedLesson, taughtIds, assessedIds, achievedIds, progress: after });
+  }
 
   return { lesson: updatedLesson, progress: after, completion, invalidated: diffInvalidatedMilestones(before, after) };
 }

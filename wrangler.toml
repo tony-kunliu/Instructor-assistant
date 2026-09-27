@@ -14,6 +14,14 @@ binding = "ASSETS"
 [vars]
 ACCESS_AUD = "dbaecdf29cb50d215f3edbb3b260b2c85209db78728fb19e3c53c39c5d9759e3"
 
+# ACTGDS Integration V1 (see docs/integrations/actgds-instructor-assistant-v1.md).
+# Disabled by default — real ACTGDS_WEBHOOK_URL/ACTGDS_WEBHOOK_SECRET are
+# deliberately not set this round (no real receiver exists yet); the secret
+# in particular must be set via `wrangler secret put`, never a plain [vars]
+# value, when this is actually turned on.
+ACTGDS_INTEGRATION_ENABLED = "false"
+ACTGDS_INTEGRATION_ENV = "staging"
+
 # Self-reference service binding required by the OpenNext Cloudflare adapter
 # (used for ISR/tag-cache revalidation); the service name must match `name`.
 [[services]]
@@ -42,6 +50,8 @@ name = "instructor-assistant-production"
 
 [env.production.vars]
 ACCESS_AUD = "5d77a5074b7a9436e7610db2937f4108d9fd60a97d6c9243421fb44909ce288b"
+ACTGDS_INTEGRATION_ENABLED = "false"
+ACTGDS_INTEGRATION_ENV = "production"
 
 [[env.production.services]]
 binding = "WORKER_SELF_REFERENCE"

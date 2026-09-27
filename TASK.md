@@ -1,6 +1,63 @@
 # TASK.md
 
-No active development task.
+**Current Task:** ACTGDS Integration V1 Sender — **Completed** (on its own
+feature branch; see below for exactly what "completed" does and doesn't
+include).
+
+**Next Recommended Task:** Coordinated QA between this repo and ACTGDS's
+own receiver implementation — once ACTGDS has a matching `lesson.upserted`
+receiver and both sides confirm the same `contract_schema_sha256`
+(`6335f5897731d75799fad59dfff2556eb188abaa2b47c13cdd847a994351ad7e`), do a
+real end-to-end test against a real (non-production) webhook URL and
+secret, still with `ACTGDS_INTEGRATION_ENABLED=false` in production until
+that's proven out. Not started automatically — waiting for Tony's go-ahead
+per `AGENTS.md` §11.
+
+**Waiting on Other Repo:** `tony-kunliu/actgds.com` needs its own
+`feature/instructor-assistant-integration-v1` (or equivalently named)
+receiver work: an endpoint that verifies the HMAC signature, accepts
+`lesson.upserted`, upserts by `(lesson_id, source_updated_at)`, and — this
+is the part that can't be automated — a way for Tony to manually link an
+Instructor Assistant `learner_id` (via the new "Copy ID" button) to a real
+ACTGDS student record. Until that exists, there's nothing for this side's
+integration to talk to.
+
+**Tony Manual Action Required:** NONE this round. (Later, turning this on
+for real will need: `wrangler secret put ACTGDS_WEBHOOK_SECRET` per
+environment, setting a real `ACTGDS_WEBHOOK_URL`, and flipping
+`ACTGDS_INTEGRATION_ENABLED` to `"true"` — none of that is done or asked
+for yet.)
+
+**Completed this session (ACTGDS Integration V1 Sender):**
+
+New branch `feature/actgds-integration-v1`, off `staging@c862ba5` (no
+existing branch by that name found). Implements the full sender side of
+`actgds-instructor-assistant/v1`: contract docs + JSON Schema, a durable
+`integration_outbox` (migration `0005`, additive only), HMAC-SHA256
+request signing, retry with backoff (1min/5min/30min/2hr/12hr →
+permanent_failure), data-minimized payload (learner PII never leaves this
+app), a learner "Copy ID" UI for Tony's manual CRM linking, and 17 new
+tests (A-N from the spec) run against an isolated in-process fake receiver
+— never touching real `actgds.com`. `npm run build` + `npm test` (86/86)
+pass, including all 69 pre-existing tests unchanged. Disabled by default
+(`ACTGDS_INTEGRATION_ENABLED=false`); no real secret/webhook URL
+configured. **Not merged into `staging` or `main`, nothing deployed
+anywhere, no real ACTGDS/production system touched.** Full technical
+detail in STATUS.md's "ACTGDS Integration V1 — Sender" section, including
+one documented trade-off (the outbox enqueue isn't in the exact same D1
+transaction as the lesson write — see there for why) and one deliberately
+unfinished piece (no Cloudflare Cron Trigger wired up yet for the
+periodic-retry sweep; the retry logic itself is implemented and tested,
+just not scheduled anywhere live).
+
+Also updated `AGENTS.md`: added §10 (permanent Instructor Assistant ↔
+ACTGDS ecosystem boundaries — no shared DB, no auto-matching by name/
+phone/email, versioned contracts, lesson save never blocked by the
+integration) and §11 (end-of-task self-memory rules — this TASK.md format
+is itself the first application of that new rule). Added
+`docs/ECOSYSTEM_ROADMAP.md` (P0-P6 shared direction). Corrected the
+now-stale "official CBT&A competency list not yet verified" line in
+`AGENTS.md` — it has been verified since the CBT&A full-names round.
 
 **Completed this session (access-logout-button):**
 
