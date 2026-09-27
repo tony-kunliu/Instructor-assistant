@@ -11,13 +11,26 @@ not grant permission to start the next — every task still needs Tony's
 explicit go-ahead, and every task still ends with a stop (see `AGENTS.md`
 §11).
 
-## P0 — Integration V1 (this round)
+## P0 — Integration V1
 
 Instructor Assistant sends a lesson summary (`lesson.upserted`) to ACTGDS
 whenever a lesson is created or edited. See `docs/integrations/
 actgds-instructor-assistant-v1.md` for the contract.
 
+**Current gate status:**
+
+- **Status:** CODE COMPATIBILITY PASS, SOURCE IN STAGING, NOT LIVE
+- **Canonical contract hash:**
+  `c43d28164bb1c5c0e316e2d2f1cee77ad627508ef7dca4d58516adab8852b7e6`
+- **Next:** Coordinated non-Production Instructor Assistant Staging ↔
+  ACTGDS QA Integration QA
+
+See `STATUS.md` for the full current-state detail (deployed versions,
+migration levels, webhook/secret/enablement status).
+
 ## P1 — Student Account
+
+**Status:** NOT STARTED.
 
 Students can view their own lesson history, hours, km, and CBT&A progress
 on the ACTGDS website, fed by the P0 integration data ACTGDS has received

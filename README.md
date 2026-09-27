@@ -1,45 +1,75 @@
-# ACTGDS Driver
+# Instructor Assistant
 
-Mobile-first instructor app (PWA) for **ACT Golden Driving School**.
+## Purpose
 
-GitHub repo: `tony-kunliu/instructor-assistant`
+Instructor / Teaching **source of truth** for ACT Golden Driving School
+(ACTGDS). An instructor completes each lesson's CBT&A checklist on their
+phone right after a driving lesson. Core domain:
 
-The first MVP does one thing: let an instructor complete the **ACT CBT&A
-Lesson Checklist** on an iPhone right after each driving lesson.
+- Learners and lessons (duration, distance, odometer, signatures)
+- CBT&A competencies 1-22, Review 1-17, Review 1-22, Final Drive 23
+- History Edit (editing an earlier lesson, with downstream recalculation)
+- CBT&A Checklist PDF export
+- Integration Sender — emits `lesson.upserted` events to the separate
+  ACTGDS Website repo (`tony-kunliu/actgds.com`), disabled by default
 
-## Stack
+This repo never manages customer identity (name/phone/email/CRM) — that is
+the ACTGDS Website's job. See `AGENTS.md` §10 for the full ecosystem
+boundary.
+
+## Architecture
 
 - Next.js (App Router) + React + TypeScript
-- **Storage: D1-compatible.** `lib/repo.ts` only talks to the `D1Database`
-  interface (`lib/d1-types.ts`) — the same shape as a real Cloudflare D1
-  binding. Schema/migration: `migrations/0001_init.sql` (plain SQL, applied
-  with `wrangler d1 migrations apply DB`). Locally (dev/test) it runs against
-  `lib/d1-sqlite.ts`, a local D1-compatible adapter backed by `node:sqlite` —
-  no code change needed to run against real D1 in a Cloudflare Worker, only
-  swapping the binding in `lib/db.ts#getD1()`.
-- Installable PWA (web manifest, iOS home-screen meta)
+- Deployed as a Cloudflare Worker via `@opennextjs/cloudflare`
+- Storage: Cloudflare D1 (SQLite-compatible) in production; a local
+  `node:sqlite`-backed adapter for dev/test (`lib/db.ts`, `lib/d1-sqlite.ts`)
+  — same `D1Database` interface both ways, no code branching
+- Cloudflare Access protects both Staging and Production
 
-## Requirements
-
-- Node.js ≥ 22.13
-
-## Getting started
+## Local Development
 
 ```bash
 npm install
-npm run db:migrate:local   # apply schema to the local D1 emulator (Miniflare, offline)
+npm run db:migrate:local   # apply schema to the local D1 emulator
 npm run dev                # http://localhost:3000
-npm run build
-npm test
 ```
 
-The local database file is created automatically at
-`data/actgds-driver.sqlite` (override with
-`ACTGDS_DRIVER_DB=/path/to/file.sqlite`). It is git-ignored. Deploying with a
-real Cloudflare D1 database requires Cloudflare account credentials — see
-`wrangler.toml` and `STATUS.md`.
+Requires Node.js ≥ 22.13. The local database file is created automatically
+at `data/actgds-driver.sqlite` (override with `ACTGDS_DRIVER_DB`); it is
+git-ignored.
 
-## Branches
+## Verification
 
-`feature/*` → `staging` → `main` → Production (separate approval required).
-See `AGENTS.md` for working rules.
+```bash
+npm run typecheck
+npm test
+npm run build
+```
+
+All three run in GitHub Actions CI (`.github/workflows/ci.yml`) on every
+push/PR to `main` and `staging`.
+
+## Branch Flow
+
+```
+feature/* → staging → main → Production
+```
+
+- `staging` — integration and QA.
+- `main` — trusted baseline; merging requires Tony's explicit authorization.
+- Production — requires a **separate** explicit authorization from Tony,
+  independent of any `main` merge.
+
+See `AGENTS.md` for the full working rules every agent in this repo follows.
+
+## Documentation
+
+- `AGENTS.md` — permanent working rules (read this first)
+- `STATUS.md` — current state: branches, environments, Integration status
+- `TASK.md` — current task and next recommended step
+- `docs/INDEX.md` — everything else (ecosystem roadmap, Integration contract)
+
+## Production Safety
+
+Production deploy always requires Tony's explicit, separate authorization —
+merging into `main` does not imply permission to deploy to Production.
