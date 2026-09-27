@@ -966,6 +966,15 @@ Verification:
   through the real Access login (email one-time PIN) — this session cannot
   do that itself (no access to their email inboxes); see "Tony manual
   action required" in TASK.md.
+- **No logout button in the app** — the app never built one; Cloudflare
+  Access itself owns the login session, not app code, so there's nothing
+  in `app/driver-app.tsx` to add a logout link to without also handling
+  Access's own session cookie. To end an Access session today, visit
+  `https://actgds.cloudflareaccess.com/cdn-cgi/access/logout` (clears this
+  browser's Access login) or use a private/incognito window per person.
+  Noted per AGENTS.md §6 — not fixed, since it's outside this round's task;
+  a real in-app "Sign out" (linking to Access's logout URL) would be a
+  small, separate follow-up task if Tony wants one.
 - Pre-existing production instructor rows (`ADI601`, `ADI604`) have `email:
   null` — nobody has confirmed which real person those correspond to, so
   no email was guessed onto them (though see the ADI-number coincidence
