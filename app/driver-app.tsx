@@ -135,6 +135,18 @@ const draftKey = (learnerId: string) => `actgds-driver:draft:${learnerId}`;
 const LAST_LEARNER_KEY = "actgds-driver:last-learner";
 const LAST_INSTRUCTOR_KEY = "actgds-driver:last-instructor";
 
+/**
+ * Ends the Cloudflare Access session (not an app-level login — Access owns
+ * the session, this app never has its own). Same team domain as
+ * lib/access.ts#TEAM_DOMAIN (duplicated, not imported: that module pulls in
+ * `jose`/JWKS setup meant for the server, not the client bundle). Shared by
+ * every environment's Access Application, so this is correct for both
+ * Staging and Production. Visiting it clears this browser's Access login;
+ * the next request to any Access-protected app on this account will
+ * require signing in again.
+ */
+const ACCESS_LOGOUT_URL = "https://actgds.cloudflareaccess.com/cdn-cgi/access/logout";
+
 async function api<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, init);
   const data = await response.json().catch(() => ({}));
@@ -378,7 +390,12 @@ export default function DriverApp() {
           <strong>ACTGDS Driver</strong>
           <small>CBT&amp;A Lesson Checklist</small>
         </div>
-        {signedInAs ? <span className="signed-in-as">Signed in as {signedInAs}</span> : null}
+        {signedInAs ? (
+          <div className="signed-in-as">
+            <span>Signed in as {signedInAs}</span>
+            <a href={ACCESS_LOGOUT_URL} className="signout-link">Sign out</a>
+          </div>
+        ) : null}
       </header>
 
       <section className="card picker">
