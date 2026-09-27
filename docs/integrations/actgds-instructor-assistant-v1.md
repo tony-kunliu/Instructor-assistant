@@ -184,6 +184,26 @@ tests I and J verify this directly: exactly one `db.batch()` call per
 lesson save, and a forced batch failure loses the lesson and its event
 together, never one without the other).
 
+## Per-lesson source_updated_at monotonicity
+
+For any given `lesson_id`, every `lesson.upserted` event this sender ever
+produces — its original create, a direct edit, or a downstream propagation
+from editing an earlier lesson (see above) — must carry a
+`source_updated_at` strictly greater than every prior event already
+recorded for that same `lesson_id`, regardless of which of those paths
+produced the prior one. The receiver's own upsert rule (equal or older
+version is a no-op, `stale_ignored`, still `HTTP 200`) means a same-or-older
+version is not just wasted — it is silently accepted as "delivered" while
+the receiver's mirror never actually changes, and no outbox row is left
+pending for any retry to repair. `lib/integration/outbox.ts#ensureStrictlyNewerSourceUpdatedAt`
+is the single mechanism enforcing this, checked in both `createLesson` (no
+prior version exists yet) and `updateLesson` — the direct edit's own event
+and every downstream propagated event each look up the latest version
+already recorded for *their own* `lesson_id` specifically (never a
+different lesson's), so a lesson that was itself a downstream propagation
+target in an earlier edit still gets a strictly newer version when it is
+later edited directly.
+
 ## No historical backfill in V1
 
 Only lessons created or edited **after** `ACTGDS_INTEGRATION_ENABLED` is

@@ -15,6 +15,7 @@ import { resolveIntegrationConfig } from "../lib/integration/config.ts";
 import { listOutboxRowsForLearner } from "../lib/integration/outbox.ts";
 import type { IntegrationHooks, LessonUpsertedPayloadV1 } from "../lib/integration/types.ts";
 import { createFakeReceiver } from "./helpers/fake-actgds-receiver.ts";
+import { FakeClock } from "./helpers/fake-clock.ts";
 
 const TONY_EMAIL = "Kunliu.work@gmail.com";
 const SECRET = "synthetic-test-secret-never-real";
@@ -325,4 +326,166 @@ test("H: a failed History Edit batch rolls back the edited lesson, its downstrea
   assert.deepEqual(afterLesson2Row, beforeLesson2Row, "Lesson #2's cumulative totals must not have changed");
   const afterOutboxCount = (await listOutboxRowsForLearner(db, learner.id)).length;
   assert.equal(afterOutboxCount, beforeOutboxCount, "no new outbox row — direct or propagated — must have been created by the failed batch");
+});
+
+// ── I: direct edit after propagation — source_updated_at monotonicity ────
+//
+// Reproduces the follow-up blocker ACTGDS (Work) found reviewing the fix
+// above (Issue #3, comment 5855527779 then 5856473979): a lesson that was
+// previously the *target* of a propagated event (from editing an earlier
+// lesson) could later be *directly* edited within the same millisecond as
+// that propagated version, producing a colliding (or, with clock skew,
+// even older) source_updated_at. The receiver's own upsert rule — same or
+// older version is a no-op ("stale_ignored", still HTTP 200) — meant the
+// Sender treated the direct edit as delivered while the receiver's mirror
+// silently never changed, with zero pending outbox rows left for any retry
+// to repair. `updateLesson`'s direct-edit path must therefore look up the
+// latest version already recorded for its OWN lesson_id (not just what
+// downstream lessons use), exactly like the propagation path already does.
+//
+// Uses FakeClock (tests/helpers/fake-clock.ts) to force the exact
+// millisecond collision deterministically — no dependency on real
+// wall-clock timing. The scenario and all numbers mirror Work's own
+// reproduction in Issue #3 exactly, so the final assertions can be checked
+// against their independently-computed expected values.
+
+test("I: a direct edit of a lesson that was previously a downstream propagation target gets a version strictly newer than that propagated version, and the receiver mirror actually updates", async () => {
+  const { db, learner } = await setup();
+  const receiver = createFakeReceiver(SECRET);
+  receiver.queueResponse(202); // Lesson #1 create
+  receiver.queueResponse(202); // Lesson #2 create
+  const { hooks, settle } = testHooks(receiver.fetchImpl);
+
+  const clock = new FakeClock("2026-09-01T00:00:00.000Z");
+  clock.install();
+  try {
+    const lesson1 = await createLesson(db, learner.id, { lessonDate: "2026-09-01", startTime: "09:00", finishTime: "10:00", startOdometer: "0", finishOdometer: "10", taughtIds: ["1"], adiSignature: SIG1, learnerSignature: SIG1 }, hooks);
+    const lesson2 = await createLesson(db, learner.id, { lessonDate: "2026-09-02", startTime: "09:00", finishTime: "10:00", startOdometer: "100", finishOdometer: "110", taughtIds: ["2"], adiSignature: SIG1, learnerSignature: SIG1 }, hooks);
+    await settle();
+
+    const initialMirror = mirrorFromReceived(receiver);
+    assert.equal(initialMirror.get(lesson2.id)?.lesson.cumulative_minutes, 120);
+    assert.equal(initialMirror.get(lesson2.id)?.lesson.cumulative_km, 20);
+
+    // Both direct edits of Lesson #1 below happen at the SAME controlled
+    // clock value T — forcing Lesson #2's two propagated versions to land
+    // at T and T+1ms respectively (ensureStrictlyNewerSourceUpdatedAt's own
+    // collision-avoidance), exactly reproducing Work's boundary scenario.
+    clock.set("2026-09-05T10:00:00.000Z");
+    const t = clock.nowIso();
+
+    receiver.queueResponse(202); // Lesson #1's own edit (v = T)
+    receiver.queueResponse(202); // propagated Lesson #2 (v = T)
+    await updateLesson(db, learner.id, lesson1.id, { lessonDate: "2026-09-01", startTime: "09:00", finishTime: "10:30", startOdometer: "0", finishOdometer: "15", taughtIds: ["1"], adiSignature: SIG2, learnerSignature: SIG2 }, hooks);
+    await settle();
+
+    receiver.queueResponse(202); // Lesson #1's own edit (v = T+1ms, collision-avoided)
+    receiver.queueResponse(202); // propagated Lesson #2 (v = T+1ms, collision-avoided)
+    await updateLesson(db, learner.id, lesson1.id, { lessonDate: "2026-09-01", startTime: "09:00", finishTime: "11:00", startOdometer: "0", finishOdometer: "20", taughtIds: ["1"], adiSignature: SIG3, learnerSignature: SIG3 }, hooks);
+    await settle();
+
+    const lesson2RowsBeforeDirectEdit = outboxRowsForLesson(await listOutboxRowsForLearner(db, learner.id), lesson2.id);
+    assert.equal(lesson2RowsBeforeDirectEdit.length, 3, "create + two propagated events");
+    const sortedVersions = lesson2RowsBeforeDirectEdit.map((row) => row.sourceUpdatedAt).sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
+    const latestPropagatedVersion = sortedVersions[sortedVersions.length - 1];
+    assert.equal(latestPropagatedVersion, new Date(new Date(t).getTime() + 1).toISOString(), "Lesson #2's latest propagated version must be exactly T+1ms");
+
+    // Advance the clock to EXACTLY that same T+1ms value, then directly
+    // edit Lesson #2 — this is the exact collision Work reproduced.
+    clock.set(latestPropagatedVersion);
+    assert.equal(clock.nowIso(), latestPropagatedVersion, "clock must be set to exactly Lesson #2's latest propagated version");
+
+    receiver.queueResponse(202); // Lesson #2's own direct edit
+    await updateLesson(db, learner.id, lesson2.id, { lessonDate: "2026-09-02", startTime: "09:00", finishTime: "10:30", startOdometer: "100", finishOdometer: "120", taughtIds: ["2"], adiSignature: SIG4, learnerSignature: SIG4 }, hooks);
+    await settle();
+
+    const lesson2RowsAfter = outboxRowsForLesson(await listOutboxRowsForLearner(db, learner.id), lesson2.id);
+    assert.equal(lesson2RowsAfter.length, 4);
+    const directEditRow = lesson2RowsAfter.reduce((latest, row) => (new Date(row.sourceUpdatedAt).getTime() > new Date(latest.sourceUpdatedAt).getTime() ? row : latest));
+    assert.ok(
+      new Date(directEditRow.sourceUpdatedAt).getTime() > new Date(latestPropagatedVersion).getTime(),
+      `direct edit's source_updated_at (${directEditRow.sourceUpdatedAt}) must be strictly greater than the propagated version it collided with (${latestPropagatedVersion}) — this is the bug`,
+    );
+    assert.equal(directEditRow.sourceUpdatedAt, new Date(new Date(latestPropagatedVersion).getTime() + 1).toISOString(), "must be exactly T+2ms — the minimal strictly-newer bump, not an arbitrarily larger jump");
+
+    // Persisted Sender state: Lesson #2 is now 90 min / 20 km, on top of
+    // Lesson #1's final 120 min / 20 km => cumulative 210 min / 40 km.
+    const sourceLesson2Row = await db
+      .prepare("SELECT duration_minutes, distance_km, cumulative_minutes, cumulative_km FROM lessons WHERE id = ?")
+      .bind(lesson2.id)
+      .first<{ duration_minutes: number; distance_km: number; cumulative_minutes: number; cumulative_km: number }>();
+    assert.equal(sourceLesson2Row?.duration_minutes, 90);
+    assert.equal(sourceLesson2Row?.distance_km, 20);
+    assert.equal(sourceLesson2Row?.cumulative_minutes, 210);
+    assert.equal(sourceLesson2Row?.cumulative_km, 40);
+
+    // The simulated receiver mirror (highest-source_updated_at-wins, per
+    // the contract's own upsert rule) must reflect the SAME values — if the
+    // bug were still present, the direct edit's event would have collided
+    // with (not exceeded) the propagated version, so this mirror would
+    // still show the propagated snapshot (duration 60, cumulative 180/30),
+    // not the direct edit's own content, even though the Sender reports it
+    // delivered. Receiver code itself is out of scope/another repo — this
+    // mirror only re-applies the contract's own documented, version-based
+    // upsert rule to what the fake receiver actually captured.
+    const finalMirror = mirrorFromReceived(receiver);
+    const mirroredLesson2 = finalMirror.get(lesson2.id);
+    assert.equal(mirroredLesson2?.lesson.source_updated_at, directEditRow.sourceUpdatedAt, "receiver mirror must have actually advanced to the direct edit's version, not stayed stale");
+    assert.equal(mirroredLesson2?.lesson.duration_minutes, 90);
+    assert.equal(mirroredLesson2?.lesson.distance_km, 20);
+    assert.equal(mirroredLesson2?.lesson.cumulative_minutes, 210);
+    assert.equal(mirroredLesson2?.lesson.cumulative_km, 40);
+
+    // Delivered (202/200 are both "delivered" outcomes), so nothing is left pending to retry.
+    const allRows = await listOutboxRowsForLearner(db, learner.id);
+    assert.equal(
+      allRows.filter((row) => row.status === "pending").length,
+      0,
+      "every event, direct and propagated, must have been delivered — none left pending",
+    );
+  } finally {
+    clock.restore();
+  }
+});
+
+// ── J: rapid direct edits at the exact same controlled clock value ───────
+
+test("J: two direct edits of the same lesson at the exact same controlled clock timestamp still produce strictly increasing source_updated_at", async () => {
+  const { db, learner } = await setup();
+  const receiver = createFakeReceiver(SECRET);
+  receiver.queueResponse(202); // create
+  const { hooks, settle } = testHooks(receiver.fetchImpl);
+
+  const clock = new FakeClock("2026-09-01T00:00:00.000Z");
+  clock.install();
+  try {
+    const lesson = await createLesson(db, learner.id, { lessonDate: "2026-09-01", startTime: "09:00", finishTime: "10:00", startOdometer: "0", finishOdometer: "10", taughtIds: ["1"], adiSignature: SIG1, learnerSignature: SIG1 }, hooks);
+    await settle();
+
+    clock.set("2026-09-05T10:00:00.000Z");
+    const t = clock.nowIso();
+
+    receiver.queueResponse(202);
+    await updateLesson(db, learner.id, lesson.id, { lessonDate: "2026-09-01", startTime: "09:00", finishTime: "10:30", startOdometer: "0", finishOdometer: "15", taughtIds: ["1"], adiSignature: SIG2, learnerSignature: SIG2 }, hooks);
+    await settle();
+
+    // Deliberately do NOT advance the clock — the second direct edit lands
+    // at the exact same millisecond as the first.
+    assert.equal(clock.nowIso(), t, "clock must be unchanged for this to be a genuine same-millisecond collision");
+    receiver.queueResponse(202);
+    await updateLesson(db, learner.id, lesson.id, { lessonDate: "2026-09-01", startTime: "09:00", finishTime: "11:00", startOdometer: "0", finishOdometer: "20", taughtIds: ["1"], adiSignature: SIG3, learnerSignature: SIG3 }, hooks);
+    await settle();
+
+    const rows = outboxRowsForLesson(await listOutboxRowsForLearner(db, learner.id), lesson.id);
+    assert.equal(rows.length, 3, "create + two direct edits");
+    const versions = rows.map((row) => new Date(row.sourceUpdatedAt).getTime()).sort((a, b) => a - b);
+    assert.ok(versions[0] < versions[1], "second edit's version must be strictly newer than the create");
+    assert.ok(versions[1] < versions[2], "second edit's version must be strictly newer than the first edit, despite the identical clock reading");
+    assert.equal(versions[2], versions[1] + 1, "the minimal strictly-newer bump is exactly +1ms, not an arbitrarily larger jump");
+
+    const eventIds = new Set(rows.map((row) => row.eventId));
+    assert.equal(eventIds.size, 3, "every edit must have its own unique event_id despite the clock collision");
+  } finally {
+    clock.restore();
+  }
 });

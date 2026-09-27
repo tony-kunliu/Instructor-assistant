@@ -662,6 +662,22 @@ export async function updateLesson(db: D1Database, learnerId: string, lessonId: 
     ...assessedIds.map((competencyId) => ({ competencyId, action: "assessed" as const, result: achievedResults[competencyId] ?? null, lessonId, createdAt: nowIso })),
   ];
   const after = computeProgress([...otherLessonsEvents, ...newEventsForThisLesson]);
+
+  // Version lookup for the directly edited lesson itself, combined with the
+  // downstream lookup below into one query: a direct edit's own event must
+  // be strictly newer than every prior event recorded for this lesson_id,
+  // including a *propagated* event a previous edit already gave it (this
+  // lesson can itself be a downstream target of an earlier edit — see
+  // tony-kunliu/actgds.com Issue #3, "direct edit after propagation").
+  // Using plain `nowIso` unconditionally here was the bug: two events
+  // landing in the same millisecond compared equal, so the receiver
+  // silently treated the direct edit as `stale_ignored` while the Sender
+  // still marked it delivered — a durable mirror divergence with zero
+  // pending outbox rows left to retry.
+  const downstreamLessonIds = laterLessons.map((row) => String(row.id));
+  const latestByLesson = integration?.config.enabled ? await latestSourceUpdatedAtByLesson(db, [lessonId, ...downstreamLessonIds]) : new Map<string, string>();
+  const directSourceUpdatedAt = ensureStrictlyNewerSourceUpdatedAt(nowIso, latestByLesson.get(lessonId) ?? null);
+
   // The lesson's own instructor_id (never the transient editor) is who this teaching record belongs to.
   const outboxInsert = await prepareIntegrationOutboxInsert(db, integration, {
     learnerId,
@@ -677,7 +693,7 @@ export async function updateLesson(db: D1Database, learnerId: string, lessonId: 
       cumulativeMinutes: thisLessonCumulativeMinutes,
       cumulativeKm: thisLessonCumulativeKm,
       createdAt: existing.createdAt,
-      updatedAt: nowIso,
+      updatedAt: directSourceUpdatedAt,
     },
     taughtIds,
     assessedIds,
@@ -703,8 +719,6 @@ export async function updateLesson(db: D1Database, learnerId: string, lessonId: 
   // silently treats it as stale.
   const downstreamOutboxInserts: D1PreparedStatement[] = [];
   if (integration?.config.enabled && laterLessons.length > 0) {
-    const downstreamLessonIds = laterLessons.map((row) => String(row.id));
-    const latestByLesson = await latestSourceUpdatedAtByLesson(db, downstreamLessonIds);
     for (const row of laterLessons) {
       const downstreamLessonId = String(row.id);
       const latestExisting = latestByLesson.get(downstreamLessonId);
