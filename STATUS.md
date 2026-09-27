@@ -7,42 +7,66 @@ Repo: `tony-kunliu/instructor-assistant`
 ## Current Snapshot (read this first — everything below is history)
 
 - **`main`**: `8bae4e4` — trusted baseline, every feature through Production
-  deployment. Does not include `feature/learner-instructor-select`,
-  `feature/access-logout-button`, or this round's
-  `feature/actgds-integration-v1` yet (none authorized to merge into `main`
-  so far).
-- **`staging`**: `c862ba5` — `main` plus the instructor-dropdown fix and the
-  Access "Sign out" link. This round's ACTGDS integration work is on its
-  own feature branch, **not yet merged into `staging`**.
-- **`feature/actgds-integration-v1`** (off `staging@c862ba5`, now at
-  `1797af9`): ACTGDS Integration V1 sender. Contract Alignment + Reliability
-  Alignment complete (canonical schema byte-identical, event-id
-  immutability fixed, atomic outbox enqueue, periodic retry sweep), the
-  History Edit downstream-propagation blocker is fixed (editing an earlier
-  lesson propagates a fresh `lesson.upserted` event to every
-  already-exported downstream lesson), and **now the follow-up "direct edit
-  after propagation" version-collision blocker ACTGDS's re-review found is
-  also fixed**: `updateLesson`'s direct-edit path now checks the latest
-  `source_updated_at` already recorded for its own `lesson_id` (not just
-  what downstream lessons check), so a lesson that was itself a downstream
-  propagation target still gets a strictly newer version when later edited
-  directly — no more same-millisecond version collisions silently accepted
-  by the receiver as `stale_ignored` while the Sender reports delivered.
-  Disabled by default (`ACTGDS_INTEGRATION_ENABLED=false`); no real webhook
-  URL/secret configured; not merged, not deployed. See "Direct edit
-  source_updated_at monotonicity fix" below for full detail.
+  deployment. Does not yet include GitHub Actions CI, the Integration
+  Sender, `feature/learner-instructor-select`, or `feature/access-logout-button`
+  (none authorized to merge into `main` so far).
+- **`staging`**: now includes GitHub Actions CI (`929ffb8`) **and** the
+  fully cross-repo-reviewed ACTGDS Integration V1 Sender, merged this round
+  from `feature/actgds-integration-v1` — see "Integration Sender source
+  merged into staging" below for the exact commit and verification detail.
+  Integration remains disabled (`ACTGDS_INTEGRATION_ENABLED=false`); no
+  deploy performed as part of this merge.
+- **`feature/actgds-integration-v1`**: ACTGDS Integration V1 sender —
+  Contract Alignment + Reliability Alignment, History Edit downstream
+  propagation, and the direct-edit source_updated_at monotonicity fix are
+  all cross-repo reviewed PASS by ACTGDS/Work and now merged into `staging`
+  (see below). Disabled by default; no real webhook URL/secret configured.
 - **Staging Worker** live version: `9939629c-7886-4338-9126-a70f8e330b91`.
   **Production Worker** live version: `a5708df9-5dcf-4c10-b26b-212fb4bf9a3f`.
   Both D1s (`instructor-assistant-db`, `instructor-assistant-db-production`)
-  fully migrated through `0004` — **not** `0005` (this round's outbox
-  migration lives only on the feature branch, unapplied anywhere remote).
+  fully migrated through `0004` — **not** `0005` (now merged into `staging`'s
+  source but still unapplied to any remote D1 — no live deploy has happened
+  since this merge).
 - Ecosystem boundary rules (Instructor Assistant ↔ ACTGDS Website) now live
   in `AGENTS.md` §10 (now also naming ACTGDS as the canonical schema
   authority); long-term shared direction in `docs/ECOSYSTEM_ROADMAP.md`.
 - Cross-repo coordination record: `tony-kunliu/actgds.com` Issue #3
   ("Integration V1 Coordination — Instructor Assistant ↔ ACTGDS").
 
-## ACTGDS Integration V1 — Sender (feature branch, not yet merged)
+## Integration Sender source merged into staging (this round)
+
+`feature/actgds-integration-v1` had diverged from `staging` since before
+the GitHub Actions CI fix (`929ffb8`) landed there. Brought `staging` into
+the feature branch first (merge commit `a1b10f7`) rather than force-pushing
+or rebuilding history — conflicts were only in `STATUS.md`/`TASK.md`
+(resolved by keeping both branches' history, nothing dropped);
+`package.json`'s `test` script conflict resolved cleanly in staging's favor
+(`--experimental-strip-types` kept — the CI runtime fix was not reverted by
+this merge).
+
+Re-verified on the aligned feature branch before merging further: `npm run
+typecheck` PASS, `npm test` **111/111 PASS, 0 skipped** (Integration,
+Integration Alignment, History Edit propagation including the
+direct-after-propagation regression tests, PDF export incl.
+`public/fonts/NotoSansSC-Regular.otf`, Instructor Identity, CBT&A, D1
+storage, and every other prior suite), `npm run build` PASS. Canonical
+contract hash re-verified unchanged (`jq -cS . docs/integrations/
+lesson-upserted-v1.schema.json | sha256sum` = `c43d28164bb1c5c0e316e2d2f1cee77ad627508ef7dca4d58516adab8852b7e6`).
+`ACTGDS_INTEGRATION_ENABLED` confirmed still `"false"` in both the
+`[vars]` and `[env.production.vars]` blocks of `wrangler.toml`.
+
+Merged `feature/actgds-integration-v1` into `staging`. The real GitHub
+Actions push-triggered run on staging's new HEAD also came back green
+(`npm ci`/`typecheck`/`test`/`build` all PASS, overall success) — not just
+the feature branch's own local/pre-merge run.
+
+**Not done, deliberately, this round:** deploying Staging or Production,
+applying migration `0005` to any remote D1, configuring
+`ACTGDS_WEBHOOK_URL`/`ACTGDS_WEBHOOK_SECRET`, enabling
+`ACTGDS_INTEGRATION_ENABLED`, sending any real webhook, touching the
+`tony-kunliu/actgds.com` repo, merging into `main`.
+
+## ACTGDS Integration V1 — Sender (now merged into staging — see above)
 
 **Rollback baseline recorded before this round:** `main` at `8bae4e4`,
 `staging` at `c862ba5`; Staging Worker version

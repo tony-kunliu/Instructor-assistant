@@ -1,36 +1,41 @@
 # TASK.md
 
-**Current Task:** Direct edit source-version monotonicity fix —
-**Completed** (on `feature/actgds-integration-v1`; see below for exactly
-what "completed" does and doesn't include).
+**Current Task:** Merge reviewed Integration Sender source into staging
 
-**Next Recommended Task:** ACTGDS (Work) repeats its focused cross-repo
-compatibility review against this new commit (`1797af9`), since their
-re-review found the direct-edit-after-propagation version collision and
-marked Sender status `BLOCKED`. Confirm the deterministic reproduction now
-passes, the canonical hash is still unchanged, and no regressions in the
-previously PASS-ed areas. Only after their PASS and Tony's separate
-authorization should coordinated QA against a real (non-production)
-webhook URL/secret begin. Not started automatically — waiting for Tony's
-go-ahead per `AGENTS.md` §11.
+**Status:** Completed
 
-**Coordination Issue:** UPDATED —
-https://github.com/tony-kunliu/actgds.com/issues/3#issuecomment-5857648043
-(`STATUS: DIRECT EDIT VERSION BLOCKER FIXED — READY FOR RE-REVIEW`, commit
-`1797af9`).
+**Next Recommended Task:** Wait for ACTGDS Receiver source to also land in
+staging, then perform project documentation slimming before coordinated
+non-Production Integration QA.
 
-**Waiting on Other Repo:** `tony-kunliu/actgds.com` Issue #3 — ACTGDS
-(Work) repeats its focused cross-repo compatibility review of this fix.
-Beyond that, ACTGDS still needs the human-only step of linking a real
-Instructor Assistant `learner_id` (via the "Copy ID" button) to a real
-ACTGDS student record before any live data could flow meaningfully —
-that's Tony's manual CRM step, not something either repo automates.
+**Waiting on Other Repo:** ACTGDS staging source merge completion / NONE
 
-**Tony Manual Action Required:** NONE this round. (Later, turning this on
-for real will need: `wrangler secret put ACTGDS_WEBHOOK_SECRET` per
-environment, setting a real `ACTGDS_WEBHOOK_URL`, and flipping
-`ACTGDS_INTEGRATION_ENABLED` to `"true"` — none of that is done or asked
-for yet.)
+**Tony Manual Action Required:** NONE
+
+**Completed this session (merge reviewed Integration Sender source into staging):**
+
+`feature/actgds-integration-v1` (Integration Sender: contract, outbox,
+HMAC, retry, Cron wrapper, History Edit propagation, direct-edit
+source_updated_at monotonicity, migration `0005`, Copy Integration ID UI —
+all previously cross-repo reviewed PASS by ACTGDS/Work) had diverged from
+`staging` since before the GitHub Actions CI fix landed there. Merged
+latest `staging` (`929ffb8`, containing the CI `--experimental-strip-types`
+runtime fix) into the feature branch first (commit `a1b10f7`) — conflicts
+in `STATUS.md`/`TASK.md` resolved by keeping both branches' history intact;
+`package.json`'s test script merged cleanly, keeping staging's CI fix.
+Re-verified on the aligned feature branch: `npm run typecheck` PASS,
+`npm test` **111/111 PASS** (0 skipped — includes Integration, Alignment,
+History Edit propagation incl. the direct-after-propagation regression,
+PDF export, Instructor Identity, CBT&A, and all prior suites), `npm run
+build` PASS. Canonical contract hash re-verified unchanged:
+`c43d28164bb1c5c0e316e2d2f1cee77ad627508ef7dca4d58516adab8852b7e6`.
+`ACTGDS_INTEGRATION_ENABLED` confirmed still `"false"` in both Staging and
+Production `wrangler.toml` env blocks. Merged `feature/actgds-integration-v1`
+into `staging`; the subsequent real GitHub Actions run on `staging`'s new
+HEAD also came back green. No deploy, no migration `0005` applied to any
+remote D1, no webhook/secret configured, Integration not enabled, `main`
+untouched, Production untouched, ACTGDS repo untouched. Full detail in
+STATUS.md's "Integration Sender source merged into staging" section.
 
 **Completed this session (Direct edit source-version monotonicity fix):**
 
