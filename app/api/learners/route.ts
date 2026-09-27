@@ -1,4 +1,4 @@
-import { handle, readJson } from "@/lib/api.ts";
+import { handle, readJsonWithDefaultInstructor } from "@/lib/api.ts";
 import { getD1 } from "@/lib/db.ts";
 import { createLearner, listLearners } from "@/lib/repo.ts";
 
@@ -9,5 +9,5 @@ export function GET() {
 }
 
 export async function POST(request: Request) {
-  return handle(async () => ({ learner: await createLearner(getD1(), await readJson(request)) }), 201);
+  return handle(async () => ({ learner: await createLearner(getD1(), await readJsonWithDefaultInstructor(request)) }), 201);
 }

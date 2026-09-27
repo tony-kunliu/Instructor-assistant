@@ -1,15 +1,19 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { openTestD1 } from "../lib/db.ts";
-import { createLearner, createLesson, getCompletionSummary, getLearnerProgress } from "../lib/repo.ts";
+import { createLearner, createLesson, findInstructorByEmail, getCompletionSummary, getLearnerProgress } from "../lib/repo.ts";
 import { ALL_ASSESSABLE_IDS, FINAL_DRIVE_23, REVIEW_1_17, REVIEW_1_22, competencyFullName } from "../lib/competency.ts";
 
 const SIG = "data:image/png;base64,iVBORw0KGgo=";
 const BASE = { lessonDate: "2026-09-25", startOdometer: "0", adiSignature: SIG, learnerSignature: SIG };
 
+// Seeded by lib/schema.ts — see tests/instructor-identity.test.ts.
+const TONY_EMAIL = "Kunliu.work@gmail.com";
+
 async function setup() {
   const db = openTestD1(":memory:");
-  const learner = await createLearner(db, { fullName: "Test Learner", instructorName: "Test Instructor" });
+  const tony = await findInstructorByEmail(db, TONY_EMAIL);
+  const learner = await createLearner(db, { fullName: "Test Learner", instructorId: tony?.id });
   return { db, learner };
 }
 
@@ -142,7 +146,7 @@ test("J: Final Drive 23 Assessed + Achieved (after full unlock) marks CBT&A comp
   const summary = await getCompletionSummary(db, learner.id);
   assert.ok(summary);
   assert.equal(summary?.completingLessonNo, lesson.lessonNo);
-  assert.equal(summary?.instructorName, "Test Instructor");
+  assert.equal(summary?.instructorName, "Tony");
   assert.equal(summary?.totalLessons, lesson.lessonNo);
   assert.equal(summary?.cumulativeKm, lesson.cumulativeKm);
 });
