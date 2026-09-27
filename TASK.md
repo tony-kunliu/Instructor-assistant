@@ -14,9 +14,10 @@ authorization should coordinated QA against a real (non-production)
 webhook URL/secret begin. Not started automatically — waiting for Tony's
 go-ahead per `AGENTS.md` §11.
 
-**Coordination Issue:** to be updated with this round's handshake comment
-on https://github.com/tony-kunliu/actgds.com/issues/3 (`STATUS: DIRECT
-EDIT VERSION BLOCKER FIXED — READY FOR RE-REVIEW`, commit `1797af9`).
+**Coordination Issue:** UPDATED —
+https://github.com/tony-kunliu/actgds.com/issues/3#issuecomment-5857648043
+(`STATUS: DIRECT EDIT VERSION BLOCKER FIXED — READY FOR RE-REVIEW`, commit
+`1797af9`).
 
 **Waiting on Other Repo:** `tony-kunliu/actgds.com` Issue #3 — ACTGDS
 (Work) repeats its focused cross-repo compatibility review of this fix.
