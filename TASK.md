@@ -147,6 +147,23 @@ is itself the first application of that new rule). Added
 now-stale "official CBT&A competency list not yet verified" line in
 `AGENTS.md` — it has been verified since the CBT&A full-names round.
 
+**Completed this session (ci/add-github-actions fix, merged into `staging` separately):**
+
+Root cause confirmed (not guessed): CI's pinned `node-version: "22.13"`
+resolves to `22.13.1`, which requires an explicit opt-in to run `.ts`
+files — `npm test` failed with `ERR_UNKNOWN_FILE_EXTENSION` on every `.ts`
+test file in the first real Actions run, so no TypeScript test ever
+actually started (typecheck had passed because `tsc` handles `.ts` natively
+regardless). Fixed by adding Node's official `--experimental-strip-types`
+flag (stable since Node 22.6.0) to the `test` script — kept the declared
+`engines` floor (`>=22.13.0`) unchanged, no CI Node-version bump, no new
+test framework, no test files skipped/filtered. PR #2 base retargeted
+`main` → `staging`. Re-verified against a real (not simulated) GitHub
+Actions run: `npm ci` PASS, `npm run typecheck` PASS, `npm test` **69/69
+PASS**, `npm run build` PASS, overall workflow **success**. No merge, no
+deploy, no Production change. Full detail in STATUS.md's "GitHub Actions CI
+fixed and verified" section.
+
 **Completed this session (access-logout-button):**
 
 Added a "Sign out" link under "Signed in as `<name>`" in the topbar,

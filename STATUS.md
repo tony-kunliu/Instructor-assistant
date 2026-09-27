@@ -439,6 +439,29 @@ matched exactly.
   (commit `52ffde6`, `STATUS: SENDER ALIGNED`) — ACK'd the canonical hash
   and commit, per ACTGDS's own FROM/REPO/BRANCH/COMMIT/... handoff format.
 
+## GitHub Actions CI fixed and verified (branch `ci/add-github-actions`, merged into `staging` @ `929ffb8`)
+
+Root cause: CI pinned `node-version: "22.13"` (resolves to `22.13.1`), which
+does not run `.ts` files without an explicit opt-in — `npm test` failed
+with `ERR_UNKNOWN_FILE_EXTENSION` on every `.ts` test file in the first
+real Actions run, so the TypeScript suite never actually started (`npm ci`
+and `npm run typecheck` had passed). Fix: added Node's official
+`--experimental-strip-types` flag to the `test` script in `package.json`
+(available since Node 22.6.0) — no CI Node-version bump, `engines`
+(`>=22.13.0`) unchanged, no new test framework, no tests skipped/filtered.
+PR base retargeted from `main` to `staging` (this repo's flow is
+`feature/* → staging → main → Production`).
+
+Re-verified against a real GitHub Actions run (not just local), run
+`36336348607` / commit `34d5a5e`: `npm ci` PASS, `npm run typecheck` PASS,
+`npm test` **69/69 PASS** (0 fail/skipped — current `staging` suite:
+access, api, calc, competency, D1 storage, History Edit, Instructor
+Identity, PDF export incl. `public/fonts/NotoSansSC-Regular.otf`, smoke,
+workflow), `npm run build` PASS. Overall workflow conclusion: **success**.
+Merged into `staging` as `929ffb8` (PR #2); post-merge `staging` push CI
+also confirmed 69/69 PASS / build PASS / overall success. No deploy, no
+Production change.
+
 ## Rollback baseline — recorded before `feature/instructor-identity` (Instructor Identity V1)
 
 Recorded before any change in this round, per AGENTS.md-style rollback
