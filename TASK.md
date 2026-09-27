@@ -12,14 +12,13 @@ can understand the project's current state in 1-2 minutes.
 **Status:** Completed (branch `docs/project-memory-cleanup`, not yet
 merged into `staging` — awaiting Tony's review).
 
-**Next Recommended Task:** After this cleanup PR is reviewed and merged
-into `staging`, proceed to coordinated non-Production Integration QA
-(Staging ↔ ACTGDS QA), pending Tony's separate authorization. Also confirm
-whether ACTGDS Receiver source has landed in their `staging`.
+**Next Recommended Task:** Coordinated non-Production Integration QA
+(Staging ↔ ACTGDS QA), after both documentation cleanup PRs are
+reviewed/merged, pending Tony's separate authorization.
 
-**Waiting on Other Repo:** ACTGDS Receiver source landing in their
-`staging` (status: unconfirmed as of this task — check
-`tony-kunliu/actgds.com` before starting coordinated QA).
+**Waiting on Other Repo:** NONE — ACTGDS Receiver source is confirmed IN
+STAGING (`tony-kunliu/actgds.com` `staging` @ `d8c8632dec9863a0dc3b0475093ecf193f63dfc2`,
+CI SUCCESS, 57/57 tests PASS).
 
 **Tony Manual Action Required:** Review and merge
 `docs/project-memory-cleanup` into `staging` when ready.
