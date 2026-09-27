@@ -2,7 +2,31 @@
 
 No active development task.
 
-**Completed this session:**
+**Completed this session (learner-instructor-select):**
+
+New-learner creation no longer accepts a free-typed instructor name or
+auto-creates an instructor row for it. `POST /api/learners` now requires an
+existing, active instructor's id (400 if unknown/inactive); the UI's
+instructor field is a dropdown of active instructors from `/api/instructors`,
+defaulting to the signed-in instructor (`/api/me`) but always manually
+changeable (works in local dev with no Cloudflare Access too). No migration,
+no existing `learners`/`lessons`/`instructors` data touched (`ADI604`/"V1test"
+included). `npm run build` + `npm test` (69/69) pass. Merged into `staging`
+(`01d7e5c`) and deployed to Cloudflare Staging — confirmed still Access-gated
+post-deploy, and `instructors` row count unchanged via a remote read-only
+`wrangler d1 execute` query. **Not merged into `main`, not deployed to
+Production** (not authorized this round). Full details in STATUS.md.
+
+**Follow-up for Tony (this round):**
+
+- The one QA step this session couldn't do itself: sign in to Staging via
+  Cloudflare Access (Tony or Anna) and add one learner explicitly named
+  "QA" through the new instructor dropdown, confirming it's attributed to
+  the right instructor. This session has no access to either inbox to
+  complete the Access one-time-PIN login — same constraint as the original
+  Access login verification earlier in this project.
+
+**Completed in the previous session:**
 
 1. **ADI601 merged into the real "Tony" instructor record** (Tony
    explicitly re-confirmed after this session's own sandboxing had
@@ -23,7 +47,7 @@ No active development task.
    made Production logins always fail) was found and fixed before Tony
    ever tried logging in — the audience is now a per-environment
    `ACCESS_AUD` Worker var.
-3. `staging` was merged into `main` again (`b6907de`) to carry all of the
+3. `staging` was merged into `main` again (`8bae4e4`) to carry all of the
    above forward, continuing from the authorization already given in an
    earlier round.
 
