@@ -1,7 +1,16 @@
 name = "instructor-assistant"
-main = ".open-next/worker.js"
+# worker/scheduled-entry.ts wraps OpenNext's generated `.open-next/worker.js`
+# (fetch unchanged) and adds a `scheduled` handler for the ACTGDS
+# Integration V1 outbox retry sweep — see that file's own header comment
+# and docs/integrations/actgds-instructor-assistant-v1.md.
+main = "worker/scheduled-entry.ts"
 compatibility_date = "2025-01-01"
 compatibility_flags = ["nodejs_compat", "global_fetch_strictly_public"]
+
+# Sweeps due ACTGDS Integration V1 outbox retries every 5 minutes — a no-op
+# when ACTGDS_INTEGRATION_ENABLED=false (the default; see [vars] below).
+[triggers]
+crons = ["*/5 * * * *"]
 
 [assets]
 directory = ".open-next/assets"
@@ -47,6 +56,9 @@ migrations_dir = "migrations"
 # vs. this Worker's own workers.dev URL) is still pending — see TASK.md.
 [env.production]
 name = "instructor-assistant-production"
+
+[env.production.triggers]
+crons = ["*/5 * * * *"]
 
 [env.production.vars]
 ACCESS_AUD = "5d77a5074b7a9436e7610db2937f4108d9fd60a97d6c9243421fb44909ce288b"

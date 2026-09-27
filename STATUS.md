@@ -14,20 +14,29 @@ Repo: `tony-kunliu/instructor-assistant`
 - **`staging`**: `c862ba5` — `main` plus the instructor-dropdown fix and the
   Access "Sign out" link. This round's ACTGDS integration work is on its
   own feature branch, **not yet merged into `staging`**.
-- **`feature/actgds-integration-v1`** (this round, off `staging@c862ba5`):
-  ACTGDS Integration V1 sender — contract docs, schema, durable outbox,
-  HMAC signing, retry, learner Integration ID UI. Disabled by default
-  (`ACTGDS_INTEGRATION_ENABLED=false`); no real webhook URL/secret
+- **`feature/actgds-integration-v1`** (off `staging@c862ba5`): ACTGDS
+  Integration V1 sender, now **Contract Alignment + Reliability
+  Alignment complete**: canonical schema copied byte-for-byte from ACTGDS
+  (`contract_schema_sha256` `c43d28164bb1c5c0e316e2d2f1cee77ad627508ef7dca4d58516adab8852b7e6`,
+  confirmed against their Issue #3 handoff), event_id immutability fixed
+  (retries resend the exact stored raw bytes, never re-serialized), the
+  outbox enqueue is now in the *same* atomic `db.batch()` as the lesson
+  write (closes the durability gap the first Sender round left open), and
+  a Cloudflare Cron Trigger + wrapper Worker entry
+  (`worker/scheduled-entry.ts`) sweep due retries periodically. Disabled by
+  default (`ACTGDS_INTEGRATION_ENABLED=false`); no real webhook URL/secret
   configured; not merged, not deployed. See "ACTGDS Integration V1 —
-  Sender (feature branch, not yet merged)" below for full detail.
+  Contract + Reliability Alignment" below for full detail.
 - **Staging Worker** live version: `9939629c-7886-4338-9126-a70f8e330b91`.
   **Production Worker** live version: `a5708df9-5dcf-4c10-b26b-212fb4bf9a3f`.
   Both D1s (`instructor-assistant-db`, `instructor-assistant-db-production`)
   fully migrated through `0004` — **not** `0005` (this round's outbox
   migration lives only on the feature branch, unapplied anywhere remote).
 - Ecosystem boundary rules (Instructor Assistant ↔ ACTGDS Website) now live
-  in `AGENTS.md` §10; long-term shared direction in
-  `docs/ECOSYSTEM_ROADMAP.md`.
+  in `AGENTS.md` §10 (now also naming ACTGDS as the canonical schema
+  authority); long-term shared direction in `docs/ECOSYSTEM_ROADMAP.md`.
+- Cross-repo coordination record: `tony-kunliu/actgds.com` Issue #3
+  ("Integration V1 Coordination — Instructor Assistant ↔ ACTGDS").
 
 ## ACTGDS Integration V1 — Sender (feature branch, not yet merged)
 
@@ -119,6 +128,127 @@ entirely inert until explicitly turned on per environment.
   anywhere, configuring a real webhook URL/secret, connecting to a real
   ACTGDS receiver, historical lesson backfill, and the Cron Trigger wiring
   noted above.
+
+## ACTGDS Integration V1 — Contract + Reliability Alignment (same feature branch, follow-up round)
+
+**Rollback baseline recorded before this round:** identical to the
+previous round's (`main` `8bae4e4`, `staging` `c862ba5`, Staging Worker
+`9939629c-7886-4338-9126-a70f8e330b91`, Production Worker
+`a5708df9-5dcf-4c10-b26b-212fb4bf9a3f`, both D1s at migration `0004`) —
+still nothing live to roll back; this round only advances
+`feature/actgds-integration-v1` itself.
+
+Read `tony-kunliu/actgds.com`'s `feature/instructor-assistant-integration-v1`
+branch (commit `d0559bec3393bfacaa8e8881e2f9abfa1dbd4978`, receiver
+implementation `1757093a8c49fbd3c36ce683baf76f358ac93360`) and its Issue #3
+handoff comment ("CONTRACT READY FOR CLAUDE") before changing anything
+here, per instruction. Confirmed the canonical hash they reported
+(`c43d28164bb1c5c0e316e2d2f1cee77ad627508ef7dca4d58516adab8852b7e6`) by
+running `jq -cS . | sha256sum` on their checked-out schema file myself —
+matched exactly.
+
+- **Canonical schema adopted verbatim:** `docs/integrations/
+  lesson-upserted-v1.schema.json` and `lesson-upserted-v1.fixtures.json`
+  are now byte-for-byte copies of ACTGDS's files (`diff` confirmed
+  identical, hash confirmed identical). This repo's previous, independently
+  drafted schema (hash `6335f5897...`) is superseded — it was a "close
+  enough" reconstruction of the same business rules, not a byte-identical
+  copy, and per `AGENTS.md` §10 that's no longer acceptable: ACTGDS's copy
+  is now the sole canonical authority.
+- **`lib/integration/contract.ts`:** no id-token behavior changed (the
+  hyphen→underscore conversion and the 1-22/review_1_17/review_1_22/
+  final_drive_23 vocabulary were already correct), but every stable id is
+  now defensively clamped to the schema's 128-char limit and
+  `display_name` to 200 — real values (UUIDs, short names) never hit
+  these limits today, but a payload that quietly exceeded them would have
+  been a permanent, hard-to-debug 400 on the receiver. `tests/
+  integration-alignment.test.ts` tests A-D build one payload per lesson
+  shape (ordinary, Review 1-17, Review 1-22, Final Drive 23) and validate
+  each directly against the canonical schema file using a small
+  test-only JSON-Schema-subset validator ported from ACTGDS's own
+  `lib/instructor-assistant-contract.ts` (read-only reviewed, not shipped
+  as sender code) — plus a fifth test runs every valid fixture from
+  ACTGDS's shared A-J set through that same validator, and confirms F/G
+  fail semantic validation while H fails schema validation outright
+  (`taught` rejects any special-assessment token by pattern).
+- **Event-ID immutability — real bug fixed:** the retry path used to
+  `JSON.parse` the stored `payload_json` back into an object and then
+  `JSON.stringify` it again before sending — which usually round-trips
+  byte-identically in V8, but "usually" was never a safe guarantee for an
+  idempotency key ACTGDS treats as immutable (a byte difference under the
+  same `event_id` is a permanent `409 event_id_conflict`, not a retry).
+  `lib/integration/sender.ts#attemptWebhookDelivery` now takes the
+  `event_id` and the exact raw `payload_json` string directly and never
+  touches JSON parsing/serialization again after the one time it was
+  built at enqueue — retries resend the literal stored bytes. Tests F
+  (byte-identical raw body across two delivery attempts), G (same
+  `X-IA-Event-ID` header on both), and H (a fresh timestamp/signature on
+  each attempt, both independently verifying) cover this directly.
+  `classifyDeliveryOutcome`'s existing generic 4xx-is-permanent bucket
+  already covered 409 correctly; added an explicit test (P) and a comment
+  spelling out why 409 specifically can never be retried.
+- **Durable outbox — real gap closed:** the first Sender round documented,
+  as a known trade-off, that the outbox INSERT happened as its own
+  statement *after* the lesson/competency_events `db.batch()` had already
+  committed (it needed the learner's post-write progress snapshot). This
+  round removes that gap: `lib/repo.ts#createLesson` and `#updateLesson`
+  now build the "after" progress snapshot **in memory** (prior competency
+  events, fetched once, plus this lesson's own about-to-be-inserted
+  events run through the same `computeProgress` the rest of the app
+  trusts) *before* the batch, so the outbox row's `D1PreparedStatement`
+  (`lib/integration/outbox.ts#insertOutboxRowStatement`) can be pushed
+  into the *same* `db.batch([...])` array as the lesson write. Tests I and
+  J prove this behaviorally rather than by inspection: I wraps the
+  `D1Database` to count `db.batch()` invocations and asserts exactly one
+  call happens per lesson save when integration is enabled; J forces that
+  one `db.batch()` call to reject and confirms **neither** the lesson row
+  **nor** the outbox row exists afterward — the specific "lesson committed,
+  event silently missing" window is now provably impossible, not just
+  believed impossible.
+- **Periodic retry sweep — implemented, deploy-time wiring unverified:**
+  `@opennextjs/cloudflare` (this version) generates only a `fetch` handler
+  with no `scheduled` hook and no config surface for adding one (checked
+  its `CloudflareOverrides` type directly). The officially-supported way
+  to add one without hacking the generated, gitignored
+  `.open-next/worker.js` is a small wrapper entry file:
+  `worker/scheduled-entry.ts` re-exports the generated `fetch` unchanged
+  and adds a `scheduled` handler that calls
+  `lib/integration/sender.ts#processDueOutbox` (a no-op when disabled).
+  `wrangler.toml`'s `main` now points there instead of directly at
+  `.open-next/worker.js`, and both the top-level and `[env.production]`
+  configs gained a `*/5 * * * *` Cron Trigger. `worker/` is excluded from
+  `tsconfig.json` (it imports a file that only exists after
+  `opennextjs-cloudflare build`, which `next build`'s own typecheck never
+  runs — mirrors how `.open-next/` itself is fully gitignored/excluded).
+  **What's actually verified:** `npm run cf:build` followed by `wrangler
+  deploy --dry-run` (both top-level and `--env production`, no upload, no
+  remote touched) bundles clean and lists the exact expected bindings —
+  proof the wrapper genuinely bundles and wires through wrangler's own
+  esbuild pipeline, not just that the idea sounds right. The retry *logic*
+  itself is fully tested by directly calling `processDueOutbox` the same
+  way the `scheduled` handler does (tests K/M — a sweep after
+  `next_attempt_at` delivers a due retry; test L — a sweep before it does
+  nothing; test Q — repeated failures exhaust the backoff schedule into
+  `permanent_failure` end to end, not just the pure backoff function).
+  **What's not verified, and can't be this round:** an actual Cloudflare
+  Cron Trigger invoking this Worker's `scheduled()` in the real Cloudflare
+  runtime — that requires a real deploy, which is out of scope. This is a
+  real, stated limitation, not "logic exists" dressed up as "automatic
+  retry complete": the wiring is implemented and dry-run-bundled, not
+  live-fired.
+- **Verification:** `npm run build` / `npm test`: PASS (**101/101** — the
+  86 tests from the previous round unchanged, plus 15 new in
+  `tests/integration-alignment.test.ts` covering requirements A-Q from
+  this round's brief, reusing `tests/helpers/fake-actgds-receiver.ts` and
+  a new `tests/helpers/schema-validate.ts`). `npx wrangler deploy
+  --dry-run` (both environments) bundles cleanly with the new `main` and
+  cron config. No migration change this round (still `0005`, unchanged
+  content). No Staging/Production D1, Worker, or ACTGDS repo/database
+  touched.
+- **Not done, deliberately:** merging into `staging`/`main`, deploying
+  anywhere for real, configuring a real webhook URL/secret, connecting to
+  a real ACTGDS receiver, historical lesson backfill, live-firing the Cron
+  Trigger.
 
 ## Rollback baseline — recorded before `feature/instructor-identity` (Instructor Identity V1)
 

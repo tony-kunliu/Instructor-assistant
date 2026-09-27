@@ -1,0 +1,536 @@
+[
+  {
+    "id": "A",
+    "description": "ordinary lesson",
+    "http": 200,
+    "status": "applied",
+    "payload": {
+      "contract_version": 1,
+      "event_id": "11111111-1111-4111-8111-111111111111",
+      "event_type": "lesson.upserted",
+      "occurred_at": "2026-09-27T00:00:00Z",
+      "source": {
+        "system": "instructor-assistant",
+        "environment": "staging"
+      },
+      "learner": {
+        "learner_id": "synthetic-learner"
+      },
+      "instructor": {
+        "instructor_id": "synthetic-instructor",
+        "display_name": "Synthetic instructor"
+      },
+      "lesson": {
+        "lesson_id": "synthetic-lesson",
+        "lesson_number": 1,
+        "lesson_date": "2026-09-27",
+        "start_time": "09:00",
+        "finish_time": "10:30",
+        "duration_minutes": 90,
+        "distance_km": 42,
+        "cumulative_minutes": 1950,
+        "cumulative_km": 686,
+        "taught": [
+          "8",
+          "12"
+        ],
+        "assessed": [
+          "4"
+        ],
+        "achieved": [
+          "4"
+        ],
+        "source_updated_at": "2026-09-27T00:00:00Z"
+      },
+      "progress": {
+        "achieved_count": 15,
+        "total_competencies": 22,
+        "review_1_17": "achieved",
+        "review_1_22": "locked",
+        "final_drive_23": "locked",
+        "cbta_status": "active"
+      }
+    }
+  },
+  {
+    "id": "B",
+    "description": "Review 1-17",
+    "http": 200,
+    "status": "applied",
+    "payload": {
+      "contract_version": 1,
+      "event_id": "11111111-1111-4111-8111-111111111111",
+      "event_type": "lesson.upserted",
+      "occurred_at": "2026-09-27T00:00:00Z",
+      "source": {
+        "system": "instructor-assistant",
+        "environment": "staging"
+      },
+      "learner": {
+        "learner_id": "synthetic-learner"
+      },
+      "instructor": {
+        "instructor_id": "synthetic-instructor",
+        "display_name": "Synthetic instructor"
+      },
+      "lesson": {
+        "lesson_id": "synthetic-lesson",
+        "lesson_number": 1,
+        "lesson_date": "2026-09-27",
+        "start_time": "09:00",
+        "finish_time": "10:30",
+        "duration_minutes": 90,
+        "distance_km": 42,
+        "cumulative_minutes": 1950,
+        "cumulative_km": 686,
+        "taught": [
+          "8",
+          "12"
+        ],
+        "assessed": [
+          "review_1_17"
+        ],
+        "achieved": [
+          "review_1_17"
+        ],
+        "source_updated_at": "2026-09-27T00:00:00Z"
+      },
+      "progress": {
+        "achieved_count": 15,
+        "total_competencies": 22,
+        "review_1_17": "achieved",
+        "review_1_22": "locked",
+        "final_drive_23": "locked",
+        "cbta_status": "active"
+      }
+    }
+  },
+  {
+    "id": "C",
+    "description": "Review 1-22",
+    "http": 200,
+    "status": "applied",
+    "payload": {
+      "contract_version": 1,
+      "event_id": "11111111-1111-4111-8111-111111111111",
+      "event_type": "lesson.upserted",
+      "occurred_at": "2026-09-27T00:00:00Z",
+      "source": {
+        "system": "instructor-assistant",
+        "environment": "staging"
+      },
+      "learner": {
+        "learner_id": "synthetic-learner"
+      },
+      "instructor": {
+        "instructor_id": "synthetic-instructor",
+        "display_name": "Synthetic instructor"
+      },
+      "lesson": {
+        "lesson_id": "synthetic-lesson",
+        "lesson_number": 1,
+        "lesson_date": "2026-09-27",
+        "start_time": "09:00",
+        "finish_time": "10:30",
+        "duration_minutes": 90,
+        "distance_km": 42,
+        "cumulative_minutes": 1950,
+        "cumulative_km": 686,
+        "taught": [
+          "8",
+          "12"
+        ],
+        "assessed": [
+          "review_1_22"
+        ],
+        "achieved": [
+          "review_1_22"
+        ],
+        "source_updated_at": "2026-09-27T00:00:00Z"
+      },
+      "progress": {
+        "achieved_count": 15,
+        "total_competencies": 22,
+        "review_1_17": "achieved",
+        "review_1_22": "locked",
+        "final_drive_23": "locked",
+        "cbta_status": "active"
+      }
+    }
+  },
+  {
+    "id": "D",
+    "description": "Final Drive 23",
+    "http": 200,
+    "status": "applied",
+    "payload": {
+      "contract_version": 1,
+      "event_id": "11111111-1111-4111-8111-111111111111",
+      "event_type": "lesson.upserted",
+      "occurred_at": "2026-09-27T00:00:00Z",
+      "source": {
+        "system": "instructor-assistant",
+        "environment": "staging"
+      },
+      "learner": {
+        "learner_id": "synthetic-learner"
+      },
+      "instructor": {
+        "instructor_id": "synthetic-instructor",
+        "display_name": "Synthetic instructor"
+      },
+      "lesson": {
+        "lesson_id": "synthetic-lesson",
+        "lesson_number": 1,
+        "lesson_date": "2026-09-27",
+        "start_time": "09:00",
+        "finish_time": "10:30",
+        "duration_minutes": 90,
+        "distance_km": 42,
+        "cumulative_minutes": 1950,
+        "cumulative_km": 686,
+        "taught": [
+          "8",
+          "12"
+        ],
+        "assessed": [
+          "final_drive_23"
+        ],
+        "achieved": [
+          "final_drive_23"
+        ],
+        "source_updated_at": "2026-09-27T00:00:00Z"
+      },
+      "progress": {
+        "achieved_count": 15,
+        "total_competencies": 22,
+        "review_1_17": "achieved",
+        "review_1_22": "locked",
+        "final_drive_23": "locked",
+        "cbta_status": "active"
+      }
+    }
+  },
+  {
+    "id": "E",
+    "description": "mixed assessments",
+    "http": 200,
+    "status": "applied",
+    "payload": {
+      "contract_version": 1,
+      "event_id": "11111111-1111-4111-8111-111111111111",
+      "event_type": "lesson.upserted",
+      "occurred_at": "2026-09-27T00:00:00Z",
+      "source": {
+        "system": "instructor-assistant",
+        "environment": "staging"
+      },
+      "learner": {
+        "learner_id": "synthetic-learner"
+      },
+      "instructor": {
+        "instructor_id": "synthetic-instructor",
+        "display_name": "Synthetic instructor"
+      },
+      "lesson": {
+        "lesson_id": "synthetic-lesson",
+        "lesson_number": 1,
+        "lesson_date": "2026-09-27",
+        "start_time": "09:00",
+        "finish_time": "10:30",
+        "duration_minutes": 90,
+        "distance_km": 42,
+        "cumulative_minutes": 1950,
+        "cumulative_km": 686,
+        "taught": [
+          "8",
+          "12"
+        ],
+        "assessed": [
+          "4",
+          "review_1_17",
+          "final_drive_23"
+        ],
+        "achieved": [
+          "4",
+          "final_drive_23"
+        ],
+        "source_updated_at": "2026-09-27T00:00:00Z"
+      },
+      "progress": {
+        "achieved_count": 15,
+        "total_competencies": 22,
+        "review_1_17": "achieved",
+        "review_1_22": "locked",
+        "final_drive_23": "locked",
+        "cbta_status": "active"
+      }
+    }
+  },
+  {
+    "id": "F",
+    "description": "achieved outside assessed",
+    "http": 400,
+    "status": "invalid_schema",
+    "payload": {
+      "contract_version": 1,
+      "event_id": "11111111-1111-4111-8111-111111111111",
+      "event_type": "lesson.upserted",
+      "occurred_at": "2026-09-27T00:00:00Z",
+      "source": {
+        "system": "instructor-assistant",
+        "environment": "staging"
+      },
+      "learner": {
+        "learner_id": "synthetic-learner"
+      },
+      "instructor": {
+        "instructor_id": "synthetic-instructor",
+        "display_name": "Synthetic instructor"
+      },
+      "lesson": {
+        "lesson_id": "synthetic-lesson",
+        "lesson_number": 1,
+        "lesson_date": "2026-09-27",
+        "start_time": "09:00",
+        "finish_time": "10:30",
+        "duration_minutes": 90,
+        "distance_km": 42,
+        "cumulative_minutes": 1950,
+        "cumulative_km": 686,
+        "taught": [
+          "8",
+          "12"
+        ],
+        "assessed": [
+          "4"
+        ],
+        "achieved": [
+          "8"
+        ],
+        "source_updated_at": "2026-09-27T00:00:00Z"
+      },
+      "progress": {
+        "achieved_count": 15,
+        "total_competencies": 22,
+        "review_1_17": "achieved",
+        "review_1_22": "locked",
+        "final_drive_23": "locked",
+        "cbta_status": "active"
+      }
+    }
+  },
+  {
+    "id": "G",
+    "description": "core taught and assessed overlap",
+    "http": 400,
+    "status": "invalid_schema",
+    "payload": {
+      "contract_version": 1,
+      "event_id": "11111111-1111-4111-8111-111111111111",
+      "event_type": "lesson.upserted",
+      "occurred_at": "2026-09-27T00:00:00Z",
+      "source": {
+        "system": "instructor-assistant",
+        "environment": "staging"
+      },
+      "learner": {
+        "learner_id": "synthetic-learner"
+      },
+      "instructor": {
+        "instructor_id": "synthetic-instructor",
+        "display_name": "Synthetic instructor"
+      },
+      "lesson": {
+        "lesson_id": "synthetic-lesson",
+        "lesson_number": 1,
+        "lesson_date": "2026-09-27",
+        "start_time": "09:00",
+        "finish_time": "10:30",
+        "duration_minutes": 90,
+        "distance_km": 42,
+        "cumulative_minutes": 1950,
+        "cumulative_km": 686,
+        "taught": [
+          "4"
+        ],
+        "assessed": [
+          "4"
+        ],
+        "achieved": [
+          "4"
+        ],
+        "source_updated_at": "2026-09-27T00:00:00Z"
+      },
+      "progress": {
+        "achieved_count": 15,
+        "total_competencies": 22,
+        "review_1_17": "achieved",
+        "review_1_22": "locked",
+        "final_drive_23": "locked",
+        "cbta_status": "active"
+      }
+    }
+  },
+  {
+    "id": "H",
+    "description": "special taught",
+    "http": 400,
+    "status": "invalid_schema",
+    "payload": {
+      "contract_version": 1,
+      "event_id": "11111111-1111-4111-8111-111111111111",
+      "event_type": "lesson.upserted",
+      "occurred_at": "2026-09-27T00:00:00Z",
+      "source": {
+        "system": "instructor-assistant",
+        "environment": "staging"
+      },
+      "learner": {
+        "learner_id": "synthetic-learner"
+      },
+      "instructor": {
+        "instructor_id": "synthetic-instructor",
+        "display_name": "Synthetic instructor"
+      },
+      "lesson": {
+        "lesson_id": "synthetic-lesson",
+        "lesson_number": 1,
+        "lesson_date": "2026-09-27",
+        "start_time": "09:00",
+        "finish_time": "10:30",
+        "duration_minutes": 90,
+        "distance_km": 42,
+        "cumulative_minutes": 1950,
+        "cumulative_km": 686,
+        "taught": [
+          "review_1_17"
+        ],
+        "assessed": [
+          "4"
+        ],
+        "achieved": [
+          "4"
+        ],
+        "source_updated_at": "2026-09-27T00:00:00Z"
+      },
+      "progress": {
+        "achieved_count": 15,
+        "total_competencies": 22,
+        "review_1_17": "achieved",
+        "review_1_22": "locked",
+        "final_drive_23": "locked",
+        "cbta_status": "active"
+      }
+    }
+  },
+  {
+    "id": "I",
+    "description": "identical retry",
+    "seed": "A",
+    "http": 200,
+    "status": "duplicate",
+    "payload": {
+      "contract_version": 1,
+      "event_id": "11111111-1111-4111-8111-111111111111",
+      "event_type": "lesson.upserted",
+      "occurred_at": "2026-09-27T00:00:00Z",
+      "source": {
+        "system": "instructor-assistant",
+        "environment": "staging"
+      },
+      "learner": {
+        "learner_id": "synthetic-learner"
+      },
+      "instructor": {
+        "instructor_id": "synthetic-instructor",
+        "display_name": "Synthetic instructor"
+      },
+      "lesson": {
+        "lesson_id": "synthetic-lesson",
+        "lesson_number": 1,
+        "lesson_date": "2026-09-27",
+        "start_time": "09:00",
+        "finish_time": "10:30",
+        "duration_minutes": 90,
+        "distance_km": 42,
+        "cumulative_minutes": 1950,
+        "cumulative_km": 686,
+        "taught": [
+          "8",
+          "12"
+        ],
+        "assessed": [
+          "4"
+        ],
+        "achieved": [
+          "4"
+        ],
+        "source_updated_at": "2026-09-27T00:00:00Z"
+      },
+      "progress": {
+        "achieved_count": 15,
+        "total_competencies": 22,
+        "review_1_17": "achieved",
+        "review_1_22": "locked",
+        "final_drive_23": "locked",
+        "cbta_status": "active"
+      }
+    }
+  },
+  {
+    "id": "J",
+    "description": "changed payload same event ID",
+    "seed": "A",
+    "http": 409,
+    "status": "event_id_conflict",
+    "code": "event_id_payload_mismatch",
+    "payload": {
+      "contract_version": 1,
+      "event_id": "11111111-1111-4111-8111-111111111111",
+      "event_type": "lesson.upserted",
+      "occurred_at": "2026-09-27T00:00:00Z",
+      "source": {
+        "system": "instructor-assistant",
+        "environment": "staging"
+      },
+      "learner": {
+        "learner_id": "synthetic-learner"
+      },
+      "instructor": {
+        "instructor_id": "synthetic-instructor",
+        "display_name": "Synthetic instructor"
+      },
+      "lesson": {
+        "lesson_id": "synthetic-lesson",
+        "lesson_number": 1,
+        "lesson_date": "2026-09-27",
+        "start_time": "09:00",
+        "finish_time": "10:30",
+        "duration_minutes": 90,
+        "distance_km": 43,
+        "cumulative_minutes": 1950,
+        "cumulative_km": 686,
+        "taught": [
+          "8",
+          "12"
+        ],
+        "assessed": [
+          "4"
+        ],
+        "achieved": [
+          "4"
+        ],
+        "source_updated_at": "2026-09-27T00:00:00Z"
+      },
+      "progress": {
+        "achieved_count": 15,
+        "total_competencies": 22,
+        "review_1_17": "achieved",
+        "review_1_22": "locked",
+        "final_drive_23": "locked",
+        "cbta_status": "active"
+      }
+    }
+  }
+]

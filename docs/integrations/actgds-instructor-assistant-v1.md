@@ -1,15 +1,26 @@
 # Integration Contract: `actgds-instructor-assistant/v1`
 
-**Direction:** Instructor Assistant (sender) → ACTGDS Website (receiver).
+**Direction:** Instructor Assistant (sender, this repo) → ACTGDS Website
+(receiver, `tony-kunliu/actgds.com`).
 **Contract version:** `1`.
 **Event type:** `lesson.upserted`.
-**Schema:** `docs/integrations/lesson-upserted-v1.schema.json`
-**Canonical schema hash (`contract_schema_sha256`):**
-`6335f5897731d75799fad59dfff2556eb188abaa2b47c13cdd847a994351ad7e`
-(computed as `jq -cS . docs/integrations/lesson-upserted-v1.schema.json | sha256sum`
-— both repos must produce this exact hash from their copy of the schema
-file, or they cannot safely interoperate; recompute and compare on any
-schema change).
+**Schema:** `docs/integrations/lesson-upserted-v1.schema.json` — a
+byte-identical copy of ACTGDS's own canonical file. **ACTGDS is the
+canonical authority for this contract; this repo copies it, never
+redefines it.** On any future contract change, ACTGDS's copy changes
+first and this repo copies it again — never the other way around.
+**contract_schema_sha256:**
+`c43d28164bb1c5c0e316e2d2f1cee77ad627508ef7dca4d58516adab8852b7e6`
+(`jq -cS . docs/integrations/lesson-upserted-v1.schema.json | sha256sum`
+— both repos must produce this exact hash, or they cannot safely
+interoperate; recompute and compare on any schema change). Confirmed
+against ACTGDS's receiver handoff in
+[Issue #3](https://github.com/tony-kunliu/actgds.com/issues/3)
+("CONTRACT READY FOR CLAUDE", receiver commit `d0559bec3393bfacaa8e8881e2f9abfa1dbd4978`).
+**Shared fixtures:** `docs/integrations/lesson-upserted-v1.fixtures.json`
+— also copied byte-for-byte from ACTGDS; `tests/integration-alignment.test.ts`
+validates every one of its valid cases against this repo's own schema copy
+and payload builder.
 
 This document is the human-readable companion to the JSON Schema. See
 `AGENTS.md` §10 for the permanent ecosystem boundary rules this contract
@@ -27,37 +38,75 @@ create and edit as different event types, both produce the same
 
 The receiver upserts by `(lesson_id, source_updated_at)` — never by arrival
 order, and never by `lesson_number` (a lesson's number reflects creation
-order for display, not version recency).
+order for display, not version recency). `source_updated_at` is normalized
+UTC ISO-8601; equal timestamps are a no-op, older ones are ignored.
 
-## Transport
+## Transport and authentication
 
-- **Method:** `POST` to `ACTGDS_WEBHOOK_URL`.
-- **Headers:**
-  - `Content-Type: application/json`
-  - `X-IA-Event-ID: <event_id>`
-  - `X-IA-Timestamp: <unix-seconds>`
-  - `X-IA-Signature: v1=<hex-hmac-sha256>`
-- **Signing:** HMAC-SHA256 over the exact bytes `"<timestamp>." + <raw
-  request body>`, keyed with `ACTGDS_WEBHOOK_SECRET`. The signature is
-  computed over the body's exact serialized bytes — the body is never
-  re-serialized after signing, so the receiver must verify against the raw
-  bytes it received, not a re-encoded copy.
-- **Response handling:**
-  - `200`/`202` → delivered, no further retry.
-  - A `202` with a `pending_link` status in the response body means ACTGDS
-    has durably accepted the event even though the learner isn't linked to
-    a student yet — this still counts as delivered, not retried.
-  - Network error, timeout, `429`, or `5xx` → retryable.
-  - `400`, `401`, `403`, or an unsupported `contract_version` → permanent
-    failure, never retried indefinitely.
+`POST /api/integrations/instructor-assistant/events` on the ACTGDS Worker,
+`Content-Type: application/json`. Maximum body size **32 KiB** — every
+real payload this sender produces is a small fraction of that. This
+endpoint uses neither Golden nor ChatGPT sessions; it authenticates purely
+via the HMAC signature below.
+
+Headers:
+
+- `X-IA-Event-ID`: exact payload `event_id`.
+- `X-IA-Timestamp`: ten-digit Unix seconds, must be fresh within ±300
+  seconds of the receiver's clock at delivery time — a retry always uses a
+  **fresh** timestamp (and therefore a fresh signature), never the
+  original delivery's.
+- `X-IA-Signature`: `v1=<64 lowercase hex characters>`.
+
+**Signing:** HMAC-SHA256 over the exact bytes `"<timestamp>." + <raw
+request body>`, keyed with `ACTGDS_WEBHOOK_SECRET`. The signature covers
+the body's exact serialized bytes — **the body is never re-serialized
+after signing, on the first delivery or any retry.** Concretely: the
+sender's outbox (`migrations/0005_integration_outbox.sql`) stores the
+`JSON.stringify`-produced string exactly once, at enqueue time
+(`lib/integration/outbox.ts#insertOutboxRowStatement`); every delivery
+attempt, immediate or retried, sends that same stored string verbatim
+(`lib/integration/sender.ts#attemptWebhookDelivery` takes the raw body
+string directly — it never accepts a payload object to re-stringify). This
+is what makes `event_id` a safe idempotency key: the receiver hashes the
+raw bytes it receives (`payload_hash`) and treats a mismatch under the same
+`event_id` as `409 event_id_conflict` — a **permanent** sender error, since
+by construction the same `event_id` must always carry the same bytes.
+
+## Responses
+
+| HTTP | status | Meaning | Sender outcome |
+| --- | --- | --- | --- |
+| 200 | applied | Snapshot durably applied | delivered |
+| 200 | duplicate | Same event_id + same payload_hash; not re-applied | delivered |
+| 200 | stale_ignored | Equal/older snapshot; no mirror change | delivered |
+| 202 | pending_link | Durably accepted, learner not yet linked to a student | delivered — **stop retrying** |
+| 400 | invalid_schema | Invalid schema/body (or `lesson_owner_conflict`) | permanent |
+| 401 | invalid_signature | Invalid/stale signature, or `event_id_mismatch` | permanent |
+| 403 | environment_not_allowed | Signed `source.environment` doesn't match the receiver's configured environment | permanent |
+| 409 | event_id_conflict | Same `event_id`, different `payload_hash` (`event_id_payload_mismatch`) | **permanent** — investigate event construction, never retry |
+| 415 | invalid_content_type | Body isn't `application/json` | permanent |
+| 500 | transient_internal_error | Receiver-side transient failure | retryable |
+| network error / timeout / 429 / other 5xx | — | — | retryable |
+
+`lib/integration/sender.ts#classifyDeliveryOutcome` implements exactly this
+table (200/202 → delivered; 429/5xx/network → retryable; every other 4xx,
+409 included → permanent).
 
 ## Retry schedule
 
-Best-effort immediate delivery attempt at enqueue time (via `waitUntil` when
-safely available in the current execution context), backed by a durable
-outbox so delivery survives a Worker restart or ACTGDS being down. Retry
-backoff on a retryable failure: immediate, 1 min, 5 min, 30 min, 2 hr, 12
-hr, then `permanent_failure`.
+Best-effort immediate delivery attempt right after the enqueueing lesson
+save/edit commits (via the caller-supplied `IntegrationHooks.schedule` —
+`ExecutionContext.waitUntil` in the real deployed Worker, so a slow/
+unreachable webhook can't hold up or crash the request). Durability itself
+comes from the outbox, not the immediate attempt. On a retryable failure,
+backoff: immediate → 1 min → 5 min → 30 min → 2 hr → 12 hr, then
+`permanent_failure` (6 attempts total). A separate periodic sweep
+(`worker/scheduled-entry.ts`'s Cloudflare Cron Trigger, every 5 minutes —
+see STATUS.md for what's verified about this and what isn't) calls the
+same `processDueOutbox` function so a retry scheduled for later doesn't
+sit waiting for an unrelated future lesson save to (accidentally) trigger
+it again.
 
 ## Data minimization
 
@@ -68,7 +117,9 @@ raw competency event history. It carries only a teaching summary (this
 lesson's numbers) and a progress snapshot (where the learner's CBT&A stands
 overall) — exactly the two top-level objects `lesson` and `progress` in the
 schema, plus the minimal identity references needed to route it
-(`learner_id`, `instructor_id`, `display_name`).
+(`learner_id`, `instructor_id`, `display_name`). Every object in the schema
+sets `additionalProperties: false`, so an accidental extra field fails
+validation, not just review.
 
 ## Learner identity mapping
 
@@ -79,9 +130,9 @@ record. The ACTGDS Website is the **sole authority** for linking
 by hand, by Tony in the ACTGDS CRM. Instructor Assistant does not store an
 `actgds_student_id` or any reverse mapping — this avoids mapping drift
 between two independently-evolving identity spaces. The Instructor
-Assistant UI shows each learner's `learner_id` with a "Copy ID" button
-specifically so Tony can paste it into the ACTGDS side during that one-time
-linking step.
+Assistant UI shows each learner's `learner_id` ("Integration ID") with a
+"Copy ID" button specifically so Tony can paste it into the ACTGDS side
+during that one-time linking step.
 
 ## Competency id tokens
 
@@ -89,16 +140,42 @@ linking step.
 - Special assessments: `"review_1_17"`, `"review_1_22"`, `"final_drive_23"`
   (underscore form in the wire contract — Instructor Assistant's own
   internal ids, `review-1-17` / `review-1-22` / `final-drive-23`, use
-  hyphens; the sender adapter converts between the two, the internal form
-  never leaks onto the wire).
-- `lesson.taught` may only contain core competency tokens (1-22).
+  hyphens; `lib/integration/contract.ts#toWireCompetencyId` converts
+  between the two — the internal form never reaches the wire).
+- `lesson.taught` may only contain core competency tokens (1-22), max 22
+  items. Special assessments are **never** taught — the schema's own
+  pattern rejects a special token in `taught` outright (fixture H).
 - `lesson.assessed` / `lesson.achieved` may contain core competency tokens
-  plus the three special assessment tokens.
+  plus the three special assessment tokens, max 25 items each.
+- Cross-array semantics the JSON Schema itself can't express, enforced at
+  the receiver as runtime validation (fixtures F/G) — and already
+  structurally guaranteed on this sender's side by
+  `lib/competency.ts#validateLessonCompetencies`, which is called before
+  any lesson (and therefore any event) is ever created or edited:
+  `achieved` must be a subset of `assessed`; `taught` and `assessed` must
+  be disjoint (a competency already achieved, or being assessed this
+  lesson, is never also marked taught).
 - `progress.review_1_17` / `review_1_22` / `final_drive_23` are one of
   `locked` / `ready` / `achieved` (see `lib/competency.ts#computeProgress`
   for the authoritative state machine these mirror).
 - `progress.cbta_status` is `active` until Final Drive 23 is genuinely
   achieved (see `LearnerProgress.completed`), then `completed`.
+
+## Durable outbox and atomicity
+
+A lesson save/edit's own D1 write is never blocked, slowed, or failed by
+the integration (`AGENTS.md` §10). The outbox row for a `lesson.upserted`
+event is enqueued in the **same `db.batch()` call** as the lesson row and
+its `competency_events` — see `lib/repo.ts#createLesson`/`#updateLesson`
+and `#prepareIntegrationOutboxInsert`. This is a single atomic D1
+transaction: the lesson, its competency events, and its integration event
+all commit together or none of them do. There is no window where a lesson
+exists in the database with no corresponding integration event — the gap
+an earlier round of this feature left open and explicitly documented as a
+trade-off is closed as of this round (`tests/integration-alignment.test.ts`
+tests I and J verify this directly: exactly one `db.batch()` call per
+lesson save, and a forced batch failure loses the lesson and its event
+together, never one without the other).
 
 ## No historical backfill in V1
 
@@ -112,4 +189,10 @@ deliberate task.
 Any breaking change to this contract bumps `contract_version` and is
 released in lockstep across both repos — a receiver must reject an
 unsupported `contract_version` with a `4xx` (permanent failure on the
-sender side), never silently attempt to interpret an unknown shape.
+sender side), never silently attempt to interpret an unknown shape. Every
+contract decision is recorded in
+[Issue #3](https://github.com/tony-kunliu/actgds.com/issues/3) using the
+FROM/REPO/BRANCH/COMMIT/CONTRACT VERSION/CONTRACT SHA256/STATUS/CHANGED/
+NEEDS OTHER SIDE/BLOCKERS/NEXT HANDSHAKE format ACTGDS established. An ACK
+there is evidence of alignment, not authorization to merge, configure
+secrets, or deploy.

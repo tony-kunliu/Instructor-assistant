@@ -1,32 +1,55 @@
 # TASK.md
 
-**Current Task:** ACTGDS Integration V1 Sender — **Completed** (on its own
-feature branch; see below for exactly what "completed" does and doesn't
-include).
+**Current Task:** Sender Contract + Reliability Alignment — **Completed**
+(on `feature/actgds-integration-v1`; see below for exactly what
+"completed" does and doesn't include).
 
-**Next Recommended Task:** Coordinated QA between this repo and ACTGDS's
-own receiver implementation — once ACTGDS has a matching `lesson.upserted`
-receiver and both sides confirm the same `contract_schema_sha256`
-(`6335f5897731d75799fad59dfff2556eb188abaa2b47c13cdd847a994351ad7e`), do a
-real end-to-end test against a real (non-production) webhook URL and
-secret, still with `ACTGDS_INTEGRATION_ENABLED=false` in production until
-that's proven out. Not started automatically — waiting for Tony's go-ahead
-per `AGENTS.md` §11.
+**Next Recommended Task:** ACTGDS (Work) performs a final cross-repo
+compatibility review of this Sender branch — confirm the schema hash match
+(`c43d28164bb1c5c0e316e2d2f1cee77ad627508ef7dca4d58516adab8852b7e6`),
+review `lib/integration/` and the atomicity/retry changes, and post their
+own ACK in Issue #3. Only after that, and Tony's separate authorization,
+should coordinated QA against a real (non-production) webhook URL/secret
+begin. Not started automatically — waiting for Tony's go-ahead per
+`AGENTS.md` §11.
 
-**Waiting on Other Repo:** `tony-kunliu/actgds.com` needs its own
-`feature/instructor-assistant-integration-v1` (or equivalently named)
-receiver work: an endpoint that verifies the HMAC signature, accepts
-`lesson.upserted`, upserts by `(lesson_id, source_updated_at)`, and — this
-is the part that can't be automated — a way for Tony to manually link an
-Instructor Assistant `learner_id` (via the new "Copy ID" button) to a real
-ACTGDS student record. Until that exists, there's nothing for this side's
-integration to talk to.
+**Waiting on Other Repo:** ACTGDS Receiver final ACK/cross-review of this
+Sender's alignment (Issue #3). Beyond that, ACTGDS still needs the
+human-only step of linking a real Instructor Assistant `learner_id` (via
+the "Copy ID" button) to a real ACTGDS student record before any live data
+could flow meaningfully — that's Tony's manual CRM step, not something
+either repo automates.
 
 **Tony Manual Action Required:** NONE this round. (Later, turning this on
 for real will need: `wrangler secret put ACTGDS_WEBHOOK_SECRET` per
 environment, setting a real `ACTGDS_WEBHOOK_URL`, and flipping
 `ACTGDS_INTEGRATION_ENABLED` to `"true"` — none of that is done or asked
 for yet.)
+
+**Completed this session (Sender Contract + Reliability Alignment):**
+
+Read ACTGDS's receiver handoff first (`tony-kunliu/actgds.com`
+`feature/instructor-assistant-integration-v1` @
+`d0559bec3393bfacaa8e8881e2f9abfa1dbd4978`, Issue #3 "CONTRACT READY FOR
+CLAUDE") before changing anything, per instruction. Copied their canonical
+schema and fixtures byte-for-byte (hash confirmed:
+`c43d28164bb1c5c0e316e2d2f1cee77ad627508ef7dca4d58516adab8852b7e6`,
+superseding this repo's own earlier, independently-derived schema). Fixed
+a real event-id-immutability bug (retries were parse+reserializing the
+payload instead of resending the exact stored bytes). Closed the
+previously-documented outbox durability gap: the outbox INSERT is now in
+the same atomic `db.batch()` as the lesson write, proven by tests that
+count batch calls and that a forced batch failure loses neither the lesson
+nor the event. Implemented (and dry-run-bundle-verified, not live-fired) a
+Cloudflare Cron Trigger + minimal wrapper Worker entry
+(`worker/scheduled-entry.ts`) for the periodic retry sweep. 15 new tests
+(`tests/integration-alignment.test.ts`, requirements A-Q); full suite
+101/101 PASS; `npm run build` PASS. Not merged into `staging`/`main`,
+nothing deployed for real, no real secret/webhook configured, ACTGDS repo
+untouched. Full detail in STATUS.md's "ACTGDS Integration V1 — Contract +
+Reliability Alignment" section, including the one deliberately unverified
+piece (the Cron Trigger's real invocation — needs an actual deploy, out of
+scope this round).
 
 **Completed this session (ACTGDS Integration V1 Sender):**
 

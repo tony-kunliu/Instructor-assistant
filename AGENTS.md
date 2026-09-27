@@ -148,6 +148,14 @@ Permanent integration principles:
 - Any cross-system interface is versioned (a `contract_version` field,
   bumped on any breaking change) and changed in lockstep across both repos —
   never a silent, one-sided change.
+- **ACTGDS's copy of a shared contract schema is the canonical authority.**
+  This repo's copy under `docs/integrations/` must be byte-identical to
+  ACTGDS's (verified via `jq -cS . <file> | sha256sum` producing the exact
+  same hash both sides record) — never a "semantically equivalent" variant
+  invented independently here. A contract change flows ACTGDS → this repo,
+  confirmed with an ACK naming the exact commit/hash, never the reverse
+  (established during ACTGDS Integration V1 Contract Alignment; see
+  `tony-kunliu/actgds.com` Issue #3 for the live coordination record).
 - A lesson save/edit in this app must never fail, block, or degrade because
   the website integration is down, slow, unconfigured, or misconfigured.
   Integration delivery is always best-effort and asynchronous relative to

@@ -4,7 +4,7 @@
 import type { D1Database } from "../d1-types.ts";
 import { signWebhookBody } from "./hmac.ts";
 import { listDueOutboxRows, markOutboxDelivered, markOutboxPermanentFailure, markOutboxRetry } from "./outbox.ts";
-import type { DeliveryOutcome, IntegrationConfig, LessonUpsertedPayloadV1, OutboxRow } from "./types.ts";
+import type { DeliveryOutcome, IntegrationConfig, OutboxRow } from "./types.ts";
 
 /** Backoff after each successive retryable failure: 1min, 5min, 30min, 2hr, 12hr. After the 5th retry fails (6 attempts total, counting the initial one), the row becomes permanent_failure. */
 const RETRY_BACKOFF_MINUTES = [1, 5, 30, 120, 720];
@@ -16,7 +16,15 @@ export function backoffMinutesAfterAttempt(attemptCountAfterFailure: number): nu
   return RETRY_BACKOFF_MINUTES[index];
 }
 
-/** 200/202 delivered (a 202 with a pending_link body still counts as delivered — ACTGDS durably accepted it). Network errors and 429/5xx are retryable. 400/401/403 and any other 4xx (including an unsupported contract_version) are permanent. */
+/**
+ * 200/202 delivered (a 202 with a pending_link body still counts as delivered — ACTGDS durably accepted
+ * it, sender must stop retrying). Network errors and 429/5xx are retryable. Every other 4xx is permanent —
+ * that includes 400 invalid_schema, 401 invalid_signature, 403 environment_not_allowed, and, critically,
+ * 409 event_id_conflict: the same event_id was already durably stored under a *different* payload, which
+ * can only mean a sender-side bug in event construction (an immutable event_id must always carry the same
+ * bytes on every attempt — see lib/integration/outbox.ts). Retrying a 409 would never succeed, so it must
+ * never be treated as transient.
+ */
 export function classifyDeliveryOutcome(httpStatus: number | null, networkError: boolean): DeliveryOutcome {
   if (networkError || httpStatus === null) return "retryable";
   if (httpStatus === 200 || httpStatus === 202) return "delivered";
@@ -27,12 +35,24 @@ export function classifyDeliveryOutcome(httpStatus: number | null, networkError:
 
 export type DeliveryAttemptResult = { outcome: DeliveryOutcome; errorCode: string | null };
 
-/** A single HTTP delivery attempt. Never throws — a thrown/rejected fetch is treated as a retryable network error, same as any other. */
-export async function attemptWebhookDelivery(fetchImpl: typeof fetch, config: IntegrationConfig, payload: LessonUpsertedPayloadV1): Promise<DeliveryAttemptResult> {
+/**
+ * A single HTTP delivery attempt. Never throws — a thrown/rejected fetch is treated as a retryable network
+ * error, same as any other.
+ *
+ * Takes the event's id and its already-serialized `rawBody` directly — never a payload object to
+ * (re-)`JSON.stringify` here. This is deliberate: event_id is an immutable idempotency key on the receiver
+ * side (docs/integrations/actgds-instructor-assistant-v1.md#responses — same event_id + a different
+ * `payload_hash` is a permanent 409 event_id_conflict, not a retry). `JSON.stringify(JSON.parse(x))`
+ * happens to usually round-trip byte-identically in V8, but "usually" is not a guarantee this contract can
+ * rely on — number formatting and Unicode escaping differences are real ways it can silently diverge.
+ * `rawBody` must always be the exact string produced once, at enqueue time
+ * (lib/integration/outbox.ts#insertOutboxRowStatement), and reused verbatim on every attempt, retried or
+ * not. Only the timestamp and signature are allowed to differ between attempts of the same event.
+ */
+export async function attemptWebhookDelivery(fetchImpl: typeof fetch, config: IntegrationConfig, eventId: string, rawBody: string): Promise<DeliveryAttemptResult> {
   if (!config.webhookUrl || !config.webhookSecret) {
     return { outcome: "retryable", errorCode: "missing_webhook_config" };
   }
-  const rawBody = JSON.stringify(payload);
   const timestamp = Math.floor(Date.now() / 1000);
   let signature: string;
   try {
@@ -45,7 +65,7 @@ export async function attemptWebhookDelivery(fetchImpl: typeof fetch, config: In
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "X-IA-Event-ID": payload.event_id,
+        "X-IA-Event-ID": eventId,
         "X-IA-Timestamp": String(timestamp),
         "X-IA-Signature": signature,
       },
@@ -58,10 +78,9 @@ export async function attemptWebhookDelivery(fetchImpl: typeof fetch, config: In
   }
 }
 
-/** Runs one delivery attempt for one outbox row and applies the resulting state transition (delivered / rescheduled / permanent_failure) to the database. */
+/** Runs one delivery attempt for one outbox row and applies the resulting state transition (delivered / rescheduled / permanent_failure) to the database. Sends `row.payloadJson` (the exact bytes stored at enqueue time) verbatim — see attemptWebhookDelivery's own comment on why that must never be reparsed/reserialized. */
 export async function processOutboxRow(db: D1Database, config: IntegrationConfig, fetchImpl: typeof fetch, row: OutboxRow, now: Date = new Date()): Promise<DeliveryOutcome> {
-  const payload = JSON.parse(row.payloadJson) as LessonUpsertedPayloadV1;
-  const { outcome, errorCode } = await attemptWebhookDelivery(fetchImpl, config, payload);
+  const { outcome, errorCode } = await attemptWebhookDelivery(fetchImpl, config, row.eventId, row.payloadJson);
 
   if (outcome === "delivered") {
     await markOutboxDelivered(db, row.id, now.toISOString());
