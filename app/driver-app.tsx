@@ -45,7 +45,8 @@ type LearnerDraft = {
   eligibility: string;
   transmission: string;
   schoolWork: string;
-  instructorName: string;
+  /** Must be an existing, active instructor's id — selected from a dropdown, never free-typed (see lib/repo.ts#createLearner). */
+  instructorId: string;
 };
 
 type Detail = { learner: Learner; totals: Totals; lessons: Lesson[]; progress: LearnerProgress; completion: CompletionSummary | null };
@@ -60,7 +61,7 @@ const emptyLearner: LearnerDraft = {
   eligibility: "",
   transmission: "",
   schoolWork: "",
-  instructorName: "",
+  instructorId: "",
 };
 
 function freshLesson(startOdometer: number | null): LessonDraft {
@@ -134,6 +135,18 @@ const draftKey = (learnerId: string) => `actgds-driver:draft:${learnerId}`;
 const LAST_LEARNER_KEY = "actgds-driver:last-learner";
 const LAST_INSTRUCTOR_KEY = "actgds-driver:last-instructor";
 
+/**
+ * Ends the Cloudflare Access session (not an app-level login — Access owns
+ * the session, this app never has its own). Same team domain as
+ * lib/access.ts#TEAM_DOMAIN (duplicated, not imported: that module pulls in
+ * `jose`/JWKS setup meant for the server, not the client bundle). Shared by
+ * every environment's Access Application, so this is correct for both
+ * Staging and Production. Visiting it clears this browser's Access login;
+ * the next request to any Access-protected app on this account will
+ * require signing in again.
+ */
+const ACCESS_LOGOUT_URL = "https://actgds.cloudflareaccess.com/cdn-cgi/access/logout";
+
 async function api<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, init);
   const data = await response.json().catch(() => ({}));
@@ -162,6 +175,7 @@ export default function DriverApp() {
   const [editStatus, setEditStatus] = useState<string | null>(null);
   const [invalidation, setInvalidation] = useState<MilestoneInvalidation | null>(null);
   const [signedInAs, setSignedInAs] = useState<string | null>(null);
+  const [signedInInstructorId, setSignedInInstructorId] = useState<string | null>(null);
 
   const totals = detail?.totals ?? EMPTY_TOTALS;
 
@@ -195,6 +209,7 @@ export default function DriverApp() {
         setLearners(learnerData.learners);
         setInstructors(instructorData.instructors);
         setSignedInAs(meData.instructor?.fullName ?? null);
+        setSignedInInstructorId(meData.instructor?.id ?? null);
         const last = storage.get(LAST_LEARNER_KEY);
         if (last && learnerData.learners.some((l) => l.id === last)) await loadLearner(last);
         else if (!learnerData.learners.length) setAddingLearner(true);
@@ -246,13 +261,8 @@ export default function DriverApp() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify(learnerDraft),
       });
-      storage.set(LAST_INSTRUCTOR_KEY, learnerDraft.instructorName.trim());
+      storage.set(LAST_INSTRUCTOR_KEY, learner.instructorId);
       setLearners((current) => [...current, learner].sort((a, b) => a.fullName.localeCompare(b.fullName)));
-      setInstructors((current) =>
-        current.some((i) => i.id === learner.instructorId)
-          ? current
-          : [...current, { id: learner.instructorId, fullName: learner.instructorName, adiNumber: null, email: null, status: "active" }],
-      );
       setAddingLearner(false);
       setLearnerDraft(emptyLearner);
       await loadLearner(learner.id);
@@ -351,7 +361,11 @@ export default function DriverApp() {
   };
 
   const openAddLearner = () => {
-    setLearnerDraft({ ...emptyLearner, instructorName: storage.get(LAST_INSTRUCTOR_KEY) ?? instructors[0]?.fullName ?? "" });
+    // Default to the signed-in instructor (Cloudflare Access); with no Access
+    // identity (local dev), fall back to whoever this device last picked,
+    // then the first active instructor — always still changeable via the dropdown.
+    const defaultInstructorId = signedInInstructorId ?? storage.get(LAST_INSTRUCTOR_KEY) ?? instructors[0]?.id ?? "";
+    setLearnerDraft({ ...emptyLearner, instructorId: instructors.some((i) => i.id === defaultInstructorId) ? defaultInstructorId : "" });
     setAddingLearner(true);
     setStatus(null);
   };
@@ -376,7 +390,12 @@ export default function DriverApp() {
           <strong>ACTGDS Driver</strong>
           <small>CBT&amp;A Lesson Checklist</small>
         </div>
-        {signedInAs ? <span className="signed-in-as">Signed in as {signedInAs}</span> : null}
+        {signedInAs ? (
+          <div className="signed-in-as">
+            <span>Signed in as {signedInAs}</span>
+            <a href={ACCESS_LOGOUT_URL} className="signout-link">Sign out</a>
+          </div>
+        ) : null}
       </header>
 
       <section className="card picker">
@@ -414,8 +433,10 @@ export default function DriverApp() {
             </label>
             <label className="field full"><span>School / Work</span><input value={learnerDraft.schoolWork} onChange={(e) => learnerField("schoolWork", e.target.value)} /></label>
             <label className="field full"><span>Instructor *</span>
-              <input list="instructor-list" value={learnerDraft.instructorName} onChange={(e) => learnerField("instructorName", e.target.value)} autoComplete="off" />
-              <datalist id="instructor-list">{instructors.map((i) => <option key={i.id} value={i.fullName} />)}</datalist>
+              <select value={learnerDraft.instructorId} onChange={(e) => learnerField("instructorId", e.target.value)}>
+                <option value="">Select instructor…</option>
+                {instructors.map((i) => <option key={i.id} value={i.id}>{i.fullName}</option>)}
+              </select>
             </label>
           </div>
           <button type="button" className="btn primary block" disabled={saving} onClick={() => void addLearner()}>

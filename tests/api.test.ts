@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readJsonWithActor } from "../lib/api.ts";
+import { readJsonWithActor, readJsonWithDefaultInstructor } from "../lib/api.ts";
 
 function request(body: unknown, headers: Record<string, string> = {}): Request {
   return new Request("https://instructor-assistant.example/x", {
@@ -24,4 +24,20 @@ test("readJsonWithActor sets actingInstructorId from the header even when the bo
   const body = await readJsonWithActor(request({ lessonDate: "2026-01-01" }, { "x-instructor-id": "real-verified-instructor-id" }));
   assert.equal(body.actingInstructorId, "real-verified-instructor-id");
   assert.equal(body.lessonDate, "2026-01-01");
+});
+
+test("readJsonWithDefaultInstructor defaults instructorId from the x-instructor-id header when the body didn't supply one", async () => {
+  const body = await readJsonWithDefaultInstructor(request({ fullName: "New Learner" }, { "x-instructor-id": "signed-in-instructor-id" }));
+  assert.equal(body.instructorId, "signed-in-instructor-id");
+  assert.equal(body.fullName, "New Learner");
+});
+
+test("readJsonWithDefaultInstructor never overrides an explicit instructorId the body already supplied", async () => {
+  const body = await readJsonWithDefaultInstructor(request({ fullName: "New Learner", instructorId: "explicitly-chosen-id" }, { "x-instructor-id": "signed-in-instructor-id" }));
+  assert.equal(body.instructorId, "explicitly-chosen-id");
+});
+
+test("readJsonWithDefaultInstructor leaves instructorId untouched when there is no Access identity header (local dev)", async () => {
+  const body = await readJsonWithDefaultInstructor(request({ fullName: "New Learner" }));
+  assert.equal(body.instructorId, undefined);
 });

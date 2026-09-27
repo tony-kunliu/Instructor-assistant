@@ -35,3 +35,19 @@ export async function readJsonWithActor(request: Request): Promise<Record<string
   if (instructorId) return { ...body, actingInstructorId: instructorId };
   return body;
 }
+
+/**
+ * Reads the request body for creating a learner, defaulting `instructorId`
+ * to the trusted `x-instructor-id` header (a verified Cloudflare Access
+ * identity) only when the request didn't already supply one — unlike
+ * `readJsonWithActor`, an explicit body value is never overridden, since a
+ * signed-in instructor may deliberately be creating a learner for a
+ * colleague via the dropdown. Local dev/no-Access requests fall back to
+ * whatever the body says (possibly nothing, which createLearner rejects).
+ */
+export async function readJsonWithDefaultInstructor(request: Request): Promise<Record<string, unknown>> {
+  const body = await readJson(request);
+  if (String(body.instructorId ?? "").trim()) return body;
+  const instructorId = request.headers.get("x-instructor-id");
+  return instructorId ? { ...body, instructorId } : body;
+}

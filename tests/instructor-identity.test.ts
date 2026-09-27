@@ -54,7 +54,8 @@ test("C: an inactive instructor's email does not resolve, even if it exists", as
 test("E: a lesson created with actingInstructorId = Tony is attributed to Tony, not the learner's own default instructor", async () => {
   const db = openTestD1(":memory:");
   const tony = await findInstructorByEmail(db, TONY_EMAIL);
-  const learner = await createLearner(db, { fullName: "Attribution Learner", instructorName: "Some Other Instructor On File" });
+  const anna = await findInstructorByEmail(db, ANNA_EMAIL);
+  const learner = await createLearner(db, { fullName: "Attribution Learner", instructorId: anna?.id });
   assert.notEqual(learner.instructorId, tony?.id, "sanity: the learner's own instructor is a different record than Tony");
 
   const lesson = await createLesson(db, learner.id, {
@@ -73,8 +74,9 @@ test("E: a lesson created with actingInstructorId = Tony is attributed to Tony, 
 
 test("F: a lesson created with actingInstructorId = Anna is attributed to Anna", async () => {
   const db = openTestD1(":memory:");
+  const tony = await findInstructorByEmail(db, TONY_EMAIL);
   const anna = await findInstructorByEmail(db, ANNA_EMAIL);
-  const learner = await createLearner(db, { fullName: "Attribution Learner 2", instructorName: "Some Other Instructor On File" });
+  const learner = await createLearner(db, { fullName: "Attribution Learner 2", instructorId: tony?.id });
 
   const lesson = await createLesson(db, learner.id, {
     lessonDate: "2026-09-01",
@@ -92,7 +94,8 @@ test("F: a lesson created with actingInstructorId = Anna is attributed to Anna",
 
 test("createLesson without actingInstructorId keeps the prior behavior (falls back to the learner's own instructor) — backward compatible", async () => {
   const db = openTestD1(":memory:");
-  const learner = await createLearner(db, { fullName: "Legacy Behavior Learner", instructorName: "Legacy Instructor" });
+  const tony = await findInstructorByEmail(db, TONY_EMAIL);
+  const learner = await createLearner(db, { fullName: "Legacy Behavior Learner", instructorId: tony?.id });
   const lesson = await createLesson(db, learner.id, {
     lessonDate: "2026-09-01",
     startTime: "09:00",
@@ -108,7 +111,8 @@ test("createLesson without actingInstructorId keeps the prior behavior (falls ba
 
 test("createLesson rejects an actingInstructorId that doesn't exist", async () => {
   const db = openTestD1(":memory:");
-  const learner = await createLearner(db, { fullName: "Bad Attribution Learner", instructorName: "Some Instructor" });
+  const tony = await findInstructorByEmail(db, TONY_EMAIL);
+  const learner = await createLearner(db, { fullName: "Bad Attribution Learner", instructorId: tony?.id });
   await assert.rejects(
     () =>
       createLesson(db, learner.id, {
@@ -130,7 +134,7 @@ test("G: Anna editing a history lesson originally created under a different inst
   const db = openTestD1(":memory:");
   const tony = await findInstructorByEmail(db, TONY_EMAIL);
   const anna = await findInstructorByEmail(db, ANNA_EMAIL);
-  const learner = await createLearner(db, { fullName: "Shared Learner", instructorName: "Original Instructor On File" });
+  const learner = await createLearner(db, { fullName: "Shared Learner", instructorId: anna?.id });
 
   const created = await createLesson(db, learner.id, {
     lessonDate: "2026-09-01",
@@ -166,7 +170,7 @@ test("G: Anna editing a history lesson originally created under a different inst
 test("H: history (listLessons) surfaces the editor's display name (\"Last edited by <name>\") alongside updatedAt", async () => {
   const db = openTestD1(":memory:");
   const anna = await findInstructorByEmail(db, ANNA_EMAIL);
-  const learner = await createLearner(db, { fullName: "History Display Learner", instructorName: "Some Instructor" });
+  const learner = await createLearner(db, { fullName: "History Display Learner", instructorId: anna?.id });
   const created = await createLesson(db, learner.id, {
     lessonDate: "2026-09-01",
     startTime: "09:00",
@@ -199,7 +203,7 @@ test("H: history (listLessons) surfaces the editor's display name (\"Last edited
 test("editing a lesson without actingInstructorId leaves updatedByInstructorId exactly as it was — never guessed (STEP 6/7)", async () => {
   const db = openTestD1(":memory:");
   const anna = await findInstructorByEmail(db, ANNA_EMAIL);
-  const learner = await createLearner(db, { fullName: "No-Attribution Edit Learner", instructorName: "Some Instructor" });
+  const learner = await createLearner(db, { fullName: "No-Attribution Edit Learner", instructorId: anna?.id });
   const created = await createLesson(db, learner.id, {
     lessonDate: "2026-09-01",
     startTime: "09:00",
@@ -242,7 +246,8 @@ test("editing a lesson without actingInstructorId leaves updatedByInstructorId e
 
 test("updateLesson rejects an actingInstructorId that doesn't exist", async () => {
   const db = openTestD1(":memory:");
-  const learner = await createLearner(db, { fullName: "Bad Edit Attribution Learner", instructorName: "Some Instructor" });
+  const tony = await findInstructorByEmail(db, TONY_EMAIL);
+  const learner = await createLearner(db, { fullName: "Bad Edit Attribution Learner", instructorId: tony?.id });
   const created = await createLesson(db, learner.id, {
     lessonDate: "2026-09-01",
     startTime: "09:00",
