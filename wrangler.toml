@@ -24,12 +24,14 @@ binding = "ASSETS"
 ACCESS_AUD = "dbaecdf29cb50d215f3edbb3b260b2c85209db78728fb19e3c53c39c5d9759e3"
 
 # ACTGDS Integration V1 (see docs/integrations/actgds-instructor-assistant-v1.md).
-# Disabled by default — real ACTGDS_WEBHOOK_URL/ACTGDS_WEBHOOK_SECRET are
-# deliberately not set this round (no real receiver exists yet); the secret
-# in particular must be set via `wrangler secret put`, never a plain [vars]
-# value, when this is actually turned on.
-ACTGDS_INTEGRATION_ENABLED = "false"
+# Coordinated non-Production Staging <-> ACTGDS QA Integration QA (Tony
+# authorized; see tony-kunliu/actgds.com Issue #3). ACTGDS_WEBHOOK_URL is
+# not sensitive — the QA receiver route itself, not a credential — so it's
+# a plain [vars] value here. ACTGDS_WEBHOOK_SECRET remains a Worker secret
+# via `wrangler secret put`, never a plain [vars] value.
+ACTGDS_INTEGRATION_ENABLED = "true"
 ACTGDS_INTEGRATION_ENV = "staging"
+ACTGDS_WEBHOOK_URL = "https://actgds-production-baseline-qa.dsnhtcrrx4.chatgpt.site/api/integrations/instructor-assistant/events"
 
 # Self-reference service binding required by the OpenNext Cloudflare adapter
 # (used for ISR/tag-cache revalidation); the service name must match `name`.
