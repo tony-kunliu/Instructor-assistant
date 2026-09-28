@@ -11,6 +11,9 @@ Start with the repo root docs, in this order:
 
 - `docs/ECOSYSTEM_ROADMAP.md` — longer-term shared direction between this
   repo and the ACTGDS Website (`tony-kunliu/actgds.com`).
+- `docs/NEXT_PHASE_AUDIT.md` — read-only product audit (2026-09-28)
+  identifying the highest-value next Instructor Assistant MVP after the
+  CBT&A / lesson / PDF / History Edit / Integration V1 foundation.
 - `docs/integrations/actgds-instructor-assistant-v1.md` — the
   `actgds-instructor-assistant/v1` Integration contract (human-readable
   companion to the JSON Schema).
