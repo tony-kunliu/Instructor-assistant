@@ -1,6 +1,6 @@
 # STATUS.md
 
-_Last updated: 2026-09-28_ (Sender Phase 3 update)
+_Last updated: 2026-09-28_ (Retry / real hosted Cron recovery QA)
 
 This file describes **current state only**. Development history lives in
 git log and closed PRs, not here — see `TASK.md` for what's in progress.
@@ -27,7 +27,7 @@ git log and closed PRs, not here — see `TASK.md` for what's in progress.
 ## Environments
 
 **Staging**
-- Deployed Worker version: `0db1cc2e-6e56-4daa-98aa-d6f5bb0a5b19`
+- Deployed Worker version: `3b88a1c4-ddb4-4f02-9fd0-1ffe285f0351`
 - D1 migration level: `0005` (applied remotely)
 - Cloudflare Access: enabled
 - Integration enabled: **YES** (coordinated non-Production QA in progress,
@@ -91,8 +91,22 @@ running the pre-Integration build, unchanged.
   duplicate-delivery test; that write was denied by an automated safety
   classifier before any mutation occurred, and Tony instructed not to
   retry or request that permission — duplicate/stale is now Receiver's
-  own protocol QA to run. See `tony-kunliu/actgds.com` Issue #3 for the
-  full evidence trail and next handshake.
+  own protocol QA to run (Receiver confirmed this via its own isolated
+  protocol test harness, not a live hosted redelivery).
+  3. Retry / real hosted Cron recovery (Tony-approved design) — a further
+     edit produced `event_id 31a3d3d0-09ec-43ef-b303-bd78856e0713`.
+     Staging's `ACTGDS_WEBHOOK_URL` was deliberately, temporarily pointed
+     at a reserved `.invalid` host, inducing a real retryable failure
+     (HTTP 530, outbox `pending`/`attempt_count 1`/`last_error_code
+     http_530`), then restored to the real QA URL. With zero manual
+     retry/replay/outbox mutation afterward, the real hosted Cloudflare
+     Cron Trigger (directly observed via `wrangler tail`: a `scheduled`
+     invocation at `2026-09-28T17:20:08Z`) picked up the due row and
+     delivered it successfully — outbox flipped to `delivered`,
+     `delivered_at 2026-09-28T17:20:08.746Z` (matching the observed Cron
+     firing and `>= next_attempt_at`). Confirms real automatic
+     retry+recovery, not simulated. See `tony-kunliu/actgds.com` Issue #3
+     for the full evidence trail and next handshake.
 
 Staging is now fully configured for this coordinated QA round. Production
 remains completely untouched: migration `0004`, Integration disabled, no
@@ -103,8 +117,6 @@ Cross-repo coordination record: `tony-kunliu/actgds.com` Issue #3.
 
 ## Known Issues
 
-- Real Cloudflare Cron Trigger invocation (outbox retry sweep) is
-  dry-run-verified only, not live-fired — needs an actual deploy to confirm.
 - A location/comments-only History Edit still emits a propagated event to
   every already-exported downstream lesson even when cumulative
   totals/progress don't change. Correct data, no private content exported —
