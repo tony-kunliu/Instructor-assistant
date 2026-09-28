@@ -5,21 +5,25 @@ _Last updated: 2026-09-28_
 This file describes the **current task only**. Completed work's detail
 lives in git log and closed PRs, not here.
 
-**Current Task:** Coordinated non-Production Integration QA (Sender Phase 1)
-— Complete. Migration/secret-check/webhook-config/enable/deploy done;
-synthetic learner created by Tony; first signed `lesson.upserted` event
-delivered (Staging outbox: `delivered`, first attempt, no error). Per
-Tony's instruction, Sender stopped here after posting the evidence to
-`tony-kunliu/actgds.com` Issue #3.
+**Current Task:** Coordinated non-Production Integration QA (Sender Phase 3,
+UPDATE only) — Complete. Tony edited the existing synthetic QA lesson via
+the real Staging app; the resulting update event
+(`event_id b74bc541-9dd5-4262-a4a1-b293f1d9c22e`) delivered on the first
+attempt (Staging outbox: `delivered`, no error). Per Tony's explicit scope
+narrowing, Sender did not attempt any direct `integration_outbox` mutation
+this round (a prior attempt was denied by an automated safety classifier;
+Tony instructed not to retry or request that permission). Duplicate/stale
+verification moved to ACTGDS Receiver's own isolated protocol QA
+mechanism. Evidence posted to `tony-kunliu/actgds.com` Issue #3.
 
-**Next Recommended Task:** ACTGDS Receiver confirms the exact HTTP result
-for `event_id 330cf15f-2c6c-499a-adbc-83654353cbc5` (expected `202
-pending_link`), creates/uses its isolated QA student, then performs
-explicit mapping and replay. Sender takes no further action until that
-handoff or Tony's next authorization.
+**Next Recommended Task:** ACTGDS Receiver independently confirms the
+mirror reflects the updated snapshot (`duration_minutes 64`,
+`distance_km 20`), confirms the exact HTTP result for the update event,
+then runs its own duplicate/stale protocol QA. Sender takes no further
+action until that handoff or Tony's next authorization.
 
-**Waiting on Other Repo:** ACTGDS Receiver — confirm delivery result,
-post its QA student_id, map, and replay.
+**Waiting on Other Repo:** ACTGDS Receiver — confirm mirror update,
+confirm HTTP result, run duplicate/stale QA.
 
 **Tony Manual Action Required:** NONE right now — waiting on ACTGDS
 Receiver's next handshake in Issue #3.
