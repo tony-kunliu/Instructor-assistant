@@ -188,3 +188,18 @@ At the end of every task, before reporting to Tony:
 
 This exists so Tony never has to re-explain the project's direction from
 scratch to whichever agent picks up the next task.
+
+## 12. Definition of Done
+
+A task that merges into `staging`/`main` is not complete until:
+
+1. the merge completes,
+2. post-merge CI succeeds, and
+3. the current-state documentation check (`scripts/check-project-memory.mjs`)
+   passes.
+
+Do not record an ordinary, moving `staging` HEAD SHA in `STATUS.md` as
+durable project state — fetch the remote branch head when an exact SHA is
+needed. Only retain SHAs that represent durable references, such as a
+deployed source, a rollback baseline, a release source, or a contract
+handoff commit.
