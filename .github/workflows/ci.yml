@@ -24,6 +24,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Project memory guard
+        run: node scripts/check-project-memory.mjs
+
       - name: Type check
         run: npm run typecheck
 
@@ -32,3 +35,6 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      - name: Project memory guard (post-build)
+        run: node scripts/check-project-memory.mjs
