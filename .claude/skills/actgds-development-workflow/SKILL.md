@@ -20,13 +20,13 @@ This is a thin workflow router, not a second copy of project rules. The repo's `
 
 | Situation | Required workflow |
 | --- | --- |
-| New feature, behavior, architecture, or product decision | **REQUIRED SUB-SKILL:** Use `superpowers:brainstorming` |
-| Approved multi-step requirements/spec | **REQUIRED SUB-SKILL:** Use `superpowers:writing-plans` before implementation |
-| Existing approved implementation plan | Use `superpowers:executing-plans` or `superpowers:subagent-driven-development` when available |
-| Bug, failing test/build/CI, or unexpected behavior | **REQUIRED SUB-SKILL:** Use `superpowers:systematic-debugging`; use `superpowers:test-driven-development` for the fix |
-| Two or more independent problem domains | Use `superpowers:dispatching-parallel-agents` when the harness supports it |
-| Before claiming fixed, passing, ready, or complete | **REQUIRED SUB-SKILL:** Use `superpowers:verification-before-completion` |
-| Implementation is green and needs integration | Use `superpowers:requesting-code-review` and `superpowers:finishing-a-development-branch` |
+| New feature, behavior, architecture, or product decision | **REQUIRED SUB-SKILL:** Use `brainstorming` |
+| Approved multi-step requirements/spec | **REQUIRED SUB-SKILL:** Use `writing-plans` before implementation |
+| Existing approved implementation plan | Use `executing-plans` or `subagent-driven-development` when available |
+| Bug, failing test/build/CI, or unexpected behavior | **REQUIRED SUB-SKILL:** Use `systematic-debugging`; use `test-driven-development` for the fix |
+| Two or more independent problem domains | Use `dispatching-parallel-agents` when the harness supports it |
+| Before claiming fixed, passing, ready, or complete | **REQUIRED SUB-SKILL:** Use `verification-before-completion` |
+| Implementation is green and needs integration | Use `requesting-code-review` and `finishing-a-development-branch` |
 | Authorized real-browser QA | Use the repo's Playwright skill when available |
 
 ## Authorization and Scope
