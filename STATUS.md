@@ -7,11 +7,13 @@ git log and closed PRs, not here — see `TASK.md` for what's in progress.
 
 ## Repository
 
-- **main:** `8bae4e4c211a78b2e682d8b04744f102fa1a4328` — trusted baseline.
-  Does not yet include GitHub Actions CI or the Integration Sender source
-  (not authorized to merge into `main` yet).
-- **staging:** `1f6cebd3dbe3bf16788269296425724e4d70a257` — `main` plus
-  GitHub Actions CI and the Integration Sender source (see below).
+- **main:** `8bae4e4c211a78b2e682d8b04744f102fa1a4328` — trusted baseline
+  (rollback reference). Does not yet include GitHub Actions CI or the
+  Integration Sender source (not authorized to merge into `main` yet).
+- **staging:** contains GitHub Actions CI, the Integration Sender source,
+  and the Phase A documentation cleanup. `staging`'s HEAD moves with every
+  merge — do not record its exact SHA here as durable state; `git fetch`
+  the remote when an exact SHA is needed.
 
 ## CI
 
