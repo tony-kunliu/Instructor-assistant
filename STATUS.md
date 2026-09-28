@@ -1,6 +1,6 @@
 # STATUS.md
 
-_Last updated: 2026-09-27_
+_Last updated: 2026-09-28_
 
 This file describes **current state only**. Development history lives in
 git log and closed PRs, not here — see `TASK.md` for what's in progress.
@@ -70,11 +70,19 @@ running the pre-Integration build, unchanged.
   `ACTGDS_WEBHOOK_SECRET` binding confirmed present by name (value never
   read by this repo's agents). Production has neither configured.
 - **Integration enabled:** YES on Staging only; NO on Production.
-- **Real Staging ↔ ACTGDS QA exchange:** NOT YET TESTED — blocked before
-  the first signed delivery: creating the synthetic QA learner/lesson
-  requires a real Cloudflare Access identity (Tony/Anna); no agent-side
-  bypass exists or was attempted. Waiting on Tony (see
-  `tony-kunliu/actgds.com` Issue #3).
+- **Real Staging ↔ ACTGDS QA exchange:** NOT YET TESTED end-to-end (first
+  signed event sent and accepted; mapping/replay still pending on ACTGDS's
+  side). Tony created an isolated synthetic QA learner
+  (`05e8f7f4-0a8c-40b8-8117-0fd32e91b2ae`) via his own real Access session
+  and saved its first lesson. The resulting `lesson.upserted` event
+  (`event_id 330cf15f-2c6c-499a-adbc-83654353cbc5`) was delivered on the
+  first attempt — Staging outbox row status `delivered`, `attempt_count 0`,
+  no error — consistent with the expected `202 pending_link` (no
+  learner↔student mapping exists yet). Exact HTTP status is pending
+  confirmation from ACTGDS Receiver's own side; see
+  `tony-kunliu/actgds.com` Issue #3 for the full evidence trail and next
+  handshake (ACTGDS confirms pending_link, creates its QA student, maps
+  and replays).
 
 Staging is now fully configured for this coordinated QA round. Production
 remains completely untouched: migration `0004`, Integration disabled, no
