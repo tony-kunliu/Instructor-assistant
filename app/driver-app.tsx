@@ -15,6 +15,7 @@ import {
 } from "@/lib/calc.ts";
 import type { AssessmentResult, LearnerProgress, MilestoneInvalidation } from "@/lib/competency.ts";
 import { filterLearners } from "@/lib/learner-filter.ts";
+import { availableViews, initialSelection, learnerPanel, selectionAfterViewChange, viewLearners, type PickerView } from "@/lib/learner-picker.ts";
 import type { CompletionSummary, Instructor, Learner, Lesson } from "@/lib/types.ts";
 import CompetencyPicker from "./competency-picker.tsx";
 import CompetencyProgressCard from "./competency-progress.tsx";
@@ -51,8 +52,6 @@ type LearnerDraft = {
 };
 
 type Detail = { learner: Learner; totals: Totals; lessons: Lesson[]; progress: LearnerProgress; completion: CompletionSummary | null };
-
-type PickerView = "mine" | "all" | "archived";
 
 const byName = (a: Learner, b: Learner) => a.fullName.localeCompare(b.fullName);
 
@@ -171,6 +170,8 @@ export default function DriverApp() {
   const [saving, setSaving] = useState(false);
   const [clock, setClock] = useState(() => localNow().time);
   const finishOdoRef = useRef<HTMLInputElement>(null);
+  // Latest requested learner — lets a slow /api/learners/:id response be dropped if the selection changed meanwhile (e.g. a view switch).
+  const selectedRef = useRef("");
 
   const [editingLessonId, setEditingLessonId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState<LessonDraft | null>(null);
@@ -181,6 +182,8 @@ export default function DriverApp() {
   const [invalidation, setInvalidation] = useState<MilestoneInvalidation | null>(null);
   const [signedInAs, setSignedInAs] = useState<string | null>(null);
   const [signedInInstructorId, setSignedInInstructorId] = useState<string | null>(null);
+  // Nothing identity-dependent (view, learner list) is shown until /api/me has resolved, so a device's leftover state can never flash or pick "All".
+  const [ready, setReady] = useState(false);
   const [view, setView] = useState<PickerView>("mine");
   const [query, setQuery] = useState("");
   const [archivedLearners, setArchivedLearners] = useState<Learner[] | null>(null);
@@ -188,6 +191,7 @@ export default function DriverApp() {
   const totals = detail?.totals ?? EMPTY_TOTALS;
 
   const loadLearner = useCallback(async (id: string) => {
+    selectedRef.current = id;
     setSelectedId(id);
     setDetail(null);
     setDraft(null);
@@ -197,6 +201,7 @@ export default function DriverApp() {
     storage.set(LAST_LEARNER_KEY, id);
     try {
       const data = await api<Detail>(`/api/learners/${encodeURIComponent(id)}`);
+      if (selectedRef.current !== id) return;
       setDetail(data);
       const saved = storage.get(draftKey(id));
       setDraft(saved ? { ...freshLesson(data.totals.lastFinishOdometer), ...JSON.parse(saved) } : freshLesson(data.totals.lastFinishOdometer));
@@ -218,15 +223,14 @@ export default function DriverApp() {
         setInstructors(instructorData.instructors);
         setSignedInAs(meData.instructor?.fullName ?? null);
         setSignedInInstructorId(meData.instructor?.id ?? null);
-        const last = storage.get(LAST_LEARNER_KEY);
-        const lastLearner = last ? learnerData.learners.find((l) => l.id === last) : undefined;
-        if (lastLearner) {
-          // Reopening a colleague's learner: show the view that actually contains them.
-          if (meData.instructor && lastLearner.instructorId !== meData.instructor.id) setView("all");
-          await loadLearner(lastLearner.id);
-        } else if (!learnerData.learners.length) setAddingLearner(true);
+        const start = initialSelection({ signedInInstructorId: meData.instructor?.id ?? null, activeLearners: learnerData.learners, lastLearnerId: storage.get(LAST_LEARNER_KEY) });
+        setView(start.view);
+        setReady(true);
+        if (start.learnerId) await loadLearner(start.learnerId);
+        else if (!learnerData.learners.length) setAddingLearner(true);
       } catch (error) {
         setStatus({ kind: "error", text: (error as Error).message });
+        setReady(true);
       }
     })();
   }, [loadLearner]);
@@ -390,8 +394,24 @@ export default function DriverApp() {
     void loadLearner(id);
   };
 
+  const clearSelection = () => {
+    selectedRef.current = "";
+    setSelectedId("");
+    setDetail(null);
+    setDraft(null);
+    cancelEditLesson();
+    setInvalidation(null);
+  };
+
   const chooseView = (next: PickerView) => {
     setView(next);
+    setQuery("");
+    // The open learner only stays if they belong to the target view — never leave an active learner showing in Archived (or vice versa).
+    const open = detail?.learner ?? [...learners, ...(archivedLearners ?? [])].find((l) => l.id === selectedId);
+    if (selectionAfterViewChange(open, next, signedInInstructorId) === "clear") {
+      clearSelection();
+      setStatus(null);
+    }
     if (next === "archived" && archivedLearners === null) {
       api<{ learners: Learner[] }>("/api/learners?status=archived")
         .then((data) => setArchivedLearners(data.learners))
@@ -417,10 +437,7 @@ export default function DriverApp() {
         setLearners((current) => current.filter((l) => l.id !== id));
         setArchivedLearners((current) => (current ? [...current.filter((l) => l.id !== id), learner].sort(byName) : current));
         if (storage.get(LAST_LEARNER_KEY) === id) storage.remove(LAST_LEARNER_KEY);
-        setSelectedId("");
-        setDetail(null);
-        setDraft(null);
-        cancelEditLesson();
+        clearSelection();
         setStatus({ kind: "ok", text: `${fullName} archived. Find them under "Archived" if you need them again.` });
       } else {
         setArchivedLearners((current) => (current ? current.filter((l) => l.id !== id) : current));
@@ -460,18 +477,17 @@ export default function DriverApp() {
   const learnerField = (key: keyof LearnerDraft, value: string) => setLearnerDraft((current) => ({ ...current, [key]: value }));
 
   // No Access identity (local dev) means "My learners" has no meaning.
-  const views: PickerView[] = signedInInstructorId ? ["mine", "all", "archived"] : ["all", "archived"];
-  const activeView: PickerView = view === "mine" && !signedInInstructorId ? "all" : view;
-  const viewSource = activeView === "archived" ? (archivedLearners ?? []) : learners;
-  const visibleLearners = filterLearners(viewSource, { scope: activeView === "mine" ? "mine" : "all", instructorId: signedInInstructorId, query });
-  const selectedLearner = detail?.learner.id === selectedId ? detail.learner : undefined;
-  // Keep the open learner selectable even when the current view/search hides them.
-  const selectOptions = selectedLearner && !visibleLearners.some((l) => l.id === selectedId) ? [selectedLearner, ...visibleLearners] : visibleLearners;
-  const mineCount = signedInInstructorId ? learners.filter((l) => l.instructorId === signedInInstructorId).length : learners.length;
+  const views = availableViews(signedInInstructorId);
+  const activeView: PickerView = views.includes(view) ? view : "all";
+  const viewMembers = viewLearners(learners, archivedLearners ?? [], activeView, signedInInstructorId);
+  // Dropdown = exactly this view's members; the open learner is never injected into a view they don't belong to.
+  const selectOptions = viewMembers;
+  const searchResults = filterLearners(viewMembers, { scope: "all", instructorId: signedInInstructorId, query });
+  const mineCount = viewLearners(learners, [], "mine", signedInInstructorId).length;
   const viewLabel = (v: PickerView) =>
     v === "mine" ? `My learners (${mineCount})` : v === "all" ? `All (${learners.length})` : `Archived${archivedLearners ? ` (${archivedLearners.length})` : ""}`;
   const optionLabel = (l: Learner) => (activeView === "mine" ? l.fullName : `${l.fullName} · ${l.instructorName}`);
-  const isArchived = Boolean(detail?.learner.archivedAt);
+  const panel = detail ? learnerPanel({ archivedAt: detail.learner.archivedAt, completed: detail.progress.completed }) : "active";
 
   return (
     <main className="app">
@@ -490,6 +506,10 @@ export default function DriverApp() {
       </header>
 
       <section className="card picker">
+        {!ready ? (
+          <p className="empty" data-testid="picker-loading" role="status">Loading your learners…</p>
+        ) : (
+          <>
         <div className="view-tabs" role="group" aria-label="Which learners to show">
           {views.map((v) => (
             <button key={v} type="button" className={`view-tab${activeView === v ? " active" : ""}`} aria-pressed={activeView === v} onClick={() => chooseView(v)}>
@@ -510,8 +530,8 @@ export default function DriverApp() {
         />
         {query.trim() ? (
           <ul className="learner-results" aria-label="Matching learners">
-            {visibleLearners.length ? (
-              visibleLearners.map((l) => (
+            {searchResults.length ? (
+              searchResults.map((l) => (
                 <li key={l.id}>
                   <button type="button" onClick={() => pickLearner(l.id)} data-testid="learner-result">
                     <span>{l.fullName}</span>
@@ -536,6 +556,8 @@ export default function DriverApp() {
             {addingLearner ? "Cancel" : "+ New"}
           </button>
         </div>
+          </>
+        )}
       </section>
 
       {status ? <p className={`status ${status.kind}`} role="status">{status.text}</p> : null}
@@ -577,7 +599,7 @@ export default function DriverApp() {
           <section className="card summary">
             <div className="summary-main">
               <small>{detail.learner.fullName}</small>
-              <strong data-testid="lesson-no">Lesson #{lessonNo}</strong>
+              <strong data-testid="lesson-no">{panel === "completed" ? "CBT&A Completed" : `Lesson #${lessonNo}`}</strong>
             </div>
             <dl className="totals">
               <div><dt>Hours so far</dt><dd data-testid="total-hours">{formatMinutes(totals.totalMinutes)} <em>({decimalHours(totals.totalMinutes)} h)</em></dd></div>
@@ -594,26 +616,34 @@ export default function DriverApp() {
               <button type="button" className="link" onClick={() => void copyIntegrationId(detail.learner.id)}>Copy ID</button>
             </p>
             <ExportPdfButton learnerId={detail.learner.id} lessonCount={detail.lessons.length} />
-            {isArchived ? (
+            {panel === "archived" ? (
               <div className="lifecycle archived" data-testid="archived-banner">
                 <p><b>Archived</b> {detail.learner.archivedAt?.slice(0, 10)} — hidden from the daily learner list. Lessons, signatures, progress and PDF are kept.</p>
                 <button type="button" className="btn primary block" disabled={saving} onClick={() => void setLearnerArchived(false)}>Restore learner</button>
               </div>
-            ) : detail.progress.completed ? (
-              <div className="lifecycle suggest" data-testid="archive-suggestion">
-                <p><b>23 Final Drive completed.</b> You can archive {detail.learner.fullName} to keep your daily list short — nothing is deleted, and you can restore any time. Or just leave them active.</p>
-                <button type="button" className="btn ghost small" disabled={saving || phase !== "ready"} onClick={() => void setLearnerArchived(true)}>Archive learner…</button>
-              </div>
-            ) : (
+            ) : panel === "active" ? (
               <button type="button" className="link archive-link" disabled={saving || phase !== "ready"} onClick={() => void setLearnerArchived(true)}>
                 Archive learner…
               </button>
-            )}
+            ) : null}
           </section>
 
           <CompetencyProgressCard progress={detail.progress} completion={detail.completion} invalidated={invalidation} />
 
-          {isArchived ? null : (
+          {panel === "completed" ? (
+            <section className="card lesson-completed" data-testid="cbta-completed-card">
+              <h2>CBT&amp;A Completed</h2>
+              <p className="meta">
+                23 Final Drive achieved{detail.completion ? ` in Lesson #${detail.completion.completingLessonNo}` : ""}. No further CBT&amp;A lessons can be started for {detail.learner.fullName}.
+              </p>
+              <div className="lifecycle suggest" data-testid="archive-suggestion">
+                <p>You can archive {detail.learner.fullName} to keep your daily list short — nothing is deleted and you can restore any time. Or just leave them active.</p>
+                <button type="button" className="btn ghost small" disabled={saving} onClick={() => void setLearnerArchived(true)}>Archive learner…</button>
+              </div>
+            </section>
+          ) : null}
+
+          {panel !== "active" ? null : (
           <section className="card lesson">
             {phase === "ready" ? (
               <button type="button" className="btn huge go" onClick={startLesson}>Start Lesson</button>

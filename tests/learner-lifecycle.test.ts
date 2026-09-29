@@ -54,9 +54,12 @@ function lessonInput(extra: Record<string, unknown> = {}) {
 
 async function completeFinalDrive(db: ReturnType<typeof openTestD1>, learnerId: string) {
   odo = 0;
-  const allAchieved = Object.fromEntries(CORE_COMPETENCY_IDS.map((id) => [id, "achieved"]));
-  await createLesson(db, learnerId, lessonInput({ assessedIds: [...CORE_COMPETENCY_IDS], achievedResults: allAchieved }));
+  const achieved = (ids: string[]) => Object.fromEntries(ids.map((id) => [id, "achieved"]));
+  const first17 = CORE_COMPETENCY_IDS.slice(0, 17);
+  const last5 = CORE_COMPETENCY_IDS.slice(17);
+  await createLesson(db, learnerId, lessonInput({ assessedIds: first17, achievedResults: achieved(first17) }));
   await createLesson(db, learnerId, lessonInput({ assessedIds: [REVIEW_1_17], achievedResults: { [REVIEW_1_17]: "achieved" } }));
+  await createLesson(db, learnerId, lessonInput({ assessedIds: last5, achievedResults: achieved(last5) }));
   await createLesson(db, learnerId, lessonInput({ assessedIds: [REVIEW_1_22], achievedResults: { [REVIEW_1_22]: "achieved" } }));
   await createLesson(db, learnerId, lessonInput({ assessedIds: [FINAL_DRIVE_23], achievedResults: { [FINAL_DRIVE_23]: "achieved" } }));
 }

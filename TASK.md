@@ -5,27 +5,27 @@ _Last updated: 2026-09-29_
 This file describes the **current task only**. Completed work's detail
 lives in git log and closed PRs, not here.
 
-**Current Task:** Learner List Usability & Lifecycle MVP — **Partial /
-Blocked on deploy.** Done: feature merged into `staging` (merge of
-`98fd33c`), no migration, no Integration V1 change; typecheck + 124/124
-tests + build + Memory Guard verified on merged code. **Blocked:** Staging
-deploy (no Cloudflare credentials in the agent environment) and real
-Cloudflare Access QA as Tony and Anna. Not marked PASS until both are done.
+**Current Task:** Fix real Staging QA findings + permanent regression
+coverage (branch `fix/learner-lifecycle-qa-findings`) — **Partial**.
+Done and verified locally: 18-22 Assessed gate (server + UI), CBT&A
+Completed handling (no Start Lesson, server rejects new lessons, archive
+suggestion), stale selection on view switch, My learners login default;
+190/190 tests, build, Memory Guard, 62/62 real-browser QA. **Remaining:**
+merge → `staging` → Cloudflare Workers Builds auto-deploy (agent cannot
+read Cloudflare status) → Tony's minimal real-Access smoke test.
+Learner Lifecycle MVP is **not PASS** until then.
 
-**Next Recommended Task:** Deploy Staging from `staging`
-(`npm run cf:deploy`, Staging env — no migration to apply), then run the
-real-Access QA on a synthetic QA learner: Tony/Anna default My learners →
-All → search → Archive → refresh → Archived → Restore → refresh; archived
-learner shows no Start Lesson; Final Drive 23 learner shows suggestion only
-(no auto-archive); Start Lesson still works; confirm no new outbox rows from
-Archive/Restore.
+**Next Recommended Task:** Tony confirms the new Staging Worker version, then
+a short real-Access smoke: login as Tony and as Anna → My learners; Archive
+→ Restore a QA learner; a completed QA learner shows no Start Lesson; 18-22
+Assessed chips locked before Review 1-17. Everything else is covered by
+`npm test` and `bash scripts/qa-browser/run.sh`.
 
-**Waiting on Other Repo:** NONE for this feature. Integration V1 follow-up
-(Receiver confirming the retry event) remains open in
-`tony-kunliu/actgds.com` Issue #3.
+**Waiting on Other Repo:** NONE. Integration V1 follow-up (Receiver
+confirming the retry event) remains open in `tony-kunliu/actgds.com`
+Issue #3.
 
-**Tony Manual Action Required:** Either run the Staging deploy and the real
-login QA yourself, or give the agent Cloudflare credentials plus a way to
-act as Tony/Anna (real Access sessions cannot be simulated by the agent).
+**Tony Manual Action Required:** Confirm the Staging deployment and run the
+real-Access smoke test.
 
 **Production:** UNCHANGED.

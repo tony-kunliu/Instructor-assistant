@@ -18,7 +18,7 @@ git log and closed PRs, not here — see `TASK.md` for what's in progress.
 ## CI
 
 - Latest `staging` GitHub Actions run: **SUCCESS**.
-- Tests: 111/111 PASS, 0 skipped.
+- Tests: 190/190 PASS, 0 skipped (on the QA-fix branch; CI result recorded by GitHub).
 - Build: PASS.
 - `npm test` requires Node's `--experimental-strip-types` flag (already in
   `package.json`'s `test` script) — CI pins Node 22.13, which needs this
@@ -27,7 +27,13 @@ git log and closed PRs, not here — see `TASK.md` for what's in progress.
 ## Environments
 
 **Staging**
-- Deployed Worker version: `3b88a1c4-ddb4-4f02-9fd0-1ffe285f0351`
+- **Auto-deploy:** Cloudflare Workers Builds (GitHub integration, Tony-
+  configured) builds and deploys every `staging` push to Worker
+  `instructor-assistant`. No manual `wrangler deploy`; agents have no
+  Cloudflare credentials and cannot read build status.
+- Deployed Worker version: `358328f4-8d74-4ee8-8985-fc032d7e31bc` (built
+  from `6faa89a`, per Tony; has the learner-lifecycle MVP but NOT the QA
+  fixes below — those deploy on the next `staging` push).
 - D1 migration level: `0005` (applied remotely)
 - Cloudflare Access: enabled
 - Integration enabled: **YES** (coordinated non-Production QA in progress,
@@ -39,9 +45,10 @@ git log and closed PRs, not here — see `TASK.md` for what's in progress.
 - Cloudflare Access: enabled (Tony + Anna only)
 - Integration enabled: **NO**
 
-Staging was redeployed with the Integration Sender source and Integration
-enabled (this QA round). Production has not been redeployed and is still
-running the pre-Integration build, unchanged.
+Production has not been redeployed and is still running the
+pre-Integration build, unchanged. The Workers Builds "Production branch"
+setting is `staging` and drives only the Staging Worker; do not touch
+`instructor-assistant-production`.
 
 ## Current Product
 
@@ -57,29 +64,38 @@ running the pre-Integration build, unchanged.
 
 ## Learner List Usability & Lifecycle MVP
 
-- **Code:** merged into `staging` (feature commit `98fd33c`, branch
-  `feature/learner-list-lifecycle`). Not in `main`.
-- Picker defaults to **My learners** (signed-in instructor's active
-  learners), with **All** and **Archived** views plus name search.
-- **Archive / Restore** reuses the existing `learners.archived_at` column
-  (present since migration `0001`) — **no new migration**. Archive is a
-  reversible visibility flag: lessons, competency events, signatures, PDF,
-  learner id / Integration ID untouched; no outbox event emitted (covered
-  by an automated test).
-- Final Drive 23 completed learners show an archive **suggestion** only —
-  never auto-archived.
-- Authorization unchanged: there is no admin/role model; every
-  Access-verified active instructor (Tony, Anna) could already open any
-  learner, so "All" grants no new access.
-- Verified: typecheck, 124/124 tests, build, Memory Guard on the merged
-  `staging` code (local + CI); local real-browser QA at iPhone 13 width
-  (390px) 34/34 PASS (local harness, local D1, Integration off, synthetic
-  QA learners only).
-- **Staging deploy: NOT DONE.** No Cloudflare credentials were available
-  (`wrangler whoami`: not authenticated). Deployed Staging still runs the
-  pre-feature Worker (`3b88a1c4-…`). **Real Cloudflare Access QA as Tony /
-  Anna: NOT DONE** (needs their real sessions). The MVP is therefore not
-  yet marked PASS.
+- Merged into `staging`; `6faa89a` deployed to Staging (v `358328f4-…`).
+  No migration; `archived_at` has existed since `0001`.
+- My learners / All / Archived views, name search, Archive / Restore
+  (reversible flag, no Integration event, lessons/signatures/PDF/learner
+  id untouched). Authorization unchanged: no role model; every
+  Access-verified instructor could already open any learner.
+- **Real Staging QA (Tony, phone) found 5 issues; fixed on branch
+  `fix/learner-lifecycle-qa-findings`** (not yet merged/deployed at the time
+  of writing — check `git log origin/staging`):
+  1. Competency 18-22 had no Assessed gate → now Assessed only after 1-17 +
+     Review 1-17 Achieved (Taught unrestricted); server-authoritative
+     (`assessmentLockReason`), UI chips locked from the same function.
+  2. Review 1-22 / Final Drive gates were already correct; regression tests
+     added for the full sequence.
+  3. Completed learners (Final Drive valid): UI shows a "CBT&A Completed"
+     card with the archive suggestion instead of Start Lesson, and the
+     server rejects new lessons for them. Completion is derived, so a
+     History Edit that invalidates it re-opens lesson creation. The
+     reported "no suggestion" could NOT be reproduced (API, tests, browser)
+     — only the missing Start Lesson removal / server block were real.
+  4. Switching My / All / Archived left the old learner selected and
+     injected into the dropdown → selection is now cleared unless the
+     learner belongs to the target view.
+  5. Login defaulted to All: my own code forced All when the device's
+     remembered last learner belonged to a colleague → default is now
+     always My learners from the verified identity; the picker shows a
+     loading state until `/api/me` resolves.
+- Verified locally: typecheck, 190/190 tests, build, Memory Guard; real-
+  browser QA at 390px, 62/62 PASS (`scripts/qa-browser/run.sh`, local D1,
+  header-simulated Tony/Anna, synthetic QA learners, Integration off).
+- **NOT yet done:** deploy of the QA fixes and Tony's real-Access smoke
+  test. MVP is **not** marked PASS until both are complete.
 
 ## Integration V1
 
@@ -147,14 +163,17 @@ Cross-repo coordination record: `tony-kunliu/actgds.com` Issue #3.
   every already-exported downstream lesson even when cumulative
   totals/progress don't change. Correct data, no private content exported —
   non-blocking, possible future optimization.
-- Learner picker: until `/api/me` returns (first ~100ms of page load), the
-  view tabs briefly show only All / Archived before switching to My
-  learners. Cosmetic, non-blocking.
+- Existing data created under the old rules can hold 18-22 assessed before
+  Review 1-17 (e.g. Tony's earlier Staging test learners). It is not
+  rewritten; but a History Edit of a lesson that assessed 1-17 and 18-22
+  together will now be rejected until corrected. Also, the gate is checked
+  against the learner's other lessons regardless of lesson order (same as
+  the existing review gates).
 - An archived learner is hidden from lesson start in the UI only; the
   lesson-create API itself does not reject archived learners (by design for
   this MVP — archive is a visibility state, not a lock).
 
 ## Next
 
-Staging deploy of the learner-lifecycle build + real-Access QA (needs
-Cloudflare credentials / Tony). See `TASK.md`.
+Confirm the Workers Builds deploy of the QA fixes, then Tony's minimal
+real-Access smoke test. See `TASK.md`.

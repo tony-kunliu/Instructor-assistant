@@ -93,10 +93,11 @@ test("F: Review 1-17 unlocks once Competency 1-17 are all achieved", async () =>
   assert.equal(after.review1_17.status, "achieved");
 });
 
-test("G: Review 1-22 stays locked when 1-22 are achieved but Review 1-17 is not", async () => {
+test("G: Review 1-22 stays locked when only 18-21 are achieved (1-17 + Review 1-17 achieved)", async () => {
   const { db, learner } = await setup();
-  const ids = Array.from({ length: 22 }, (_, i) => String(i + 1));
-  const next = await achieveCompetencies(db, learner.id, ids);
+  let next = await achieveCompetencies(db, learner.id, Array.from({ length: 17 }, (_, i) => String(i + 1)));
+  next = await achieveCompetencies(db, learner.id, [REVIEW_1_17], next);
+  next = await achieveCompetencies(db, learner.id, ["18", "19", "20", "21"], next);
   const progress = await getLearnerProgress(db, learner.id);
   assert.equal(progress.review1_22.status, "locked");
   await assert.rejects(
@@ -107,9 +108,9 @@ test("G: Review 1-22 stays locked when 1-22 are achieved but Review 1-17 is not"
 
 test("H: Review 1-22 unlocks once 1-22 are achieved and Review 1-17 is achieved", async () => {
   const { db, learner } = await setup();
-  const ids = Array.from({ length: 22 }, (_, i) => String(i + 1));
-  let next = await achieveCompetencies(db, learner.id, ids);
+  let next = await achieveCompetencies(db, learner.id, Array.from({ length: 17 }, (_, i) => String(i + 1)));
   next = await achieveCompetencies(db, learner.id, [REVIEW_1_17], next);
+  next = await achieveCompetencies(db, learner.id, ["18", "19", "20", "21", "22"], next);
   const progress = await getLearnerProgress(db, learner.id);
   assert.equal(progress.review1_22.status, "ready");
   await createLesson(db, learner.id, lessonAt(next, { assessedIds: [REVIEW_1_22], achievedResults: { [REVIEW_1_22]: "achieved" } }));
@@ -130,9 +131,9 @@ test("J: Final Drive 23 Assessed + Achieved (after full unlock) marks CBT&A comp
   const before = await getCompletionSummary(db, learner.id);
   assert.equal(before, null);
 
-  const ids = Array.from({ length: 22 }, (_, i) => String(i + 1));
-  let next = await achieveCompetencies(db, learner.id, ids);
+  let next = await achieveCompetencies(db, learner.id, Array.from({ length: 17 }, (_, i) => String(i + 1)));
   next = await achieveCompetencies(db, learner.id, [REVIEW_1_17], next);
+  next = await achieveCompetencies(db, learner.id, ["18", "19", "20", "21", "22"], next);
   next = await achieveCompetencies(db, learner.id, [REVIEW_1_22], next);
 
   const progressBefore = await getLearnerProgress(db, learner.id);
