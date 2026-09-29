@@ -38,8 +38,8 @@ git log and closed PRs, not here — see `TASK.md` for what's in progress.
   today** (see Known Issues for the smallest fix).
 - D1 migration level: `0005` (applied remotely)
 - Cloudflare Access: enabled
-- Integration enabled: **YES** (coordinated non-Production QA in progress,
-  Tony-authorized; see `tony-kunliu/actgds.com` Issue #3)
+- Integration enabled: **YES** (non-Production only; coordinated QA
+  **PASS**, see Integration V1 below)
 
 **Production**
 - Deployed Worker version: `a5708df9-5dcf-4c10-b26b-212fb4bf9a3f`
@@ -116,47 +116,38 @@ setting is `staging` and drives only the Staging Worker; do not touch
   `ACTGDS_WEBHOOK_SECRET` binding confirmed present by name (value never
   read by this repo's agents). Production has neither configured.
 - **Integration enabled:** YES on Staging only; NO on Production.
-- **Real Staging ↔ ACTGDS QA exchange:** NOT YET TESTED end-to-end for
-  duplicate/stale cases (create + update both delivered and mapped;
-  duplicate/stale verification moved to ACTGDS Receiver's own isolated
-  protocol QA mechanism, not Sender-side). Sequence so far, same synthetic
-  learner (`05e8f7f4-0a8c-40b8-8117-0fd32e91b2ae`) and lesson
-  (`43180a4d-a6f4-4121-b8a8-036343544346`), both created/edited by Tony via
-  his own real Access session:
-  1. Create — `event_id 330cf15f-2c6c-499a-adbc-83654353cbc5`, delivered
-     first attempt; ACTGDS mapped the learner to a QA student and replayed
-     it (applied).
-  2. Update (History Edit) — `event_id b74bc541-9dd5-4262-a4a1-b293f1d9c22e`,
-     `source_updated_at` `2026-09-28T16:51:49.977Z` (strictly newer than
-     the create event), delivered first attempt, Staging outbox
-     `delivered`/`attempt_count 0`/no error. Updated snapshot per this
-     event's own payload: `duration_minutes` 64 (was 1), `distance_km` 20
-     (was 4), `finish_time` 23:26 (was 22:23) — Receiver mirror equality
-     not yet independently confirmed.
-  Sender attempted a direct Staging `integration_outbox` row reset for a
-  duplicate-delivery test; that write was denied by an automated safety
-  classifier before any mutation occurred, and Tony instructed not to
-  retry or request that permission — duplicate/stale is now Receiver's
-  own protocol QA to run (Receiver confirmed this via its own isolated
-  protocol test harness, not a live hosted redelivery).
-  3. Retry / real hosted Cron recovery (Tony-approved design) — a further
-     edit produced `event_id 31a3d3d0-09ec-43ef-b303-bd78856e0713`.
-     Staging's `ACTGDS_WEBHOOK_URL` was deliberately, temporarily pointed
-     at a reserved `.invalid` host, inducing a real retryable failure
-     (HTTP 530, outbox `pending`/`attempt_count 1`/`last_error_code
-     http_530`), then restored to the real QA URL. With zero manual
-     retry/replay/outbox mutation afterward, the real hosted Cloudflare
-     Cron Trigger (directly observed via `wrangler tail`: a `scheduled`
-     invocation at `2026-09-28T17:20:08Z`) picked up the due row and
-     delivered it successfully — outbox flipped to `delivered`,
-     `delivered_at 2026-09-28T17:20:08.746Z` (matching the observed Cron
-     firing and `>= next_attempt_at`). Confirms real automatic
-     retry+recovery, not simulated. See `tony-kunliu/actgds.com` Issue #3
-     for the full evidence trail and next handshake.
-
-Staging is now fully configured for this coordinated QA round. Production
-remains completely untouched: migration `0004`, Integration disabled, no
-webhook configured, no redeploy.
+- **Coordinated non-Production Integration V1 QA: PASS.** Final Receiver
+  adjudication in `tony-kunliu/actgds.com` Issue #3 (comment 5880411046):
+  "FINAL COORDINATED NON-PRODUCTION INTEGRATION V1 QA: PASS; outstanding
+  Integration V1 blockers: NONE". Tested scope, all on the same synthetic
+  learner / lesson, driven through Tony's real Access session:
+  1. Create — first real signed delivery, accepted as `pending_link`, then
+     explicit learner↔student mapping and replay → applied.
+  2. Real History Edit update — newer `source_updated_at` upserted the same
+     mirror row.
+  3. Retryable failure + real hosted Cloudflare Cron recovery — temporary
+     Staging-only `.invalid` webhook URL gave a real HTTP 530 and a durable
+     pending outbox row; after the URL was restored, the hosted Cron
+     delivered the same immutable row with no manual retry, and the
+     Receiver applied it (final values 83 min / 30 km).
+  4. Duplicate / stale / event-id immutability — verified by the Receiver's
+     isolated protocol tests (PASS).
+  5. Privacy minimization and CRM independence — PASS.
+  The earlier 64/20 vs 83/30 discrepancy was a Sender *reporting* error (an
+  unverified value copied into a handoff), not a code or data defect; source
+  lesson, outbox payload and Receiver mirror all agree at 83/30, and no
+  corrective resend is needed.
+- **Known non-blocking limitations:** duplicate/stale were isolated
+  Receiver protocol tests, not hosted duplicate/stale deliveries;
+  historical backfill is intentionally not part of V1; the literal
+  historical Receiver HTTP response was not retained; the hosted Cron
+  invocation is evidenced by the Sender's own tail, corroborated by the
+  Receiver's arrival time.
+- **Production rollout is NOT authorized.** It needs Tony's separate,
+  explicit authorization (migration `0005`, webhook URL/secret, enablement
+  and deploy are all still to be done for Production). Production remains
+  unchanged: migration `0004`, Integration disabled, no webhook configured,
+  no redeploy.
 
 Full contract detail: `docs/integrations/actgds-instructor-assistant-v1.md`.
 Cross-repo coordination record: `tony-kunliu/actgds.com` Issue #3.

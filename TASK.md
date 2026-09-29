@@ -16,9 +16,10 @@ the exact rules live in `STATUS.md`.
 **Next Recommended Task:** None scheduled. Pick from the backlog below (or
 a new feature) only on Tony's go-ahead.
 
-**Waiting on Other Repo:** NONE. Integration V1 follow-up (Receiver
-confirming the retry event) remains open in `tony-kunliu/actgds.com`
-Issue #3.
+**Waiting on Other Repo:** NONE. Coordinated non-Production Integration V1
+QA is **PASS** with no outstanding blockers (`tony-kunliu/actgds.com`
+Issue #3, final Receiver adjudication). Production rollout of Integration
+V1 still requires Tony's separate, explicit authorization.
 
 **Tony Manual Action Required:** NONE.
 
