@@ -57,25 +57,29 @@ running the pre-Integration build, unchanged.
 
 ## Learner List Usability & Lifecycle MVP
 
-- **Branch:** `feature/learner-list-lifecycle` (from `staging`; not merged —
-  merge into `staging` needs Tony's authorization).
+- **Code:** merged into `staging` (feature commit `98fd33c`, branch
+  `feature/learner-list-lifecycle`). Not in `main`.
 - Picker defaults to **My learners** (signed-in instructor's active
   learners), with **All** and **Archived** views plus name search.
 - **Archive / Restore** reuses the existing `learners.archived_at` column
   (present since migration `0001`) — **no new migration**. Archive is a
   reversible visibility flag: lessons, competency events, signatures, PDF,
-  learner id / Integration ID untouched; no outbox event emitted.
+  learner id / Integration ID untouched; no outbox event emitted (covered
+  by an automated test).
 - Final Drive 23 completed learners show an archive **suggestion** only —
   never auto-archived.
 - Authorization unchanged: there is no admin/role model; every
   Access-verified active instructor (Tony, Anna) could already open any
-  learner, so "All" grants no new access. Archive/Restore follows the same
-  rule as lesson create/edit.
-- Verified: typecheck, 124/124 tests, build; local real-browser QA at
-  iPhone 13 width (390px) 34/34 PASS (local harness with local D1,
-  Integration off, synthetic QA learners only).
-- **Staging deploy: NOT DONE** — this session had no Cloudflare
-  credentials. Staging still runs the previous build.
+  learner, so "All" grants no new access.
+- Verified: typecheck, 124/124 tests, build, Memory Guard on the merged
+  `staging` code (local + CI); local real-browser QA at iPhone 13 width
+  (390px) 34/34 PASS (local harness, local D1, Integration off, synthetic
+  QA learners only).
+- **Staging deploy: NOT DONE.** No Cloudflare credentials were available
+  (`wrangler whoami`: not authenticated). Deployed Staging still runs the
+  pre-feature Worker (`3b88a1c4-…`). **Real Cloudflare Access QA as Tony /
+  Anna: NOT DONE** (needs their real sessions). The MVP is therefore not
+  yet marked PASS.
 
 ## Integration V1
 
@@ -152,5 +156,5 @@ Cross-repo coordination record: `tony-kunliu/actgds.com` Issue #3.
 
 ## Next
 
-Tony review of `feature/learner-list-lifecycle`, then an authorized
-Staging deploy + real-Access QA. See `TASK.md`.
+Staging deploy of the learner-lifecycle build + real-Access QA (needs
+Cloudflare credentials / Tony). See `TASK.md`.
