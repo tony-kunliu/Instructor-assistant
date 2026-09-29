@@ -67,7 +67,8 @@ const INTEGRATION_TOKENS = [
   { label: "cross-repo compatibility PASS", pattern: /cross-repo compatibility[^\n]*pass/i },
   { label: "Integration enabled: NO", pattern: /integration enabled[^\n]*no/i },
   { label: "migration 0005 not applied", pattern: /migration[^\n]*0005[^\n]*not applied/i },
-  { label: "real Staging <-> ACTGDS QA not yet tested", pattern: /(real[^\n]*staging[^\n]*actgds[^\n]*qa|actgds qa)[^\n]*not yet tested/i },
+  { label: "coordinated non-Production Integration V1 QA PASS", pattern: /coordinated non-production integration v1 qa[^\n]*pass/i },
+  { label: "Production rollout not authorized", pattern: /production rollout is not authorized/i },
 ];
 for (const { label, pattern } of INTEGRATION_TOKENS) {
   if (!pattern.test(statusText)) {

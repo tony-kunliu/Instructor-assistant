@@ -19,11 +19,12 @@ actgds-instructor-assistant-v1.md` for the contract.
 
 **Current gate status:**
 
-- **Status:** CODE COMPATIBILITY PASS, SOURCE IN STAGING, NOT LIVE
+- **Status:** NON-PRODUCTION COORDINATED QA PASS (no outstanding
+  blockers); NOT LIVE IN PRODUCTION
 - **Canonical contract hash:**
   `c43d28164bb1c5c0e316e2d2f1cee77ad627508ef7dca4d58516adab8852b7e6`
-- **Next:** Coordinated non-Production Instructor Assistant Staging ↔
-  ACTGDS QA Integration QA
+- **Next:** Production rollout — requires Tony's separate, explicit
+  authorization; nothing further is pending in non-Production.
 
 See `STATUS.md` for the full current-state detail (deployed versions,
 migration levels, webhook/secret/enablement status).
