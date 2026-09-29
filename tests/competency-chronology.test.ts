@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { openTestD1 } from "../lib/db.ts";
 import { createLearner, createLesson, findInstructorByEmail, getLearnerProgress, updateLesson } from "../lib/repo.ts";
-import { REVIEW_1_17, postReview17Violations, type CompetencyEvent } from "../lib/competency.ts";
+import { REVIEW_1_17, assessmentChronologyViolations, type CompetencyEvent } from "../lib/competency.ts";
 
 // Canonical rule (Tony): Competency 18-22 may be Taught any time, but a lesson
 // may only Assess / Achieve them if, in EARLIER lessons (lesson number order,
@@ -191,9 +191,9 @@ function ev(lessonId: string, competencyId: string, action: "taught" | "assessed
 }
 const lessonEvents = (lessonNo: number, events: CompetencyEvent[]) => ({ lessonNo, events });
 
-test("postReview17Violations: flags exactly the 18-22 assessments made before the gate, per lesson number", () => {
+test("assessmentChronologyViolations: flags exactly the 18-22 assessments made before the gate, per lesson number", () => {
   const first17 = range(1, 17).map((id, i) => ev("l2", id, "assessed", "achieved", i));
-  const violations = postReview17Violations([
+  const violations = assessmentChronologyViolations([
     lessonEvents(1, [ev("l1", "18", "assessed", "achieved", 0)]),
     lessonEvents(2, first17),
     lessonEvents(3, [ev("l3", REVIEW_1_17, "assessed", "achieved", 30), ev("l3", "19", "assessed", "achieved", 31)]), // same lesson as Review 1-17 → still a violation
@@ -203,11 +203,11 @@ test("postReview17Violations: flags exactly the 18-22 assessments made before th
   assert.deepEqual([...violations].sort(), ["1:18", "3:19"]);
 });
 
-test("postReview17Violations: order of the input array does not matter, only lesson numbers", () => {
+test("assessmentChronologyViolations: order of the input array does not matter, only lesson numbers", () => {
   const events = [
     lessonEvents(3, [ev("l3", "18", "assessed", "achieved", 3)]),
     lessonEvents(1, range(1, 17).map((id, i) => ev("l1", id, "assessed", "achieved", i))),
     lessonEvents(2, [ev("l2", REVIEW_1_17, "assessed", "achieved", 20)]),
   ];
-  assert.deepEqual([...postReview17Violations(events)], []);
+  assert.deepEqual([...assessmentChronologyViolations(events)], []);
 });

@@ -1,6 +1,6 @@
 # STATUS.md
 
-_Last updated: 2026-09-29_ (Learner List Usability & Lifecycle MVP)
+_Last updated: 2026-09-29_ (Learner Lifecycle / CBT&A Staging round — PASS)
 
 This file describes **current state only**. Development history lives in
 git log and closed PRs, not here — see `TASK.md` for what's in progress.
@@ -18,7 +18,7 @@ git log and closed PRs, not here — see `TASK.md` for what's in progress.
 ## CI
 
 - Latest `staging` GitHub Actions run: **SUCCESS**.
-- Tests: 226/226 PASS, 0 skipped.
+- Tests: 252/252 PASS, 0 skipped.
 - Build: PASS.
 - `npm test` requires Node's `--experimental-strip-types` flag (already in
   `package.json`'s `test` script) — CI pins Node 22.13, which needs this
@@ -64,40 +64,42 @@ setting is `staging` and drives only the Staging Worker; do not touch
   Access JWT.
 - Learner "Copy Integration ID" UI for Tony's manual ACTGDS CRM linking.
 
-## Learner List Usability & Lifecycle MVP
+## Learner List Usability & Lifecycle MVP — PASS
 
 - My learners / All / Archived views, name search, Archive / Restore
   (reversible flag, no Integration event, lessons/signatures/PDF/learner
   id untouched). No migration. Authorization unchanged: no role model;
   every Access-verified instructor could already open any learner.
-- Tony's real-Staging QA findings (18-22 gate, completed learners, view
-  switching, login default) were fixed and merged earlier
-  (`fix/learner-lifecycle-qa-findings`); Tony verified those fixes.
-- **Current round (`fix/chronology-and-save-error-ux`):**
-  - *18-22 chronology.* Confirmed loophole: History Edit judged the gate
-    against all other lessons, so an early lesson could be edited to
-    Assess 18-22 after Review 1-17 was achieved later. Now a lesson may
-    only Assess 18-22 if 1-17 + Review 1-17 were Achieved by EARLIER
-    lessons (lesson-number order); an edit that would leave a LATER lesson
-    violating this is rejected. Taught stays unrestricted. Legacy
-    violations are tolerated (only NEW ones block an edit; nothing is
-    rewritten). The edit form's chips use the same earlier-lessons
-    progress.
-  - *Save error UX.* A failed Save Lesson / Save changes shows a summary
-    directly above the button: every problem (client checks mirror the
-    server), each with a "Go to …" action that scrolls to and focuses the
-    field / section (opens the collapsed time section). It stays until the
-    problem is fixed; a server message clears when its own field changes.
-    Save is no longer greyed out for a missing Achieved/Not-achieved
-    result — tapping it explains what is missing.
-  - *Working rule.* `AGENTS.md` §13: the agent owns all automatable QA and
-    deployment verification; Tony/Anna do only real-login / real-phone
-    smoke checks.
-- Verified: typecheck, 226/226 tests, build, Memory Guard; real-browser QA
-  at 390px 87/87 PASS (`bash scripts/qa-browser/run.sh`: local D1,
-  header-simulated Tony/Anna, synthetic QA learners, Integration off).
-- **Not marked PASS yet:** Tony/Anna real-account smoke test (see
-  `TASK.md`).
+- Tony's real-Staging findings (18-22 gate, completed learners, view
+  switching, login default) were fixed and verified by Tony. The
+  real-account / real-phone smoke tests (Access login → My learners;
+  signature drawn on a real phone and a lesson saved) **PASSED** — manual
+  acceptance is complete.
+- **CBT&A chronology (History Edit).** A lesson may only Assess a gated
+  item if its prerequisites were Achieved in EARLIER lessons (lesson number
+  = creation order, never editable); a later lesson can never legitimise an
+  earlier one:
+  Review 1-17 needs 1-17; Competency 18-22 needs 1-17 + Review 1-17;
+  Review 1-22 needs 1-17 + Review 1-17 + 18-22; Final Drive 23 needs
+  Review 1-22 (and its chain). The same lesson never counts. Taught is
+  unrestricted except "already achieved in an EARLIER lesson" (achieved
+  later is normal — this also fixes editing an early lesson that taught a
+  competency achieved afterwards, which used to be rejected).
+  Enforced server-side (`assessmentChronologyViolations`,
+  `assessmentLockReason`); the edit form's chips use the earlier-lessons
+  progress. Legacy violations are tolerated and never rewritten (only NEW
+  ones block an edit). Effects on LATER lessons: an Assessed 18-22 there has
+  no rollback, so an edit that breaks its prerequisites is rejected
+  ("Correct Lesson #N first"); later Review / Final Drive milestones keep
+  the existing derived rollback and are reported via `invalidated`.
+- Save failure UX: error summary above Save with per-problem "Go to …"
+  jump links (new lesson and History Edit), kept until fixed.
+- Working rule: `AGENTS.md` §13 (agent owns automatable QA and deployment
+  verification; Tony/Anna only real-login / real-phone smoke checks).
+- Verified: typecheck, 252/252 tests, build, Memory Guard, GitHub CI;
+  real-browser QA at 390px 91/91 PASS (`bash scripts/qa-browser/run.sh`:
+  local D1, header-simulated Tony/Anna, synthetic QA learners, Integration
+  off).
 
 ## Integration V1
 
@@ -168,9 +170,6 @@ Cross-repo coordination record: `tony-kunliu/actgds.com` Issue #3.
 - Legacy data created before the 18-22 gate may hold 18-22 assessed too
   early; it is tolerated and never rewritten (only newly introduced
   violations block a History Edit).
-- Review 1-17 / Review 1-22 / Final Drive gates are still judged against
-  all other lessons in History Edit rather than lesson order (see
-  `TASK.md` backlog).
 - Deployment is not agent-observable (Workers Builds status is unreadable
   and Staging sits behind Access). Smallest fix, needs Tony once: a
   read-only Cloudflare token stored as a GitHub Actions secret so CI can
@@ -179,4 +178,4 @@ Cross-repo coordination record: `tony-kunliu/actgds.com` Issue #3.
 
 ## Next
 
-Tony/Anna minimal real-account smoke test. See `TASK.md`.
+No pending manual acceptance. See `TASK.md` for the backlog.

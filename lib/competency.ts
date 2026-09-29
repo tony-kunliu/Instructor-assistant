@@ -132,22 +132,20 @@ export function parseAchievedResults(value: unknown): Record<string, AssessmentR
 export class CompetencyRuleError extends Error {}
 
 /**
- * Chronology check for the 18-22 gate. `lessons` is a learner's lessons with
- * their events, in any order; ordering is by `lessonNo` (creation order, never
- * editable). Returns `"<lessonNo>:<competencyId>"` for every 18-22 assessment
- * made in a lesson where Competency 1-17 and Review 1-17 were not both
- * Achieved by EARLIER lessons alone (the same lesson never counts).
- * Taught events are never violations.
+ * Chronology check for every gated Assessed selection: Review 1-17, Competency
+ * 18-22, Review 1-22 and Final Drive 23 (Taught is never gated). `lessons` is a
+ * learner's lessons with their events, in any order; ordering is by `lessonNo`
+ * (creation order, never editable). Returns `"<lessonNo>:<competencyId>"` for
+ * every gated assessment whose prerequisites were not Achieved by EARLIER
+ * lessons alone — the same lesson, or a later one, never counts.
  */
-export function postReview17Violations(lessons: readonly { lessonNo: number; events: readonly CompetencyEvent[] }[]): Set<string> {
+export function assessmentChronologyViolations(lessons: readonly { lessonNo: number; events: readonly CompetencyEvent[] }[]): Set<string> {
   const violations = new Set<string>();
   const earlier: CompetencyEvent[] = [];
   for (const lesson of [...lessons].sort((a, b) => a.lessonNo - b.lessonNo)) {
-    const gateOpen = computeProgress(earlier).review1_17.status === "achieved";
-    if (!gateOpen) {
-      for (const event of lesson.events) {
-        if (event.action === "assessed" && POST_REVIEW_1_17_IDS.includes(event.competencyId)) violations.add(`${lesson.lessonNo}:${event.competencyId}`);
-      }
+    const before = computeProgress(earlier);
+    for (const event of lesson.events) {
+      if (event.action === "assessed" && assessmentLockReason(event.competencyId, before) !== null) violations.add(`${lesson.lessonNo}:${event.competencyId}`);
     }
     earlier.push(...lesson.events);
   }
@@ -161,8 +159,8 @@ export function postReview17Violations(lessons: readonly { lessonNo: number; eve
  * gated here. `review1_17.status === "achieved"` already implies
  * Competency 1-17 are all Achieved (see computeProgress).
  */
-export function assessmentLockReason(id: string, progress: LearnerProgress, options: { skipPostReview17Gate?: boolean } = {}): string | null {
-  if (!options.skipPostReview17Gate && POST_REVIEW_1_17_IDS.includes(id) && progress.review1_17.status !== "achieved") {
+export function assessmentLockReason(id: string, progress: LearnerProgress): string | null {
+  if (POST_REVIEW_1_17_IDS.includes(id) && progress.review1_17.status !== "achieved") {
     return POST_REVIEW_1_17_LOCK_MESSAGE;
   }
   if (id === REVIEW_1_17 && progress.review1_17.status === "locked") return "Review 1-17 is locked until Competency 1-17 are all achieved.";
@@ -201,8 +199,8 @@ export function hasInvalidatedMilestone(invalidation: MilestoneInvalidation): bo
 export function validateLessonCompetencies(
   input: { taughtIds: string[]; assessedIds: string[]; achievedResults: Record<string, AssessmentResult> },
   progress: LearnerProgress,
-  // History Edit checks the 18-22 gate by lesson chronology instead (see postReview17Violations).
-  options: { skipPostReview17Gate?: boolean } = {},
+  // History Edit judges every Assessed gate by lesson chronology instead (see assessmentChronologyViolations).
+  options: { skipAssessmentGates?: boolean } = {},
 ): void {
   const assessedSet = new Set(input.assessedIds);
 
@@ -215,9 +213,11 @@ export function validateLessonCompetencies(
     }
   }
 
-  for (const id of input.assessedIds) {
-    const reason = assessmentLockReason(id, progress, options);
-    if (reason) throw new CompetencyRuleError(reason);
+  if (!options.skipAssessmentGates) {
+    for (const id of input.assessedIds) {
+      const reason = assessmentLockReason(id, progress);
+      if (reason) throw new CompetencyRuleError(reason);
+    }
   }
 
   for (const id of input.assessedIds) {

@@ -276,6 +276,40 @@ try {
   await s.ctx.close();
 }
 
+// ═══ 5a. History Edit judges every gate by lesson chronology ═══════════════
+{
+  const s = await session("tony");
+  await ready(s.page);
+  await pick(s.page, "QA Tony Completed");
+  await s.page.waitForSelector("[data-testid=history-row]");
+  // History rows are newest first: nth=-1 is Lesson #1 (assessed 1-17), nth=1 is Lesson #4 (Review 1-22).
+  await s.page.click("[data-testid=history-row] .h-edit >> nth=-1");
+  await s.page.waitForSelector("text=/Editing Lesson #1/");
+  const assessedRow = s.page.locator(".h-editing .comp-section:has(.comp-label:text-is('Assessed'))");
+  const lockedIn = async (label) => (await assessedRow.locator(`button:has-text("${label}")`).first().isDisabled());
+  check("History Edit of Lesson #1: Review 1-17, Review 1-22 and Final Drive are locked (nothing achieved before it)", (await lockedIn("Review 1-17")) && (await lockedIn("Review 1-22")) && (await lockedIn("23 Final Drive")));
+  const core = await Promise.all(["18", "19", "20", "21", "22"].map(async (id) => assessedRow.locator(`.chip-row >> nth=0 >> button:text-is("${id}")`).isDisabled()));
+  check("History Edit of Lesson #1: 18-22 are locked for Assessed", core.every(Boolean), core.join());
+  await shot(s.page, "05a-history-edit-chronology");
+  await s.page.click(".h-editing >> text=Cancel");
+  await s.page.click("[data-testid=history-row] .h-edit >> nth=1");
+  await s.page.waitForSelector("text=/Editing Lesson #4/");
+  const row4 = s.page.locator(".h-editing .comp-section:has(.comp-label:text-is('Assessed'))");
+  check("History Edit of the Review 1-22 lesson: Review 1-22 stays selectable, Final Drive (needs Review 1-22 EARLIER) is locked", !(await row4.locator('button:has-text("Review 1-22")').first().isDisabled()) && (await row4.locator('button:has-text("23 Final Drive")').first().isDisabled()));
+  await s.ctx.close();
+  // Server side: the same edit through the API is rejected with the specific rule.
+  const detail = await (await fetch(`${B}/api/learners/${ids.completed}`)).json();
+  const lesson1 = detail.lessons.find((l) => l.lessonNo === 1);
+  const patch = await fetch(`${B}/api/learners/${ids.completed}/lessons/${lesson1.id}`, {
+    method: "PATCH", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ lessonDate: lesson1.lessonDate, startTime: lesson1.startTime, finishTime: lesson1.finishTime, startOdometer: String(lesson1.startOdometer), finishOdometer: String(lesson1.finishOdometer),
+      assessedIds: [...Array.from({ length: 17 }, (_, i) => String(i + 1)), "review-1-22"], achievedResults: Object.fromEntries([...Array.from({ length: 17 }, (_, i) => String(i + 1)), "review-1-22"].map((id) => [id, "achieved"])),
+      adiSignature: SIG.replace("AAAAC0lEQVR42", "AAAAC0lEQVR43"), learnerSignature: SIG.replace("AAAAC0lEQVR42", "AAAAC0lEQVR44") }),
+  });
+  const patchBody = await patch.json();
+  check("server rejects backdating Review 1-22 onto Lesson #1 through History Edit (400)", patch.status === 400 && /Review 1-22 is locked/.test(patchBody.error), `${patch.status} ${patchBody.error}`);
+}
+
 // ═══ 5b. Save-failure UX: summary next to Save, jump-to-field, persistence ═
 const inViewport = (page, selector) =>
   page.evaluate((sel) => { const r = document.querySelector(sel)?.getBoundingClientRect(); return Boolean(r) && r.top >= 0 && r.bottom <= window.innerHeight; }, selector);
