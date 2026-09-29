@@ -371,6 +371,10 @@ export async function createLesson(db: D1Database, learnerId: string, input: Les
   // without a second read once the events actually exist in the DB.
   const priorEvents = await getCompetencyEvents(db, learnerId);
   const progress = computeProgress(priorEvents);
+  // CBT&A Completed is a derived state (Final Drive 23 valid), so a History
+  // Edit that invalidates it re-opens lesson creation. Corrections to
+  // existing lessons (updateLesson) are never blocked.
+  if (progress.completed) throw new ValidationError("CBT&A is already completed for this learner — no further CBT&A lessons can be recorded.");
   try {
     validateLessonCompetencies({ taughtIds, assessedIds, achievedResults }, progress);
   } catch (error) {

@@ -10,6 +10,8 @@ export const REVIEW_1_22 = "review-1-22";
 export const FINAL_DRIVE_23 = "final-drive-23";
 export const SPECIAL_ASSESSMENT_IDS: readonly string[] = [REVIEW_1_17, REVIEW_1_22, FINAL_DRIVE_23];
 export const ALL_ASSESSABLE_IDS: readonly string[] = [...CORE_COMPETENCY_IDS, ...SPECIAL_ASSESSMENT_IDS];
+/** Competency 18-22: may be Taught any time, but only Assessed once 1-17 and Review 1-17 are Achieved. */
+export const POST_REVIEW_1_17_IDS: readonly string[] = CORE_COMPETENCY_IDS.slice(17);
 
 export type CompetencyAction = "taught" | "assessed";
 export type AssessmentResult = "achieved" | "not_achieved";
@@ -128,6 +130,23 @@ export function parseAchievedResults(value: unknown): Record<string, AssessmentR
 
 export class CompetencyRuleError extends Error {}
 
+/**
+ * Whether `id` is currently blocked from being Assessed, given progress
+ * *before* the lesson being validated. Single source of truth for both the
+ * server-side validation below and the UI's locked chips. Taught is never
+ * gated here. `review1_17.status === "achieved"` already implies
+ * Competency 1-17 are all Achieved (see computeProgress).
+ */
+export function assessmentLockReason(id: string, progress: LearnerProgress): string | null {
+  if (POST_REVIEW_1_17_IDS.includes(id) && progress.review1_17.status !== "achieved") {
+    return "Competency 18-22 can only be assessed after Competency 1-17 and Review 1-17 are all achieved.";
+  }
+  if (id === REVIEW_1_17 && progress.review1_17.status === "locked") return "Review 1-17 is locked until Competency 1-17 are all achieved.";
+  if (id === REVIEW_1_22 && progress.review1_22.status === "locked") return "Review 1-22 is locked until Competency 1-22 and Review 1-17 are all achieved.";
+  if (id === FINAL_DRIVE_23 && progress.finalDrive23.status === "locked") return "23 Final Drive is locked until Competency 1-22, Review 1-17 and Review 1-22 are all achieved.";
+  return null;
+}
+
 /** Milestones that flipped from Achieved/Completed to not, as a side effect of editing an earlier lesson. */
 export type MilestoneInvalidation = {
   review1_17: boolean;
@@ -170,14 +189,9 @@ export function validateLessonCompetencies(
     }
   }
 
-  if (input.assessedIds.includes(REVIEW_1_17) && progress.review1_17.status === "locked") {
-    throw new CompetencyRuleError("Review 1-17 is locked until Competency 1-17 are all achieved.");
-  }
-  if (input.assessedIds.includes(REVIEW_1_22) && progress.review1_22.status === "locked") {
-    throw new CompetencyRuleError("Review 1-22 is locked until Competency 1-22 and Review 1-17 are all achieved.");
-  }
-  if (input.assessedIds.includes(FINAL_DRIVE_23) && progress.finalDrive23.status === "locked") {
-    throw new CompetencyRuleError("23 Final Drive is locked until Competency 1-22, Review 1-17 and Review 1-22 are all achieved.");
+  for (const id of input.assessedIds) {
+    const reason = assessmentLockReason(id, progress);
+    if (reason) throw new CompetencyRuleError(reason);
   }
 
   for (const id of input.assessedIds) {
