@@ -10,9 +10,9 @@ coverage (branch `fix/learner-lifecycle-qa-findings`) — **Partial**.
 Done and verified locally: 18-22 Assessed gate (server + UI), CBT&A
 Completed handling (no Start Lesson, server rejects new lessons, archive
 suggestion), stale selection on view switch, My learners login default;
-190/190 tests, build, Memory Guard, 62/62 real-browser QA. **Remaining:**
-merge → `staging` → Cloudflare Workers Builds auto-deploy (agent cannot
-read Cloudflare status) → Tony's minimal real-Access smoke test.
+190/190 tests, build, Memory Guard, 62/62 real-browser QA. Merged into `staging`. **Remaining:**
+Cloudflare Workers Builds auto-deploy (agent cannot read Cloudflare status)
+→ Tony's minimal real-Access smoke test.
 Learner Lifecycle MVP is **not PASS** until then.
 
 **Next Recommended Task:** Tony confirms the new Staging Worker version, then

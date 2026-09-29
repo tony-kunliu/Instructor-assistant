@@ -31,9 +31,10 @@ git log and closed PRs, not here — see `TASK.md` for what's in progress.
   configured) builds and deploys every `staging` push to Worker
   `instructor-assistant`. No manual `wrangler deploy`; agents have no
   Cloudflare credentials and cannot read build status.
-- Deployed Worker version: `358328f4-8d74-4ee8-8985-fc032d7e31bc` (built
-  from `6faa89a`, per Tony; has the learner-lifecycle MVP but NOT the QA
-  fixes below — those deploy on the next `staging` push).
+- Last Worker version reported by Tony: `358328f4-8d74-4ee8-8985-fc032d7e31bc`
+  (built from `6faa89a`: learner-lifecycle MVP, without the QA fixes). The
+  QA-fix build deploys automatically from `staging`; its version is not yet
+  confirmed.
 - D1 migration level: `0005` (applied remotely)
 - Cloudflare Access: enabled
 - Integration enabled: **YES** (coordinated non-Production QA in progress,
@@ -71,8 +72,9 @@ setting is `staging` and drives only the Staging Worker; do not touch
   id untouched). Authorization unchanged: no role model; every
   Access-verified instructor could already open any learner.
 - **Real Staging QA (Tony, phone) found 5 issues; fixed on branch
-  `fix/learner-lifecycle-qa-findings`** (not yet merged/deployed at the time
-  of writing — check `git log origin/staging`):
+  `fix/learner-lifecycle-qa-findings`, merged into `staging`** (Cloudflare
+  auto-deploys it; the agent cannot see the deploy — Tony confirms the new
+  Worker version):
   1. Competency 18-22 had no Assessed gate → now Assessed only after 1-17 +
      Review 1-17 Achieved (Taught unrestricted); server-authoritative
      (`assessmentLockReason`), UI chips locked from the same function.
@@ -94,8 +96,8 @@ setting is `staging` and drives only the Staging Worker; do not touch
 - Verified locally: typecheck, 190/190 tests, build, Memory Guard; real-
   browser QA at 390px, 62/62 PASS (`scripts/qa-browser/run.sh`, local D1,
   header-simulated Tony/Anna, synthetic QA learners, Integration off).
-- **NOT yet done:** deploy of the QA fixes and Tony's real-Access smoke
-  test. MVP is **not** marked PASS until both are complete.
+- **NOT yet done:** confirmation that the QA-fix build is deployed, and
+  Tony's real-Access smoke test. MVP is **not** marked PASS until both are complete.
 
 ## Integration V1
 
