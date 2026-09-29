@@ -3,8 +3,10 @@ import {
   ALL_ASSESSABLE_IDS,
   CORE_COMPETENCY_IDS,
   CompetencyRuleError,
+  POST_REVIEW_1_17_IDS,
   POST_REVIEW_1_17_LOCK_MESSAGE,
-  postReview17Violations,
+  assessmentChronologyViolations,
+  assessmentLockReason,
   FINAL_DRIVE_23,
   computeProgress,
   diffInvalidatedMilestones,
@@ -552,24 +554,34 @@ export async function updateLesson(db: D1Database, learnerId: string, lessonId: 
   // getLearnerProgress/getProgressExcludingLesson DB round trips.
   const allEventsBeforeEdit = await getCompetencyEvents(db, learnerId);
   const otherLessonsEvents = allEventsBeforeEdit.filter((event) => event.lessonId !== lessonId);
-  const progressExcludingThisLesson = computeProgress(otherLessonsEvents);
+
+  // History Edit is judged by LESSON CHRONOLOGY (lesson number = creation
+  // order, never editable), not by "every other lesson": a later lesson can
+  // never legitimise an earlier one. Two consequences:
+  //  - Taught: a competency can't be taught in a lesson if it was already
+  //    Achieved in an EARLIER lesson (achieved LATER is normal — that's how
+  //    it was learned).
+  //  - Assessed gates (Review 1-17, 18-22, Review 1-22, Final Drive 23) are
+  //    judged against earlier lessons only, below.
+  const { results: lessonRows } = await db.prepare("SELECT id, lesson_no FROM lessons WHERE learner_id = ?").bind(learnerId).all<Row>();
+  const lessonNoById = new Map(lessonRows.map((row) => [String(row.id), Number(row.lesson_no)]));
+  const progressBeforeThisLesson = computeProgress(allEventsBeforeEdit.filter((event) => (lessonNoById.get(event.lessonId) ?? Infinity) < existing.lessonNo));
   try {
-    // The 18-22 gate is enforced by chronology below (progressExcludingThisLesson ignores lesson order).
-    validateLessonCompetencies({ taughtIds, assessedIds, achievedResults }, progressExcludingThisLesson, { skipPostReview17Gate: true });
+    validateLessonCompetencies({ taughtIds, assessedIds, achievedResults }, progressBeforeThisLesson, { skipAssessmentGates: true });
   } catch (error) {
     if (error instanceof CompetencyRuleError) throw new ValidationError(error.message);
     throw error;
   }
   const achievedIds = assessedIds.filter((id) => achievedResults[id] === "achieved");
 
-  // History Edit must keep the 18-22 chronology: an edit may not introduce an
-  // 18-22 assessment (in this lesson or, by breaking a prerequisite, in a
-  // LATER lesson) that lacks 1-17 + Review 1-17 Achieved in EARLIER lessons.
-  // Violations already present in legacy data are tolerated and never
-  // rewritten — only NEW ones block the edit.
+  // An edit may not introduce a NEW gated assessment (in this lesson) whose
+  // prerequisites weren't Achieved in earlier lessons. Violations already in
+  // legacy data are tolerated and never rewritten — only new ones block.
+  // Effects on LATER lessons: an Assessed 18-22 there has no rollback
+  // semantics, so an edit that would break its prerequisites is rejected;
+  // later Review / Final Drive milestones keep their derived rollback and are
+  // reported through `invalidated` instead of blocking the edit.
   {
-    const { results: lessonRows } = await db.prepare("SELECT id, lesson_no FROM lessons WHERE learner_id = ?").bind(learnerId).all<Row>();
-    const lessonNoById = new Map(lessonRows.map((row) => [String(row.id), Number(row.lesson_no)]));
     const groupByLesson = (events: readonly CompetencyEvent[]) => {
       const groups = new Map<number, CompetencyEvent[]>();
       for (const event of events) {
@@ -585,12 +597,15 @@ export async function updateLesson(db: D1Database, learnerId: string, lessonId: 
       ...taughtIds.map((competencyId) => ({ competencyId, action: "taught" as const, result: null, lessonId, createdAt: stamp })),
       ...assessedIds.map((competencyId) => ({ competencyId, action: "assessed" as const, result: achievedResults[competencyId] ?? null, lessonId, createdAt: stamp })),
     ];
-    const already = postReview17Violations(groupByLesson(allEventsBeforeEdit));
-    const introduced = [...postReview17Violations(groupByLesson(proposedEvents))].filter((key) => !already.has(key));
-    if (introduced.length) {
-      const ownKey = introduced.find((key) => key.startsWith(`${existing.lessonNo}:`));
-      if (ownKey) throw new ValidationError(POST_REVIEW_1_17_LOCK_MESSAGE);
-      const laterLessonNo = Math.min(...introduced.map((key) => Number(key.split(":")[0])));
+    const already = assessmentChronologyViolations(groupByLesson(allEventsBeforeEdit));
+    const introduced = [...assessmentChronologyViolations(groupByLesson(proposedEvents))].filter((key) => !already.has(key));
+    const idOf = (key: string) => key.slice(key.indexOf(":") + 1);
+    const lessonNoOf = (key: string) => Number(key.slice(0, key.indexOf(":")));
+    const own = introduced.find((key) => lessonNoOf(key) === existing.lessonNo);
+    if (own) throw new ValidationError(assessmentLockReason(idOf(own), progressBeforeThisLesson) ?? POST_REVIEW_1_17_LOCK_MESSAGE);
+    const laterCompetencies = introduced.filter((key) => POST_REVIEW_1_17_IDS.includes(idOf(key)));
+    if (laterCompetencies.length) {
+      const laterLessonNo = Math.min(...laterCompetencies.map(lessonNoOf));
       throw new ValidationError(`This edit would leave Lesson #${laterLessonNo} assessing Competency 18-22 before Competency 1-17 and Review 1-17 were achieved in earlier lessons. Correct Lesson #${laterLessonNo} first.`);
     }
   }

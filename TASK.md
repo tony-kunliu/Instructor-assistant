@@ -5,36 +5,34 @@ _Last updated: 2026-09-29_
 This file describes the **current task only**. Completed work's detail
 lives in git log and closed PRs, not here.
 
-**Current Task:** Staging wrap-up round (branch
-`fix/chronology-and-save-error-ux`): (1) 18-22 Assessed gate now honours
-lesson chronology in History Edit; (2) Save Lesson / Save changes failures
-show a clear error summary next to the button with jump-to-field links;
-(3) permanent QA / acceptance responsibility rule added to `AGENTS.md` §13.
-See `STATUS.md` for verification evidence and the deployment state.
+**Current Task:** Learner Lifecycle / CBT&A Staging round — **Completed**
+(PASS). Real-account / real-phone acceptance by Tony passed; the History
+Edit chronology gates (Review 1-17, Competency 18-22, Review 1-22, Final
+Drive 23), the save-failure error summary and the QA/acceptance working
+rule are in `staging`, verified by 252 automated tests, real-browser QA
+(`bash scripts/qa-browser/run.sh`, 91 checks) and GitHub CI. Details and
+the exact rules live in `STATUS.md`.
 
-**Next Recommended Task:** Tony / Anna run the minimal real-account smoke
-test (only what automation cannot replace): sign in with the real Cloudflare
-Access account → default My learners; draw a signature on a real phone and
-save one lesson on a synthetic QA learner. Then mark the Learner Lifecycle
-MVP PASS. Do not re-walk workflows that `npm test` and
-`bash scripts/qa-browser/run.sh` already cover.
+**Next Recommended Task:** None scheduled. Pick from the backlog below (or
+a new feature) only on Tony's go-ahead.
 
 **Waiting on Other Repo:** NONE. Integration V1 follow-up (Receiver
 confirming the retry event) remains open in `tony-kunliu/actgds.com`
 Issue #3.
 
-**Tony Manual Action Required:** The minimal smoke test above.
+**Tony Manual Action Required:** NONE.
 
 **Non-blocking backlog (not scheduled):**
 - UX: Finish odometer can be typed before Start Lesson is tapped (Tony,
   2026-09-29). Consider showing/enabling it only once the lesson is
-  running or ended. Deliberately not changed in this round.
-- Review 1-17 / Review 1-22 / Final Drive 23 gates are still judged against
-  all of a learner's other lessons in History Edit, not by lesson order
-  (only Competency 18-22 is chronology-aware). Extend if Tony wants the
-  same guarantee.
+  running or ended.
 - A location/comments-only History Edit still emits a propagated
   Integration event to already-exported downstream lessons (correct data,
-  no private content; see `STATUS.md`).
+  no private content).
+- Deployment is not agent-observable (Workers Builds status unreadable,
+  Staging behind Access). Smallest fix, needs Tony once: a read-only
+  Cloudflare token as a GitHub Actions secret so CI can verify the deployed
+  version, or permission for the agent to open a PR so check runs become
+  readable.
 
 **Production:** UNCHANGED.
