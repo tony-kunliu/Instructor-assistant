@@ -4,8 +4,9 @@ import { createLearner, listLearners } from "@/lib/repo.ts";
 
 export const dynamic = "force-dynamic";
 
-export function GET() {
-  return handle(async () => ({ learners: await listLearners(getD1()) }));
+export function GET(request: Request) {
+  const archived = new URL(request.url).searchParams.get("status") === "archived";
+  return handle(async () => ({ learners: await listLearners(getD1(), { archived }) }));
 }
 
 export async function POST(request: Request) {

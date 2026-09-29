@@ -1,6 +1,6 @@
 # STATUS.md
 
-_Last updated: 2026-09-28_ (Retry / real hosted Cron recovery QA)
+_Last updated: 2026-09-29_ (Learner List Usability & Lifecycle MVP)
 
 This file describes **current state only**. Development history lives in
 git log and closed PRs, not here — see `TASK.md` for what's in progress.
@@ -54,6 +54,28 @@ running the pre-Integration build, unchanged.
 - Cloudflare Access-gated sign-in, instructor identity resolved from the
   Access JWT.
 - Learner "Copy Integration ID" UI for Tony's manual ACTGDS CRM linking.
+
+## Learner List Usability & Lifecycle MVP
+
+- **Branch:** `feature/learner-list-lifecycle` (from `staging`; not merged —
+  merge into `staging` needs Tony's authorization).
+- Picker defaults to **My learners** (signed-in instructor's active
+  learners), with **All** and **Archived** views plus name search.
+- **Archive / Restore** reuses the existing `learners.archived_at` column
+  (present since migration `0001`) — **no new migration**. Archive is a
+  reversible visibility flag: lessons, competency events, signatures, PDF,
+  learner id / Integration ID untouched; no outbox event emitted.
+- Final Drive 23 completed learners show an archive **suggestion** only —
+  never auto-archived.
+- Authorization unchanged: there is no admin/role model; every
+  Access-verified active instructor (Tony, Anna) could already open any
+  learner, so "All" grants no new access. Archive/Restore follows the same
+  rule as lesson create/edit.
+- Verified: typecheck, 124/124 tests, build; local real-browser QA at
+  iPhone 13 width (390px) 34/34 PASS (local harness with local D1,
+  Integration off, synthetic QA learners only).
+- **Staging deploy: NOT DONE** — this session had no Cloudflare
+  credentials. Staging still runs the previous build.
 
 ## Integration V1
 
@@ -121,8 +143,14 @@ Cross-repo coordination record: `tony-kunliu/actgds.com` Issue #3.
   every already-exported downstream lesson even when cumulative
   totals/progress don't change. Correct data, no private content exported —
   non-blocking, possible future optimization.
+- Learner picker: until `/api/me` returns (first ~100ms of page load), the
+  view tabs briefly show only All / Archived before switching to My
+  learners. Cosmetic, non-blocking.
+- An archived learner is hidden from lesson start in the UI only; the
+  lesson-create API itself does not reject archived learners (by design for
+  this MVP — archive is a visibility state, not a lock).
 
 ## Next
 
-Coordinated non-Production Integration QA (Staging ↔ ACTGDS QA), pending
-Tony's separate authorization. See `TASK.md` for the immediate next step.
+Tony review of `feature/learner-list-lifecycle`, then an authorized
+Staging deploy + real-Access QA. See `TASK.md`.

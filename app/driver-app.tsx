@@ -14,6 +14,7 @@ import {
   type Totals,
 } from "@/lib/calc.ts";
 import type { AssessmentResult, LearnerProgress, MilestoneInvalidation } from "@/lib/competency.ts";
+import { filterLearners } from "@/lib/learner-filter.ts";
 import type { CompletionSummary, Instructor, Learner, Lesson } from "@/lib/types.ts";
 import CompetencyPicker from "./competency-picker.tsx";
 import CompetencyProgressCard from "./competency-progress.tsx";
@@ -50,6 +51,10 @@ type LearnerDraft = {
 };
 
 type Detail = { learner: Learner; totals: Totals; lessons: Lesson[]; progress: LearnerProgress; completion: CompletionSummary | null };
+
+type PickerView = "mine" | "all" | "archived";
+
+const byName = (a: Learner, b: Learner) => a.fullName.localeCompare(b.fullName);
 
 const emptyLearner: LearnerDraft = {
   fullName: "",
@@ -176,6 +181,9 @@ export default function DriverApp() {
   const [invalidation, setInvalidation] = useState<MilestoneInvalidation | null>(null);
   const [signedInAs, setSignedInAs] = useState<string | null>(null);
   const [signedInInstructorId, setSignedInInstructorId] = useState<string | null>(null);
+  const [view, setView] = useState<PickerView>("mine");
+  const [query, setQuery] = useState("");
+  const [archivedLearners, setArchivedLearners] = useState<Learner[] | null>(null);
 
   const totals = detail?.totals ?? EMPTY_TOTALS;
 
@@ -211,8 +219,12 @@ export default function DriverApp() {
         setSignedInAs(meData.instructor?.fullName ?? null);
         setSignedInInstructorId(meData.instructor?.id ?? null);
         const last = storage.get(LAST_LEARNER_KEY);
-        if (last && learnerData.learners.some((l) => l.id === last)) await loadLearner(last);
-        else if (!learnerData.learners.length) setAddingLearner(true);
+        const lastLearner = last ? learnerData.learners.find((l) => l.id === last) : undefined;
+        if (lastLearner) {
+          // Reopening a colleague's learner: show the view that actually contains them.
+          if (meData.instructor && lastLearner.instructorId !== meData.instructor.id) setView("all");
+          await loadLearner(lastLearner.id);
+        } else if (!learnerData.learners.length) setAddingLearner(true);
       } catch (error) {
         setStatus({ kind: "error", text: (error as Error).message });
       }
@@ -372,6 +384,59 @@ export default function DriverApp() {
     }
   };
 
+  const pickLearner = (id: string) => {
+    setAddingLearner(false);
+    setQuery("");
+    void loadLearner(id);
+  };
+
+  const chooseView = (next: PickerView) => {
+    setView(next);
+    if (next === "archived" && archivedLearners === null) {
+      api<{ learners: Learner[] }>("/api/learners?status=archived")
+        .then((data) => setArchivedLearners(data.learners))
+        .catch((error: Error) => setStatus({ kind: "error", text: error.message }));
+    }
+  };
+
+  // Archive is a reversible lifecycle flag, never a delete — lessons,
+  // signatures, progress, PDF and the Integration ID all stay as they are.
+  const setLearnerArchived = async (archived: boolean) => {
+    if (!detail) return;
+    const { id, fullName } = detail.learner;
+    if (archived && !window.confirm(`Archive ${fullName}?\n\nThey will be hidden from the daily learner list. Lessons, signatures, progress and PDF are all kept, and you can restore them any time from "Archived".`)) return;
+    setSaving(true);
+    setStatus(null);
+    try {
+      const { learner } = await api<{ learner: Learner }>(`/api/learners/${encodeURIComponent(id)}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ archived }),
+      });
+      if (archived) {
+        setLearners((current) => current.filter((l) => l.id !== id));
+        setArchivedLearners((current) => (current ? [...current.filter((l) => l.id !== id), learner].sort(byName) : current));
+        if (storage.get(LAST_LEARNER_KEY) === id) storage.remove(LAST_LEARNER_KEY);
+        setSelectedId("");
+        setDetail(null);
+        setDraft(null);
+        cancelEditLesson();
+        setStatus({ kind: "ok", text: `${fullName} archived. Find them under "Archived" if you need them again.` });
+      } else {
+        setArchivedLearners((current) => (current ? current.filter((l) => l.id !== id) : current));
+        setLearners((current) => [...current.filter((l) => l.id !== id), learner].sort(byName));
+        setView(signedInInstructorId && learner.instructorId !== signedInInstructorId ? "all" : "mine");
+        setDetail({ ...detail, learner });
+        storage.set(LAST_LEARNER_KEY, id);
+        setStatus({ kind: "ok", text: `${fullName} restored to the active learner list.` });
+      }
+    } catch (error) {
+      setStatus({ kind: "error", text: (error as Error).message });
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const openAddLearner = () => {
     // Default to the signed-in instructor (Cloudflare Access); with no Access
     // identity (local dev), fall back to whoever this device last picked,
@@ -394,6 +459,20 @@ export default function DriverApp() {
 
   const learnerField = (key: keyof LearnerDraft, value: string) => setLearnerDraft((current) => ({ ...current, [key]: value }));
 
+  // No Access identity (local dev) means "My learners" has no meaning.
+  const views: PickerView[] = signedInInstructorId ? ["mine", "all", "archived"] : ["all", "archived"];
+  const activeView: PickerView = view === "mine" && !signedInInstructorId ? "all" : view;
+  const viewSource = activeView === "archived" ? (archivedLearners ?? []) : learners;
+  const visibleLearners = filterLearners(viewSource, { scope: activeView === "mine" ? "mine" : "all", instructorId: signedInInstructorId, query });
+  const selectedLearner = detail?.learner.id === selectedId ? detail.learner : undefined;
+  // Keep the open learner selectable even when the current view/search hides them.
+  const selectOptions = selectedLearner && !visibleLearners.some((l) => l.id === selectedId) ? [selectedLearner, ...visibleLearners] : visibleLearners;
+  const mineCount = signedInInstructorId ? learners.filter((l) => l.instructorId === signedInInstructorId).length : learners.length;
+  const viewLabel = (v: PickerView) =>
+    v === "mine" ? `My learners (${mineCount})` : v === "all" ? `All (${learners.length})` : `Archived${archivedLearners ? ` (${archivedLearners.length})` : ""}`;
+  const optionLabel = (l: Learner) => (activeView === "mine" ? l.fullName : `${l.fullName} · ${l.instructorName}`);
+  const isArchived = Boolean(detail?.learner.archivedAt);
+
   return (
     <main className="app">
       <header className="topbar">
@@ -411,16 +490,52 @@ export default function DriverApp() {
       </header>
 
       <section className="card picker">
-        <label className="field">
-          <span>Learner</span>
-          <select value={selectedId} onChange={(e) => { setAddingLearner(false); void loadLearner(e.target.value); }} aria-label="Select learner">
-            <option value="">{learners.length ? "Select learner…" : "No learners yet"}</option>
-            {learners.map((learner) => <option key={learner.id} value={learner.id}>{learner.fullName}</option>)}
-          </select>
-        </label>
-        <button type="button" className="btn ghost" onClick={() => (addingLearner ? setAddingLearner(false) : openAddLearner())}>
-          {addingLearner ? "Cancel" : "+ New"}
-        </button>
+        <div className="view-tabs" role="group" aria-label="Which learners to show">
+          {views.map((v) => (
+            <button key={v} type="button" className={`view-tab${activeView === v ? " active" : ""}`} aria-pressed={activeView === v} onClick={() => chooseView(v)}>
+              {viewLabel(v)}
+            </button>
+          ))}
+        </div>
+        <input
+          type="search"
+          className="learner-search"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder={activeView === "archived" ? "Search archived learners…" : "Search learner name…"}
+          aria-label="Search learner name"
+          autoComplete="off"
+          autoCorrect="off"
+          enterKeyHint="search"
+        />
+        {query.trim() ? (
+          <ul className="learner-results" aria-label="Matching learners">
+            {visibleLearners.length ? (
+              visibleLearners.map((l) => (
+                <li key={l.id}>
+                  <button type="button" onClick={() => pickLearner(l.id)} data-testid="learner-result">
+                    <span>{l.fullName}</span>
+                    {activeView !== "mine" ? <small>{l.instructorName}</small> : null}
+                  </button>
+                </li>
+              ))
+            ) : (
+              <li className="empty">No matching learners{activeView === "mine" ? ' — try "All"' : ""}.</li>
+            )}
+          </ul>
+        ) : null}
+        <div className="picker-row">
+          <label className="field">
+            <span>Learner</span>
+            <select value={selectedId} onChange={(e) => pickLearner(e.target.value)} aria-label="Select learner">
+              <option value="">{selectOptions.length ? "Select learner…" : activeView === "archived" ? "No archived learners" : "No learners here yet"}</option>
+              {selectOptions.map((learner) => <option key={learner.id} value={learner.id}>{optionLabel(learner)}</option>)}
+            </select>
+          </label>
+          <button type="button" className="btn ghost" onClick={() => (addingLearner ? setAddingLearner(false) : openAddLearner())}>
+            {addingLearner ? "Cancel" : "+ New"}
+          </button>
+        </div>
       </section>
 
       {status ? <p className={`status ${status.kind}`} role="status">{status.text}</p> : null}
@@ -479,10 +594,26 @@ export default function DriverApp() {
               <button type="button" className="link" onClick={() => void copyIntegrationId(detail.learner.id)}>Copy ID</button>
             </p>
             <ExportPdfButton learnerId={detail.learner.id} lessonCount={detail.lessons.length} />
+            {isArchived ? (
+              <div className="lifecycle archived" data-testid="archived-banner">
+                <p><b>Archived</b> {detail.learner.archivedAt?.slice(0, 10)} — hidden from the daily learner list. Lessons, signatures, progress and PDF are kept.</p>
+                <button type="button" className="btn primary block" disabled={saving} onClick={() => void setLearnerArchived(false)}>Restore learner</button>
+              </div>
+            ) : detail.progress.completed ? (
+              <div className="lifecycle suggest" data-testid="archive-suggestion">
+                <p><b>23 Final Drive completed.</b> You can archive {detail.learner.fullName} to keep your daily list short — nothing is deleted, and you can restore any time. Or just leave them active.</p>
+                <button type="button" className="btn ghost small" disabled={saving || phase !== "ready"} onClick={() => void setLearnerArchived(true)}>Archive learner…</button>
+              </div>
+            ) : (
+              <button type="button" className="link archive-link" disabled={saving || phase !== "ready"} onClick={() => void setLearnerArchived(true)}>
+                Archive learner…
+              </button>
+            )}
           </section>
 
           <CompetencyProgressCard progress={detail.progress} completion={detail.completion} invalidated={invalidation} />
 
+          {isArchived ? null : (
           <section className="card lesson">
             {phase === "ready" ? (
               <button type="button" className="btn huge go" onClick={startLesson}>Start Lesson</button>
@@ -550,6 +681,7 @@ export default function DriverApp() {
               </>
             ) : null}
           </section>
+          )}
 
           <section className="card history">
             <h2>History</h2>

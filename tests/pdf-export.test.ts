@@ -26,6 +26,7 @@ const learner: Learner = {
   transmission: "manual",
   schoolWork: null,
   licenceStage: "learner",
+  archivedAt: null,
 };
 
 function lesson(n: number, overrides: Partial<Lesson> = {}): Lesson {

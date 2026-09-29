@@ -1,30 +1,27 @@
 # TASK.md
 
-_Last updated: 2026-09-28_
+_Last updated: 2026-09-29_
 
 This file describes the **current task only**. Completed work's detail
 lives in git log and closed PRs, not here.
 
-**Current Task:** Coordinated non-Production Integration QA — Retry / real
-hosted Cloudflare Cron recovery QA (Tony-approved design) — Complete.
-Staging `ACTGDS_WEBHOOK_URL` was deliberately, temporarily broken
-(`.invalid` host) to induce a real retryable failure
-(`event_id 31a3d3d0-09ec-43ef-b303-bd78856e0713`, HTTP 530), then
-restored. With zero manual retry/replay/outbox mutation afterward, the
-real hosted Cron Trigger (directly observed via `wrangler tail`) recovered
-and delivered the pending event automatically — outbox `delivered`,
-`delivered_at >= next_attempt_at`. Evidence posted to
-`tony-kunliu/actgds.com` Issue #3.
+**Current Task:** Learner List Usability & Lifecycle MVP — **Partial**.
+Implemented and verified on `feature/learner-list-lifecycle`: My learners
+default, All / Archived views, name search, Archive / Restore (existing
+`archived_at`, no migration), Final Drive 23 archive suggestion (never
+automatic). typecheck + 124/124 tests + build PASS; local real-browser
+mobile QA (390px) 34/34 PASS. **Not done:** Staging deploy and
+real-Access Staging QA — this session had no Cloudflare credentials.
 
-**Next Recommended Task:** ACTGDS Receiver independently confirms (from
-its own QA D1) the retry event was applied exactly once with the correct
-final snapshot, and confirms the exact HTTP result. Sender takes no
-further action until that handoff or Tony's next authorization.
+**Next Recommended Task:** Tony reviews the branch; with authorization,
+merge into `staging`, deploy Staging, and run a short real-Access QA as
+both Tony and Anna using a synthetic QA learner (archive → restore).
 
-**Waiting on Other Repo:** ACTGDS Receiver — confirm the retry event's
-mirror application and HTTP result.
+**Waiting on Other Repo:** NONE for this feature (no Integration V1 /
+ACTGDS change). Integration V1 follow-up (Receiver confirming the retry
+event) remains open in `tony-kunliu/actgds.com` Issue #3.
 
-**Tony Manual Action Required:** NONE right now — waiting on ACTGDS
-Receiver's next handshake in Issue #3.
+**Tony Manual Action Required:** Review and authorize the `staging` merge,
+and run (or provide credentials for) the Staging deploy.
 
 **Production:** UNCHANGED.
