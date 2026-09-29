@@ -18,6 +18,8 @@ const SPECIAL_ASSESSMENTS = [REVIEW_1_17, REVIEW_1_22, FINAL_DRIVE_23] as const;
 
 type Props = {
   progress: LearnerProgress;
+  /** Progress from EARLIER lessons only — what the 18-22 gate is judged against (History Edit). Defaults to `progress`. */
+  gateProgress?: LearnerProgress;
   taughtIds: string[];
   assessedIds: string[];
   achievedResults: Record<string, AssessmentResult>;
@@ -46,14 +48,14 @@ function specialLocked(id: string, progress: LearnerProgress): boolean {
 }
 
 /** Assessment lock (Competency 18-22 and the three specials) — same rule the server enforces (lib/competency.ts#assessmentLockReason). */
-function assessLocked(id: string, progress: LearnerProgress): boolean {
-  return assessmentLockReason(id, progress) !== null;
+function assessLocked(id: string, progress: LearnerProgress, gateProgress: LearnerProgress = progress): boolean {
+  return assessmentLockReason(id, POST_REVIEW_1_17_IDS.includes(id) ? gateProgress : progress) !== null;
 }
 
-export default function CompetencyPicker({ progress, taughtIds, assessedIds, achievedResults, onChangeTaught, onChangeAssessed, onChangeAchieved }: Props) {
+export default function CompetencyPicker({ progress, gateProgress, taughtIds, assessedIds, achievedResults, onChangeTaught, onChangeAssessed, onChangeAchieved }: Props) {
   const taughtDisabled = (id: string) => progress.competencies[id]?.achieved === true || assessedIds.includes(id);
   // An already-selected locked chip stays clickable so legacy data in an edit form can still be deselected.
-  const assessedDisabled = (id: string) => taughtIds.includes(id) || (assessLocked(id, progress) && !assessedIds.includes(id));
+  const assessedDisabled = (id: string) => taughtIds.includes(id) || (assessLocked(id, progress, gateProgress) && !assessedIds.includes(id));
 
   const handleTaughtClick = (id: string) => {
     if (taughtDisabled(id)) return;
@@ -104,7 +106,7 @@ export default function CompetencyPicker({ progress, taughtIds, assessedIds, ach
         <div className="chip-row">
           {CORE_COMPETENCY_IDS.map((id) => {
             const achieved = progress.competencies[id]?.achieved === true;
-            const locked = assessLocked(id, progress);
+            const locked = assessLocked(id, progress, gateProgress);
             return (
               <button
                 key={id}
@@ -113,7 +115,7 @@ export default function CompetencyPicker({ progress, taughtIds, assessedIds, ach
                 disabled={assessedDisabled(id)}
                 aria-pressed={assessedIds.includes(id)}
                 data-locked={locked ? "true" : undefined}
-                title={locked ? (assessmentLockReason(id, progress) ?? undefined) : (competencyFullName(id) ?? undefined)}
+                title={locked ? (assessmentLockReason(id, POST_REVIEW_1_17_IDS.includes(id) ? (gateProgress ?? progress) : progress) ?? undefined) : (competencyFullName(id) ?? undefined)}
                 onClick={() => handleAssessedClick(id)}
               >
                 {id}
@@ -121,7 +123,7 @@ export default function CompetencyPicker({ progress, taughtIds, assessedIds, ach
             );
           })}
         </div>
-        {POST_REVIEW_1_17_IDS.some((id) => assessLocked(id, progress)) ? (
+        {POST_REVIEW_1_17_IDS.some((id) => assessLocked(id, progress, gateProgress)) ? (
           <p className="comp-lock-hint">18-22 can be Taught now — they can only be Assessed after 1-17 and Review 1-17 are Achieved.</p>
         ) : null}
         <div className="chip-row special">

@@ -5,27 +5,36 @@ _Last updated: 2026-09-29_
 This file describes the **current task only**. Completed work's detail
 lives in git log and closed PRs, not here.
 
-**Current Task:** Fix real Staging QA findings + permanent regression
-coverage (branch `fix/learner-lifecycle-qa-findings`) — **Partial**.
-Done and verified locally: 18-22 Assessed gate (server + UI), CBT&A
-Completed handling (no Start Lesson, server rejects new lessons, archive
-suggestion), stale selection on view switch, My learners login default;
-190/190 tests, build, Memory Guard, 62/62 real-browser QA. Merged into `staging`. **Remaining:**
-Cloudflare Workers Builds auto-deploy (agent cannot read Cloudflare status)
-→ Tony's minimal real-Access smoke test.
-Learner Lifecycle MVP is **not PASS** until then.
+**Current Task:** Staging wrap-up round (branch
+`fix/chronology-and-save-error-ux`): (1) 18-22 Assessed gate now honours
+lesson chronology in History Edit; (2) Save Lesson / Save changes failures
+show a clear error summary next to the button with jump-to-field links;
+(3) permanent QA / acceptance responsibility rule added to `AGENTS.md` §13.
+See `STATUS.md` for verification evidence and the deployment state.
 
-**Next Recommended Task:** Tony confirms the new Staging Worker version, then
-a short real-Access smoke: login as Tony and as Anna → My learners; Archive
-→ Restore a QA learner; a completed QA learner shows no Start Lesson; 18-22
-Assessed chips locked before Review 1-17. Everything else is covered by
-`npm test` and `bash scripts/qa-browser/run.sh`.
+**Next Recommended Task:** Tony / Anna run the minimal real-account smoke
+test (only what automation cannot replace): sign in with the real Cloudflare
+Access account → default My learners; draw a signature on a real phone and
+save one lesson on a synthetic QA learner. Then mark the Learner Lifecycle
+MVP PASS. Do not re-walk workflows that `npm test` and
+`bash scripts/qa-browser/run.sh` already cover.
 
 **Waiting on Other Repo:** NONE. Integration V1 follow-up (Receiver
 confirming the retry event) remains open in `tony-kunliu/actgds.com`
 Issue #3.
 
-**Tony Manual Action Required:** Confirm the Staging deployment and run the
-real-Access smoke test.
+**Tony Manual Action Required:** The minimal smoke test above.
+
+**Non-blocking backlog (not scheduled):**
+- UX: Finish odometer can be typed before Start Lesson is tapped (Tony,
+  2026-09-29). Consider showing/enabling it only once the lesson is
+  running or ended. Deliberately not changed in this round.
+- Review 1-17 / Review 1-22 / Final Drive 23 gates are still judged against
+  all of a learner's other lessons in History Edit, not by lesson order
+  (only Competency 18-22 is chronology-aware). Extend if Tony wants the
+  same guarantee.
+- A location/comments-only History Edit still emits a propagated
+  Integration event to already-exported downstream lessons (correct data,
+  no private content; see `STATUS.md`).
 
 **Production:** UNCHANGED.

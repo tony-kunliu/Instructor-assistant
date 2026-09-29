@@ -133,21 +133,20 @@ test("History Edit on a completed learner's earlier lesson still works (completi
 
 test("completion is derived: a History Edit that invalidates it re-opens lesson creation, and the panel returns to active", async () => {
   const { db, learner, input, complete } = await setup();
-  const { first } = await complete();
-  const ids = range(1, 17);
-  const result = await updateLesson(db, learner.id, first.id, {
-    lessonDate: first.lessonDate,
-    startTime: first.startTime,
-    finishTime: first.finishTime,
-    startOdometer: String(first.startOdometer),
-    finishOdometer: String(first.finishOdometer),
-    assessedIds: ids,
-    achievedResults: Object.fromEntries(ids.map((id) => [id, id === "17" ? "not_achieved" : "achieved"])),
+  const { last } = await complete();
+  const result = await updateLesson(db, learner.id, last.id, {
+    lessonDate: last.lessonDate,
+    startTime: last.startTime,
+    finishTime: last.finishTime,
+    startOdometer: String(last.startOdometer),
+    finishOdometer: String(last.finishOdometer),
+    assessedIds: [FINAL_DRIVE_23],
+    achievedResults: { [FINAL_DRIVE_23]: "not_achieved" },
     adiSignature: SIG_NEW,
     learnerSignature: SIG_NEW,
   });
   assert.equal(result.progress.completed, false);
   assert.equal(result.invalidated.completed, true);
   assert.equal(learnerPanel({ archivedAt: null, completed: (await getLearnerProgress(db, learner.id)).completed }), "active");
-  await createLesson(db, learner.id, input({ taughtIds: ["17"] }));
+  await createLesson(db, learner.id, input({ taughtIds: [] }));
 });

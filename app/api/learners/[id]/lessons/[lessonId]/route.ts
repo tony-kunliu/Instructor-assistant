@@ -1,7 +1,7 @@
 import { handle, readJsonWithActor } from "@/lib/api.ts";
 import { getD1 } from "@/lib/db.ts";
 import { integrationHooksFromRequestContext } from "@/lib/integration/context.ts";
-import { getLesson, getLessonCompetencySelections, getProgressExcludingLesson, getTotals, updateLesson } from "@/lib/repo.ts";
+import { getLesson, getLessonCompetencySelections, getProgressBeforeLesson, getProgressExcludingLesson, getTotals, updateLesson } from "@/lib/repo.ts";
 
 export const dynamic = "force-dynamic";
 
@@ -10,12 +10,13 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   const { id, lessonId } = await params;
   return handle(async () => {
     const db = getD1();
-    const [lesson, selections, progressExcludingThisLesson] = await Promise.all([
+    const [lesson, selections, progressExcludingThisLesson, progressBeforeThisLesson] = await Promise.all([
       getLesson(db, id, lessonId),
       getLessonCompetencySelections(db, lessonId),
       getProgressExcludingLesson(db, id, lessonId),
+      getProgressBeforeLesson(db, id, lessonId),
     ]);
-    return { lesson, selections, progressExcludingThisLesson };
+    return { lesson, selections, progressExcludingThisLesson, progressBeforeThisLesson };
   });
 }
 

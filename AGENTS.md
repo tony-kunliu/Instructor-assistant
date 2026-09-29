@@ -203,3 +203,36 @@ durable project state — fetch the remote branch head when an exact SHA is
 needed. Only retain SHAs that represent durable references, such as a
 deployed source, a rollback baseline, a release source, or a contract
 handoff commit.
+
+## 13. QA / acceptance responsibility (permanent working rule)
+
+Tony's time is for decisions and for the few checks only a real person can
+do. The agent owns every check that can be automated, and never hands one
+back to Tony.
+
+**The agent does, and reports evidence for:**
+
+- unit / integration / regression tests (`npm test`), typecheck, build,
+  Memory Guard, GitHub CI;
+- real-browser E2E at phone width (`bash scripts/qa-browser/run.sh` — local
+  throw-away copy, local D1, synthetic `QA …` data, header-simulated
+  Tony/Anna). New behaviour and every QA finding gets an automated test
+  and, for UI, a `qa-browser` check, in the same change;
+- verifying that Staging is running the intended commit and that
+  Production is unchanged, using whatever the agent can actually observe
+  (GitHub commit/CI/check state, deployment metadata). If the agent
+  genuinely cannot observe it, say exactly what was tried and what is
+  missing — do not turn it into "Tony, please confirm it's deployed";
+  propose the smallest change that makes it observable instead.
+
+**Only Tony / Anna, and only what automation cannot replace reliably:**
+
+- real account login through Cloudflare Access (real identity and
+  permissions — the local harness fakes identity with request headers);
+- real-phone interaction where automation cannot verify the behaviour
+  (touch drawing of signatures on a real device, iOS keyboard / safe-area
+  quirks).
+
+The final report lists just those items as a short smoke test. It never
+asks Tony to re-walk the CBT&A lesson workflow, archive/restore, competency
+gates, History Edit, PDF export or other flows that tests already cover.

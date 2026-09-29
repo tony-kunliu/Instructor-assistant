@@ -15,11 +15,13 @@ import {
 } from "@/lib/calc.ts";
 import type { AssessmentResult, LearnerProgress, MilestoneInvalidation } from "@/lib/competency.ts";
 import { filterLearners } from "@/lib/learner-filter.ts";
+import { currentIssues, issueFromServerMessage, validateLessonDraftFields, type IssueState } from "@/lib/lesson-form-errors.ts";
 import { availableViews, initialSelection, learnerPanel, selectionAfterViewChange, viewLearners, type PickerView } from "@/lib/learner-picker.ts";
 import type { CompletionSummary, Instructor, Learner, Lesson } from "@/lib/types.ts";
 import CompetencyPicker from "./competency-picker.tsx";
 import CompetencyProgressCard from "./competency-progress.tsx";
 import ExportPdfButton from "./export-pdf-button.tsx";
+import SaveErrorSummary from "./save-error-summary.tsx";
 import SignaturePad from "./signature-pad.tsx";
 
 type LessonDraft = {
@@ -177,6 +179,12 @@ export default function DriverApp() {
   const [editDraft, setEditDraft] = useState<LessonDraft | null>(null);
   const [editOriginal, setEditOriginal] = useState<LessonDraft | null>(null);
   const [editProgress, setEditProgress] = useState<LearnerProgress | null>(null);
+  const [editGateProgress, setEditGateProgress] = useState<LearnerProgress | null>(null);
+  // Save-failure summaries (rendered next to the Save button; see lib/lesson-form-errors.ts).
+  const [saveIssues, setSaveIssues] = useState<IssueState | null>(null);
+  const [saveAttempt, setSaveAttempt] = useState(0);
+  const [editIssues, setEditIssues] = useState<IssueState | null>(null);
+  const [editAttempt, setEditAttempt] = useState(0);
   const [editLoading, setEditLoading] = useState(false);
   const [editStatus, setEditStatus] = useState<string | null>(null);
   const [invalidation, setInvalidation] = useState<MilestoneInvalidation | null>(null);
@@ -192,6 +200,7 @@ export default function DriverApp() {
 
   const loadLearner = useCallback(async (id: string) => {
     selectedRef.current = id;
+    setSaveIssues(null);
     setSelectedId(id);
     setDetail(null);
     setDraft(null);
@@ -265,6 +274,7 @@ export default function DriverApp() {
     if (!detail || !window.confirm("Discard this lesson? Nothing will be saved.")) return;
     storage.remove(draftKey(detail.learner.id));
     setDraft(freshLesson(detail.totals.lastFinishOdometer));
+    setSaveIssues(null);
     setStatus(null);
   };
 
@@ -292,6 +302,12 @@ export default function DriverApp() {
 
   const saveLesson = async () => {
     if (!detail || !draft) return;
+    const problems = validateLessonDraftFields(draft, "new");
+    if (problems.length) {
+      setSaveIssues({ source: "client", issues: problems, snapshot: draft });
+      setSaveAttempt((n) => n + 1);
+      return;
+    }
     setSaving(true);
     setStatus(null);
     try {
@@ -300,12 +316,14 @@ export default function DriverApp() {
         { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(draft) },
       );
       storage.remove(draftKey(detail.learner.id));
+      setSaveIssues(null);
       setDetail({ ...detail, totals: result.totals, progress: result.progress, completion: result.completion, lessons: [result.lesson, ...detail.lessons] });
       setDraft(freshLesson(result.totals.lastFinishOdometer));
       setStatus({ kind: "ok", text: `Lesson #${result.lesson.lessonNo} saved.` });
       window.scrollTo({ top: 0, behavior: "smooth" });
     } catch (error) {
-      setStatus({ kind: "error", text: (error as Error).message });
+      setSaveIssues({ source: "server", issues: [issueFromServerMessage((error as Error).message)], snapshot: draft });
+      setSaveAttempt((n) => n + 1);
     } finally {
       setSaving(false);
     }
@@ -315,16 +333,18 @@ export default function DriverApp() {
     if (!detail) return;
     setEditingLessonId(lessonId);
     setEditDraft(null);
+    setEditIssues(null);
     setEditStatus(null);
     setEditLoading(true);
     try {
-      const data = await api<{ lesson: Lesson; selections: LessonSelections; progressExcludingThisLesson: LearnerProgress }>(
+      const data = await api<{ lesson: Lesson; selections: LessonSelections; progressExcludingThisLesson: LearnerProgress; progressBeforeThisLesson: LearnerProgress }>(
         `/api/learners/${encodeURIComponent(detail.learner.id)}/lessons/${encodeURIComponent(lessonId)}`,
       );
       const draft = lessonToDraft(data.lesson, data.selections);
       setEditDraft(draft);
       setEditOriginal(draft);
       setEditProgress(data.progressExcludingThisLesson);
+      setEditGateProgress(data.progressBeforeThisLesson);
     } catch (error) {
       setEditStatus((error as Error).message);
     } finally {
@@ -337,6 +357,8 @@ export default function DriverApp() {
     setEditDraft(null);
     setEditOriginal(null);
     setEditProgress(null);
+    setEditGateProgress(null);
+    setEditIssues(null);
     setEditStatus(null);
   };
 
@@ -356,6 +378,12 @@ export default function DriverApp() {
 
   const saveEditLesson = async () => {
     if (!detail || !editingLessonId || !editDraft) return;
+    const problems = validateLessonDraftFields(editDraft, "edit");
+    if (problems.length) {
+      setEditIssues({ source: "client", issues: problems, snapshot: editDraft });
+      setEditAttempt((n) => n + 1);
+      return;
+    }
     setSaving(true);
     setEditStatus(null);
     try {
@@ -370,7 +398,8 @@ export default function DriverApp() {
       cancelEditLesson();
       setStatus({ kind: "ok", text: "Lesson updated." });
     } catch (error) {
-      setEditStatus((error as Error).message);
+      setEditIssues({ source: "server", issues: [issueFromServerMessage((error as Error).message)], snapshot: editDraft });
+      setEditAttempt((n) => n + 1);
     } finally {
       setSaving(false);
     }
@@ -472,7 +501,8 @@ export default function DriverApp() {
   const elapsed = startedMinutes !== null && nowMinutes !== null && nowMinutes >= startedMinutes ? nowMinutes - startedMinutes : null;
   const phase: "ready" | "running" | "ended" = !draft?.startTime ? "ready" : !draft.finishTime ? "running" : "ended";
   const lessonNo = nextLessonNo(totals);
-  const competencyComplete = draft ? draft.assessedIds.every((id) => id in draft.achievedResults) : true;
+  const shownSaveIssues = draft ? currentIssues(saveIssues, draft, "new") : [];
+  const shownEditIssues = editDraft ? currentIssues(editIssues, editDraft, "edit") : [];
 
   const learnerField = (key: keyof LearnerDraft, value: string) => setLearnerDraft((current) => ({ ...current, [key]: value }));
 
@@ -661,10 +691,10 @@ export default function DriverApp() {
 
             <div className="grid odo">
               <label className="field"><span>Start odometer (km)</span>
-                <input type="text" inputMode="numeric" pattern="[0-9]*" value={draft.startOdometer} onChange={(e) => setField("startOdometer", e.target.value.replace(/\D/g, ""))} placeholder="e.g. 45210" />
+                <input id="lesson-field-start-odometer" type="text" inputMode="numeric" pattern="[0-9]*" value={draft.startOdometer} onChange={(e) => setField("startOdometer", e.target.value.replace(/\D/g, ""))} placeholder="e.g. 45210" />
               </label>
               <label className="field"><span>Finish odometer (km)</span>
-                <input ref={finishOdoRef} type="text" inputMode="numeric" pattern="[0-9]*" value={draft.finishOdometer} onChange={(e) => setField("finishOdometer", e.target.value.replace(/\D/g, ""))} placeholder={phase === "ended" ? "Enter now" : "At end"} />
+                <input id="lesson-field-finish-odometer" ref={finishOdoRef} type="text" inputMode="numeric" pattern="[0-9]*" value={draft.finishOdometer} onChange={(e) => setField("finishOdometer", e.target.value.replace(/\D/g, ""))} placeholder={phase === "ended" ? "Enter now" : "At end"} />
               </label>
             </div>
             {totals.lastFinishOdometer !== null && draft.startOdometer === String(totals.lastFinishOdometer) ? (
@@ -677,6 +707,7 @@ export default function DriverApp() {
 
             {phase !== "ready" ? (
               <>
+                <div id="lesson-field-competency">
                 <CompetencyPicker
                   progress={detail.progress}
                   taughtIds={draft.taughtIds}
@@ -686,6 +717,7 @@ export default function DriverApp() {
                   onChangeAssessed={(ids) => setDraft((current) => (current ? { ...current, assessedIds: ids } : current))}
                   onChangeAchieved={(results) => setDraft((current) => (current ? { ...current, achievedResults: results } : current))}
                 />
+                </div>
 
                 <div className="grid">
                   <label className="field full"><span>Location</span><input value={draft.location} onChange={(e) => setField("location", e.target.value)} placeholder="Belconnen, Gungahlin…" /></label>
@@ -695,17 +727,18 @@ export default function DriverApp() {
                 <details className="edit-times">
                   <summary>Edit date / times</summary>
                   <div className="grid">
-                    <label className="field full"><span>Date</span><input type="date" value={draft.lessonDate} onChange={(e) => setField("lessonDate", e.target.value)} /></label>
-                    <label className="field"><span>Start time</span><input type="time" value={draft.startTime} onChange={(e) => setField("startTime", e.target.value)} /></label>
+                    <label className="field full"><span>Date</span><input id="lesson-field-date" type="date" value={draft.lessonDate} onChange={(e) => setField("lessonDate", e.target.value)} /></label>
+                    <label className="field"><span>Start time</span><input id="lesson-field-times" type="time" value={draft.startTime} onChange={(e) => setField("startTime", e.target.value)} /></label>
                     <label className="field"><span>Finish time</span><input type="time" value={draft.finishTime} onChange={(e) => setField("finishTime", e.target.value)} /></label>
                   </div>
                 </details>
 
-                <SignaturePad label="ADI signature" value={draft.adiSignature} onChange={(value) => setField("adiSignature", value)} />
-                <SignaturePad label="Learner signature" value={draft.learnerSignature} onChange={(value) => setField("learnerSignature", value)} />
+                <div id="lesson-field-adi-signature"><SignaturePad label="ADI signature" value={draft.adiSignature} onChange={(value) => setField("adiSignature", value)} /></div>
+                <div id="lesson-field-learner-signature"><SignaturePad label="Learner signature" value={draft.learnerSignature} onChange={(value) => setField("learnerSignature", value)} /></div>
 
-                <button type="button" className="btn huge save" disabled={saving || phase !== "ended" || !competencyComplete} onClick={() => void saveLesson()}>
-                  {saving ? "Saving…" : phase !== "ended" ? "Save (tap End Lesson first)" : !competencyComplete ? "Mark Achieved / Not achieved for each Assessed item" : `Save Lesson #${lessonNo}`}
+                <SaveErrorSummary issues={shownSaveIssues} prefix="lesson" attempt={saveAttempt} />
+                <button type="button" className="btn huge save" disabled={saving || phase !== "ended"} onClick={() => void saveLesson()}>
+                  {saving ? "Saving…" : phase !== "ended" ? "Save (tap End Lesson first)" : `Save Lesson #${lessonNo}`}
                 </button>
                 <button type="button" className="link danger" onClick={discardLesson}>Discard this lesson</button>
               </>
@@ -727,12 +760,12 @@ export default function DriverApp() {
                           <h3>Editing Lesson #{lesson.lessonNo}</h3>
                           {editStatus ? <p className="status error">{editStatus}</p> : null}
                           <div className="grid">
-                            <label className="field"><span>Date</span><input type="date" value={editDraft.lessonDate} onChange={(e) => setEditFieldValue((d) => ({ ...d, lessonDate: e.target.value }))} /></label>
+                            <label className="field"><span>Date</span><input id="edit-field-date" type="date" value={editDraft.lessonDate} onChange={(e) => setEditFieldValue((d) => ({ ...d, lessonDate: e.target.value }))} /></label>
                             <label className="field"><span>Location</span><input value={editDraft.location} onChange={(e) => setEditFieldValue((d) => ({ ...d, location: e.target.value }))} /></label>
-                            <label className="field"><span>Start time</span><input type="time" value={editDraft.startTime} onChange={(e) => setEditFieldValue((d) => ({ ...d, startTime: e.target.value }))} /></label>
+                            <label className="field"><span>Start time</span><input id="edit-field-times" type="time" value={editDraft.startTime} onChange={(e) => setEditFieldValue((d) => ({ ...d, startTime: e.target.value }))} /></label>
                             <label className="field"><span>Finish time</span><input type="time" value={editDraft.finishTime} onChange={(e) => setEditFieldValue((d) => ({ ...d, finishTime: e.target.value }))} /></label>
-                            <label className="field"><span>Start odometer (km)</span><input type="text" inputMode="numeric" pattern="[0-9]*" value={editDraft.startOdometer} onChange={(e) => setEditFieldValue((d) => ({ ...d, startOdometer: e.target.value.replace(/\D/g, "") }))} /></label>
-                            <label className="field"><span>Finish odometer (km)</span><input type="text" inputMode="numeric" pattern="[0-9]*" value={editDraft.finishOdometer} onChange={(e) => setEditFieldValue((d) => ({ ...d, finishOdometer: e.target.value.replace(/\D/g, "") }))} /></label>
+                            <label className="field"><span>Start odometer (km)</span><input id="edit-field-start-odometer" type="text" inputMode="numeric" pattern="[0-9]*" value={editDraft.startOdometer} onChange={(e) => setEditFieldValue((d) => ({ ...d, startOdometer: e.target.value.replace(/\D/g, "") }))} /></label>
+                            <label className="field"><span>Finish odometer (km)</span><input id="edit-field-finish-odometer" type="text" inputMode="numeric" pattern="[0-9]*" value={editDraft.finishOdometer} onChange={(e) => setEditFieldValue((d) => ({ ...d, finishOdometer: e.target.value.replace(/\D/g, "") }))} /></label>
                           </div>
                           <p className="derived">
                             Recalculated: <b>{(() => { const m = durationMinutes(editDraft.startTime, editDraft.finishTime); return m !== null ? formatMinutes(m) : "—"; })()}</b> ·{" "}
@@ -740,8 +773,10 @@ export default function DriverApp() {
                             {" "}(lesson number, duration, distance and cumulative totals are always recalculated, never typed)
                           </p>
 
+                          <div id="edit-field-competency">
                           <CompetencyPicker
                             progress={editProgress}
+                            gateProgress={editGateProgress ?? undefined}
                             taughtIds={editDraft.taughtIds}
                             assessedIds={editDraft.assessedIds}
                             achievedResults={editDraft.achievedResults}
@@ -749,16 +784,18 @@ export default function DriverApp() {
                             onChangeAssessed={(ids) => setEditFieldValue((d) => ({ ...d, assessedIds: ids }))}
                             onChangeAchieved={(results) => setEditFieldValue((d) => ({ ...d, achievedResults: results }))}
                           />
+                          </div>
 
                           <label className="field full"><span>Comments</span><textarea rows={2} value={editDraft.comments} onChange={(e) => setEditFieldValue((d) => ({ ...d, comments: e.target.value }))} /></label>
 
                           {editOriginal && contentChanged(editOriginal, editDraft) ? (
                             <p className="hint danger">Content changed — both signatures were cleared. Please redraw both before saving.</p>
                           ) : null}
-                          <SignaturePad label="ADI signature" value={editDraft.adiSignature} onChange={(value) => setEditFieldValue((d) => ({ ...d, adiSignature: value }))} />
-                          <SignaturePad label="Learner signature" value={editDraft.learnerSignature} onChange={(value) => setEditFieldValue((d) => ({ ...d, learnerSignature: value }))} />
+                          <div id="edit-field-adi-signature"><SignaturePad label="ADI signature" value={editDraft.adiSignature} onChange={(value) => setEditFieldValue((d) => ({ ...d, adiSignature: value }))} /></div>
+                          <div id="edit-field-learner-signature"><SignaturePad label="Learner signature" value={editDraft.learnerSignature} onChange={(value) => setEditFieldValue((d) => ({ ...d, learnerSignature: value }))} /></div>
 
-                          <button type="button" className="btn huge save" disabled={saving || !editDraft.assessedIds.every((id) => id in editDraft.achievedResults)} onClick={() => void saveEditLesson()}>
+                          <SaveErrorSummary issues={shownEditIssues} prefix="edit" attempt={editAttempt} />
+                          <button type="button" className="btn huge save" disabled={saving} onClick={() => void saveEditLesson()}>
                             {saving ? "Saving…" : "Save changes"}
                           </button>
                           <button type="button" className="link" onClick={cancelEditLesson}>Cancel</button>

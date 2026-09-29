@@ -3,6 +3,8 @@ import {
   ALL_ASSESSABLE_IDS,
   CORE_COMPETENCY_IDS,
   CompetencyRuleError,
+  POST_REVIEW_1_17_LOCK_MESSAGE,
+  postReview17Violations,
   FINAL_DRIVE_23,
   computeProgress,
   diffInvalidatedMilestones,
@@ -552,12 +554,46 @@ export async function updateLesson(db: D1Database, learnerId: string, lessonId: 
   const otherLessonsEvents = allEventsBeforeEdit.filter((event) => event.lessonId !== lessonId);
   const progressExcludingThisLesson = computeProgress(otherLessonsEvents);
   try {
-    validateLessonCompetencies({ taughtIds, assessedIds, achievedResults }, progressExcludingThisLesson);
+    // The 18-22 gate is enforced by chronology below (progressExcludingThisLesson ignores lesson order).
+    validateLessonCompetencies({ taughtIds, assessedIds, achievedResults }, progressExcludingThisLesson, { skipPostReview17Gate: true });
   } catch (error) {
     if (error instanceof CompetencyRuleError) throw new ValidationError(error.message);
     throw error;
   }
   const achievedIds = assessedIds.filter((id) => achievedResults[id] === "achieved");
+
+  // History Edit must keep the 18-22 chronology: an edit may not introduce an
+  // 18-22 assessment (in this lesson or, by breaking a prerequisite, in a
+  // LATER lesson) that lacks 1-17 + Review 1-17 Achieved in EARLIER lessons.
+  // Violations already present in legacy data are tolerated and never
+  // rewritten — only NEW ones block the edit.
+  {
+    const { results: lessonRows } = await db.prepare("SELECT id, lesson_no FROM lessons WHERE learner_id = ?").bind(learnerId).all<Row>();
+    const lessonNoById = new Map(lessonRows.map((row) => [String(row.id), Number(row.lesson_no)]));
+    const groupByLesson = (events: readonly CompetencyEvent[]) => {
+      const groups = new Map<number, CompetencyEvent[]>();
+      for (const event of events) {
+        const lessonNo = lessonNoById.get(event.lessonId);
+        if (lessonNo === undefined) continue;
+        groups.set(lessonNo, [...(groups.get(lessonNo) ?? []), event]);
+      }
+      return [...groups].map(([lessonNo, events]) => ({ lessonNo, events }));
+    };
+    const stamp = new Date().toISOString();
+    const proposedEvents: CompetencyEvent[] = [
+      ...otherLessonsEvents,
+      ...taughtIds.map((competencyId) => ({ competencyId, action: "taught" as const, result: null, lessonId, createdAt: stamp })),
+      ...assessedIds.map((competencyId) => ({ competencyId, action: "assessed" as const, result: achievedResults[competencyId] ?? null, lessonId, createdAt: stamp })),
+    ];
+    const already = postReview17Violations(groupByLesson(allEventsBeforeEdit));
+    const introduced = [...postReview17Violations(groupByLesson(proposedEvents))].filter((key) => !already.has(key));
+    if (introduced.length) {
+      const ownKey = introduced.find((key) => key.startsWith(`${existing.lessonNo}:`));
+      if (ownKey) throw new ValidationError(POST_REVIEW_1_17_LOCK_MESSAGE);
+      const laterLessonNo = Math.min(...introduced.map((key) => Number(key.split(":")[0])));
+      throw new ValidationError(`This edit would leave Lesson #${laterLessonNo} assessing Competency 18-22 before Competency 1-17 and Review 1-17 were achieved in earlier lessons. Correct Lesson #${laterLessonNo} first.`);
+    }
+  }
 
   // Instructor performing this edit (Instructor Identity V1). Omitted (or
   // not yet resolvable, e.g. before Cloudflare Access is wired up) leaves
@@ -822,6 +858,28 @@ export async function getLearnerProgress(db: D1Database, learnerId: string): Pro
 /** Progress as if `lessonId`'s own competency events had never happened — used to validate/preview an edit to that lesson. */
 export async function getProgressExcludingLesson(db: D1Database, learnerId: string, lessonId: string): Promise<LearnerProgress> {
   return computeProgress((await getCompetencyEvents(db, learnerId)).filter((event) => event.lessonId !== lessonId));
+}
+
+/** Progress from EARLIER lessons only (lower lesson number) — what the 18-22 chronology gate is judged against when editing that lesson. */
+export async function getProgressBeforeLesson(db: D1Database, learnerId: string, lessonId: string): Promise<LearnerProgress> {
+  const { results } = await db
+    .prepare(
+      `SELECT e.competency_id, e.action, e.result, e.lesson_id, e.created_at
+       FROM competency_events e JOIN lessons l ON l.id = e.lesson_id
+       WHERE e.learner_id = ? AND l.lesson_no < (SELECT lesson_no FROM lessons WHERE id = ? AND learner_id = ?)
+       ORDER BY e.created_at ASC`,
+    )
+    .bind(learnerId, lessonId, learnerId)
+    .all<Row>();
+  return computeProgress(
+    results.map((row) => ({
+      competencyId: String(row.competency_id),
+      action: row.action as CompetencyEvent["action"],
+      result: (row.result as CompetencyEvent["result"]) ?? null,
+      lessonId: String(row.lesson_id),
+      createdAt: String(row.created_at),
+    })),
+  );
 }
 
 /** A lesson's current Taught/Assessed/Achieved selections, reconstructed from its competency events (for the edit form). */
