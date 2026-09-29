@@ -54,6 +54,7 @@ const postLesson = (id, body) =>
   fetch(`${B}/api/learners/${id}/lessons`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }).then(async (r) => ({ status: r.status, body: await r.json() }));
 const SIG = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
 
+try {
 // ═══ 1. Identity default: My learners, never stale device state ═══════════
 {
   const s = await session("tony");
@@ -61,7 +62,7 @@ const SIG = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCA
   check("viewport is iPhone 13 (390px)", (await s.page.evaluate(() => window.innerWidth)) === 390);
   check("Tony fresh login → default My learners", (await activeTab(s.page)).startsWith("My learners"));
   const opts = await options(s.page);
-  check("Tony My learners = only Tony's active learners", opts.length === 6 && opts.every((o) => o.startsWith("QA Tony")), opts.join(","));
+  check("Tony My learners = only Tony's active learners", opts.length === 7 && opts.every((o) => o.startsWith("QA Tony")), opts.join(","));
   check("nothing pre-selected on a fresh login", (await selectedValue(s.page)) === "" && !(await hasSummary(s.page)));
   check("no horizontal scroll (picker)", await noHScroll(s.page));
   await shot(s.page, "01-tony-my-learners");
@@ -275,6 +276,138 @@ const SIG = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCA
   await s.ctx.close();
 }
 
+// ═══ 5b. Save-failure UX: summary next to Save, jump-to-field, persistence ═
+const inViewport = (page, selector) =>
+  page.evaluate((sel) => { const r = document.querySelector(sel)?.getBoundingClientRect(); return Boolean(r) && r.top >= 0 && r.bottom <= window.innerHeight; }, selector);
+// Waits for smooth scrolling to finish, then records whether the element is fully on screen.
+async function expectVisible(page, selector, name) {
+  try {
+    await page.waitForFunction((sel) => { const r = document.querySelector(sel)?.getBoundingClientRect(); return Boolean(r) && r.top >= 0 && r.bottom <= window.innerHeight; }, selector, { timeout: 8000 });
+    check(name, true);
+  } catch {
+    check(name, false, "not fully on screen after 8s");
+  }
+}
+async function expectIssueCount(page, prefix, n, name) {
+  try {
+    await page.waitForFunction(([p, count]) => document.querySelectorAll(`[data-testid=${p}-save-errors] li`).length === count, [prefix, n], { timeout: 8000 });
+    check(name, true);
+  } catch {
+    const now = await page.$$eval(`[data-testid=${prefix}-save-errors] li span`, (e) => e.map((x) => x.textContent)).catch(() => []);
+    check(name, false, `expected ${n} item(s), got ${now.length}: ${now.join(" | ")}`);
+  }
+}
+const activeId = (page) => page.evaluate(() => document.activeElement?.id ?? "");
+const draw = async (page, index) => {
+  const canvas = (await page.$$(".sig canvas"))[index];
+  await canvas.scrollIntoViewIfNeeded();
+  const b = await canvas.boundingBox();
+  await page.mouse.move(b.x + 20, b.y + 30); await page.mouse.down(); await page.mouse.move(b.x + 120, b.y + 90, { steps: 8 }); await page.mouse.up();
+};
+{
+  const s = await session("tony");
+  await ready(s.page);
+  await pick(s.page, "QA Tony Save Errors");
+  await s.page.waitForSelector("text=Start Lesson");
+  await s.page.click("text=Start Lesson");
+  await s.page.click("text=End Lesson");
+  await s.page.click('.comp-section:has(.comp-label:text-is("Assessed")) .chip-row >> text="5"'); // assessed, result not chosen
+  await s.page.click(".btn.save");
+  await s.page.waitForSelector("[data-testid=lesson-save-errors]");
+  const items = await s.page.$$eval("[data-testid=lesson-save-errors] li span", (e) => e.map((x) => x.textContent));
+  // Start Lesson → End Lesson in the same minute gives finish == start, which the server also rejects: a real "times" problem.
+  check("failed save lists every problem, in page order (finish odometer, competency result, times, both signatures)", items.length === 5 && items[0] === "Finish odometer is required." && /^Start and finish time/.test(items[2]), items.join(" | "));
+  const box = async (sel) => (await s.page.locator(sel).boundingBox());
+  const summaryBox = await box("[data-testid=lesson-save-errors]"), saveBox = await box(".btn.save");
+  check("summary sits directly above the Save button", saveBox.y - (summaryBox.y + summaryBox.height) >= 0 && saveBox.y - (summaryBox.y + summaryBox.height) < 40, `${Math.round(saveBox.y - (summaryBox.y + summaryBox.height))}px gap`);
+  await settle(300);
+  check("summary and Save button are on screen right after the tap (no scrolling to find why)", (await inViewport(s.page, "[data-testid=lesson-save-errors]")) && (await inViewport(s.page, ".btn.save")));
+  check("no separate top-of-page error to hunt for", (await s.page.$(".status.error")) === null);
+  check("no horizontal scroll with the summary showing", await noHScroll(s.page));
+  await shot(s.page, "07-save-errors");
+  await s.page.click("[data-testid=lesson-go-finish-odometer]");
+  await s.page.waitForFunction(() => document.activeElement?.id === "lesson-field-finish-odometer");
+  await s.page.waitForFunction(() => { const r = document.getElementById("lesson-field-finish-odometer").getBoundingClientRect(); return r.top >= 0 && r.bottom <= window.innerHeight; });
+  check("'Go to Finish odometer' scrolls to and focuses the input", (await activeId(s.page)) === "lesson-field-finish-odometer");
+  check("the summary is still there (not a disappearing toast)", (await s.page.$("[data-testid=lesson-save-errors]")) !== null);
+  await s.page.keyboard.type("1030");
+  await expectIssueCount(s.page, "lesson", 4, "fixing the finish odometer removes just that item");
+  await s.page.click("[data-testid=lesson-go-competency]");
+  await s.page.waitForFunction(() => document.activeElement?.id === "lesson-field-competency");
+  await expectVisible(s.page, "#lesson-field-competency .comp-section", "'Go to CBT&A competencies' brings the competency section on screen");
+  await s.page.click('.result-list li:has-text("5") >> text="Achieved"');
+  await expectIssueCount(s.page, "lesson", 3, "choosing Achieved removes the competency item");
+  await s.page.click("[data-testid=lesson-go-times]");
+  await s.page.waitForFunction(() => document.activeElement?.id === "lesson-field-times");
+  check("'Go to Start / finish time' opens the collapsed time section and focuses it", (await s.page.evaluate(() => document.querySelector("details.edit-times").open)) && (await activeId(s.page)) === "lesson-field-times");
+  await s.page.fill("#lesson-field-times", "09:00");
+  await s.page.fill('.edit-times input[type="time"] >> nth=1', "09:45");
+  await expectIssueCount(s.page, "lesson", 2, "fixing the times removes that item");
+  await s.page.click("[data-testid=lesson-go-adi-signature]");
+  await s.page.waitForFunction(() => document.activeElement?.id === "lesson-field-adi-signature");
+  await expectVisible(s.page, "#lesson-field-adi-signature canvas", "'Go to ADI signature' brings the signature pad on screen");
+  await draw(s.page, 0);
+  await expectIssueCount(s.page, "lesson", 1, "signing as ADI removes that item");
+  await draw(s.page, 1);
+  await s.page.waitForFunction(() => document.querySelector("[data-testid=lesson-save-errors]") === null);
+  check("once everything is fixed the summary disappears", true);
+  await s.page.click(".btn.save");
+  await s.page.waitForSelector('.status:has-text("saved")');
+  check("…and the lesson saves", (await s.page.textContent(".status")).includes("Lesson #2 saved"));
+
+  // Server-side rejection → single item mapped to the right section, persists until that section changes.
+  await s.page.click("text=Start Lesson");
+  await s.page.click("text=End Lesson");
+  await s.page.fill('input[placeholder="Enter now"]', "1100");
+  await s.page.click(".edit-times summary");
+  await s.page.fill('.edit-times input[type="time"] >> nth=0', "09:00");
+  await s.page.fill('.edit-times input[type="time"] >> nth=1', "09:45");
+  await draw(s.page, 0); await draw(s.page, 1);
+  await s.page.route("**/api/learners/*/lessons", (route) =>
+    route.request().method() === "POST" ? route.fulfill({ status: 400, contentType: "application/json", body: JSON.stringify({ error: "Competency 18-22 can only be assessed after Competency 1-17 and Review 1-17 are all achieved." }) }) : route.continue(),
+  );
+  await s.page.click(".btn.save");
+  await s.page.waitForSelector("[data-testid=lesson-save-errors]");
+  check("server rejection is shown next to Save with a jump link to the competency section", (await s.page.textContent("[data-testid=lesson-save-errors]")).includes("Competency 18-22") && (await s.page.$("[data-testid=lesson-go-competency]")) !== null);
+  await s.page.fill('input[placeholder="Belconnen, Gungahlin…"]', "Belconnen");
+  check("an unrelated edit does not hide the server error", (await s.page.$("[data-testid=lesson-save-errors]")) !== null);
+  await s.page.click("[data-testid=lesson-go-competency]");
+  await s.page.waitForFunction(() => document.activeElement?.id === "lesson-field-competency");
+  await s.page.click('.comp-section:has(.comp-label:text-is("Taught")) .chip-row >> text="6"');
+  await s.page.waitForFunction(() => document.querySelector("[data-testid=lesson-save-errors]") === null);
+  check("changing the competency selection clears the server error", true);
+  await s.page.unroute("**/api/learners/*/lessons");
+  await s.page.route("**/api/learners/*/lessons", (route) =>
+    route.request().method() === "POST" ? route.fulfill({ status: 400, contentType: "application/json", body: JSON.stringify({ error: "CBT&A is already completed for this learner — no further CBT&A lessons can be recorded." }) }) : route.continue(),
+  );
+  await s.page.click(".btn.save");
+  await s.page.waitForSelector("[data-testid=lesson-save-errors]");
+  check("a message with no field is still shown next to Save (no jump link)", (await s.page.$("[data-testid=lesson-save-errors] button")) === null && (await s.page.textContent("[data-testid=lesson-save-errors]")).includes("already completed"));
+  await s.page.unroute("**/api/learners/*/lessons");
+  check("Tony: no page errors (save-error UX)", s.errors.length === 0, s.errors.join("|"));
+  await s.ctx.close();
+}
+{
+  // History Edit form: same summary next to "Save changes".
+  const s = await session("tony");
+  await ready(s.page);
+  await pick(s.page, "QA Tony Save Errors");
+  await s.page.waitForSelector("[data-testid=history-row]");
+  await s.page.click("[data-testid=history-row] .h-edit >> nth=-1");
+  await s.page.waitForSelector("text=/Editing Lesson/");
+  await s.page.fill('.h-editing input[type="time"] >> nth=1', "10:20");
+  await s.page.click(".h-editing .btn.save");
+  await s.page.waitForSelector("[data-testid=edit-save-errors]");
+  const items = await s.page.$$eval("[data-testid=edit-save-errors] li span", (e) => e.map((x) => x.textContent));
+  check("History Edit: changed content without re-signing lists both signatures", items.join("|") === "ADI signature is required.|Learner signature is required.", items.join(" | "));
+  const summaryBox = await s.page.locator("[data-testid=edit-save-errors]").boundingBox(), saveBox = await s.page.locator(".h-editing .btn.save").boundingBox();
+  check("History Edit: summary directly above Save changes", saveBox.y - (summaryBox.y + summaryBox.height) >= 0 && saveBox.y - (summaryBox.y + summaryBox.height) < 40);
+  await s.page.click("[data-testid=edit-go-learner-signature]");
+  await s.page.waitForFunction(() => document.activeElement?.id === "edit-field-learner-signature");
+  await expectVisible(s.page, "#edit-field-learner-signature canvas", "History Edit: 'Go to Learner signature' brings the pad on screen");
+  await s.ctx.close();
+}
+
 // ═══ 6. Regression: lesson workflow, History Edit, signatures, PDF ═══════
 {
   const s = await session("tony");
@@ -315,6 +448,10 @@ const SIG = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCA
   await shot(s.page, "06-regression-lesson");
   check("Tony: no page errors (regression)", s.errors.length === 0, s.errors.join("|"));
   await s.ctx.close();
+}
+
+} catch (error) {
+  check(`script aborted: ${String(error.message).split("\n")[0]}`, false);
 }
 
 await browser.close();

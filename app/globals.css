@@ -229,3 +229,11 @@ html, body {
 .empty { color: var(--muted); margin: 0; }
 
 .foot { text-align: center; color: var(--muted); font-size: 12px; margin-top: 8px; }
+
+.save-errors { margin: 16px 0 0; padding: 12px; border-radius: 12px; border: 1.5px solid var(--stop); background: #fbe4e1; color: #8e2418; }
+.save-errors strong { display: block; margin-bottom: 6px; font-size: 15px; }
+.save-errors ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.save-errors li { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; font-size: 14px; overflow-wrap: anywhere; }
+.save-errors-go { font: inherit; font-weight: 700; font-size: 14px; min-height: 40px; padding: 6px 12px; border: 1px solid var(--stop); border-radius: 10px; background: #fff; color: var(--stop); cursor: pointer; touch-action: manipulation; }
+.save-errors + .btn.save { margin-top: 12px; }
+.field-flash { outline: 3px solid var(--gold); outline-offset: 3px; border-radius: 10px; transition: outline-color .4s; }

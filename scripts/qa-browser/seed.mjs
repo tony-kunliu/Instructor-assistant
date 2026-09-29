@@ -35,6 +35,8 @@ ids.gateLocked = (await mk("QA Tony Gate Locked", TONY)).id;
 await lessons({ id: ids.gateLocked }, [assess(range(1, 17))]);
 ids.gateOpen = (await mk("QA Tony Gate Open", TONY)).id;
 await lessons({ id: ids.gateOpen }, upToR17);
+ids.saveErr = (await mk("QA Tony Save Errors", TONY)).id;
+await lessons({ id: ids.saveErr }, [{ taughtIds: ["1"] }]);
 ids.charlie = (await mk("QA Anna Charlie", ANNA)).id;
 ids.delta = (await mk("QA Anna Delta", ANNA)).id;
 const { writeFileSync } = await import("node:fs");

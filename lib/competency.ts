@@ -12,6 +12,7 @@ export const SPECIAL_ASSESSMENT_IDS: readonly string[] = [REVIEW_1_17, REVIEW_1_
 export const ALL_ASSESSABLE_IDS: readonly string[] = [...CORE_COMPETENCY_IDS, ...SPECIAL_ASSESSMENT_IDS];
 /** Competency 18-22: may be Taught any time, but only Assessed once 1-17 and Review 1-17 are Achieved. */
 export const POST_REVIEW_1_17_IDS: readonly string[] = CORE_COMPETENCY_IDS.slice(17);
+export const POST_REVIEW_1_17_LOCK_MESSAGE = "Competency 18-22 can only be assessed after Competency 1-17 and Review 1-17 are all achieved.";
 
 export type CompetencyAction = "taught" | "assessed";
 export type AssessmentResult = "achieved" | "not_achieved";
@@ -131,15 +132,38 @@ export function parseAchievedResults(value: unknown): Record<string, AssessmentR
 export class CompetencyRuleError extends Error {}
 
 /**
+ * Chronology check for the 18-22 gate. `lessons` is a learner's lessons with
+ * their events, in any order; ordering is by `lessonNo` (creation order, never
+ * editable). Returns `"<lessonNo>:<competencyId>"` for every 18-22 assessment
+ * made in a lesson where Competency 1-17 and Review 1-17 were not both
+ * Achieved by EARLIER lessons alone (the same lesson never counts).
+ * Taught events are never violations.
+ */
+export function postReview17Violations(lessons: readonly { lessonNo: number; events: readonly CompetencyEvent[] }[]): Set<string> {
+  const violations = new Set<string>();
+  const earlier: CompetencyEvent[] = [];
+  for (const lesson of [...lessons].sort((a, b) => a.lessonNo - b.lessonNo)) {
+    const gateOpen = computeProgress(earlier).review1_17.status === "achieved";
+    if (!gateOpen) {
+      for (const event of lesson.events) {
+        if (event.action === "assessed" && POST_REVIEW_1_17_IDS.includes(event.competencyId)) violations.add(`${lesson.lessonNo}:${event.competencyId}`);
+      }
+    }
+    earlier.push(...lesson.events);
+  }
+  return violations;
+}
+
+/**
  * Whether `id` is currently blocked from being Assessed, given progress
  * *before* the lesson being validated. Single source of truth for both the
  * server-side validation below and the UI's locked chips. Taught is never
  * gated here. `review1_17.status === "achieved"` already implies
  * Competency 1-17 are all Achieved (see computeProgress).
  */
-export function assessmentLockReason(id: string, progress: LearnerProgress): string | null {
-  if (POST_REVIEW_1_17_IDS.includes(id) && progress.review1_17.status !== "achieved") {
-    return "Competency 18-22 can only be assessed after Competency 1-17 and Review 1-17 are all achieved.";
+export function assessmentLockReason(id: string, progress: LearnerProgress, options: { skipPostReview17Gate?: boolean } = {}): string | null {
+  if (!options.skipPostReview17Gate && POST_REVIEW_1_17_IDS.includes(id) && progress.review1_17.status !== "achieved") {
+    return POST_REVIEW_1_17_LOCK_MESSAGE;
   }
   if (id === REVIEW_1_17 && progress.review1_17.status === "locked") return "Review 1-17 is locked until Competency 1-17 are all achieved.";
   if (id === REVIEW_1_22 && progress.review1_22.status === "locked") return "Review 1-22 is locked until Competency 1-22 and Review 1-17 are all achieved.";
@@ -177,6 +201,8 @@ export function hasInvalidatedMilestone(invalidation: MilestoneInvalidation): bo
 export function validateLessonCompetencies(
   input: { taughtIds: string[]; assessedIds: string[]; achievedResults: Record<string, AssessmentResult> },
   progress: LearnerProgress,
+  // History Edit checks the 18-22 gate by lesson chronology instead (see postReview17Violations).
+  options: { skipPostReview17Gate?: boolean } = {},
 ): void {
   const assessedSet = new Set(input.assessedIds);
 
@@ -190,7 +216,7 @@ export function validateLessonCompetencies(
   }
 
   for (const id of input.assessedIds) {
-    const reason = assessmentLockReason(id, progress);
+    const reason = assessmentLockReason(id, progress, options);
     if (reason) throw new CompetencyRuleError(reason);
   }
 
