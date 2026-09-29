@@ -60,6 +60,7 @@ function toLearner(row: Row): Learner {
     transmission: (row.transmission as Learner["transmission"]) ?? null,
     schoolWork: (row.school_work as string) ?? null,
     licenceStage: (row.licence_stage as Learner["licenceStage"]) ?? "learner",
+    archivedAt: (row.archived_at as string) ?? null,
   };
 }
 
@@ -165,9 +166,30 @@ const LEARNER_SELECT = `
   SELECT l.*, i.full_name AS instructor_name, i.adi_number AS instructor_adi_number
   FROM learners l JOIN instructors i ON i.id = l.instructor_id`;
 
-export async function listLearners(db: D1Database): Promise<Learner[]> {
-  const { results } = await db.prepare(`${LEARNER_SELECT} WHERE l.archived_at IS NULL ORDER BY l.full_name COLLATE NOCASE`).all<Row>();
+export async function listLearners(db: D1Database, options: { archived?: boolean } = {}): Promise<Learner[]> {
+  const where = options.archived ? "l.archived_at IS NOT NULL" : "l.archived_at IS NULL";
+  const { results } = await db.prepare(`${LEARNER_SELECT} WHERE ${where} ORDER BY l.full_name COLLATE NOCASE`).all<Row>();
   return results.map(toLearner);
+}
+
+/**
+ * Archive (or restore) a learner. Only toggles `archived_at` — identity,
+ * lessons, competency events, signatures and Integration mapping are never
+ * touched, and no integration event is emitted. Re-archiving keeps the
+ * original timestamp.
+ */
+export async function setLearnerArchived(db: D1Database, id: string, archived: boolean): Promise<Learner> {
+  const result = await db
+    .prepare(
+      `UPDATE learners SET
+         archived_at = CASE WHEN ? THEN COALESCE(archived_at, strftime('%Y-%m-%dT%H:%M:%fZ', 'now')) ELSE NULL END,
+         updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+       WHERE id = ?`,
+    )
+    .bind(archived ? 1 : 0, id)
+    .run();
+  if (!result.meta.changes) throw new NotFoundError("Learner not found.");
+  return getLearner(db, id);
 }
 
 export async function getLearner(db: D1Database, id: string): Promise<Learner> {

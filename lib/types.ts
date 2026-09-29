@@ -27,6 +27,8 @@ export type Learner = {
   transmission: Transmission | null;
   schoolWork: string | null;
   licenceStage: LicenceStage;
+  /** Lifecycle state only (reversible, never a delete): set = hidden from the daily picker. Independent of Final Drive 23 completion. */
+  archivedAt: string | null;
 };
 
 export type Lesson = {
