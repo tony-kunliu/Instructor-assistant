@@ -5,20 +5,19 @@ _Last updated: 2026-09-29_
 This file describes the **current task only**. Completed work's detail
 lives in git log and closed PRs, not here.
 
-**Current Task:** Release A (application Production release) — **Partial**.
-main = staging `9fabe2c` (fast-forward, Tony-authorized); Production deploy
-not done: the agent has no Cloudflare credential. Integration V1 stays OFF,
-no migration for Release A.
+**Current Task:** Release A (application Production release) — **Completed**
+(automated). Production Worker `b76eeb2c-163d-4b32-a49d-042d32063e00`
+(previous `a5708df9-5dcf-4c10-b26b-212fb4bf9a3f`), D1 still `0004`,
+Integration V1 OFF.
 
-**Next Recommended Task:** Deploy Release A: give the session a Cloudflare
-API token (environment settings), then `opennextjs-cloudflare build` +
-`wrangler deploy --env production` from main `9fabe2c`; record the new
-version; Tony + Anna real Access login, confirm My Learners. Then STOP.
+**Next Recommended Task:** Tony/Anna real Access login smoke test; then
+decide on Release B (Integration Production enablement) — not authorized
+or started. P3-B not started.
 
-**Waiting on Other Repo:** NONE (Release B / P3 not authorized).
+**Waiting on Other Repo:** NONE.
 
-**Tony Manual Action Required:** provide the Cloudflare token (or deploy
-himself with the commands above); after deploy, Tony/Anna Access login check.
+**Tony Manual Action Required:** real Access login on Production (Tony +
+Anna), confirm My Learners loads.
 
 **Non-blocking backlog (not scheduled):**
 - UX: Finish odometer can be typed before Start Lesson is tapped (Tony,

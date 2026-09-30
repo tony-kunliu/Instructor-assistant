@@ -1,6 +1,6 @@
 # STATUS.md
 
-_Last updated: 2026-09-29_ (Learner Lifecycle / CBT&A Staging round — PASS)
+_Last updated: 2026-09-30_ (Release A deployed to Production — PASS; Release B / P3 not started)
 
 This file describes **current state only**. Development history lives in
 git log and closed PRs, not here — see `TASK.md` for what's in progress.
@@ -43,20 +43,21 @@ git log and closed PRs, not here — see `TASK.md` for what's in progress.
   **PASS**, see Integration V1 below)
 
 **Production**
-- Deployed Worker version: `a5708df9-5dcf-4c10-b26b-212fb4bf9a3f`
-- D1 migration level: `0004`
+- Deployed Worker version: `b76eeb2c-163d-4b32-a49d-042d32063e00` (Release A, from main `92aa496`, application identical to `9fabe2c`; deployed 2026-09-30 via `wrangler deploy --env production`). Previous / rollback version: `a5708df9-5dcf-4c10-b26b-212fb4bf9a3f`
+- D1 migration level: `0004` (no migration run; not readable with the deploy token — D1 permission absent — so unchanged by construction)
 - Cloudflare Access: enabled (Tony + Anna only)
 - Integration enabled: **NO**
 
-**Release A (application) — PARTIAL, deploy PENDING:** main is promoted
-and its CI is running/green, but the agent has NO Cloudflare credential
-(`wrangler whoami`: not authenticated), so Production is NOT redeployed yet
-and still runs the pre-Integration build. Dry-run of
-`wrangler deploy --env production` from `9fabe2c` verified: target
-`instructor-assistant-production`, Production D1, Integration disabled, no
-webhook URL/secret. Release A applies no migration — never run
-`db:migrate:remote` for it (would apply 0005; migration 0005 not applied
-to Production). Rollback target: Worker `a5708df9-5dcf-4c10-b26b-212fb4bf9a3f`.
+**Release A (application) — DEPLOYED, PASS (automated):** Worker
+`instructor-assistant-production` now runs `b76eeb2c-163d-4b32-a49d-042d32063e00`
+(100%), previous `a5708df9-5dcf-4c10-b26b-212fb4bf9a3f` (rollback target).
+Deploy bindings verified: Production D1 `instructor-assistant-db-production`,
+`ACTGDS_INTEGRATION_ENABLED=false`, no webhook URL, no secrets
+(`wrangler secret list` = `[]`). No migration was run — never run
+`db:migrate:remote` for Release A (would apply 0005). Automated smoke:
+`/`, `/api/health`, `/api/learners`, `/my-learners` all 302 to the
+Cloudflare Access login (Access enforced, Worker live). Remaining: Tony /
+Anna real Access login and My Learners check.
 Release B (Integration Production enablement) and P3-B are NOT started.
 The Workers Builds "Production branch" setting is `staging` and drives only
 the Staging Worker; do not touch `instructor-assistant-production`.
