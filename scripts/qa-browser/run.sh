@@ -37,3 +37,4 @@ export QA_BASE="http://localhost:$PORT" QA_OUT="${QA_OUT:-$WORK/shots}" NPM_GLOB
 mkdir -p "$QA_OUT"
 node "$ROOT/scripts/qa-browser/seed.mjs"
 node "$ROOT/scripts/qa-browser/qa.mjs"
+node "$ROOT/scripts/qa-browser/gps-lab.mjs"
