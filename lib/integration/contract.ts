@@ -87,3 +87,33 @@ export function buildLessonUpsertedPayload(input: BuildLessonUpsertedInput): Les
     },
   };
 }
+
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  if (value && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    return `{${Object.keys(record).sort().map((key) => `${JSON.stringify(key)}:${canonicalJson(record[key])}`).join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+/**
+ * True when two serialized lesson.upserted payloads say exactly the same thing to the receiver — every
+ * contract-visible field equal — differing only in per-event identity/version bookkeeping (event_id,
+ * occurred_at, lesson.source_updated_at). Fails closed: anything unparseable, or of another shape, is
+ * "different", so a caller that uses this to skip a redundant event can only ever skip a genuine no-op.
+ */
+export function sameContractState(payloadJsonA: string, payloadJsonB: string): boolean {
+  try {
+    const strip = (json: string): string => {
+      const payload = JSON.parse(json) as Record<string, unknown>;
+      if (!payload || typeof payload !== "object" || typeof payload.lesson !== "object" || payload.lesson === null) throw new Error("unexpected shape");
+      const { event_id: _eventId, occurred_at: _occurredAt, lesson, ...rest } = payload;
+      const { source_updated_at: _sourceUpdatedAt, ...lessonRest } = lesson as Record<string, unknown>;
+      return canonicalJson({ ...rest, lesson: lessonRest });
+    };
+    return strip(payloadJsonA) === strip(payloadJsonB);
+  } catch {
+    return false;
+  }
+}

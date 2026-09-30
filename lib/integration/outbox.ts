@@ -95,6 +95,28 @@ export async function latestSourceUpdatedAtByLesson(db: D1Database, lessonIds: r
 }
 
 /**
+ * For each lesson id, the payload of its most recent event the receiver has received or will still receive
+ * (`pending` or `delivered`; a `permanent_failure` never reached it, so it is never the baseline). A lesson
+ * with no such event is absent from the map. Used only to recognise a genuinely redundant propagated event.
+ */
+export async function latestSendablePayloadByLesson(db: D1Database, lessonIds: readonly string[]): Promise<Map<string, string>> {
+  const result = new Map<string, string>();
+  if (lessonIds.length === 0) return result;
+  const placeholders = lessonIds.map(() => "?").join(", ");
+  const { results } = await db
+    .prepare(
+      `SELECT o.lesson_id, o.payload_json FROM integration_outbox o
+       WHERE o.lesson_id IN (${placeholders}) AND o.status != 'permanent_failure'
+         AND o.source_updated_at = (SELECT MAX(i.source_updated_at) FROM integration_outbox i WHERE i.lesson_id = o.lesson_id AND i.status != 'permanent_failure')
+       ORDER BY o.created_at ASC`,
+    )
+    .bind(...lessonIds)
+    .all<Row>();
+  for (const row of results) result.set(String(row.lesson_id), String(row.payload_json));
+  return result;
+}
+
+/**
  * The receiver upserts on (lesson_id, source_updated_at) — reusing or undercutting a lesson's existing
  * version is silently ignored as `stale_ignored`, which would look like a successful propagation while
  * actually fixing nothing. Guarantees the returned timestamp is strictly newer than `latestExistingIso`

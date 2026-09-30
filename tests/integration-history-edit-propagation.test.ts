@@ -489,3 +489,66 @@ test("J: two direct edits of the same lesson at the exact same controlled clock 
     clock.restore();
   }
 });
+
+// ── K–M: redundant downstream events are not enqueued; real changes always are ──
+
+const L1 = { lessonDate: "2026-09-01", startTime: "09:00", finishTime: "10:00", startOdometer: "0", finishOdometer: "10", taughtIds: ["1"], adiSignature: SIG1, learnerSignature: SIG1 };
+const L2 = { lessonDate: "2026-09-02", startTime: "09:00", finishTime: "10:00", startOdometer: "100", finishOdometer: "110", taughtIds: ["2"], adiSignature: SIG1, learnerSignature: SIG1 };
+
+test("K: a location/comments-only History Edit of Lesson #1 emits its own event but NOT a redundant one for already-exported Lesson #2", async () => {
+  const { db, learner } = await setup();
+  const receiver = createFakeReceiver(SECRET);
+  for (let i = 0; i < 4; i++) receiver.queueResponse(202);
+  const { hooks, settle } = testHooks(receiver.fetchImpl);
+  const lesson1 = await createLesson(db, learner.id, L1, hooks);
+  const lesson2 = await createLesson(db, learner.id, L2, hooks);
+  await settle();
+
+  await updateLesson(db, learner.id, lesson1.id, { ...L1, location: "Belconnen", comments: "Smooth drive", adiSignature: SIG2, learnerSignature: SIG2 }, hooks);
+  await settle();
+
+  const rows = await listOutboxRowsForLearner(db, learner.id);
+  assert.equal(outboxRowsForLesson(rows, lesson2.id).length, 1, "Lesson #2's payload is unchanged — no redundant event");
+  assert.equal(outboxRowsForLesson(rows, lesson1.id).length, 2, "the edited lesson still gets its own event");
+  assert.ok(rows.every((row) => row.status === "delivered"));
+});
+
+test("L: after a no-op edit, a later real change (totals) still propagates to Lesson #2 correctly", async () => {
+  const { db, learner } = await setup();
+  const receiver = createFakeReceiver(SECRET);
+  for (let i = 0; i < 6; i++) receiver.queueResponse(202);
+  const { hooks, settle } = testHooks(receiver.fetchImpl);
+  const lesson1 = await createLesson(db, learner.id, L1, hooks);
+  const lesson2 = await createLesson(db, learner.id, L2, hooks);
+  await settle();
+  await updateLesson(db, learner.id, lesson1.id, { ...L1, comments: "note only", adiSignature: SIG2, learnerSignature: SIG2 }, hooks);
+  await settle();
+  await updateLesson(db, learner.id, lesson1.id, { ...L1, finishTime: "10:30", finishOdometer: "15", comments: "note only", adiSignature: SIG3, learnerSignature: SIG3 }, hooks);
+  await settle();
+
+  const lesson2Rows = outboxRowsForLesson(await listOutboxRowsForLearner(db, learner.id), lesson2.id);
+  assert.equal(lesson2Rows.length, 2, "one original + one for the real change, none for the no-op");
+  const mirror = mirrorFromReceived(receiver).get(lesson2.id)!;
+  assert.equal(mirror.lesson.cumulative_minutes, 150);
+  assert.equal(mirror.lesson.cumulative_km, 25);
+});
+
+test("M: if Lesson #2's latest event permanently failed (receiver never got it), a no-op edit still re-sends the current state", async () => {
+  const { db, learner } = await setup();
+  const receiver = createFakeReceiver(SECRET);
+  receiver.queueResponse(202); // Lesson #1
+  receiver.queueResponse(400); // Lesson #2 rejected -> permanent_failure
+  for (let i = 0; i < 4; i++) receiver.queueResponse(202);
+  const { hooks, settle } = testHooks(receiver.fetchImpl);
+  const lesson1 = await createLesson(db, learner.id, L1, hooks);
+  await settle();
+  const lesson2 = await createLesson(db, learner.id, L2, hooks);
+  await settle();
+  const before = outboxRowsForLesson(await listOutboxRowsForLearner(db, learner.id), lesson2.id);
+  assert.equal(before[0].status, "permanent_failure", "test precondition");
+
+  await updateLesson(db, learner.id, lesson1.id, { ...L1, comments: "note only", adiSignature: SIG2, learnerSignature: SIG2 }, hooks);
+  await settle();
+  const after = outboxRowsForLesson(await listOutboxRowsForLearner(db, learner.id), lesson2.id);
+  assert.equal(after.length, 2, "no deliverable baseline existed, so the state is sent, never suppressed");
+});

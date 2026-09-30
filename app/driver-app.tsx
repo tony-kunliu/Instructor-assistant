@@ -14,6 +14,7 @@ import {
   type Totals,
 } from "@/lib/calc.ts";
 import type { AssessmentResult, LearnerProgress, MilestoneInvalidation } from "@/lib/competency.ts";
+import { accessLogoutUrl } from "@/lib/access-logout.ts";
 import { filterLearners } from "@/lib/learner-filter.ts";
 import { currentIssues, issueFromServerMessage, validateLessonDraftFields, type IssueState } from "@/lib/lesson-form-errors.ts";
 import { availableViews, initialSelection, learnerPanel, selectionAfterViewChange, viewLearners, type PickerView } from "@/lib/learner-picker.ts";
@@ -141,18 +142,6 @@ const draftKey = (learnerId: string) => `actgds-driver:draft:${learnerId}`;
 const LAST_LEARNER_KEY = "actgds-driver:last-learner";
 const LAST_INSTRUCTOR_KEY = "actgds-driver:last-instructor";
 
-/**
- * Ends the Cloudflare Access session (not an app-level login — Access owns
- * the session, this app never has its own). Same team domain as
- * lib/access.ts#TEAM_DOMAIN (duplicated, not imported: that module pulls in
- * `jose`/JWKS setup meant for the server, not the client bundle). Shared by
- * every environment's Access Application, so this is correct for both
- * Staging and Production. Visiting it clears this browser's Access login;
- * the next request to any Access-protected app on this account will
- * require signing in again.
- */
-const ACCESS_LOGOUT_URL = "https://actgds.cloudflareaccess.com/cdn-cgi/access/logout";
-
 async function api<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, init);
   const data = await response.json().catch(() => ({}));
@@ -189,6 +178,9 @@ export default function DriverApp() {
   const [editStatus, setEditStatus] = useState<string | null>(null);
   const [invalidation, setInvalidation] = useState<MilestoneInvalidation | null>(null);
   const [signedInAs, setSignedInAs] = useState<string | null>(null);
+  // Ends the Cloudflare Access session on this app's own origin and returns to it (see lib/access-logout.ts).
+  const [logoutUrl, setLogoutUrl] = useState(() => accessLogoutUrl(null));
+  useEffect(() => setLogoutUrl(accessLogoutUrl(window.location.origin)), []);
   const [signedInInstructorId, setSignedInInstructorId] = useState<string | null>(null);
   // Nothing identity-dependent (view, learner list) is shown until /api/me has resolved, so a device's leftover state can never flash or pick "All".
   const [ready, setReady] = useState(false);
@@ -530,7 +522,7 @@ export default function DriverApp() {
         {signedInAs ? (
           <div className="signed-in-as">
             <span>Signed in as {signedInAs}</span>
-            <a href={ACCESS_LOGOUT_URL} className="signout-link">Sign out</a>
+            <a href={logoutUrl} className="signout-link" data-testid="signout-link">Sign out</a>
           </div>
         ) : null}
       </header>
@@ -694,7 +686,7 @@ export default function DriverApp() {
                 <input id="lesson-field-start-odometer" type="text" inputMode="numeric" pattern="[0-9]*" value={draft.startOdometer} onChange={(e) => setField("startOdometer", e.target.value.replace(/\D/g, ""))} placeholder="e.g. 45210" />
               </label>
               <label className="field"><span>Finish odometer (km)</span>
-                <input id="lesson-field-finish-odometer" ref={finishOdoRef} type="text" inputMode="numeric" pattern="[0-9]*" value={draft.finishOdometer} onChange={(e) => setField("finishOdometer", e.target.value.replace(/\D/g, ""))} placeholder={phase === "ended" ? "Enter now" : "At end"} />
+                <input id="lesson-field-finish-odometer" ref={finishOdoRef} type="text" inputMode="numeric" pattern="[0-9]*" value={draft.finishOdometer} onChange={(e) => setField("finishOdometer", e.target.value.replace(/\D/g, ""))} disabled={phase !== "ended"} placeholder={phase === "ended" ? "Enter now" : "After End Lesson"} />
               </label>
             </div>
             {totals.lastFinishOdometer !== null && draft.startOdometer === String(totals.lastFinishOdometer) ? (

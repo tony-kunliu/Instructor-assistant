@@ -451,3 +451,15 @@ test("N: renaming the learner never changes learner_id in later events", async (
     assert.ok(!JSON.stringify(payload).includes("Different Name"), "the renamed full_name must never leak into the payload");
   }
 });
+
+test("sameContractState: ignores only event_id / occurred_at / source_updated_at, fails closed otherwise", async () => {
+  const { sameContractState } = await import("../lib/integration/contract.ts");
+  const base = { contract_version: 1, event_id: "a", occurred_at: "t1", learner: { learner_id: "L" }, lesson: { lesson_id: "x", cumulative_km: 10, source_updated_at: "s1" }, progress: { achieved_count: 1 } };
+  const bookkeepingOnly = { ...base, event_id: "b", occurred_at: "t2", lesson: { ...base.lesson, source_updated_at: "s2" } };
+  assert.equal(sameContractState(JSON.stringify(base), JSON.stringify(bookkeepingOnly)), true);
+  assert.equal(sameContractState(JSON.stringify(base), JSON.stringify({ ...base, lesson: { ...base.lesson, cumulative_km: 11 } })), false);
+  assert.equal(sameContractState(JSON.stringify(base), JSON.stringify({ ...base, progress: { achieved_count: 2 } })), false);
+  assert.equal(sameContractState(JSON.stringify(base), JSON.stringify({ ...base, learner: { learner_id: "M" } })), false);
+  assert.equal(sameContractState(JSON.stringify(base), "not json"), false);
+  assert.equal(sameContractState(JSON.stringify(base), JSON.stringify({ x: 1 })), false);
+});
