@@ -7,9 +7,10 @@ git log and closed PRs, not here — see `TASK.md` for what's in progress.
 
 ## Repository
 
-- **main:** `8bae4e4c211a78b2e682d8b04744f102fa1a4328` — trusted baseline
-  (rollback reference). Does not yet include GitHub Actions CI or the
-  Integration Sender source (not authorized to merge into `main` yet).
+- **main:** `9fabe2c8ddb404d0a879883aba3c56ccd00f6132` — Release A source
+  (staging fast-forwarded into main 2026-09-30, Tony-authorized; includes
+  CI and the Integration Sender source, inert while disabled). Previous
+  main / application rollback baseline: `8bae4e4c211a78b2e682d8b04744f102fa1a4328`.
 - **staging:** contains GitHub Actions CI, the Integration Sender source,
   and the Phase A documentation cleanup. `staging`'s HEAD moves with every
   merge — do not record its exact SHA here as durable state; `git fetch`
@@ -47,10 +48,18 @@ git log and closed PRs, not here — see `TASK.md` for what's in progress.
 - Cloudflare Access: enabled (Tony + Anna only)
 - Integration enabled: **NO**
 
-Production has not been redeployed and is still running the
-pre-Integration build, unchanged. The Workers Builds "Production branch"
-setting is `staging` and drives only the Staging Worker; do not touch
-`instructor-assistant-production`.
+**Release A (application) — PARTIAL, deploy PENDING:** main is promoted
+and its CI is running/green, but the agent has NO Cloudflare credential
+(`wrangler whoami`: not authenticated), so Production is NOT redeployed yet
+and still runs the pre-Integration build. Dry-run of
+`wrangler deploy --env production` from `9fabe2c` verified: target
+`instructor-assistant-production`, Production D1, Integration disabled, no
+webhook URL/secret. Release A applies no migration — never run
+`db:migrate:remote` for it (would apply 0005; migration 0005 not applied
+to Production). Rollback target: Worker `a5708df9-5dcf-4c10-b26b-212fb4bf9a3f`.
+Release B (Integration Production enablement) and P3-B are NOT started.
+The Workers Builds "Production branch" setting is `staging` and drives only
+the Staging Worker; do not touch `instructor-assistant-production`.
 
 ## Current Product
 

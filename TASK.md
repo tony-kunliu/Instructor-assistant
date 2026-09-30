@@ -5,23 +5,20 @@ _Last updated: 2026-09-29_
 This file describes the **current task only**. Completed work's detail
 lives in git log and closed PRs, not here.
 
-**Current Task:** Learner Lifecycle / CBT&A Staging round — **Completed**
-(PASS). Real-account / real-phone acceptance by Tony passed; the History
-Edit chronology gates (Review 1-17, Competency 18-22, Review 1-22, Final
-Drive 23), the save-failure error summary and the QA/acceptance working
-rule are in `staging`, verified by 252 automated tests, real-browser QA
-(`bash scripts/qa-browser/run.sh`, 91 checks) and GitHub CI. Details and
-the exact rules live in `STATUS.md`.
+**Current Task:** Release A (application Production release) — **Partial**.
+main = staging `9fabe2c` (fast-forward, Tony-authorized); Production deploy
+not done: the agent has no Cloudflare credential. Integration V1 stays OFF,
+no migration for Release A.
 
-**Next Recommended Task:** None scheduled. Pick from the backlog below (or
-a new feature) only on Tony's go-ahead.
+**Next Recommended Task:** Deploy Release A: give the session a Cloudflare
+API token (environment settings), then `opennextjs-cloudflare build` +
+`wrangler deploy --env production` from main `9fabe2c`; record the new
+version; Tony + Anna real Access login, confirm My Learners. Then STOP.
 
-**Waiting on Other Repo:** NONE. Coordinated non-Production Integration V1
-QA is **PASS** with no outstanding blockers (`tony-kunliu/actgds.com`
-Issue #3, final Receiver adjudication). Production rollout of Integration
-V1 still requires Tony's separate, explicit authorization.
+**Waiting on Other Repo:** NONE (Release B / P3 not authorized).
 
-**Tony Manual Action Required:** NONE.
+**Tony Manual Action Required:** provide the Cloudflare token (or deploy
+himself with the commands above); after deploy, Tony/Anna Access login check.
 
 **Non-blocking backlog (not scheduled):**
 - UX: Finish odometer can be typed before Start Lesson is tapped (Tony,
