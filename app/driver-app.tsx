@@ -157,10 +157,12 @@ export default function DriverApp() {
   const [draft, setDraft] = useState<LessonDraft | null>(null);
   const [addingLearner, setAddingLearner] = useState(false);
   const [learnerDraft, setLearnerDraft] = useState<LearnerDraft>(emptyLearner);
-  const [status, setStatus] = useState<{ kind: "info" | "error" | "ok"; text: string } | null>(null);
+  const [status, setStatus] = useState<{ kind: "info" | "error" | "ok"; text: string; facts?: string[] } | null>(null);
   const [saving, setSaving] = useState(false);
   const [clock, setClock] = useState(() => localNow().time);
   const finishOdoRef = useRef<HTMLInputElement>(null);
+  // Set by End Lesson: the Finish odometer only mounts once the lesson has ended, so focus it after that render.
+  const focusFinishOdoRef = useRef(false);
   // Latest requested learner — lets a slow /api/learners/:id response be dropped if the selection changed meanwhile (e.g. a view switch).
   const selectedRef = useRef("");
 
@@ -259,7 +261,7 @@ export default function DriverApp() {
 
   const endLesson = () => {
     setDraft((current) => (current ? { ...current, finishTime: localNow().time } : current));
-    window.setTimeout(() => finishOdoRef.current?.focus(), 50);
+    focusFinishOdoRef.current = true;
   };
 
   const discardLesson = () => {
@@ -311,7 +313,15 @@ export default function DriverApp() {
       setSaveIssues(null);
       setDetail({ ...detail, totals: result.totals, progress: result.progress, completion: result.completion, lessons: [result.lesson, ...detail.lessons] });
       setDraft(freshLesson(result.totals.lastFinishOdometer));
-      setStatus({ kind: "ok", text: `Lesson #${result.lesson.lessonNo} saved.` });
+      setStatus({
+        kind: "ok",
+        text: `Lesson #${result.lesson.lessonNo} saved.`,
+        facts: [
+          `This lesson: ${formatMinutes(result.lesson.durationMinutes)} · ${result.lesson.distanceKm} km`,
+          `Total so far: ${formatMinutes(result.totals.totalMinutes)} · ${result.totals.totalKm} km`,
+          result.progress.completed ? "CBT&A completed — 23 Final Drive achieved." : `CBT&A: ${result.progress.achievedCount} / 22 Achieved`,
+        ],
+      });
       window.scrollTo({ top: 0, behavior: "smooth" });
     } catch (error) {
       setSaveIssues({ source: "server", issues: [issueFromServerMessage((error as Error).message)], snapshot: draft });
@@ -492,6 +502,12 @@ export default function DriverApp() {
   const nowMinutes = parseTime(clock);
   const elapsed = startedMinutes !== null && nowMinutes !== null && nowMinutes >= startedMinutes ? nowMinutes - startedMinutes : null;
   const phase: "ready" | "running" | "ended" = !draft?.startTime ? "ready" : !draft.finishTime ? "running" : "ended";
+  useEffect(() => {
+    if (phase === "ended" && focusFinishOdoRef.current) {
+      focusFinishOdoRef.current = false;
+      finishOdoRef.current?.focus();
+    }
+  }, [phase]);
   const lessonNo = nextLessonNo(totals);
   const shownSaveIssues = draft ? currentIssues(saveIssues, draft, "new") : [];
   const shownEditIssues = editDraft ? currentIssues(editIssues, editDraft, "edit") : [];
@@ -575,14 +591,19 @@ export default function DriverApp() {
             </select>
           </label>
           <button type="button" className="btn ghost" onClick={() => (addingLearner ? setAddingLearner(false) : openAddLearner())}>
-            {addingLearner ? "Cancel" : "+ New"}
+            {addingLearner ? "Cancel" : "New Learner"}
           </button>
         </div>
           </>
         )}
       </section>
 
-      {status ? <p className={`status ${status.kind}`} role="status">{status.text}</p> : null}
+      {status ? (
+        <div className={`status ${status.kind}`} role="status" data-testid={status.facts ? "saved-confirmation" : undefined}>
+          {status.text}
+          {status.facts ? <ul className="status-facts">{status.facts.map((fact) => <li key={fact}>{fact}</li>)}</ul> : null}
+        </div>
+      ) : null}
 
       {addingLearner ? (
         <section className="card">
@@ -618,39 +639,26 @@ export default function DriverApp() {
 
       {detail && draft && !addingLearner ? (
         <>
-          <section className="card summary">
+          <section className={`card summary${phase === "running" ? " compact" : ""}`}>
             <div className="summary-main">
               <small>{detail.learner.fullName}</small>
               <strong data-testid="lesson-no">{panel === "completed" ? "CBT&A Completed" : `Lesson #${lessonNo}`}</strong>
             </div>
-            <dl className="totals">
-              <div><dt>Hours so far</dt><dd data-testid="total-hours">{formatMinutes(totals.totalMinutes)} <em>({decimalHours(totals.totalMinutes)} h)</em></dd></div>
-              <div><dt>Km so far</dt><dd data-testid="total-km">{totals.totalKm} km</dd></div>
-            </dl>
-            <p className="meta">
-              {[detail.learner.transmission === "manual" ? "Manual" : detail.learner.transmission === "auto" ? "Auto" : null,
-                detail.learner.licenceNumber ? `Licence ${detail.learner.licenceNumber}` : null,
-                detail.learner.licenceExpiry ? `exp ${detail.learner.licenceExpiry}` : null,
-                `ADI ${detail.learner.instructorName}`].filter(Boolean).join(" · ")}
-            </p>
-            <p className="meta integration-id">
-              Integration ID: <code>{detail.learner.id}</code>
-              <button type="button" className="link" onClick={() => void copyIntegrationId(detail.learner.id)}>Copy ID</button>
-            </p>
-            <ExportPdfButton learnerId={detail.learner.id} lessonCount={detail.lessons.length} />
-            {panel === "archived" ? (
-              <div className="lifecycle archived" data-testid="archived-banner">
-                <p><b>Archived</b> {detail.learner.archivedAt?.slice(0, 10)} — hidden from the daily learner list. Lessons, signatures, progress and PDF are kept.</p>
-                <button type="button" className="btn primary block" disabled={saving} onClick={() => void setLearnerArchived(false)}>Restore learner</button>
-              </div>
-            ) : panel === "active" ? (
-              <button type="button" className="link archive-link" disabled={saving || phase !== "ready"} onClick={() => void setLearnerArchived(true)}>
-                Archive learner…
-              </button>
-            ) : null}
+            {phase === "running" ? null : (
+              <>
+                <dl className="totals">
+                  <div><dt>Hours so far</dt><dd data-testid="total-hours">{formatMinutes(totals.totalMinutes)} <em>({decimalHours(totals.totalMinutes)} h)</em></dd></div>
+                  <div><dt>Km so far</dt><dd data-testid="total-km">{totals.totalKm} km</dd></div>
+                </dl>
+                {panel === "archived" ? (
+                  <div className="lifecycle archived" data-testid="archived-banner">
+                    <p><b>Archived</b> {detail.learner.archivedAt?.slice(0, 10)} — hidden from the daily learner list. Lessons, signatures, progress and PDF are kept.</p>
+                    <button type="button" className="btn primary block" disabled={saving} onClick={() => void setLearnerArchived(false)}>Restore Learner</button>
+                  </div>
+                ) : null}
+              </>
+            )}
           </section>
-
-          <CompetencyProgressCard progress={detail.progress} completion={detail.completion} invalidated={invalidation} />
 
           {panel === "completed" ? (
             <section className="card lesson-completed" data-testid="cbta-completed-card">
@@ -660,45 +668,67 @@ export default function DriverApp() {
               </p>
               <div className="lifecycle suggest" data-testid="archive-suggestion">
                 <p>You can archive {detail.learner.fullName} to keep your daily list short — nothing is deleted and you can restore any time. Or just leave them active.</p>
-                <button type="button" className="btn ghost small" disabled={saving} onClick={() => void setLearnerArchived(true)}>Archive learner…</button>
+                <button type="button" className="btn ghost small" disabled={saving} onClick={() => void setLearnerArchived(true)}>Archive Learner…</button>
               </div>
             </section>
           ) : null}
 
           {panel !== "active" ? null : (
-          <section className="card lesson">
+          <section className={`card lesson phase-${phase}`} data-phase={phase}>
             {phase === "ready" ? (
-              <button type="button" className="btn huge go" onClick={startLesson}>Start Lesson</button>
-            ) : (
-              <div className="timebar">
-                <div><small>Started</small><strong>{draft.startTime}</strong></div>
-                <div>
-                  <small>{phase === "running" ? "Elapsed" : "Duration"}</small>
-                  <strong data-testid="duration">{phase === "running" ? (elapsed !== null ? formatMinutes(elapsed) : "—") : liveDuration !== null ? formatMinutes(liveDuration) : "—"}</strong>
-                </div>
-                <div><small>Finished</small><strong>{draft.finishTime || "—"}</strong></div>
-              </div>
-            )}
-            {phase === "running" ? <button type="button" className="btn huge stop" onClick={endLesson}>End Lesson</button> : null}
-
-            <div className="grid odo">
-              <label className="field"><span>Start odometer (km)</span>
-                <input id="lesson-field-start-odometer" type="text" inputMode="numeric" pattern="[0-9]*" value={draft.startOdometer} onChange={(e) => setField("startOdometer", e.target.value.replace(/\D/g, ""))} placeholder="e.g. 45210" />
-              </label>
-              <label className="field"><span>Finish odometer (km)</span>
-                <input id="lesson-field-finish-odometer" ref={finishOdoRef} type="text" inputMode="numeric" pattern="[0-9]*" value={draft.finishOdometer} onChange={(e) => setField("finishOdometer", e.target.value.replace(/\D/g, ""))} disabled={phase !== "ended"} placeholder={phase === "ended" ? "Enter now" : "After End Lesson"} />
-              </label>
-            </div>
-            {totals.lastFinishOdometer !== null && draft.startOdometer === String(totals.lastFinishOdometer) ? (
-              <p className="hint">Start odometer carried from Lesson #{totals.lessonCount}.</p>
-            ) : null}
-            <p className="derived" data-testid="lesson-km">
-              This lesson: <b>{liveDuration !== null ? formatMinutes(liveDuration) : "—"}</b> · <b>{liveKm !== null ? `${liveKm} km` : "—"}</b>
-              {liveDuration !== null && liveKm !== null ? <> → total <b>{formatMinutes(totals.totalMinutes + liveDuration)}</b> · <b>{totals.totalKm + liveKm} km</b></> : null}
-            </p>
-
-            {phase !== "ready" ? (
               <>
+                <p className="state-line" data-testid="lesson-state">Ready to start</p>
+                <label className="field">
+                  <span>Start odometer (km)</span>
+                  <input id="lesson-field-start-odometer" type="text" inputMode="numeric" pattern="[0-9]*" value={draft.startOdometer} onChange={(e) => setField("startOdometer", e.target.value.replace(/\D/g, ""))} placeholder="e.g. 45210" />
+                </label>
+                {totals.lastFinishOdometer !== null && draft.startOdometer === String(totals.lastFinishOdometer) ? (
+                  <p className="hint">Start odometer carried from Lesson #{totals.lessonCount}.</p>
+                ) : null}
+                <button type="button" className="btn huge start" onClick={startLesson}>Start Lesson</button>
+              </>
+            ) : phase === "running" ? (
+              <>
+                <p className="state-pill running" data-testid="lesson-state" role="status">Lesson running</p>
+                <div className="timebar">
+                  <div><small>Started</small><strong>{draft.startTime}</strong></div>
+                  <div>
+                    <small>Elapsed</small>
+                    <strong data-testid="duration">{elapsed !== null ? formatMinutes(elapsed) : "—"}</strong>
+                  </div>
+                </div>
+                <label className="field">
+                  <span>Start odometer (km)</span>
+                  <input id="lesson-field-start-odometer" type="text" inputMode="numeric" pattern="[0-9]*" value={draft.startOdometer} onChange={(e) => setField("startOdometer", e.target.value.replace(/\D/g, ""))} placeholder="e.g. 45210" />
+                </label>
+                <button type="button" className="btn huge stop" onClick={endLesson}>End Lesson</button>
+                <button type="button" className="link danger" onClick={discardLesson}>Discard this lesson</button>
+              </>
+            ) : (
+              <>
+                <p className="state-pill ended" data-testid="lesson-state">Lesson ended — complete and save</p>
+                <div className="timebar">
+                  <div><small>Started</small><strong>{draft.startTime}</strong></div>
+                  <div><small>Duration</small><strong data-testid="duration">{liveDuration !== null ? formatMinutes(liveDuration) : "—"}</strong></div>
+                  <div><small>Finished</small><strong>{draft.finishTime}</strong></div>
+                </div>
+
+                <div className="odo-stack">
+                  <label className="field"><span>Finish odometer (km)</span>
+                    <input id="lesson-field-finish-odometer" ref={finishOdoRef} type="text" inputMode="numeric" pattern="[0-9]*" value={draft.finishOdometer} onChange={(e) => setField("finishOdometer", e.target.value.replace(/\D/g, ""))} placeholder="Enter now" />
+                  </label>
+                  <label className="field"><span>Start odometer (km)</span>
+                    <input id="lesson-field-start-odometer" type="text" inputMode="numeric" pattern="[0-9]*" value={draft.startOdometer} onChange={(e) => setField("startOdometer", e.target.value.replace(/\D/g, ""))} placeholder="e.g. 45210" />
+                  </label>
+                </div>
+                {totals.lastFinishOdometer !== null && draft.startOdometer === String(totals.lastFinishOdometer) ? (
+                  <p className="hint">Start odometer carried from Lesson #{totals.lessonCount}.</p>
+                ) : null}
+                <p className="derived" data-testid="lesson-km">
+                  This lesson: <b>{liveDuration !== null ? formatMinutes(liveDuration) : "—"}</b> · <b>{liveKm !== null ? `${liveKm} km` : "—"}</b>
+                  {liveDuration !== null && liveKm !== null ? <> → total <b>{formatMinutes(totals.totalMinutes + liveDuration)}</b> · <b>{totals.totalKm + liveKm} km</b></> : null}
+                </p>
+
                 <div id="lesson-field-competency">
                 <CompetencyPicker
                   progress={detail.progress}
@@ -711,10 +741,12 @@ export default function DriverApp() {
                 />
                 </div>
 
+
                 <div className="grid">
                   <label className="field full"><span>Location</span><input value={draft.location} onChange={(e) => setField("location", e.target.value)} placeholder="Belconnen, Gungahlin…" /></label>
                   <label className="field full"><span>Comments</span><textarea rows={2} value={draft.comments} onChange={(e) => setField("comments", e.target.value)} /></label>
                 </div>
+
 
                 <details className="edit-times">
                   <summary>Edit date / times</summary>
@@ -725,17 +757,45 @@ export default function DriverApp() {
                   </div>
                 </details>
 
+
                 <div id="lesson-field-adi-signature"><SignaturePad label="ADI signature" value={draft.adiSignature} onChange={(value) => setField("adiSignature", value)} /></div>
                 <div id="lesson-field-learner-signature"><SignaturePad label="Learner signature" value={draft.learnerSignature} onChange={(value) => setField("learnerSignature", value)} /></div>
 
+
                 <SaveErrorSummary issues={shownSaveIssues} prefix="lesson" attempt={saveAttempt} />
-                <button type="button" className="btn huge save" disabled={saving || phase !== "ended"} onClick={() => void saveLesson()}>
-                  {saving ? "Saving…" : phase !== "ended" ? "Save (tap End Lesson first)" : `Save Lesson #${lessonNo}`}
+                <button type="button" className="btn huge save" disabled={saving} onClick={() => void saveLesson()}>
+                  {saving ? "Saving…" : `Save Lesson #${lessonNo}`}
                 </button>
                 <button type="button" className="link danger" onClick={discardLesson}>Discard this lesson</button>
               </>
-            ) : null}
+            )}
           </section>
+          )}
+
+          <CompetencyProgressCard progress={detail.progress} completion={detail.completion} invalidated={invalidation} />
+
+          {phase === "running" ? null : (
+            <section className="card learner-tools">
+              <details className="learner-details">
+                <summary>Learner details</summary>
+                <p className="meta">
+                  {[detail.learner.transmission === "manual" ? "Manual" : detail.learner.transmission === "auto" ? "Auto" : null,
+                    detail.learner.licenceNumber ? `Licence ${detail.learner.licenceNumber}` : null,
+                    detail.learner.licenceExpiry ? `exp ${detail.learner.licenceExpiry}` : null,
+                    `ADI ${detail.learner.instructorName}`].filter(Boolean).join(" · ")}
+                </p>
+                <p className="meta integration-id">
+                  Integration ID: <code>{detail.learner.id}</code>
+                  <button type="button" className="link" onClick={() => void copyIntegrationId(detail.learner.id)}>Copy ID</button>
+                </p>
+              </details>
+              <ExportPdfButton learnerId={detail.learner.id} lessonCount={detail.lessons.length} />
+              {panel === "active" ? (
+                <button type="button" className="link archive-link" disabled={saving || phase !== "ready"} onClick={() => void setLearnerArchived(true)}>
+                  Archive Learner…
+                </button>
+              ) : null}
+            </section>
           )}
 
           <section className="card history">

@@ -21,3 +21,7 @@ Release B and P3-B are NOT STARTED.
 once and confirm he is logged out and lands on the login flow.
 
 **Non-blocking backlog (not scheduled):** none.
+
+**Side task (separate branch):** UI Foundation V1 lives on
+`feature/ui-foundation-v1` only — NOT merged to staging/main, NOT deployed.
+Release B is coordinated separately; merge that branch only after it.

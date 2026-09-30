@@ -236,3 +236,13 @@ back to Tony.
 The final report lists just those items as a short smoke test. It never
 asks Tony to re-walk the CBT&A lesson workflow, archive/restore, competency
 gates, History Edit, PDF export or other flows that tests already cover.
+
+## 14. Frontend / UX design contract
+
+Before modifying task-critical UI (lesson states, forms, chips, buttons,
+navigation, colours, touch targets), read `docs/UX_DESIGN_SYSTEM.md` and keep
+to it: parked-first interaction, one primary action per state, ≥44px hit
+targets, ACT Golden tokens in `app/globals.css`, functional colours never by
+colour alone. Extend the qa-browser UI assertions (and
+`tests/ui-design-tokens.test.ts` for token changes) in the same change; update
+the document if an implementation finding changes a rule.

@@ -310,20 +310,21 @@ try {
   check("server rejects backdating Review 1-22 onto Lesson #1 through History Edit (400)", patch.status === 400 && /Review 1-22 is locked/.test(patchBody.error), `${patch.status} ${patchBody.error}`);
 }
 
-// ═══ 5a2. Finish odometer only opens after End Lesson; Sign out link ═════
+// ═══ 5a2. Lesson states: Finish odometer / completion only after End Lesson; Sign out ═
 {
   const s = await session("tony");
   await ready(s.page);
   await pick(s.page, "QA Tony Save Errors");
   await s.page.waitForSelector("text=Start Lesson");
-  const finish = s.page.locator("#lesson-field-finish-odometer");
-  check("READY: Start odometer editable, Finish odometer not editable", (await s.page.locator("#lesson-field-start-odometer").isEnabled()) && (await finish.isDisabled()));
+  const gone = async (sels) => (await Promise.all(sels.map((q) => s.page.$(q)))).every((el) => el === null);
+  const completionOnly = ["#lesson-field-finish-odometer", "#lesson-field-competency", "#lesson-field-adi-signature", "#lesson-field-learner-signature", ".btn.save"];
+  check("READY: Start odometer editable, Finish odometer and completion form not shown", (await s.page.locator("#lesson-field-start-odometer").isEnabled()) && (await gone(completionOnly)));
   await s.page.click("text=Start Lesson");
-  check("RUNNING: Finish odometer still not editable", await finish.isDisabled());
+  check("RUNNING: Finish odometer and completion form still not shown", await gone(completionOnly));
   await s.page.click("text=End Lesson");
-  // The autofocus fires from a short timer after End Lesson, so wait for it rather than sampling instantly.
+  // The autofocus fires from an effect after End Lesson renders the form, so wait for it rather than sampling instantly.
   const focused = await s.page.waitForFunction(() => document.activeElement?.id === "lesson-field-finish-odometer", null, { timeout: 3000 }).then(() => true, () => false);
-  check("ENDED: Finish odometer editable and focused (existing End Lesson autofocus)", (await finish.isEnabled()) && focused);
+  check("ENDED: Finish odometer editable and focused (End Lesson autofocus)", (await s.page.locator("#lesson-field-finish-odometer").isEnabled()) && focused);
   check("no horizontal scroll (odometer states)", await noHScroll(s.page));
   const href = await s.page.getAttribute("[data-testid=signout-link]", "href");
   check("Sign out is the app-origin Access logout returning to the app root", href === `/cdn-cgi/access/logout?returnTo=${encodeURIComponent(B + "/")}`, href);
@@ -339,7 +340,7 @@ async function expectVisible(page, selector, name) {
     await page.waitForFunction((sel) => { const r = document.querySelector(sel)?.getBoundingClientRect(); return Boolean(r) && r.top >= 0 && r.bottom <= window.innerHeight; }, selector, { timeout: 8000 });
     check(name, true);
   } catch {
-    check(name, false, "not fully on screen after 8s");
+    check(name, false, "not fully on screen after 8s: " + JSON.stringify(await page.evaluate((sel) => { const r = document.querySelector(sel)?.getBoundingClientRect(); return { top: r?.top, bottom: r?.bottom, h: innerHeight, y: scrollY }; }, selector)));
   }
 }
 async function expectIssueCount(page, prefix, n, name) {
@@ -504,8 +505,133 @@ const draw = async (page, index) => {
   await s.ctx.close();
 }
 
+// ═══ 7. UI Foundation V1: states × 375/390px — overflow, hit targets, dominance ═
+const undersized = (page) =>
+  page.evaluate(() => {
+    const out = [];
+    for (const el of document.querySelectorAll("button, a[href], input:not([type=hidden]), select, textarea, summary")) {
+      const r = el.getBoundingClientRect();
+      const cs = getComputedStyle(el);
+      if (r.width === 0 || r.height === 0 || cs.visibility === "hidden" || cs.display === "none") continue;
+      if (r.height < 43.5 || r.width < 43.5) out.push(`${el.tagName.toLowerCase()}.${String(el.className).split(" ")[0]}"${(el.textContent || el.getAttribute("aria-label") || "").trim().slice(0, 18)}" ${Math.round(r.width)}x${Math.round(r.height)}`);
+    }
+    return out;
+  });
+const hugeButtons = (page) => page.$$eval(".btn.huge", (els) => els.filter((e) => e.getBoundingClientRect().width > 0).map((e) => e.textContent.trim()));
+const LONG_NAME = "QA Tony Bartholomew-Featherstonehaugh Wolfeschlegelsteinhausenbergerdorff";
+const LONG_PLACE = "Gungahlin Town Centre via Flemington Road, Mitchell and the Federal Highway interchange near Majura Parkway";
+{
+  const longLearner = (await (await fetch(`${B}/api/learners`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ fullName: LONG_NAME, instructorId: WHO.tony[0] }) })).json()).learner;
+  const shelved = (await (await fetch(`${B}/api/learners`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ fullName: "QA Tony Shelved", instructorId: WHO.tony[0] }) })).json()).learner;
+  await fetch(`${B}/api/learners/${shelved.id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ archived: true }) });
+  for (const width of [375, 390]) {
+    const s = await session("tony");
+    await s.page.setViewportSize({ width, height: 812 });
+    const W = `${width}px`;
+    await ready(s.page);
+    check(`[${W}] no learner selected: no horizontal overflow, hit targets ≥44`, (await noHScroll(s.page)) && (await undersized(s.page)).length === 0, (await undersized(s.page)).join(" | "));
+    check(`[${W}] Sign out hit area ≥44x44`, await s.page.$eval("[data-testid=signout-link]", (e) => { const r = e.getBoundingClientRect(); return r.width >= 43.5 && r.height >= 43.5; }));
+    await shot(s.page, `ui-${width}-01-no-learner`);
+
+    await pick(s.page, LONG_NAME);
+    await s.page.waitForSelector("text=Start Lesson");
+    check(`[${W}] READY, long learner name: no overflow`, await noHScroll(s.page));
+    check(`[${W}] READY: hit targets ≥44`, (await undersized(s.page)).length === 0, (await undersized(s.page)).join(" | "));
+    check(`[${W}] READY: exactly one dominant action (Start Lesson), on screen`, (await hugeButtons(s.page)).join() === "Start Lesson" && (await inViewport(s.page, ".btn.huge")));
+    check(`[${W}] READY: state label shown`, (await s.page.textContent("[data-testid=lesson-state]")).includes("Ready"));
+    check(`[${W}] READY: Integration ID is tucked under Learner details, not open by default`, (await s.page.locator(".integration-id").isVisible()) === false);
+    await shot(s.page, `ui-${width}-02-ready`);
+
+    await s.page.fill("#lesson-field-start-odometer", "45210");
+    await s.page.click("text=Start Lesson");
+    await s.page.waitForSelector("[data-testid=lesson-state]:has-text('running')");
+    check(`[${W}] RUNNING: only End Lesson is dominant, visible without scrolling`, (await hugeButtons(s.page)).join() === "End Lesson" && (await inViewport(s.page, ".btn.huge")));
+    check(`[${W}] RUNNING: completion controls (competencies, signatures, save, comments) not exposed`, (await s.page.$$("#lesson-field-competency, .sig canvas, .btn.save, textarea, #lesson-field-finish-odometer")).length === 0);
+    check(`[${W}] RUNNING: no overflow, hit targets ≥44`, (await noHScroll(s.page)) && (await undersized(s.page)).length === 0, (await undersized(s.page)).join(" | "));
+    await s.page.reload(); await ready(s.page);
+    await pick(s.page, LONG_NAME);
+    await s.page.waitForSelector("[data-testid=lesson-state]:has-text('running')");
+    check(`[${W}] RUNNING: draft restored after reload (still running, odometer kept)`, (await s.page.inputValue("#lesson-field-start-odometer")) === "45210");
+    await shot(s.page, `ui-${width}-03-running`);
+
+    await s.page.click("text=End Lesson");
+    await s.page.waitForSelector("#lesson-field-finish-odometer");
+    check(`[${W}] ENDED: completion flow revealed in order Finish odometer → CBT&A → Location → signatures → Save`, await s.page.evaluate(() => {
+      const order = ["#lesson-field-finish-odometer", "#lesson-field-competency", "#lesson-field-adi-signature", ".btn.save"].map((q) => document.querySelector(q));
+      return order.every(Boolean) && order.every((el, i) => i === 0 || (order[i - 1].compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0);
+    }));
+    check(`[${W}] ENDED: exactly one dominant action (Save Lesson)`, (await hugeButtons(s.page)).join().startsWith("Save Lesson"));
+    await s.page.fill("#lesson-field-finish-odometer", "45240");
+    await s.page.fill('input[placeholder="Belconnen, Gungahlin…"]', LONG_PLACE);
+    check(`[${W}] ENDED: long location, no overflow`, await noHScroll(s.page));
+    const taught = s.page.locator('.comp-section:has(.comp-label:text-is("Taught")) .chip-row').first();
+    await taught.locator('button:text-is("1")').click();
+    check(`[${W}] ENDED: selected chip is distinguishable without colour (aria-pressed / text)`, (await taught.locator('button:text-is("1")').getAttribute("aria-pressed")) === "true" || (await taught.locator("button.selected").count()) === 1);
+    await s.page.click(".btn.save");
+    await s.page.waitForSelector("[data-testid=lesson-save-errors]");
+    check(`[${W}] save validation error: no overflow, hit targets ≥44`, (await noHScroll(s.page)) && (await undersized(s.page)).length === 0, (await undersized(s.page)).join(" | "));
+    await s.page.click("[data-testid=lesson-go-adi-signature]");
+    check(`[${W}] error jump reaches the signature field`, await s.page.waitForFunction(() => { const r = document.getElementById("lesson-field-adi-signature")?.getBoundingClientRect(); return Boolean(r) && r.top >= 0 && r.bottom <= window.innerHeight; }, null, { timeout: 8000 }).then(() => true, () => false));
+    await shot(s.page, `ui-${width}-04-save-error`);
+    await signBoth(s.page);
+    check(`[${W}] signatures usable (both signed)`, (await s.page.$$(".sig-ok")).length === 2);
+    // Start → End in the same minute gives finish == start, which is (correctly) rejected; correct the times as an instructor would.
+    await s.page.click("summary:has-text('Edit date')");
+    await s.page.fill("#lesson-field-times", "09:00");
+    await s.page.locator(".edit-times input[type=time]").nth(1).fill("10:00");
+    await s.page.click(".btn.save");
+    await s.page.waitForSelector("[data-testid=saved-confirmation]");
+    const saved = await s.page.textContent("[data-testid=saved-confirmation]");
+    check(`[${W}] SAVED: confirmation shows lesson #, this lesson, total and CBT&A progress`, /Lesson #\d+ saved/.test(saved) && /This lesson: .* 30 km/.test(saved) && /Total so far/.test(saved) && /1 \/ 22|0 \/ 22|Achieved/.test(saved), saved);
+    check(`[${W}] SAVED: form is back to READY with one dominant action`, (await hugeButtons(s.page)).join() === "Start Lesson" && (await noHScroll(s.page)));
+    check(`[${W}] SAVED: hit targets ≥44 (history, links)`, (await undersized(s.page)).length === 0, (await undersized(s.page)).join(" | "));
+    await shot(s.page, `ui-${width}-05-saved`);
+
+    // History Edit at phone width
+    await s.page.click(".h-edit >> nth=0");
+    await s.page.waitForSelector(".h-editing #edit-field-finish-odometer");
+    check(`[${W}] History Edit: finish odometer editable, no overflow, hit targets ≥44`, (await s.page.locator("#edit-field-finish-odometer").isEnabled()) && (await noHScroll(s.page)) && (await undersized(s.page)).length === 0, (await undersized(s.page)).join(" | "));
+    await shot(s.page, `ui-${width}-06-history-edit`);
+    check(`[${W}] no page errors`, s.errors.length === 0, s.errors.join("|"));
+    await s.ctx.close();
+
+    const a = await session("tony");
+    await a.page.setViewportSize({ width, height: 812 });
+    await ready(a.page);
+    await tab(a.page, "Archived");
+    await a.page.waitForFunction(() => document.querySelectorAll('select[aria-label="Select learner"] option').length > 1);
+    await pick(a.page, "QA Tony Shelved · Tony");
+    await a.page.waitForSelector("[data-testid=archived-banner]");
+    if (await a.page.$("text=Restore Learner")) {
+      check(`[${W}] archived learner: Restore Learner offered, no Start Lesson, no overflow, hit targets ≥44`, (await a.page.$("text=Start Lesson")) === null && (await noHScroll(a.page)) && (await undersized(a.page)).length === 0, (await undersized(a.page)).join(" | "));
+    } else {
+      check(`[${W}] archived learner view reachable`, false, "no archived learner available");
+    }
+    await a.ctx.close();
+
+    const c = await session("tony");
+    await c.page.setViewportSize({ width, height: 812 });
+    await ready(c.page);
+    await pick(c.page, "QA Tony Completed");
+    await c.page.waitForSelector("[data-testid=cbta-completed-card]");
+    check(`[${W}] completed learner: no Start Lesson, no overflow, hit targets ≥44`, (await c.page.$("text=Start Lesson")) === null && (await noHScroll(c.page)) && (await undersized(c.page)).length === 0, (await undersized(c.page)).join(" | "));
+    await c.ctx.close();
+
+    const g = await session("tony");
+    await g.page.setViewportSize({ width, height: 812 });
+    await ready(g.page);
+    await pick(g.page, "QA Tony Gate Locked");
+    await g.page.waitForSelector("text=Start Lesson");
+    await g.page.click("text=Start Lesson");
+    await g.page.click("text=End Lesson");
+    const assessed = g.page.locator('.comp-section:has(.comp-label:text-is("Assessed")) .chip-row').first();
+    check(`[${W}] locked competency chips: disabled, explained, ≥44, no overflow`, (await assessed.locator('button:text-is("18")').isDisabled()) && (await g.page.$(".comp-lock-hint")) !== null && (await undersized(g.page)).length === 0 && (await noHScroll(g.page)), (await undersized(g.page)).join(" | "));
+    await g.ctx.close();
+  }
+}
+
 } catch (error) {
-  check(`script aborted: ${String(error.message).split("\n")[0]}`, false);
+  check(`script aborted: ${String(error.message).split("\n").slice(0, 3).join(" / ")}`, false);
 }
 
 await browser.close();
