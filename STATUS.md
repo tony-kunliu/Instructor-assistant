@@ -1,16 +1,17 @@
 # STATUS.md
 
-_Last updated: 2026-09-29_ (Learner Lifecycle / CBT&A Staging round — PASS)
+_Last updated: 2026-09-30_ (Release A PASS; Release A UX bugfix deployed)
 
 This file describes **current state only**. Development history lives in
 git log and closed PRs, not here — see `TASK.md` for what's in progress.
 
 ## Repository
 
-- **main:** `9fabe2c8ddb404d0a879883aba3c56ccd00f6132` — Release A source
-  (staging fast-forwarded into main 2026-09-30, Tony-authorized; includes
-  CI and the Integration Sender source, inert while disabled). Previous
-  main / application rollback baseline: `8bae4e4c211a78b2e682d8b04744f102fa1a4328`.
+- **main:** `b3693f51634e8b1f1fe070d6e2076bc27849cd41` — Release A UX
+  bugfix release source (deployed to Production). Release A source:
+  `92aa49623e945b90d55a10d3f47eca72cbdf9025` (application code same as
+  audited `9fabe2c`). Application rollback baseline before Release A:
+  `8bae4e4c211a78b2e682d8b04744f102fa1a4328`.
 - **staging:** contains GitHub Actions CI, the Integration Sender source,
   and the Phase A documentation cleanup. `staging`'s HEAD moves with every
   merge — do not record its exact SHA here as durable state; `git fetch`
@@ -28,38 +29,44 @@ git log and closed PRs, not here — see `TASK.md` for what's in progress.
 ## Environments
 
 **Staging**
-- **Auto-deploy:** Cloudflare Workers Builds (GitHub integration, Tony-
-  configured) builds and deploys every `staging` push to Worker
-  `instructor-assistant`. No manual `wrangler deploy`; agents have no
-  Cloudflare credentials and cannot read build status.
-- Last Worker version reported by Tony: `358328f4-8d74-4ee8-8985-fc032d7e31bc`
-  (built from `6faa89a`). Later `staging` commits deploy automatically; the
-  agent has no way to read Cloudflare / Workers Builds status, and Staging
-  is behind Access, so "which commit is live" is **not agent-observable
-  today** (see Known Issues for the smallest fix).
+- **Auto-deploy:** Cloudflare Workers Builds builds and deploys every
+  `staging` push to Worker `instructor-assistant`. The agent's least-
+  privilege Cloudflare token can read Worker deployment/version metadata
+  (`wrangler deployments list`) and deploy Workers; it cannot read Workers
+  Builds' commit mapping, so the live commit is inferred from push time.
+- Current Worker version: `280f14f3-fbde-4af5-99ba-ad24eb49e4bf`
+  (deployed right after the `b3693f5` staging push).
 - D1 migration level: `0005` (applied remotely)
 - Cloudflare Access: enabled
 - Integration enabled: **YES** (non-Production only; coordinated QA
   **PASS**, see Integration V1 below)
 
 **Production**
-- Deployed Worker version: `a5708df9-5dcf-4c10-b26b-212fb4bf9a3f`
-- D1 migration level: `0004`
+- Deployed Worker version: `a8ec37da-9939-48d4-b1d0-fef195b0a09c`
+  (Release A UX bugfix, from main `b3693f5`, deployed 2026-09-30).
+  Previous: `b76eeb2c-163d-4b32-a49d-042d32063e00` (Release A, the
+  immediate rollback target); before that `a5708df9-5dcf-4c10-b26b-212fb4bf9a3f`.
+- D1 migration level: `0004` (baseline; no migration executed in Release A
+  or the bugfix; the agent's token has no D1 permission, so it cannot
+  independently list Production migrations — not observable by the agent)
 - Cloudflare Access: enabled (Tony + Anna only)
-- Integration enabled: **NO**
+- Integration enabled: **NO** (`ACTGDS_INTEGRATION_ENABLED=false`, no
+  webhook URL, no secrets — `wrangler secret list` is empty)
 
-**Release A (application) — PARTIAL, deploy PENDING:** main is promoted
-and its CI is running/green, but the agent has NO Cloudflare credential
-(`wrangler whoami`: not authenticated), so Production is NOT redeployed yet
-and still runs the pre-Integration build. Dry-run of
-`wrangler deploy --env production` from `9fabe2c` verified: target
-`instructor-assistant-production`, Production D1, Integration disabled, no
-webhook URL/secret. Release A applies no migration — never run
-`db:migrate:remote` for it (would apply 0005; migration 0005 not applied
-to Production). Rollback target: Worker `a5708df9-5dcf-4c10-b26b-212fb4bf9a3f`.
-Release B (Integration Production enablement) and P3-B are NOT started.
-The Workers Builds "Production branch" setting is `staging` and drives only
-the Staging Worker; do not touch `instructor-assistant-production`.
+**Release A (application): PASS.** Deployed 2026-09-30 (Worker `b76eeb2c`).
+Real-account acceptance: Tony Access login PASS, Anna Access login PASS,
+app loads, default My Learners PASS. Migration `0005` not applied to
+Production — never run `db:migrate:remote` against Production without
+separate authorization. Release B (Integration Production enablement) is
+NOT STARTED / NOT AUTHORIZED; P3-B is NOT STARTED. The Workers Builds
+"Production branch" is `staging` and drives only the Staging Worker.
+
+**Release A UX bugfix** (Tony-requested, deployed to Production): Sign out
+now uses same-origin `/cdn-cgi/access/logout?returnTo=<app origin>/`
+(deletes this app's `CF_Authorization`, then re-enters the Access login);
+Finish odometer opens only after End Lesson; redundant downstream
+Integration events skipped. One real-phone acceptance outstanding: Tony
+signs out once on Production iPhone and confirms he lands on the login flow.
 
 ## Current Product
 
@@ -163,19 +170,14 @@ Cross-repo coordination record: `tony-kunliu/actgds.com` Issue #3.
 
 ## Known Issues
 
-- A location/comments-only History Edit still emits a propagated event to
-  every already-exported downstream lesson even when cumulative
-  totals/progress don't change. Correct data, no private content exported —
-  non-blocking, possible future optimization.
 - Legacy data created before the 18-22 gate may hold 18-22 assessed too
   early; it is tolerated and never rewritten (only newly introduced
   violations block a History Edit).
-- Deployment is not agent-observable (Workers Builds status is unreadable
-  and Staging sits behind Access). Smallest fix, needs Tony once: a
-  read-only Cloudflare token stored as a GitHub Actions secret so CI can
-  verify the deployed version, or permission for the agent to open a PR so
-  GitHub check runs become readable.
+- Cloudflare's `returnTo` on `/cdn-cgi/access/logout` is observed
+  behaviour (same-origin absolute URL → 302, anything else → 400), not in
+  Cloudflare's public docs; if it stops working, Sign out still logs out but
+  shows Cloudflare's generic page.
 
 ## Next
 
-No pending manual acceptance. See `TASK.md` for the backlog.
+Tony's one real-phone Sign out check on Production (see above). See `TASK.md`.

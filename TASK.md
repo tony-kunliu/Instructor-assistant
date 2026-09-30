@@ -1,36 +1,23 @@
 # TASK.md
 
-_Last updated: 2026-09-29_
+_Last updated: 2026-09-30_
 
 This file describes the **current task only**. Completed work's detail
 lives in git log and closed PRs, not here.
 
-**Current Task:** Release A (application Production release) — **Partial**.
-main = staging `9fabe2c` (fast-forward, Tony-authorized); Production deploy
-not done: the agent has no Cloudflare credential. Integration V1 stays OFF,
-no migration for Release A.
+**Current Task:** Release A UX bugfix round (Sign out return, Finish
+odometer, Integration no-op propagation) — **Completed**. Release A = PASS
+(Tony + Anna Access login PASS). Production Worker
+`a8ec37da-9939-48d4-b1d0-fef195b0a09c` (previous `b76eeb2c-163d-4b32-a49d-042d32063e00`,
+rollback target), D1 baseline `0004`, Integration V1 OFF, no migration run.
 
-**Next Recommended Task:** Deploy Release A: give the session a Cloudflare
-API token (environment settings), then `opennextjs-cloudflare build` +
-`wrangler deploy --env production` from main `9fabe2c`; record the new
-version; Tony + Anna real Access login, confirm My Learners. Then STOP.
+**Next Recommended Task:** Wait for Tony's real-phone Sign out check; then
+decide whether to authorize Release B (Integration Production enablement).
+Release B and P3-B are NOT STARTED.
 
-**Waiting on Other Repo:** NONE (Release B / P3 not authorized).
+**Waiting on Other Repo:** NONE.
 
-**Tony Manual Action Required:** provide the Cloudflare token (or deploy
-himself with the commands above); after deploy, Tony/Anna Access login check.
+**Tony Manual Action Required:** on the Production iPhone, tap Sign out
+once and confirm he is logged out and lands on the login flow.
 
-**Non-blocking backlog (not scheduled):**
-- UX: Finish odometer can be typed before Start Lesson is tapped (Tony,
-  2026-09-29). Consider showing/enabling it only once the lesson is
-  running or ended.
-- A location/comments-only History Edit still emits a propagated
-  Integration event to already-exported downstream lessons (correct data,
-  no private content).
-- Deployment is not agent-observable (Workers Builds status unreadable,
-  Staging behind Access). Smallest fix, needs Tony once: a read-only
-  Cloudflare token as a GitHub Actions secret so CI can verify the deployed
-  version, or permission for the agent to open a PR so check runs become
-  readable.
-
-**Production:** UNCHANGED.
+**Non-blocking backlog (not scheduled):** none.
