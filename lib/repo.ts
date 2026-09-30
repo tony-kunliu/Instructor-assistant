@@ -19,8 +19,8 @@ import {
   type MilestoneInvalidation,
 } from "./competency.ts";
 import type { D1Database, D1PreparedStatement } from "./d1-types.ts";
-import { buildLessonUpsertedPayload, type BuildLessonUpsertedInput } from "./integration/contract.ts";
-import { ensureStrictlyNewerSourceUpdatedAt, insertOutboxRowStatement, latestSourceUpdatedAtByLesson } from "./integration/outbox.ts";
+import { buildLessonUpsertedPayload, sameContractState, type BuildLessonUpsertedInput } from "./integration/contract.ts";
+import { ensureStrictlyNewerSourceUpdatedAt, insertOutboxRowStatement, latestSendablePayloadByLesson, latestSourceUpdatedAtByLesson } from "./integration/outbox.ts";
 import { processDueOutbox } from "./integration/sender.ts";
 import type { IntegrationHooks } from "./integration/types.ts";
 import type { CompletionSummary, Instructor, Learner, LearnerInput, Lesson, LessonInput } from "./types.ts";
@@ -319,6 +319,8 @@ async function prepareIntegrationOutboxInsert(
   db: D1Database,
   integration: IntegrationHooks | undefined,
   params: { learnerId: string; instructorId: string; lesson: BuildLessonUpsertedInput["lesson"]; taughtIds: string[]; assessedIds: string[]; achievedIds: string[]; progress: LearnerProgress },
+  /** Payload of the lesson's latest event the receiver has (or will get). When the new payload says exactly the same, no event is enqueued (returns null). */
+  redundantIfSameAs?: string,
 ): Promise<D1PreparedStatement | null> {
   if (!integration?.config.enabled) return null;
   const instructorRow = await db.prepare("SELECT full_name FROM instructors WHERE id = ?").bind(params.instructorId).first<Row>();
@@ -333,6 +335,7 @@ async function prepareIntegrationOutboxInsert(
     achievedIds: params.achievedIds,
     progress: params.progress,
   });
+  if (redundantIfSameAs !== undefined && sameContractState(JSON.stringify(payload), redundantIfSameAs)) return null;
   return insertOutboxRowStatement(db, payload);
 }
 
@@ -794,7 +797,15 @@ export async function updateLesson(db: D1Database, learnerId: string, lessonId: 
   // lesson's — and a source_updated_at guaranteed strictly newer than any
   // version already recorded for that lesson_id, so the receiver never
   // silently treats it as stale.
+  //
+  // A downstream event is only enqueued when it would actually tell the
+  // receiver something new: if its contract-visible content (cumulative
+  // totals, learner progress snapshot, own competencies, instructor, ...)
+  // is identical to the lesson's latest event the receiver has or will get
+  // (e.g. a location/comments-only edit), it is skipped as redundant.
+  // Anything that differs — or that can't be compared — is still sent.
   const downstreamOutboxInserts: D1PreparedStatement[] = [];
+  const downstreamBaseline = integration?.config.enabled && laterLessons.length > 0 ? await latestSendablePayloadByLesson(db, downstreamLessonIds) : new Map<string, string>();
   if (integration?.config.enabled && laterLessons.length > 0) {
     for (const row of laterLessons) {
       const downstreamLessonId = String(row.id);
@@ -828,7 +839,7 @@ export async function updateLesson(db: D1Database, learnerId: string, lessonId: 
         assessedIds: ownAssessedIds,
         achievedIds: ownAchievedIds,
         progress: after,
-      });
+      }, downstreamBaseline.get(downstreamLessonId));
       if (downstreamInsert) downstreamOutboxInserts.push(downstreamInsert);
     }
   }

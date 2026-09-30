@@ -310,6 +310,26 @@ try {
   check("server rejects backdating Review 1-22 onto Lesson #1 through History Edit (400)", patch.status === 400 && /Review 1-22 is locked/.test(patchBody.error), `${patch.status} ${patchBody.error}`);
 }
 
+// ═══ 5a2. Finish odometer only opens after End Lesson; Sign out link ═════
+{
+  const s = await session("tony");
+  await ready(s.page);
+  await pick(s.page, "QA Tony Save Errors");
+  await s.page.waitForSelector("text=Start Lesson");
+  const finish = s.page.locator("#lesson-field-finish-odometer");
+  check("READY: Start odometer editable, Finish odometer not editable", (await s.page.locator("#lesson-field-start-odometer").isEnabled()) && (await finish.isDisabled()));
+  await s.page.click("text=Start Lesson");
+  check("RUNNING: Finish odometer still not editable", await finish.isDisabled());
+  await s.page.click("text=End Lesson");
+  // The autofocus fires from a short timer after End Lesson, so wait for it rather than sampling instantly.
+  const focused = await s.page.waitForFunction(() => document.activeElement?.id === "lesson-field-finish-odometer", null, { timeout: 3000 }).then(() => true, () => false);
+  check("ENDED: Finish odometer editable and focused (existing End Lesson autofocus)", (await finish.isEnabled()) && focused);
+  check("no horizontal scroll (odometer states)", await noHScroll(s.page));
+  const href = await s.page.getAttribute("[data-testid=signout-link]", "href");
+  check("Sign out is the app-origin Access logout returning to the app root", href === `/cdn-cgi/access/logout?returnTo=${encodeURIComponent(B + "/")}`, href);
+  await s.ctx.close();
+}
+
 // ═══ 5b. Save-failure UX: summary next to Save, jump-to-field, persistence ═
 const inViewport = (page, selector) =>
   page.evaluate((sel) => { const r = document.querySelector(sel)?.getBoundingClientRect(); return Boolean(r) && r.top >= 0 && r.bottom <= window.innerHeight; }, selector);
