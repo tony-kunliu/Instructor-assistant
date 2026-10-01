@@ -168,6 +168,12 @@ signs out once on Production iPhone and confirms he lands on the login flow.
 Full contract detail: `docs/integrations/actgds-instructor-assistant-v1.md`.
 Cross-repo coordination record: `tony-kunliu/actgds.com` Issue #3.
 
+## In flight (feature branch, not merged)
+
+- `feature/pdf-per-lesson-totals`: PDF Total cells = per-lesson totals;
+  cumulative line under each page's table. Changes the exported PDF of
+  every learner (not only imported ones).
+
 ## Known Issues
 
 - Legacy data created before the 18-22 gate may hold 18-22 assessed too

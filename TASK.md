@@ -1,23 +1,28 @@
 # TASK.md
 
-_Last updated: 2026-09-30_
+_Last updated: 2026-10-01_
 
 This file describes the **current task only**. Completed work's detail
 lives in git log and closed PRs, not here.
 
-**Current Task:** Release A UX bugfix round (Sign out return, Finish
-odometer, Integration no-op propagation) — **Completed**. Release A = PASS
-(Tony + Anna Access login PASS). Production Worker
-`a8ec37da-9939-48d4-b1d0-fef195b0a09c` (previous `b76eeb2c-163d-4b32-a49d-042d32063e00`,
-rollback target), D1 baseline `0004`, Integration V1 OFF, no migration run.
+**Current Task:** P1a — CBT&A PDF "Total hrs / Total kms" cells now show
+each lesson's OWN totals (matches the paper form); a running-total line
+(`Cumulative to lesson #N: X h / Y km`) is printed under the table on every
+page. Branch `feature/pdf-per-lesson-totals` — **Completed** (build + 261
+tests + Memory Guard PASS; visual render checked). Not merged to staging.
 
-**Next Recommended Task:** Wait for Tony's real-phone Sign out check; then
-decide whether to authorize Release B (Integration Production enablement).
-Release B and P3-B are NOT STARTED.
+**Next Recommended Task:** Tony reviews the PDF export on staging after
+authorizing the merge. Then P1b (migration 0006: nullable time/odometer,
+`record_source`, `signature_status`, `integration_sync_paused`, batch
+import function) per the paper-records import design (Tony-approved
+decisions: gate not relaxed; V1 sync paused for imported learners; originals
+kept 5 years from the learner's last lesson; blank signatures allowed).
+P1b is a major DB migration → Opus. NOT STARTED.
 
 **Waiting on Other Repo:** NONE.
 
-**Tony Manual Action Required:** on the Production iPhone, tap Sign out
-once and confirm he is logged out and lands on the login flow.
+**Tony Manual Action Required:** authorize merge of this branch into
+`staging` (then glance at one exported PDF); Sign-out real-phone check from
+Release A is still outstanding.
 
-**Non-blocking backlog (not scheduled):** none.
+**Non-blocking backlog (not scheduled):** paper-records import P1b–P4.

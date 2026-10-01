@@ -36,6 +36,9 @@ export const COLUMNS = {
 export const FIRST_PAGE_ROW_TOPS = [141.0, 224.8, 307.8, 390.7, 474.7];
 export const FIRST_PAGE_TABLE_BOTTOM = 560.0;
 
+/** Gap between a page's table bottom border and the running-total line printed under it (the template has nothing below the table). */
+export const CUMULATIVE_FOOTER_GAP = 6;
+
 /** Top of each lesson row block on a continuation page (6 rows); the table's bottom border follows the last row. */
 export const CONTINUATION_ROW_TOPS = [49.6, 133.2, 217.2, 300.2, 383.3, 466.2];
 export const CONTINUATION_TABLE_BOTTOM = 551.5;
