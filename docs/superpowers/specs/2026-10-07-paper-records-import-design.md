@@ -229,3 +229,47 @@ acknowledged.
 - Importing into learners who already have App lessons.
 - Scanning or storing photos of paper originals in the App.
 - Bulk multi-learner files.
+
+## 12. Addendum (2026-10-08, Tony-approved): prior-instructor records
+
+Discovered in the first real paper record: transfer learners arrive with
+competencies already stamped by one or more **previous instructors** (e.g.
+"ADI358, 11 lessons, 20 hours, stamped 1-22 & Review 1-22"). Without them
+the App would show 0 achieved and lock Final Drive 23.
+
+| # | Decision |
+|---|---|
+| D10 | Any number of prior-instructor records per learner, each: instructor label (name and/or ADI number), lesson count, hours, km (optional), achieved competency ids, and a date (end of training with them; if unknown, the first paper lesson's date). |
+| D11 | Prior hours/km **count toward cumulative totals**, and every view says which instructor they came from. |
+| D12 | Prior achievements count as achieved for progress and gates (union across all prior instructors). They are recorded as stamped; gates are not re-checked for them. |
+| D13 | Prior records are never sent to ACTGDS. Later App lessons' cumulative/progress include them; ACTGDS cannot show the per-instructor breakdown without a contract v2 (deferred). |
+| D14 | V1 has no editing of prior records; a mistake is fixed by re-importing a learner that has no App lessons. |
+
+**Storage.** One `lessons` row per prior record with
+`record_source = 'prior_instructor'` (0006's CHECK gains this value, safe
+because 0006 has not run on any remote D1 yet), `lesson_no` negative
+(-k..-1, oldest first, so App/paper numbering still starts at 1 and the
+`UNIQUE (learner_id, lesson_no)` guard still works), times/odometers NULL,
+`duration_minutes`/`distance_km` from the record's hours/km (source data
+from paper, not derivable, so this is not a typed derived value), and new
+nullable columns `prior_instructor_label TEXT`, `prior_lesson_count INTEGER`.
+Achieved ids become `competency_events` (`assessed`, `achieved`) on that row,
+so `computeProgress` needs no change.
+
+**Counting.** Lesson numbering and `lessonCount` count only `lesson_no > 0`.
+Cumulative sums include prior rows (they come first by `lesson_no`). The
+import's "learner has no lessons" guard checks for no rows at all.
+`updateLesson` rejects prior rows (D14); editing a later lesson still sums
+prior rows into cumulative.
+
+**Input.** The same CSV gains four columns: `prior_instructor`,
+`prior_lessons`, `prior_hours`, `prior_km`. They are always present and
+empty on normal rows. A row with `prior_instructor` set is a prior record:
+it uses `date` and `assessed_achieved` only, all prior rows must come
+before the first lesson row, and the other lesson columns must be empty.
+The preview lists each prior instructor and its totals.
+
+**Display.** History lists prior records above lesson #1 ("Prior
+instructor: ADI 358 · 11 lessons · 20 h · achieved 1-22, Review 1-17,
+Review 1-22"). The PDF prints one line per prior instructor above the table,
+and the cumulative footer notes the prior hours included.
