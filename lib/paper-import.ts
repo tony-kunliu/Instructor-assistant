@@ -16,18 +16,23 @@ import type { Instructor } from "./types.ts";
 
 export const PAPER_CSV_COLUMNS = ["date", "start_time", "finish_time", "start_odometer", "finish_odometer", "taught", "assessed_achieved", "assessed_not_achieved", "location", "comments", "signature", "instructor"] as const;
 
-/** RFC 4180 parser: quoted fields, "" escapes, embedded newlines, CRLF/LF, optional BOM. Blank lines are ignored. */
-export function parseCsv(text: string): string[][] {
+/** A parsed record with its 1-based spreadsheet row number (blank/empty rows are skipped but still counted). */
+export type CsvRecord = { row: number; cells: string[] };
+
+/** RFC 4180 parser: quoted fields, "" escapes, embedded newlines, CRLF/LF, optional BOM. Blank lines and all-empty rows are skipped but still counted in `row`. */
+export function parseCsvRecords(text: string): CsvRecord[] {
   const input = text.startsWith("﻿") ? text.slice(1) : text;
-  const rows: string[][] = [];
+  const records: CsvRecord[] = [];
   let row: string[] = [];
   let field = "";
   let quoted = false;
   let sawContent = false; // anything (even an empty quoted field) on the current line
+  let recordNo = 0;
   const endRow = () => {
     row.push(field);
     field = "";
-    if (sawContent) rows.push(row);
+    recordNo++;
+    if (sawContent && row.some((c) => c.trim() !== "")) records.push({ row: recordNo, cells: row });
     row = [];
     sawContent = false;
   };
@@ -53,10 +58,20 @@ export function parseCsv(text: string): string[][] {
     }
   }
   if (sawContent || field !== "" || row.length) endRow();
-  return rows;
+  return records;
 }
 
-export type PaperImportRowError = { row: number; message: string }; // row = 1-based data row (header excluded); 0 = header / file
+export function parseCsv(text: string): string[][] {
+  return parseCsvRecords(text).map((r) => r.cells);
+}
+
+/** Spreadsheets rewrite 09:00 as 9:00 or 09:00:00; accept those (seconds must be 00) and normalise to HH:MM. Anything else is returned unchanged. */
+function normaliseTime(value: string): string {
+  const match = /^(\d{1,2}):(\d{2})(?::00)?$/.exec(value);
+  return match ? `${match[1].padStart(2, "0")}:${match[2]}` : value;
+}
+
+export type PaperImportRowError = { row: number; message: string }; // row = spreadsheet row number: header = 1, first data row = 2; skipped blank rows still count
 
 export type PlannedPaperLesson = {
   lessonNo: number; lessonDate: string;
@@ -109,23 +124,24 @@ function idCell(value: string, allowed: readonly string[], column: string, error
 }
 
 export function planPaperImport(csvText: string, instructors: readonly Pick<Instructor, "id" | "fullName" | "status">[]): PaperImportPlan {
-  const table = parseCsv(csvText);
-  if (table.length === 0) return { ok: false, errors: [{ row: 0, message: "No lessons found in the file." }] };
+  const table = parseCsvRecords(csvText);
+  if (table.length === 0) return { ok: false, errors: [{ row: 1, message: "No lessons found in the file." }] };
 
-  const header = table[0].map((h) => h.trim());
+  const headerRow = table[0].row;
+  const header = table[0].cells.map((h) => h.trim());
   const headerErrors: PaperImportRowError[] = [];
   for (const column of PAPER_CSV_COLUMNS) {
-    if (!header.includes(column)) headerErrors.push({ row: 0, message: `Missing column: ${column}` });
+    if (!header.includes(column)) headerErrors.push({ row: headerRow, message: `Missing column: ${column}` });
   }
   header.forEach((column, i) => {
-    if (!(PAPER_CSV_COLUMNS as readonly string[]).includes(column) && column !== "") headerErrors.push({ row: 0, message: `Unexpected column: ${column}` });
-    else if (column !== "" && header.indexOf(column) !== i) headerErrors.push({ row: 0, message: `Duplicate column: ${column}` });
-    else if (column === "") headerErrors.push({ row: 0, message: "Unexpected column: (blank)" });
+    if (!(PAPER_CSV_COLUMNS as readonly string[]).includes(column) && column !== "") headerErrors.push({ row: headerRow, message: `Unexpected column: ${column}` });
+    else if (column !== "" && header.indexOf(column) !== i) headerErrors.push({ row: headerRow, message: `Duplicate column: ${column}` });
+    else if (column === "") headerErrors.push({ row: headerRow, message: "Unexpected column: (blank)" });
   });
   if (headerErrors.length) return { ok: false, errors: headerErrors };
 
   const dataRows = table.slice(1);
-  if (dataRows.length === 0) return { ok: false, errors: [{ row: 0, message: "No lessons found in the file." }] };
+  if (dataRows.length === 0) return { ok: false, errors: [{ row: headerRow, message: "No lessons found in the file." }] };
 
   const errors: PaperImportRowError[] = [];
   const lessons: PlannedPaperLesson[] = [];
@@ -135,8 +151,7 @@ export function planPaperImport(csvText: string, instructors: readonly Pick<Inst
   let previousDate: string | null = null;
   let lastFinish: { odometer: number; row: number } | null = null;
 
-  dataRows.forEach((cells, index) => {
-    const rowNo = index + 1;
+  dataRows.forEach(({ row: rowNo, cells }) => {
     const get = (column: (typeof PAPER_CSV_COLUMNS)[number]) => (cells[header.indexOf(column)] ?? "").trim();
     const fail = (message: string) => errors.push({ row: rowNo, message });
     const fieldErrors: string[] = [];
@@ -150,8 +165,8 @@ export function planPaperImport(csvText: string, instructors: readonly Pick<Inst
       previousDate = date;
     }
 
-    const startRaw = get("start_time");
-    const finishRaw = get("finish_time");
+    const startRaw = normaliseTime(get("start_time"));
+    const finishRaw = normaliseTime(get("finish_time"));
     let startTime: string | null = null;
     let finishTime: string | null = null;
     let duration: number | null = null;

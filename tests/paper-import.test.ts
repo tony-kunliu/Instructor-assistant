@@ -33,14 +33,14 @@ test("parseCsv strips BOM and handles CRLF", () => {
 
 test("header must match exactly", () => {
   const missing = PAPER_CSV_COLUMNS.filter((c) => c !== "instructor").join(",") + "\n2026-01-01\n";
-  assert.deepEqual(errors(missing).filter((e) => e.row === 0).map((e) => e.message), ["Missing column: instructor"]);
+  assert.deepEqual(errors(missing).filter((e) => e.row === 1).map((e) => e.message), ["Missing column: instructor"]);
   const extra = HEADER + ",email\n2026-01-01\n";
-  assert.deepEqual(errors(extra).filter((e) => e.row === 0).map((e) => e.message), ["Unexpected column: email"]);
+  assert.deepEqual(errors(extra).filter((e) => e.row === 1).map((e) => e.message), ["Unexpected column: email"]);
 });
 
 test("empty file / header only", () => {
   for (const text of ["", HEADER + "\n", "﻿" + HEADER + "\r\n"]) {
-    assert.deepEqual(errors(text), [{ row: 0, message: "No lessons found in the file." }]);
+    assert.deepEqual(errors(text), [{ row: 1, message: "No lessons found in the file." }]);
   }
 });
 
@@ -93,29 +93,29 @@ test("field errors are reported per row and all collected", () => {
       { assessed_achieved: "1", assessed_not_achieved: "1" }, // 15 both columns
     ),
   );
-  has(errs, 1, /date/i);
-  has(errs, 2, /finish time/i);
-  has(errs, 3, /both start and finish time/i);
-  has(errs, 4, /both start and finish odometer/i);
-  has(errs, 5, /finish odometer/i);
-  has(errs, 8, /row 6/);
-  has(errs, 9, /99/);
-  has(errs, 10, /duplicate/i);
-  has(errs, 11, /earlier/i);
-  has(errs, 12, /signature/i);
-  has(errs, 13, /instructor/i);
+  has(errs, 2, /date/i);
+  has(errs, 3, /finish time/i);
+  has(errs, 4, /both start and finish time/i);
+  has(errs, 5, /both start and finish odometer/i);
+  has(errs, 6, /finish odometer/i);
+  has(errs, 9, /row 7/);
+  has(errs, 10, /99/);
+  has(errs, 11, /duplicate/i);
+  has(errs, 12, /earlier/i);
+  has(errs, 13, /signature/i);
   has(errs, 14, /instructor/i);
-  has(errs, 15, /both/i);
-  assert.ok(!errs.some((e) => e.row === 7));
+  has(errs, 15, /instructor/i);
+  has(errs, 16, /both/i);
+  assert.ok(!errs.some((e) => e.row === 8));
 });
 
 test("competency gates enforced cumulatively", () => {
   const bad = errors(csv({ assessed_achieved: "18" }));
-  assert.deepEqual(bad, [{ row: 1, message: POST_REVIEW_1_17_LOCK_MESSAGE }]);
+  assert.deepEqual(bad, [{ row: 2, message: POST_REVIEW_1_17_LOCK_MESSAGE }]);
 
   const good = planPaperImport(
     csv(
-      { date: "2026-01-01", taught: ids1to17.replace(/;/g, ";") },
+      { date: "2026-01-01", taught: ids1to17 },
       { date: "2026-01-02", assessed_achieved: ids1to17 },
       { date: "2026-01-03", assessed_achieved: "review-1-17" },
       { date: "2026-01-04", assessed_achieved: "18" },
@@ -148,7 +148,7 @@ test("rows after completion rejected", () => {
     { date: "2026-01-06", location: "extra" },
   ];
   const errs = errors(csv(...rows));
-  assert.deepEqual(errs, [{ row: 6, message: "CBT&A is already completed for this learner — no further CBT&A lessons can be recorded." }]);
+  assert.deepEqual(errs, [{ row: 7, message: "CBT&A is already completed for this learner — no further CBT&A lessons can be recorded." }]);
   const ok = planPaperImport(csv(...rows.slice(0, 5)), INSTRUCTORS);
   assert.equal(ok.ok, true, JSON.stringify(ok));
   if (ok.ok) assert.equal(ok.preview.progress.completed, true);
@@ -156,7 +156,7 @@ test("rows after completion rejected", () => {
 
 test("taught and assessed overlap rejected", () => {
   assert.deepEqual(errors(csv({ taught: "1", assessed_achieved: "1" })), [
-    { row: 1, message: "Competency 1 cannot be both taught and assessed in the same lesson." },
+    { row: 2, message: "Competency 1 cannot be both taught and assessed in the same lesson." },
   ]);
 });
 
@@ -166,4 +166,36 @@ test("text limits", () => {
   if (!plan.ok) return;
   assert.equal(plan.lessons[0].location?.length, 200);
   assert.equal(plan.lessons[0].comments?.length, 3000);
+});
+
+test("spreadsheet row numbers: header is row 1, skipped blank and all-empty rows still count", () => {
+  const text = `${HEADER}\n\n,,,,,,,,,,,\n2026-01-01,,,,,,,,,,bad,Tony\n`;
+  assert.deepEqual(errors(text), [{ row: 4, message: "Signature must be on_paper or unsigned." }]);
+});
+
+test("an all-empty row is skipped like a blank line", () => {
+  const text = csv({}).trimEnd() + "\n,,,,,,,,,,,\n" + csv({ date: "2026-01-02" }).split("\n")[1] + "\n";
+  const plan = planPaperImport(text, INSTRUCTORS);
+  assert.equal(plan.ok, true, JSON.stringify(plan));
+  if (plan.ok) assert.deepEqual(plan.lessons.map((l) => l.lessonDate), ["2026-01-01", "2026-01-02"]);
+});
+
+test("spreadsheet-style times H:MM and HH:MM:SS are normalised to HH:MM", () => {
+  const plan = planPaperImport(csv({ start_time: "9:00", finish_time: "10:30:00" }), INSTRUCTORS);
+  assert.equal(plan.ok, true, JSON.stringify(plan));
+  if (!plan.ok) return;
+  assert.equal(plan.lessons[0].startTime, "09:00");
+  assert.equal(plan.lessons[0].finishTime, "10:30");
+  assert.equal(plan.lessons[0].durationMinutes, 90);
+  const bad = errors(csv({ start_time: "09:00:30", finish_time: "10:00" }));
+  assert.match(bad[0].message, /HH:MM/);
+});
+
+test("blank header column, duplicate header column and cells beyond the header are rejected", () => {
+  const blank = HEADER + ",\n2026-01-01\n";
+  assert.deepEqual(errors(blank).map((e) => e.message), ["Unexpected column: (blank)"]);
+  const dup = HEADER + ",date\n2026-01-01\n";
+  assert.deepEqual(errors(dup).map((e) => e.message), ["Duplicate column: date"]);
+  const beyond = errors(`${HEADER}\n2026-01-01,,,,,,,,,,on_paper,Tony,extra\n`);
+  assert.deepEqual(beyond, [{ row: 2, message: "Row has more fields than the header." }]);
 });
