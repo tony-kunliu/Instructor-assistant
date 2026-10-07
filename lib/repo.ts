@@ -68,6 +68,14 @@ function toLearner(row: Row): Learner {
   };
 }
 
+function nullableString(v: unknown): string | null {
+  return v === null || v === undefined ? null : String(v);
+}
+
+function nullableNumber(v: unknown): number | null {
+  return v === null || v === undefined ? null : Number(v);
+}
+
 function toLesson(row: Row): Lesson {
   return {
     id: String(row.id),
@@ -75,12 +83,12 @@ function toLesson(row: Row): Lesson {
     instructorId: String(row.instructor_id),
     lessonNo: Number(row.lesson_no),
     lessonDate: String(row.lesson_date),
-    startTime: String(row.start_time),
-    finishTime: String(row.finish_time),
-    startOdometer: Number(row.start_odometer),
-    finishOdometer: Number(row.finish_odometer),
-    durationMinutes: Number(row.duration_minutes),
-    distanceKm: Number(row.distance_km),
+    startTime: nullableString(row.start_time),
+    finishTime: nullableString(row.finish_time),
+    startOdometer: nullableNumber(row.start_odometer),
+    finishOdometer: nullableNumber(row.finish_odometer),
+    durationMinutes: nullableNumber(row.duration_minutes),
+    distanceKm: nullableNumber(row.distance_km),
     cumulativeMinutes: Number(row.cumulative_minutes),
     cumulativeKm: Number(row.cumulative_km),
     taught: (row.taught as string) ?? null,
@@ -94,6 +102,8 @@ function toLesson(row: Row): Lesson {
     updatedAt: (row.updated_at as string) ?? null,
     updatedByInstructorId: (row.updated_by_instructor_id as string) ?? null,
     updatedByInstructorName: (row.updated_by_instructor_name as string) ?? null,
+    recordSource: row.record_source === "paper_import" ? "paper_import" : "app",
+    signatureStatus: row.signature_status === "on_paper" || row.signature_status === "unsigned" ? row.signature_status : "digital",
   };
 }
 
@@ -245,7 +255,7 @@ export async function getTotals(db: D1Database, learnerId: string): Promise<Tota
       `SELECT COUNT(*) AS lesson_count,
               COALESCE(SUM(duration_minutes), 0) AS total_minutes,
               COALESCE(SUM(distance_km), 0) AS total_km,
-              (SELECT finish_odometer FROM lessons WHERE learner_id = ? ORDER BY lesson_no DESC LIMIT 1) AS last_finish
+              (SELECT finish_odometer FROM lessons WHERE learner_id = ? AND finish_odometer IS NOT NULL ORDER BY lesson_no DESC LIMIT 1) AS last_finish
        FROM lessons WHERE learner_id = ?`,
     )
     .bind(learnerId, learnerId)
@@ -273,7 +283,7 @@ export async function listLessons(db: D1Database, learnerId: string): Promise<Le
               lessons.start_odometer, lessons.finish_odometer, lessons.duration_minutes, lessons.distance_km, lessons.cumulative_minutes, lessons.cumulative_km,
               lessons.taught, lessons.competencies_assessed, lessons.achieved, lessons.location, lessons.comments,
               NULL AS adi_signature, NULL AS learner_signature, lessons.created_at, lessons.updated_at,
-              lessons.updated_by_instructor_id, ub.full_name AS updated_by_instructor_name
+              lessons.updated_by_instructor_id, lessons.record_source, lessons.signature_status, ub.full_name AS updated_by_instructor_name
        FROM lessons ${UPDATED_BY_JOIN} WHERE lessons.learner_id = ? ORDER BY lessons.lesson_no DESC`,
     )
     .bind(learnerId)

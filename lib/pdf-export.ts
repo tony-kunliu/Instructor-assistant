@@ -202,7 +202,10 @@ function drawHeader(page: PDFPage, font: PDFFont, measurer: Measurer, learner: L
 
 /** This lesson's own "Total hrs" / "Total kms" cell text (not running totals — those are `cumulativeFooterText`). */
 export function lessonTotalsText(lesson: Pick<Lesson, "durationMinutes" | "distanceKm">): { hours: string; km: string } {
-  return { hours: `${decimalHours(lesson.durationMinutes)} h`, km: `${lesson.distanceKm} km` };
+  return {
+    hours: lesson.durationMinutes === null ? "" : `${decimalHours(lesson.durationMinutes)} h`,
+    km: lesson.distanceKm === null ? "" : `${lesson.distanceKm} km`,
+  };
 }
 
 /** Running total shown under the table, as of the last lesson on the page. */
@@ -226,13 +229,13 @@ async function drawLessonRow(doc: PDFDocument, page: PDFPage, font: PDFFont, mea
 
   // Time & total hrs — "Total" is THIS lesson's own total, matching the paper form; running totals go in the page footer.
   const totals = lessonTotalsText(lesson);
-  drawSingleLine(page, font, measurer, lesson.startTime, { ...sub.start, x0: col.timeHrs.x0, x1: col.timeHrs.x1 }, 7);
-  drawSingleLine(page, font, measurer, lesson.finishTime, { ...sub.finish, x0: col.timeHrs.x0, x1: col.timeHrs.x1 }, 7);
+  drawSingleLine(page, font, measurer, lesson.startTime ?? "", { ...sub.start, x0: col.timeHrs.x0, x1: col.timeHrs.x1 }, 7);
+  drawSingleLine(page, font, measurer, lesson.finishTime ?? "", { ...sub.finish, x0: col.timeHrs.x0, x1: col.timeHrs.x1 }, 7);
   drawSingleLine(page, font, measurer, totals.hours, { ...sub.total, x0: col.timeHrs.x0, x1: col.timeHrs.x1 }, 7);
 
   // Odometer & total kms
-  drawSingleLine(page, font, measurer, String(lesson.startOdometer), { ...sub.start, x0: col.odometerKms.x0, x1: col.odometerKms.x1 }, 7);
-  drawSingleLine(page, font, measurer, String(lesson.finishOdometer), { ...sub.finish, x0: col.odometerKms.x0, x1: col.odometerKms.x1 }, 7);
+  drawSingleLine(page, font, measurer, lesson.startOdometer === null ? "" : String(lesson.startOdometer), { ...sub.start, x0: col.odometerKms.x0, x1: col.odometerKms.x1 }, 7);
+  drawSingleLine(page, font, measurer, lesson.finishOdometer === null ? "" : String(lesson.finishOdometer), { ...sub.finish, x0: col.odometerKms.x0, x1: col.odometerKms.x1 }, 7);
   drawSingleLine(page, font, measurer, totals.km, { ...sub.total, x0: col.odometerKms.x0, x1: col.odometerKms.x1 }, 7);
 
   // Wide free-text columns (full row height, one cell each).

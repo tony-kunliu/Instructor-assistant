@@ -55,6 +55,8 @@ function lesson(n: number, overrides: Partial<Lesson> = {}): Lesson {
     updatedAt: null,
     updatedByInstructorId: null,
     updatedByInstructorName: null,
+    recordSource: "app",
+    signatureStatus: "digital",
     ...overrides,
   };
 }

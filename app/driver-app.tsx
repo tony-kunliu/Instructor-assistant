@@ -93,10 +93,10 @@ type LessonSelections = { taughtIds: string[]; assessedIds: string[]; achievedRe
 function lessonToDraft(lesson: Lesson, selections: LessonSelections): LessonDraft {
   return {
     lessonDate: lesson.lessonDate,
-    startTime: lesson.startTime,
-    finishTime: lesson.finishTime,
-    startOdometer: String(lesson.startOdometer),
-    finishOdometer: String(lesson.finishOdometer),
+    startTime: lesson.startTime ?? "",
+    finishTime: lesson.finishTime ?? "",
+    startOdometer: lesson.startOdometer === null ? "" : String(lesson.startOdometer),
+    finishOdometer: lesson.finishOdometer === null ? "" : String(lesson.finishOdometer),
     taughtIds: selections.taughtIds,
     assessedIds: selections.assessedIds,
     achievedResults: selections.achievedResults,
@@ -798,14 +798,14 @@ export default function DriverApp() {
                     <li key={lesson.id} data-testid="history-row">
                       <div className="h-top">
                         <span className="h-no">#{lesson.lessonNo}</span>
-                        <span>{lesson.lessonDate} · {lesson.startTime}–{lesson.finishTime}</span>
+                        <span>{lesson.lessonDate} · {lesson.startTime ?? "—"}–{lesson.finishTime ?? "—"}</span>
                         <button type="button" className="link h-edit" onClick={() => void startEditLesson(lesson.id)}>Edit</button>
                       </div>
                       <div className="h-nums">
-                        <span>{formatMinutes(lesson.durationMinutes)} · {lesson.distanceKm} km</span>
+                        <span>{lesson.durationMinutes === null ? "—" : formatMinutes(lesson.durationMinutes)} · {lesson.distanceKm === null ? "—" : lesson.distanceKm} km</span>
                         <span>Total {formatMinutes(lesson.cumulativeMinutes)} · {lesson.cumulativeKm} km</span>
                       </div>
-                      <div className="h-odo">Odo {lesson.startOdometer} → {lesson.finishOdometer}{lesson.location ? ` · ${lesson.location}` : ""}</div>
+                      <div className="h-odo">Odo {lesson.startOdometer ?? "—"} → {lesson.finishOdometer ?? "—"}{lesson.location ? ` · ${lesson.location}` : ""}</div>
                       {lesson.taught ? <p><b>Taught:</b> {lesson.taught}</p> : null}
                       {lesson.competenciesAssessed ? <p><b>Assessed:</b> {lesson.competenciesAssessed}</p> : null}
                       {lesson.achieved ? <p><b>Achieved:</b> {lesson.achieved}</p> : null}

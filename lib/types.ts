@@ -31,18 +31,21 @@ export type Learner = {
   archivedAt: string | null;
 };
 
+export type RecordSource = "app" | "paper_import";
+export type SignatureStatus = "digital" | "on_paper" | "unsigned";
+
 export type Lesson = {
   id: string;
   learnerId: string;
   instructorId: string;
   lessonNo: number;
   lessonDate: string;
-  startTime: string;
-  finishTime: string;
-  startOdometer: number;
-  finishOdometer: number;
-  durationMinutes: number;
-  distanceKm: number;
+  startTime: string | null;
+  finishTime: string | null;
+  startOdometer: number | null;
+  finishOdometer: number | null;
+  durationMinutes: number | null;
+  distanceKm: number | null;
   cumulativeMinutes: number;
   cumulativeKm: number;
   taught: string | null;
@@ -57,6 +60,9 @@ export type Lesson = {
   /** Instructor who last edited this lesson (Instructor Identity V1) — null if never edited, or edited before attribution existed. */
   updatedByInstructorId: string | null;
   updatedByInstructorName: string | null;
+  /** 'paper_import' rows are historical paper-logbook lessons; time/odometer/duration/distance may be null. */
+  recordSource: RecordSource;
+  signatureStatus: SignatureStatus;
 };
 
 /** Set once 23 Final Drive is Assessed + Achieved (see lib/competency.ts). */
