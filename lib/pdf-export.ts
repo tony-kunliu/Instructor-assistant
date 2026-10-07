@@ -208,6 +208,11 @@ export function lessonTotalsText(lesson: Pick<Lesson, "durationMinutes" | "dista
   };
 }
 
+/** Text printed in both signature boxes: "Paper original" for lessons whose signatures are on the paper original; null otherwise (digital draws the PNG, unsigned draws nothing). */
+export function signatureCellText(lesson: Pick<Lesson, "signatureStatus">): string | null {
+  return lesson.signatureStatus === "on_paper" ? "Paper original" : null;
+}
+
 /** Running total shown under the table, as of the last lesson on the page. */
 export function cumulativeFooterText(lesson: Pick<Lesson, "lessonNo" | "cumulativeMinutes" | "cumulativeKm">): string {
   return `Cumulative to lesson #${lesson.lessonNo}: ${decimalHours(lesson.cumulativeMinutes)} h / ${lesson.cumulativeKm} km`;
@@ -249,8 +254,14 @@ async function drawLessonRow(doc: PDFDocument, page: PDFPage, font: PDFFont, mea
   // Signatures: top half = ADI, bottom half = Learner.
   const sigTop: Box = { x0: col.signatures.x0, x1: col.signatures.x1, top: rowTop + 9, bottom: rowTop + ROW_SUB_OFFSETS.signatureSplit };
   const sigBottom: Box = { x0: col.signatures.x0, x1: col.signatures.x1, top: rowTop + ROW_SUB_OFFSETS.signatureSplit + 9, bottom: rowBottom };
-  await drawSignature(doc, page, lesson.adiSignature, sigTop);
-  await drawSignature(doc, page, lesson.learnerSignature, sigBottom);
+  const sigText = signatureCellText(lesson);
+  if (sigText !== null) {
+    drawSingleLine(page, font, measurer, sigText, sigTop, 7);
+    drawSingleLine(page, font, measurer, sigText, sigBottom, 7);
+  } else if (lesson.signatureStatus === "digital") {
+    await drawSignature(doc, page, lesson.adiSignature, sigTop);
+    await drawSignature(doc, page, lesson.learnerSignature, sigBottom);
+  }
 }
 
 function drawContinuationPageNumber(page: PDFPage, font: PDFFont, pageNo: number, totalPages: number) {

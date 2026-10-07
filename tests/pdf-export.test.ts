@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { PDFDocument } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
-import { buildCbtaChecklistPdf, createMeasurer, cumulativeFooterText, lessonTotalsText, plannedPageCount, wrapText } from "../lib/pdf-export.ts";
+import { buildCbtaChecklistPdf, createMeasurer, cumulativeFooterText, lessonTotalsText, plannedPageCount, signatureCellText, wrapText } from "../lib/pdf-export.ts";
 import type { Learner, Lesson } from "../lib/types.ts";
 
 const templateBytes = readFileSync(new URL("../public/pdf-template/adi-cbta-checklist.pdf", import.meta.url));
@@ -127,4 +127,32 @@ test("Total hrs / Total kms cells show THIS lesson's own totals (per paper form)
 test("cumulative footer states the running total as of the given lesson", () => {
   const l = lesson(3, { cumulativeMinutes: 270, cumulativeKm: 36 });
   assert.equal(cumulativeFooterText(l), "Cumulative to lesson #3: 4.5 h / 36 km");
+});
+
+test("lessonTotalsText: NULL duration/distance (paper lessons) render as empty strings", () => {
+  assert.deepEqual(lessonTotalsText({ durationMinutes: null, distanceKm: null }), { hours: "", km: "" });
+  assert.deepEqual(lessonTotalsText({ durationMinutes: 60, distanceKm: null }), { hours: "1.0 h", km: "" });
+});
+
+test("signatureCellText: 'Paper original' only for on_paper; null for digital and unsigned", () => {
+  assert.equal(signatureCellText({ signatureStatus: "on_paper" }), "Paper original");
+  assert.equal(signatureCellText({ signatureStatus: "unsigned" }), null);
+  assert.equal(signatureCellText({ signatureStatus: "digital" }), null);
+});
+
+test("buildCbtaChecklistPdf with a mixed paper/app list succeeds, keeps the page plan, and footer text is unchanged", async () => {
+  const paperNulls: Partial<Lesson> = {
+    recordSource: "paper_import", adiSignature: null, learnerSignature: null,
+    startTime: null, finishTime: null, startOdometer: null, finishOdometer: null, durationMinutes: null, distanceKm: null,
+  };
+  const lessons = [
+    lesson(1, { ...paperNulls, signatureStatus: "on_paper", cumulativeMinutes: 0, cumulativeKm: 0 }),
+    lesson(2, { ...paperNulls, signatureStatus: "unsigned", cumulativeMinutes: 0, cumulativeKm: 0 }),
+    lesson(3, { cumulativeMinutes: 30, cumulativeKm: 5 }),
+  ];
+  const result = await buildCbtaChecklistPdf({ templateBytes, fontBytes, learner, lessons });
+  assert.equal(result.pageCount, plannedPageCount(3));
+  assert.equal(result.hadOverflow, false);
+  assert.equal((await PDFDocument.load(result.bytes)).getPageCount(), result.pageCount);
+  assert.equal(cumulativeFooterText(lessons[2]), "Cumulative to lesson #3: 0.5 h / 5 km");
 });

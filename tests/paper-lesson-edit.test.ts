@@ -5,7 +5,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { openTestD1 } from "../lib/db.ts";
 import type { D1Database } from "../lib/d1-types.ts";
-import { createLearner, createLesson, findInstructorByEmail, getLesson, listLessons, updateLesson, ValidationError } from "../lib/repo.ts";
+import { createLearner, createLesson, findInstructorByEmail, getLesson, listLessons, listLessonsForExport, updateLesson, ValidationError } from "../lib/repo.ts";
 import { resolveIntegrationConfig } from "../lib/integration/config.ts";
 import { listOutboxRowsForLearner } from "../lib/integration/outbox.ts";
 import type { IntegrationHooks, LessonUpsertedPayloadV1 } from "../lib/integration/types.ts";
@@ -264,4 +264,25 @@ test("paper edit with integration enabled: no outbox row for the paper lesson; a
   const newest = app3Rows.map((row) => JSON.parse(row.payloadJson) as LessonUpsertedPayloadV1).sort((a, b) => a.lesson.source_updated_at.localeCompare(b.lesson.source_updated_at)).at(-1)!;
   assert.equal(newest.lesson.cumulative_minutes, 180);
   assert.equal(newest.lesson.cumulative_km, 30);
+});
+
+test("listLessonsForExport carries a paper lesson's real recordSource/signatureStatus (not defaulted)", async () => {
+  const { db, learner, tony } = await setup();
+  await seedPaper(db, learner.id, tony.id, { lessonNo: 1 });
+  const lessons = await listLessonsForExport(db, learner.id);
+  assert.equal(lessons[0].recordSource, "paper_import");
+  assert.equal(lessons[0].signatureStatus, "on_paper");
+});
+
+test("toLesson is strict: an unknown signature_status / record_source value throws instead of defaulting", async () => {
+  const { db, learner, tony } = await setup();
+  const id = await seedPaper(db, learner.id, tony.id, { lessonNo: 1 });
+  // Bypass the CHECK constraint if one exists; otherwise the DB itself rejects the value (also acceptable strictness).
+  let injected = true;
+  try {
+    await db.prepare("UPDATE lessons SET signature_status = 'bogus' WHERE id = ?").bind(id).run();
+  } catch {
+    injected = false;
+  }
+  if (injected) await assert.rejects(() => getLesson(db, learner.id, id), /signature_status/);
 });

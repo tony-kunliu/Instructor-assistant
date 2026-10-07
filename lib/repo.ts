@@ -77,6 +77,12 @@ function nullableNumber(v: unknown): number | null {
   return v === null || v === undefined ? null : Number(v);
 }
 
+/** Reads a column that must be present and one of `allowed` — never silently defaults (the PDF prints signature text from it). */
+function strictEnum<T extends string>(value: unknown, allowed: readonly T[], column: string): T {
+  if (typeof value === "string" && (allowed as readonly string[]).includes(value)) return value as T;
+  throw new Error(`lessons.${column} is missing or has an unknown value (${String(value)}).`);
+}
+
 function toLesson(row: Row): Lesson {
   return {
     id: String(row.id),
@@ -103,8 +109,8 @@ function toLesson(row: Row): Lesson {
     updatedAt: (row.updated_at as string) ?? null,
     updatedByInstructorId: (row.updated_by_instructor_id as string) ?? null,
     updatedByInstructorName: (row.updated_by_instructor_name as string) ?? null,
-    recordSource: row.record_source === "paper_import" ? "paper_import" : "app",
-    signatureStatus: row.signature_status === "on_paper" || row.signature_status === "unsigned" ? row.signature_status : "digital",
+    recordSource: strictEnum(row.record_source, ["app", "paper_import"], "record_source"),
+    signatureStatus: strictEnum(row.signature_status, ["digital", "on_paper", "unsigned"], "signature_status"),
   };
 }
 
