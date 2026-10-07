@@ -526,7 +526,7 @@ const draw = async (page, index) => {
   await s.page.fill('label:has-text("Student name") input', "QA Paper Learner");
   await s.page.click('button:has-text("Save learner")');
   await s.page.waitForSelector("[data-testid=paper-import-open]");
-  check("paper: Import paper records button shown for a learner with no lessons", true);
+  check("paper: Import paper records button shown for a learner with no lessons", await s.page.isVisible("[data-testid=paper-import-open]"));
   await s.page.click("[data-testid=paper-import-open]");
   await s.page.setInputFiles('input[type="file"]', badFile);
   await s.page.waitForSelector("[data-testid=paper-import-errors]");
@@ -569,7 +569,7 @@ const draw = async (page, index) => {
   const after = await (await fetch(`${B}/api/learners/${learnerId}`)).json();
   const l1 = after.lessons.find((l) => l.lessonNo === 1);
   check("paper edit: saved with blank times and Not signed", l1 && l1.startTime === null && l1.finishTime === null && l1.signatureStatus === "unsigned" && l1.recordSource === "paper_import", JSON.stringify(l1 && [l1.startTime, l1.signatureStatus]));
-  check("paper edit: totals recalculated (30m, 15 km)", (await s.page.textContent("[data-testid=total-km]")) === "35 km" && (await s.page.textContent("[data-testid=total-hours]")).startsWith("0h 30m"), await s.page.textContent("[data-testid=total-hours]"));
+  check("paper edit: totals recalculated (0h 30m, 35 km; odometers kept)", (await s.page.textContent("[data-testid=total-km]")) === "35 km" && (await s.page.textContent("[data-testid=total-hours]")).startsWith("0h 30m"), await s.page.textContent("[data-testid=total-hours]"));
 
   // New App lesson continues numbering and odometer.
   check("paper: next App lesson is #4 with start odometer prefilled 145", (await s.page.textContent("[data-testid=lesson-no]")) === "Lesson #4" && (await s.page.inputValue('input[placeholder="e.g. 45210"]')) === "145");

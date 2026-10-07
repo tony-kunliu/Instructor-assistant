@@ -53,7 +53,14 @@ export default function PaperImportPanel({ learnerId, onImported }: { learnerId:
     if (!file) return;
     setBusy(true);
     setFileName(file.name);
-    const text = await file.text();
+    let text: string;
+    try {
+      text = await file.text();
+    } catch {
+      setBusy(false);
+      setError("Could not read that file. Please choose it again.");
+      return;
+    }
     const result = await post(learnerId, text, "preview");
     setBusy(false);
     if (result.ok) {
@@ -71,13 +78,21 @@ export default function PaperImportPanel({ learnerId, onImported }: { learnerId:
     setError(null);
     const result = await post(learnerId, csv, "commit");
     if (result.ok) {
-      await onImported();
+      try {
+        await onImported();
+      } catch {
+        setError("Imported, but the learner could not be reloaded. Please refresh.");
+      } finally {
+        setBusy(false);
+      }
       return;
     }
     setBusy(false);
     setError(result.error);
-    setRows(result.rows);
-    setPreview(null);
+    if (result.rows.length) {
+      setRows(result.rows);
+      setPreview(null);
+    }
   };
 
   if (!open) {
