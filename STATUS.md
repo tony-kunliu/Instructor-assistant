@@ -1,6 +1,6 @@
 # STATUS.md
 
-_Last updated: 2026-09-30_ (Release A PASS; Release A UX bugfix deployed)
+_Last updated: 2026-10-07_ (P1a merged to staging; Release A Sign-out phone check done)
 
 This file describes **current state only**. Development history lives in
 git log and closed PRs, not here — see `TASK.md` for what's in progress.
@@ -20,7 +20,7 @@ git log and closed PRs, not here — see `TASK.md` for what's in progress.
 ## CI
 
 - Latest `staging` GitHub Actions run: **SUCCESS**.
-- Tests: 252/252 PASS, 0 skipped.
+- Tests: 261/261 PASS, 0 skipped (re-verified locally 2026-10-07).
 - Build: PASS.
 - `npm test` requires Node's `--experimental-strip-types` flag (already in
   `package.json`'s `test` script) — CI pins Node 22.13, which needs this
@@ -65,8 +65,8 @@ NOT STARTED / NOT AUTHORIZED; P3-B is NOT STARTED. The Workers Builds
 now uses same-origin `/cdn-cgi/access/logout?returnTo=<app origin>/`
 (deletes this app's `CF_Authorization`, then re-enters the Access login);
 Finish odometer opens only after End Lesson; redundant downstream
-Integration events skipped. One real-phone acceptance outstanding: Tony
-signs out once on Production iPhone and confirms he lands on the login flow.
+Integration events skipped. Real-phone acceptance: Tony signed out on
+Production iPhone and landed on the login flow — PASS (reported 2026-10-07).
 
 ## Current Product
 
@@ -112,8 +112,8 @@ signs out once on Production iPhone and confirms he lands on the login flow.
   jump links (new lesson and History Edit), kept until fixed.
 - Working rule: `AGENTS.md` §13 (agent owns automatable QA and deployment
   verification; Tony/Anna only real-login / real-phone smoke checks).
-- Verified: typecheck, 252/252 tests, build, Memory Guard, GitHub CI;
-  real-browser QA at 390px 91/91 PASS (`bash scripts/qa-browser/run.sh`:
+- Verified: typecheck, 261/261 tests, build, Memory Guard, GitHub CI;
+  real-browser QA at 390px 96/96 PASS (2026-10-07, staging HEAD) (`bash scripts/qa-browser/run.sh`:
   local D1, header-simulated Tony/Anna, synthetic QA learners, Integration
   off).
 
@@ -168,11 +168,13 @@ signs out once on Production iPhone and confirms he lands on the login flow.
 Full contract detail: `docs/integrations/actgds-instructor-assistant-v1.md`.
 Cross-repo coordination record: `tony-kunliu/actgds.com` Issue #3.
 
-## In flight (feature branch, not merged)
+## Recently merged to staging
 
-- `feature/pdf-per-lesson-totals`: PDF Total cells = per-lesson totals;
-  cumulative line under each page's table. Changes the exported PDF of
-  every learner (not only imported ones).
+- `feature/pdf-per-lesson-totals` (P1a): PDF Total hrs/kms cells show each
+  lesson's own totals (matches the paper form); a cumulative line is
+  printed under each page's table. Changes the exported PDF of every
+  learner. In `staging` only, not `main`/Production. Tony's visual PDF
+  check is outstanding.
 
 ## Known Issues
 
@@ -186,4 +188,4 @@ Cross-repo coordination record: `tony-kunliu/actgds.com` Issue #3.
 
 ## Next
 
-Tony's one real-phone Sign out check on Production (see above). See `TASK.md`.
+See `TASK.md`.
