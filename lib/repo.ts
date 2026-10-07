@@ -271,7 +271,9 @@ export async function createLearner(db: D1Database, input: LearnerInput): Promis
 export async function getTotals(db: D1Database, learnerId: string): Promise<Totals> {
   const row = await db
     .prepare(
-      `SELECT COUNT(*) AS lesson_count,
+      // lessonCount (and so the next lesson number) counts lessons only: prior-instructor
+      // records have negative lesson_no. Their hours/km DO count in the totals (spec §12).
+      `SELECT COUNT(CASE WHEN lesson_no > 0 THEN 1 END) AS lesson_count,
               COALESCE(SUM(duration_minutes), 0) AS total_minutes,
               COALESCE(SUM(distance_km), 0) AS total_km,
               (SELECT finish_odometer FROM lessons WHERE learner_id = ? AND finish_odometer IS NOT NULL ORDER BY lesson_no DESC LIMIT 1) AS last_finish
@@ -560,7 +562,7 @@ const PAPER_LESSON_COLUMNS = [
   "id", "learner_id", "instructor_id", "lesson_no", "lesson_date", "start_time", "finish_time",
   "start_odometer", "finish_odometer", "duration_minutes", "distance_km", "cumulative_minutes", "cumulative_km",
   "taught", "competencies_assessed", "achieved", "location", "comments", "adi_signature", "learner_signature",
-  "record_source", "signature_status",
+  "record_source", "signature_status", "prior_instructor_label", "prior_lesson_count",
 ] as const;
 
 export type PaperImportResult =
@@ -581,13 +583,20 @@ export class PaperImportError extends ValidationError {
  * db.batch() (atomic); `UNIQUE (learner_id, lesson_no)` rejects the whole
  * batch if a lesson appeared after the guard read. Paper lessons never
  * enqueue integration_outbox rows.
+ *
+ * Prior-instructor records (spec §12) are written in the same statements:
+ * one lessons row each (record_source 'prior_instructor', negative lesson_no,
+ * owned by the learner's own instructor, signed on paper) whose achievements
+ * become assessed/achieved competency events. They are never sent to ACTGDS.
  */
 export async function importPaperLessons(db: D1Database, learnerId: string, csvText: string, mode: "preview" | "commit"): Promise<PaperImportResult> {
   if (mode !== "preview" && mode !== "commit") throw new ValidationError("Import mode must be preview or commit.");
   if (typeof csvText !== "string" || !csvText.trim()) throw new ValidationError("CSV file is required.");
   if (new TextEncoder().encode(csvText).length > MAX_IMPORT_CSV_BYTES) throw new ValidationError("File is too large.");
-  await getLearner(db, learnerId);
-  if ((await getTotals(db, learnerId)).lessonCount !== 0) throw new ValidationError("Paper records can only be imported into a learner with no lessons.");
+  const learner = await getLearner(db, learnerId);
+  // No rows at all — getTotals().lessonCount would not see prior-instructor records (negative lesson_no).
+  const existing = await db.prepare("SELECT COUNT(*) AS n FROM lessons WHERE learner_id = ?").bind(learnerId).first<Row>();
+  if (Number(existing?.n ?? 0) !== 0) throw new ValidationError("Paper records can only be imported into a learner with no lessons.");
 
   const plan = planPaperImport(csvText, await listActiveInstructors(db));
   if (!plan.ok) throw new PaperImportError(plan.errors);
@@ -598,6 +607,18 @@ export async function importPaperLessons(db: D1Database, learnerId: string, csvT
   // against its per-request query limit). Lessons first, in lesson_no order.
   const lessonRowsToInsert: Record<(typeof PAPER_LESSON_COLUMNS)[number], string | number | null>[] = [];
   const eventRowsToInsert: ReturnType<typeof competencyEventRows> = [];
+  for (const prior of plan.priorRecords) {
+    const id = crypto.randomUUID();
+    const achieved = formatIdList(prior.achievedIds);
+    lessonRowsToInsert.push({
+      id, learner_id: learnerId, instructor_id: learner.instructorId, lesson_no: prior.lessonNo, lesson_date: prior.date,
+      start_time: null, finish_time: null, start_odometer: null, finish_odometer: null,
+      duration_minutes: prior.minutes, distance_km: prior.km, cumulative_minutes: prior.cumulativeMinutes, cumulative_km: prior.cumulativeKm,
+      taught: null, competencies_assessed: achieved, achieved, location: null, comments: null, adi_signature: null, learner_signature: null,
+      record_source: "prior_instructor", signature_status: "on_paper", prior_instructor_label: prior.label, prior_lesson_count: prior.lessonCount,
+    });
+    eventRowsToInsert.push(...competencyEventRows(learnerId, id, [], prior.achievedIds, Object.fromEntries(prior.achievedIds.map((competencyId) => [competencyId, "achieved"]))));
+  }
   for (const lesson of plan.lessons) {
     const id = crypto.randomUUID();
     lessonRowsToInsert.push({
@@ -607,7 +628,7 @@ export async function importPaperLessons(db: D1Database, learnerId: string, csvT
       taught: formatIdList(lesson.taughtIds), competencies_assessed: formatIdList(lesson.assessedIds),
       achieved: formatIdList(lesson.assessedIds.filter((competencyId) => lesson.achievedResults[competencyId] === "achieved")),
       location: lesson.location, comments: lesson.comments, adi_signature: null, learner_signature: null,
-      record_source: "paper_import", signature_status: lesson.signatureStatus,
+      record_source: "paper_import", signature_status: lesson.signatureStatus, prior_instructor_label: null, prior_lesson_count: null,
     });
     eventRowsToInsert.push(...competencyEventRows(learnerId, id, lesson.taughtIds, lesson.assessedIds, lesson.achievedResults));
   }
@@ -647,6 +668,8 @@ export type UpdateLessonResult = {
  */
 export async function updateLesson(db: D1Database, learnerId: string, lessonId: string, input: LessonInput, integration?: IntegrationHooks): Promise<UpdateLessonResult> {
   const existing = await getLesson(db, learnerId, lessonId);
+  // D14: a previous instructor's record is never edited (a mistake is fixed by re-importing a learner with no App lessons).
+  if (existing.recordSource === "prior_instructor") throw new ValidationError("Prior-instructor records cannot be edited.");
 
   const lessonDate = isoDate(input.lessonDate);
   if (!lessonDate) throw new ValidationError("Lesson date is required.");

@@ -230,6 +230,96 @@ test("budget: importPaperLessons commit of 60 lessons × 3 events stays within 1
   assert.ok(statements <= 15, `importPaperLessons commit issued ${statements} statements (budget 15)`);
 });
 
+// ── Import commit with 3 prior-instructor rows + 60 lessons (spec §12) ───
+
+/** The 60-lesson CSV with three prior-instructor rows in front (dates before 2026-01-01). */
+function priorPlusSixtyLessonCsv(): string {
+  const [header, ...lessons] = sixtyLessonCsv().trimEnd().split("\n");
+  const prior = (date: string, label: string, count: number, hours: string, km: string, achieved: string) =>
+    PAPER_CSV_COLUMNS.map((column) => ({ date, assessed_achieved: achieved, prior_instructor: label, prior_lessons: String(count), prior_hours: hours, prior_km: km } as Record<string, string>)[column] ?? "").join(",");
+  return [header, prior("2025-03-01", "QA ADI 101", 3, "4.5", "", "4;5"), prior("2025-06-01", "QA ADI 202", 5, "7", "80", "6"), prior("2025-09-01", "QA ADI 303", 2, "2.5", "31", ""), ...lessons].join("\n") + "\n";
+}
+
+test("budget: importPaperLessons commit of 3 prior rows + 60 lessons stays within 15 statements, prior rows first in cumulative", async (t) => {
+  const { db: raw, learner } = await setup();
+  const { db, count } = countingD1(raw);
+
+  const result = await importPaperLessons(db, learner.id, priorPlusSixtyLessonCsv(), "commit");
+  const statements = count();
+  assert.equal(result.mode === "commit" && result.lessonCount, 60);
+
+  const rows = await lessonRows(raw, learner.id);
+  assert.equal(rows.length, 63);
+  assert.deepEqual(rows.slice(0, 4).map((row) => [row.lesson_no, row.record_source, row.prior_instructor_label, row.prior_lesson_count, row.duration_minutes, row.distance_km]), [
+    [-3, "prior_instructor", "QA ADI 101", 3, 270, null],
+    [-2, "prior_instructor", "QA ADI 202", 5, 420, 80],
+    [-1, "prior_instructor", "QA ADI 303", 2, 150, 31],
+    [1, "paper_import", null, null, 30 + 15, 1 + 5],
+  ]);
+  for (const row of rows.slice(0, 3)) {
+    for (const column of ["lesson_no", "prior_lesson_count", "duration_minutes", "cumulative_minutes", "cumulative_km"]) assertInteger(row[column], `prior ${column}`);
+  }
+  assertCumulativeIsRunningSum(rows);
+  assert.equal(rows[3].cumulative_minutes, 840 + 45, "lesson #1 cumulative starts from the prior hours");
+  const priorEvents = (await raw.prepare("SELECT e.competency_id, e.action, e.result FROM competency_events e JOIN lessons l ON l.id = e.lesson_id WHERE l.lesson_no < 0 ORDER BY e.rowid").all<Row>()).results;
+  assert.deepEqual(priorEvents.map((event) => [event.competency_id, event.action, event.result]), [["4", "assessed", "achieved"], ["5", "assessed", "achieved"], ["6", "assessed", "achieved"]]);
+  assert.equal((await raw.prepare("SELECT COUNT(*) AS n FROM competency_events").first<{ n: number }>())?.n, 183);
+  assert.equal((await raw.prepare("SELECT COUNT(*) AS n FROM integration_outbox").first<{ n: number }>())?.n, 0, "prior and paper rows never produce outbox rows");
+
+  t.diagnostic(`importPaperLessons commit (3 prior + 60 lessons): ${statements} statements`);
+  assert.ok(statements <= 15, `importPaperLessons commit issued ${statements} statements (budget 15)`);
+});
+
+// ── updateLesson of lesson #1 with prior rows: SQL cumulative = payload cumulative ─
+
+test("consistency: editing lesson #1 on a learner with prior rows stores the same cumulative values the outbox payloads carry, within budget", async (t) => {
+  const { db: raw, learner } = await setup();
+  const { hooks, runDeferred } = deferredHooks();
+  // 3 prior rows (840 min / 111 km) and no paper lessons, then 10 exported App lessons.
+  const priorOnly = priorPlusSixtyLessonCsv().split("\n").slice(0, 4).join("\n") + "\n";
+  await importPaperLessons(raw, learner.id, priorOnly, "commit");
+  for (let i = 1; i <= 10; i++) {
+    await createLesson(raw, learner.id, {
+      lessonDate: new Date(Date.UTC(2026, 1, 1) + i * 86_400_000).toISOString().slice(0, 10),
+      startTime: "09:00", finishTime: i % 2 ? "09:30" : "10:15",
+      startOdometer: String(i * 100), finishOdometer: String(i * 100 + i + 4),
+      taughtIds: [CORE_COMPETENCY_IDS[(i % 3) + 6]], adiSignature: SIG1, learnerSignature: SIG1,
+    }, hooks);
+  }
+  await runDeferred();
+  await raw.prepare("UPDATE integration_outbox SET status = 'delivered', attempt_count = 1, delivered_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')").run();
+  const maxRowidBefore = Number((await raw.prepare("SELECT MAX(rowid) AS m FROM integration_outbox").first<{ m: number }>())?.m);
+  const lesson1 = (await lessonRows(raw, learner.id)).find((row) => row.lesson_no === 1)!;
+  assert.equal(lesson1.cumulative_minutes, 840 + 30, "createLesson already counted the prior rows");
+
+  const { db, count } = countingD1(raw);
+  await updateLesson(db, learner.id, String(lesson1.id), {
+    lessonDate: String(lesson1.lesson_date), startTime: "09:00", finishTime: "11:00", startOdometer: "100", finishOdometer: "150",
+    taughtIds: [CORE_COMPETENCY_IDS[7]], adiSignature: SIG2, learnerSignature: SIG2,
+  }, hooks);
+  const statements = count();
+
+  const rows = await lessonRows(raw, learner.id);
+  assert.deepEqual(rows.slice(0, 3).map((row) => [row.lesson_no, row.cumulative_minutes, row.cumulative_km]), [[-3, 270, 0], [-2, 690, 80], [-1, 840, 111]], "prior rows untouched");
+  assertCumulativeIsRunningSum(rows);
+  assert.equal(rows[3].cumulative_minutes, 840 + 120);
+  assert.equal(rows[3].cumulative_km, 111 + 50);
+
+  const newOutbox = (await raw.prepare("SELECT lesson_id, payload_json FROM integration_outbox WHERE rowid > ? ORDER BY rowid").bind(maxRowidBefore).all<Row>()).results;
+  const appRows = rows.filter((row) => Number(row.lesson_no) > 0);
+  assert.deepEqual(newOutbox.map((row) => row.lesson_id), appRows.map((row) => row.id), "direct event + every exported downstream lesson; never a prior row");
+  const byId = new Map(rows.map((row) => [String(row.id), row]));
+  for (const outbox of newOutbox) {
+    const payload = JSON.parse(String(outbox.payload_json)) as LessonUpsertedPayloadV1;
+    const stored = byId.get(String(outbox.lesson_id))!;
+    assert.equal(payload.lesson.cumulative_minutes, stored.cumulative_minutes, `lesson #${stored.lesson_no}: SQL cumulative_minutes = payload`);
+    assert.equal(payload.lesson.cumulative_km, stored.cumulative_km, `lesson #${stored.lesson_no}: SQL cumulative_km = payload`);
+  }
+
+  t.diagnostic(`updateLesson #1 with 3 prior rows + 9 exported downstream: ${statements} statements`);
+  assert.ok(statements <= 25, `updateLesson issued ${statements} statements (budget 25)`);
+});
+
 // ── updateLesson of lesson #1 on a 60-lesson learner, all exported ───────
 
 test("budget: updateLesson of lesson #1 with 59 exported downstream lessons stays within 25 statements, and propagates the same events", async (t) => {
