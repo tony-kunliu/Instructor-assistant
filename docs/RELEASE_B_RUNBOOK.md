@@ -35,8 +35,8 @@ migrations (`0005`, `0006`) → deploys → checks the Worker answers.
 Release B ships before P1b (precondition 5):
 
 1. **Release B**: `ACTGDS_INTEGRATION_ENABLED = "true"` under
-   `[env.production.vars]`; merge to `main`; run the workflow with
-   `apply_migrations` on (applies `0005` only). Verify `lessons` row count
+   `[env.production.vars]`; merge to `main`; run the workflow (applies
+   `0005` only). Verify `lessons` row count
    unchanged and `integration_outbox` exists and is empty.
 2. **First event** (coordinated with ACTGDS): one real lesson save produces
    one outbox row; expect `202 pending_link` until Tony links the
