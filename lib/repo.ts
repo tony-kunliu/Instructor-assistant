@@ -20,9 +20,10 @@ import {
 } from "./competency.ts";
 import type { D1Database, D1PreparedStatement } from "./d1-types.ts";
 import { buildLessonUpsertedPayload, sameContractState, type BuildLessonUpsertedInput } from "./integration/contract.ts";
-import { ensureStrictlyNewerSourceUpdatedAt, insertOutboxRowStatement, latestSendablePayloadByLesson, latestSourceUpdatedAtByLesson } from "./integration/outbox.ts";
+import { jsonInsertStatement } from "./d1-json-insert.ts";
+import { ensureStrictlyNewerSourceUpdatedAt, insertOutboxRowsStatement, latestSendablePayloadByLesson, latestSourceUpdatedAtByLesson } from "./integration/outbox.ts";
 import { processDueOutbox } from "./integration/sender.ts";
-import type { IntegrationHooks } from "./integration/types.ts";
+import type { IntegrationHooks, LessonUpsertedPayloadV1 } from "./integration/types.ts";
 import { planPaperImport, type PaperImportPreview, type PaperImportRowError } from "./paper-import.ts";
 import type { CompletionSummary, Instructor, Learner, LearnerInput, Lesson, LessonInput, SignatureStatus } from "./types.ts";
 
@@ -319,34 +320,33 @@ export async function getLesson(db: D1Database, learnerId: string, lessonId: str
 
 /**
  * ACTGDS Integration V1 (see docs/integrations/actgds-instructor-assistant-v1.md):
- * builds the outbox INSERT for this lesson's event as a plain
- * `D1PreparedStatement` — not run here. The caller must push it into the
- * *same* `db.batch([...])` call as the lesson/competency_events write, so
- * the two commit together or not at all. This is what actually closes the
- * durability gap an earlier round of this feature left open and
- * documented as a known trade-off: there is no window where the lesson
- * exists but its integration event silently doesn't.
+ * builds this lesson's lesson.upserted payload for the outbox. The caller
+ * turns its payloads into ONE outbox INSERT (insertOutboxRowsStatement) and
+ * must push it into the *same* `db.batch([...])` call as the
+ * lesson/competency_events write, so the two commit together or not at all.
+ * This is what actually closes the durability gap an earlier round of this
+ * feature left open and documented as a known trade-off: there is no window
+ * where the lesson exists but its integration event silently doesn't.
  *
- * Returns `null` (nothing to add to the batch) when `integration` is
- * omitted or disabled — the default for every caller that doesn't pass it,
- * so this never affects existing behavior (see AGENTS.md §10). The one
- * read this performs (the instructor's display name) happens before the
- * batch — reads don't need the same transactional guarantee as the write.
+ * Returns `null` (nothing to enqueue) when `integration` is omitted or
+ * disabled — the default for every caller that doesn't pass it, so this never
+ * affects existing behavior (see AGENTS.md §10). Instructor display names are
+ * read beforehand in one query (integrationInstructorNames) — reads don't
+ * need the same transactional guarantee as the write.
  */
-async function prepareIntegrationOutboxInsert(
-  db: D1Database,
+function buildIntegrationPayload(
   integration: IntegrationHooks | undefined,
+  instructorNames: ReadonlyMap<string, string>,
   params: { learnerId: string; instructorId: string; lesson: BuildLessonUpsertedInput["lesson"]; taughtIds: string[]; assessedIds: string[]; achievedIds: string[]; progress: LearnerProgress },
   /** Payload of the lesson's latest event the receiver has (or will get). When the new payload says exactly the same, no event is enqueued (returns null). */
   redundantIfSameAs?: string,
-): Promise<D1PreparedStatement | null> {
+): LessonUpsertedPayloadV1 | null {
   if (!integration?.config.enabled) return null;
-  const instructorRow = await db.prepare("SELECT full_name FROM instructors WHERE id = ?").bind(params.instructorId).first<Row>();
   const payload = buildLessonUpsertedPayload({
     environment: integration.config.environment,
     learnerId: params.learnerId,
     instructorId: params.instructorId,
-    instructorDisplayName: String(instructorRow?.full_name ?? ""),
+    instructorDisplayName: instructorNames.get(params.instructorId) ?? "",
     lesson: params.lesson,
     taughtIds: params.taughtIds,
     assessedIds: params.assessedIds,
@@ -354,7 +354,40 @@ async function prepareIntegrationOutboxInsert(
     progress: params.progress,
   });
   if (redundantIfSameAs !== undefined && sameContractState(JSON.stringify(payload), redundantIfSameAs)) return null;
-  return insertOutboxRowStatement(db, payload);
+  return payload;
+}
+
+/** Display names of the given instructors, in one query — only read when integration is enabled (no read otherwise, as before). */
+async function integrationInstructorNames(db: D1Database, integration: IntegrationHooks | undefined, instructorIds: readonly string[]): Promise<Map<string, string>> {
+  const names = new Map<string, string>();
+  if (!integration?.config.enabled || instructorIds.length === 0) return names;
+  const { results } = await db
+    .prepare("SELECT id, full_name FROM instructors WHERE id IN (SELECT value FROM json_each(?))")
+    .bind(JSON.stringify([...new Set(instructorIds)]))
+    .all<Row>();
+  for (const row of results) names.set(String(row.id), String(row.full_name ?? ""));
+  return names;
+}
+
+const COMPETENCY_EVENT_COLUMNS = ["id", "learner_id", "lesson_id", "competency_id", "action", "result"] as const;
+
+/** Rows for one lesson's competency_events: every Taught id, then every Assessed id with its result — the order they have always been inserted in. */
+function competencyEventRows(
+  learnerId: string,
+  lessonId: string,
+  taughtIds: readonly string[],
+  assessedIds: readonly string[],
+  achievedResults: Readonly<Record<string, string>>,
+): Record<(typeof COMPETENCY_EVENT_COLUMNS)[number], string | null>[] {
+  return [
+    ...taughtIds.map((competencyId) => ({ id: crypto.randomUUID(), learner_id: learnerId, lesson_id: lessonId, competency_id: competencyId, action: "taught", result: null })),
+    ...assessedIds.map((competencyId) => ({ id: crypto.randomUUID(), learner_id: learnerId, lesson_id: lessonId, competency_id: competencyId, action: "assessed", result: achievedResults[competencyId] ?? null })),
+  ];
+}
+
+/** One set-based INSERT for any number of competency events (null when there are none). */
+function insertCompetencyEventsStatement(db: D1Database, rows: readonly Record<(typeof COMPETENCY_EVENT_COLUMNS)[number], string | null>[]): D1PreparedStatement | null {
+  return jsonInsertStatement(db, "competency_events", COMPETENCY_EVENT_COLUMNS, rows);
 }
 
 /** Fires a best-effort immediate delivery attempt for whatever is now due in the outbox, once the batch that enqueued it has committed. A no-op when integration is disabled. Never awaited by the caller unless its own `schedule` hook chooses to (see IntegrationHooks — tests do, the real deployed Worker uses ExecutionContext.waitUntil instead). */
@@ -437,7 +470,8 @@ export async function createLesson(db: D1Database, learnerId: string, input: Les
     ...assessedIds.map((competencyId) => ({ competencyId, action: "assessed" as const, result: achievedResults[competencyId] ?? null, lessonId: id, createdAt: nowIso })),
   ];
   const progressAfter = computeProgress([...priorEvents, ...newEvents]);
-  const outboxInsert = await prepareIntegrationOutboxInsert(db, integration, {
+  const instructorNames = await integrationInstructorNames(db, integration, [actingInstructorId]);
+  const outboxPayload = buildIntegrationPayload(integration, instructorNames, {
     learnerId,
     instructorId: actingInstructorId,
     lesson: {
@@ -489,20 +523,15 @@ export async function createLesson(db: D1Database, learnerId: string, input: Les
       learnerSignature,
     );
 
-  const eventInsert = (competencyId: string, action: "taught" | "assessed", result: string | null): D1PreparedStatement =>
-    db
-      .prepare("INSERT INTO competency_events (id, learner_id, lesson_id, competency_id, action, result) VALUES (?, ?, ?, ?, ?, ?)")
-      .bind(crypto.randomUUID(), learnerId, id, competencyId, action, result);
-
-  const eventStatements = [
-    ...taughtIds.map((competencyId) => eventInsert(competencyId, "taught", null)),
-    ...assessedIds.map((competencyId) => eventInsert(competencyId, "assessed", achievedResults[competencyId])),
-  ];
+  // Set-based: one statement for all of this lesson's events, whatever their
+  // number (D1 counts every batch statement against its per-request limit).
+  const eventsInsert = insertCompetencyEventsStatement(db, competencyEventRows(learnerId, id, taughtIds, assessedIds, achievedResults));
+  const outboxInsert = outboxPayload ? insertOutboxRowsStatement(db, [outboxPayload]) : null;
   // db.batch() runs as a single atomic transaction on both the real D1
   // binding and the local node:sqlite adapter (see lib/d1-sqlite.ts) — the
   // lesson row, its competency events, and (when integration is enabled)
   // its outbox row are committed together or not at all.
-  await db.batch([lessonInsert, ...eventStatements, ...(outboxInsert ? [outboxInsert] : [])]);
+  await db.batch([lessonInsert, ...(eventsInsert ? [eventsInsert] : []), ...(outboxInsert ? [outboxInsert] : [])]);
 
   const row = await db.prepare("SELECT * FROM lessons WHERE id = ?").bind(id).first<Row>();
   const lesson = toLesson(row as Row);
@@ -515,6 +544,13 @@ export async function createLesson(db: D1Database, learnerId: string, input: Les
 // ── Paper records import (P1b) ───────────────────────────────────────────
 
 const MAX_IMPORT_CSV_BYTES = 512 * 1024;
+
+const PAPER_LESSON_COLUMNS = [
+  "id", "learner_id", "instructor_id", "lesson_no", "lesson_date", "start_time", "finish_time",
+  "start_odometer", "finish_odometer", "duration_minutes", "distance_km", "cumulative_minutes", "cumulative_km",
+  "taught", "competencies_assessed", "achieved", "location", "comments", "adi_signature", "learner_signature",
+  "record_source", "signature_status",
+] as const;
 
 export type PaperImportResult =
   | { mode: "preview"; preview: PaperImportPreview }
@@ -546,33 +582,27 @@ export async function importPaperLessons(db: D1Database, learnerId: string, csvT
   if (!plan.ok) throw new PaperImportError(plan.errors);
   if (mode === "preview") return { mode, preview: plan.preview };
 
-  const statements: D1PreparedStatement[] = [];
+  // Set-based: one INSERT for all lessons and one for all their competency
+  // events, however many rows the file has (D1 counts every batch statement
+  // against its per-request query limit). Lessons first, in lesson_no order.
+  const lessonRowsToInsert: Record<(typeof PAPER_LESSON_COLUMNS)[number], string | number | null>[] = [];
+  const eventRowsToInsert: ReturnType<typeof competencyEventRows> = [];
   for (const lesson of plan.lessons) {
     const id = crypto.randomUUID();
-    statements.push(
-      db
-        .prepare(
-          `INSERT INTO lessons (id, learner_id, instructor_id, lesson_no, lesson_date, start_time, finish_time,
-             start_odometer, finish_odometer, duration_minutes, distance_km, cumulative_minutes, cumulative_km,
-             taught, competencies_assessed, achieved, location, comments, adi_signature, learner_signature,
-             record_source, signature_status)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, 'paper_import', ?)`,
-        )
-        .bind(
-          id, learnerId, lesson.instructorId, lesson.lessonNo, lesson.lessonDate, lesson.startTime, lesson.finishTime,
-          lesson.startOdometer, lesson.finishOdometer, lesson.durationMinutes, lesson.distanceKm, lesson.cumulativeMinutes, lesson.cumulativeKm,
-          formatIdList(lesson.taughtIds), formatIdList(lesson.assessedIds),
-          formatIdList(lesson.assessedIds.filter((competencyId) => lesson.achievedResults[competencyId] === "achieved")),
-          lesson.location, lesson.comments, lesson.signatureStatus,
-        ),
-    );
-    const eventInsert = (competencyId: string, action: "taught" | "assessed", result: string | null): D1PreparedStatement =>
-      db
-        .prepare("INSERT INTO competency_events (id, learner_id, lesson_id, competency_id, action, result) VALUES (?, ?, ?, ?, ?, ?)")
-        .bind(crypto.randomUUID(), learnerId, id, competencyId, action, result);
-    for (const competencyId of lesson.taughtIds) statements.push(eventInsert(competencyId, "taught", null));
-    for (const competencyId of lesson.assessedIds) statements.push(eventInsert(competencyId, "assessed", lesson.achievedResults[competencyId]));
+    lessonRowsToInsert.push({
+      id, learner_id: learnerId, instructor_id: lesson.instructorId, lesson_no: lesson.lessonNo, lesson_date: lesson.lessonDate,
+      start_time: lesson.startTime, finish_time: lesson.finishTime, start_odometer: lesson.startOdometer, finish_odometer: lesson.finishOdometer,
+      duration_minutes: lesson.durationMinutes, distance_km: lesson.distanceKm, cumulative_minutes: lesson.cumulativeMinutes, cumulative_km: lesson.cumulativeKm,
+      taught: formatIdList(lesson.taughtIds), competencies_assessed: formatIdList(lesson.assessedIds),
+      achieved: formatIdList(lesson.assessedIds.filter((competencyId) => lesson.achievedResults[competencyId] === "achieved")),
+      location: lesson.location, comments: lesson.comments, adi_signature: null, learner_signature: null,
+      record_source: "paper_import", signature_status: lesson.signatureStatus,
+    });
+    eventRowsToInsert.push(...competencyEventRows(learnerId, id, lesson.taughtIds, lesson.assessedIds, lesson.achievedResults));
   }
+  const statements = [jsonInsertStatement(db, "lessons", PAPER_LESSON_COLUMNS, lessonRowsToInsert), insertCompetencyEventsStatement(db, eventRowsToInsert)].filter(
+    (statement): statement is D1PreparedStatement => statement !== null,
+  );
   try {
     await db.batch(statements);
   } catch (error) {
@@ -852,27 +882,34 @@ export async function updateLesson(db: D1Database, learnerId: string, lessonId: 
       lessonId,
     );
 
-  const cumulativeUpdates: D1PreparedStatement[] = [];
-  // lesson_id -> its own recalculated cumulative totals, for the ACTGDS
-  // downstream-propagation events built below (never the edited lesson's
-  // own totals — each downstream lesson gets its own).
+  // Every lesson from this one on gets its cumulative totals recomputed as a
+  // running sum in lesson_no order (NULL duration/distance counts as 0), in
+  // ONE set-based statement however many lessons follow — D1 counts every
+  // batch statement against its per-request query limit. It runs after
+  // updateEditedLesson in the same batch, so it sums this lesson's new
+  // duration/distance; for this lesson it yields the same value as above.
+  const recomputeCumulative = db
+    .prepare(
+      `UPDATE lessons SET
+         cumulative_minutes = (SELECT COALESCE(SUM(COALESCE(l2.duration_minutes, 0)), 0) FROM lessons l2 WHERE l2.learner_id = lessons.learner_id AND l2.lesson_no <= lessons.lesson_no),
+         cumulative_km = (SELECT COALESCE(SUM(COALESCE(l2.distance_km, 0)), 0) FROM lessons l2 WHERE l2.learner_id = lessons.learner_id AND l2.lesson_no <= lessons.lesson_no)
+       WHERE learner_id = ? AND lesson_no >= ?`,
+    )
+    .bind(learnerId, existing.lessonNo);
+
+  // lesson_id -> its own recalculated cumulative totals (the same running
+  // sums recomputeCumulative stores), for the ACTGDS downstream-propagation
+  // events built below (never the edited lesson's own totals — each
+  // downstream lesson gets its own).
   const downstreamNewCumulative = new Map<string, { minutes: number; km: number }>();
   for (const row of laterLessons) {
     runningMinutes += Number(row.duration_minutes ?? 0);
     runningKm += Number(row.distance_km ?? 0);
-    cumulativeUpdates.push(db.prepare("UPDATE lessons SET cumulative_minutes = ?, cumulative_km = ? WHERE id = ?").bind(runningMinutes, runningKm, row.id));
     downstreamNewCumulative.set(String(row.id), { minutes: runningMinutes, km: runningKm });
   }
 
   const deleteOldEvents = db.prepare("DELETE FROM competency_events WHERE lesson_id = ?").bind(lessonId);
-  const eventInsert = (competencyId: string, action: "taught" | "assessed", result: string | null): D1PreparedStatement =>
-    db
-      .prepare("INSERT INTO competency_events (id, learner_id, lesson_id, competency_id, action, result) VALUES (?, ?, ?, ?, ?, ?)")
-      .bind(crypto.randomUUID(), learnerId, lessonId, competencyId, action, result);
-  const eventInserts = [
-    ...taughtIds.map((competencyId) => eventInsert(competencyId, "taught", null)),
-    ...assessedIds.map((competencyId) => eventInsert(competencyId, "assessed", achievedResults[competencyId])),
-  ];
+  const eventsInsert = insertCompetencyEventsStatement(db, competencyEventRows(learnerId, lessonId, taughtIds, assessedIds, achievedResults));
 
   // Same reasoning as createLesson: build the "after" progress snapshot
   // in memory (otherLessonsEvents + this lesson's own new events) so the
@@ -899,11 +936,15 @@ export async function updateLesson(db: D1Database, learnerId: string, lessonId: 
   const downstreamLessonIds = laterLessons.map((row) => String(row.id));
   const latestByLesson = integration?.config.enabled ? await latestSourceUpdatedAtByLesson(db, [lessonId, ...downstreamLessonIds]) : new Map<string, string>();
   const directSourceUpdatedAt = ensureStrictlyNewerSourceUpdatedAt(nowIso, latestByLesson.get(lessonId) ?? null);
+  // Only already-exported downstream lessons can get a propagated event (see below).
+  const exportedDownstream = laterLessons.filter((row) => latestByLesson.has(String(row.id)));
+  // Every display name the payloads below need, in one read.
+  const instructorNames = await integrationInstructorNames(db, integration, [...(isPaper ? [] : [existing.instructorId]), ...exportedDownstream.map((row) => String(row.instructor_id))]);
 
   // The lesson's own instructor_id (never the transient editor) is who this teaching record belongs to.
   // Paper lessons never enter the integration domain: no outbox row of their own.
   // (App lessons always have non-NULL times/odometers/duration/distance — validated above.)
-  const outboxInsert = isPaper ? null : await prepareIntegrationOutboxInsert(db, integration, {
+  const outboxPayload = isPaper ? null : buildIntegrationPayload(integration, instructorNames, {
     learnerId,
     instructorId: existing.instructorId,
     lesson: {
@@ -948,7 +989,7 @@ export async function updateLesson(db: D1Database, learnerId: string, lessonId: 
   // is identical to the lesson's latest event the receiver has or will get
   // (e.g. a location/comments-only edit), it is skipped as redundant.
   // Anything that differs — or that can't be compared — is still sent.
-  const downstreamOutboxInserts: D1PreparedStatement[] = [];
+  const downstreamPayloads: LessonUpsertedPayloadV1[] = [];
   const downstreamBaseline = integration?.config.enabled && laterLessons.length > 0 ? await latestSendablePayloadByLesson(db, downstreamLessonIds) : new Map<string, string>();
   if (integration?.config.enabled && laterLessons.length > 0) {
     for (const row of laterLessons) {
@@ -963,7 +1004,7 @@ export async function updateLesson(db: D1Database, learnerId: string, lessonId: 
       const ownAchievedIds = ownAssessedEvents.filter((event) => event.result === "achieved").map((event) => event.competencyId);
       const cumulative = downstreamNewCumulative.get(downstreamLessonId)!;
 
-      const downstreamInsert = await prepareIntegrationOutboxInsert(db, integration, {
+      const downstreamPayload = buildIntegrationPayload(integration, instructorNames, {
         learnerId,
         instructorId: String(row.instructor_id),
         lesson: {
@@ -984,9 +1025,13 @@ export async function updateLesson(db: D1Database, learnerId: string, lessonId: 
         achievedIds: ownAchievedIds,
         progress: after,
       }, downstreamBaseline.get(downstreamLessonId));
-      if (downstreamInsert) downstreamOutboxInserts.push(downstreamInsert);
+      if (downstreamPayload) downstreamPayloads.push(downstreamPayload);
     }
   }
+
+  // The direct edit's own event first, then the propagated ones in lesson_no
+  // order — one set-based INSERT for all of them.
+  const outboxInsert = insertOutboxRowsStatement(db, [...(outboxPayload ? [outboxPayload] : []), ...downstreamPayloads]);
 
   // One atomic transaction: the edited lesson, every downstream lesson's
   // recomputed cumulative totals, the swapped competency events, the
@@ -995,8 +1040,9 @@ export async function updateLesson(db: D1Database, learnerId: string, lessonId: 
   // all — a failure anywhere in this list rolls back the whole edit,
   // including every downstream lesson's cumulative totals and events, so
   // there is never a state where some downstream mirrors advanced and
-  // others (or their outbox events) silently didn't.
-  await db.batch([updateEditedLesson, deleteOldEvents, ...eventInserts, ...cumulativeUpdates, ...(outboxInsert ? [outboxInsert] : []), ...downstreamOutboxInserts]);
+  // others (or their outbox events) silently didn't. A fixed number of
+  // statements, however many lessons follow the edited one.
+  await db.batch([updateEditedLesson, recomputeCumulative, deleteOldEvents, ...(eventsInsert ? [eventsInsert] : []), ...(outboxInsert ? [outboxInsert] : [])]);
 
   const [updatedLesson, completion] = await Promise.all([getLesson(db, learnerId, lessonId), getCompletionSummary(db, learnerId)]);
 
