@@ -23,7 +23,7 @@ import { buildLessonUpsertedPayload, sameContractState, type BuildLessonUpserted
 import { ensureStrictlyNewerSourceUpdatedAt, insertOutboxRowStatement, latestSendablePayloadByLesson, latestSourceUpdatedAtByLesson } from "./integration/outbox.ts";
 import { processDueOutbox } from "./integration/sender.ts";
 import type { IntegrationHooks } from "./integration/types.ts";
-import type { CompletionSummary, Instructor, Learner, LearnerInput, Lesson, LessonInput } from "./types.ts";
+import type { CompletionSummary, Instructor, Learner, LearnerInput, Lesson, LessonInput, SignatureStatus } from "./types.ts";
 
 export class ValidationError extends Error {}
 export class NotFoundError extends Error {}
@@ -531,30 +531,79 @@ export async function updateLesson(db: D1Database, learnerId: string, lessonId: 
 
   const lessonDate = isoDate(input.lessonDate);
   if (!lessonDate) throw new ValidationError("Lesson date is required.");
-  const startTime = String(input.startTime ?? "").trim();
-  const finishTime = String(input.finishTime ?? "").trim();
-  const duration = durationMinutes(startTime, finishTime);
-  if (duration === null) throw new ValidationError("Start and finish time are required, and finish must be after start.");
+  // Paper-imported lessons (record_source = 'paper_import') may legitimately
+  // lack times / odometer readings and carry no digital signatures; app
+  // lessons keep every original requirement unchanged.
+  const isPaper = existing.recordSource === "paper_import";
+  const startTimeRaw = String(input.startTime ?? "").trim();
+  const finishTimeRaw = String(input.finishTime ?? "").trim();
+  let startTime: string | null = startTimeRaw;
+  let finishTime: string | null = finishTimeRaw;
+  let duration: number | null;
+  let startOdometer: number | null;
+  let finishOdometer: number | null;
+  let distance: number | null;
+  let signatureStatus: SignatureStatus = "digital";
 
-  const startOdometer = parseOdometer(input.startOdometer as string);
-  const finishOdometer = parseOdometer(input.finishOdometer as string);
-  if (startOdometer === null) throw new ValidationError("Start odometer is required.");
-  if (finishOdometer === null) throw new ValidationError("Finish odometer is required.");
-  const distance = distanceKm(startOdometer, finishOdometer);
-  if (distance === null) throw new ValidationError("Finish odometer must not be less than start odometer.");
+  if (isPaper) {
+    if (input.signatureStatus !== "on_paper" && input.signatureStatus !== "unsigned") {
+      throw new ValidationError('Signature status must be "on_paper" or "unsigned" for a paper record.');
+    }
+    signatureStatus = input.signatureStatus;
+    if (!startTimeRaw && !finishTimeRaw) {
+      startTime = null;
+      finishTime = null;
+      duration = null;
+    } else if (!startTimeRaw || !finishTimeRaw) {
+      throw new ValidationError("Enter both start and finish time, or leave both blank.");
+    } else {
+      duration = durationMinutes(startTimeRaw, finishTimeRaw);
+      if (duration === null) throw new ValidationError("Start and finish time are required, and finish must be after start.");
+    }
+    const startOdoRaw = String(input.startOdometer ?? "").trim();
+    const finishOdoRaw = String(input.finishOdometer ?? "").trim();
+    if (!startOdoRaw && !finishOdoRaw) {
+      startOdometer = null;
+      finishOdometer = null;
+      distance = null;
+    } else if (!startOdoRaw || !finishOdoRaw) {
+      throw new ValidationError("Enter both start and finish odometer, or leave both blank.");
+    } else {
+      startOdometer = parseOdometer(startOdoRaw);
+      finishOdometer = parseOdometer(finishOdoRaw);
+      if (startOdometer === null) throw new ValidationError("Start odometer is required.");
+      if (finishOdometer === null) throw new ValidationError("Finish odometer is required.");
+      distance = distanceKm(startOdometer, finishOdometer);
+      if (distance === null) throw new ValidationError("Finish odometer must not be less than start odometer.");
+    }
+  } else {
+    duration = durationMinutes(startTimeRaw, finishTimeRaw);
+    if (duration === null) throw new ValidationError("Start and finish time are required, and finish must be after start.");
+    startOdometer = parseOdometer(input.startOdometer as string);
+    finishOdometer = parseOdometer(input.finishOdometer as string);
+    if (startOdometer === null) throw new ValidationError("Start odometer is required.");
+    if (finishOdometer === null) throw new ValidationError("Finish odometer is required.");
+    distance = distanceKm(startOdometer, finishOdometer);
+    if (distance === null) throw new ValidationError("Finish odometer must not be less than start odometer.");
+  }
 
   // Carry-forward consistency: the odometer is one physical instrument, so
   // its readings must stay monotonic across the learner's whole lesson
-  // sequence, not just within this one lesson.
-  const [prevLesson, nextLesson] = await Promise.all([
-    db.prepare("SELECT finish_odometer FROM lessons WHERE learner_id = ? AND lesson_no = ?").bind(learnerId, existing.lessonNo - 1).first<Row>(),
-    db.prepare("SELECT start_odometer FROM lessons WHERE learner_id = ? AND lesson_no = ?").bind(learnerId, existing.lessonNo + 1).first<Row>(),
-  ]);
-  if (prevLesson && startOdometer < Number(prevLesson.finish_odometer)) {
-    throw new ValidationError(`Start odometer cannot be less than Lesson #${existing.lessonNo - 1}'s finish odometer (${prevLesson.finish_odometer}).`);
-  }
-  if (nextLesson && finishOdometer > Number(nextLesson.start_odometer)) {
-    throw new ValidationError(`Finish odometer cannot exceed Lesson #${existing.lessonNo + 1}'s start odometer (${nextLesson.start_odometer}).`);
+  // sequence, not just within this one lesson. Paper lessons can have NULL
+  // readings, so compare against the nearest earlier lesson that has a
+  // finish reading and the nearest later lesson that has a start reading
+  // (not merely the adjacent lesson number).
+  if (startOdometer !== null && finishOdometer !== null) {
+    const [prevLesson, nextLesson] = await Promise.all([
+      db.prepare("SELECT lesson_no, finish_odometer FROM lessons WHERE learner_id = ? AND lesson_no < ? AND finish_odometer IS NOT NULL ORDER BY lesson_no DESC LIMIT 1").bind(learnerId, existing.lessonNo).first<Row>(),
+      db.prepare("SELECT lesson_no, start_odometer FROM lessons WHERE learner_id = ? AND lesson_no > ? AND start_odometer IS NOT NULL ORDER BY lesson_no ASC LIMIT 1").bind(learnerId, existing.lessonNo).first<Row>(),
+    ]);
+    if (prevLesson && startOdometer < Number(prevLesson.finish_odometer)) {
+      throw new ValidationError(`Start odometer cannot be less than Lesson #${prevLesson.lesson_no}'s finish odometer (${prevLesson.finish_odometer}).`);
+    }
+    if (nextLesson && finishOdometer > Number(nextLesson.start_odometer)) {
+      throw new ValidationError(`Finish odometer cannot exceed Lesson #${nextLesson.lesson_no}'s start odometer (${nextLesson.start_odometer}).`);
+    }
   }
 
   const taughtIds = parseIdList(input.taughtIds, CORE_COMPETENCY_IDS);
@@ -646,9 +695,13 @@ export async function updateLesson(db: D1Database, learnerId: string, lessonId: 
     location !== existing.location ||
     comments !== existing.comments;
 
-  let adiSignature: string;
-  let learnerSignature: string;
-  if (contentChanged) {
+  let adiSignature: string | null;
+  let learnerSignature: string | null;
+  if (isPaper) {
+    // Paper records carry no digital signatures: whatever is stored stays untouched.
+    adiSignature = existing.adiSignature;
+    learnerSignature = existing.learnerSignature;
+  } else if (contentChanged) {
     const newAdi = signature(input.adiSignature);
     const newLearner = signature(input.learnerSignature);
     if (!newAdi || !newLearner) {
@@ -684,8 +737,8 @@ export async function updateLesson(db: D1Database, learnerId: string, lessonId: 
     .bind(learnerId, existing.lessonNo)
     .all<Row>();
 
-  let runningMinutes = Number(priorTotals?.m ?? 0) + duration;
-  let runningKm = Number(priorTotals?.k ?? 0) + distance;
+  let runningMinutes = Number(priorTotals?.m ?? 0) + (duration ?? 0);
+  let runningKm = Number(priorTotals?.k ?? 0) + (distance ?? 0);
   // Captured before the laterLessons loop below mutates runningMinutes/Km further — this lesson's own new cumulative totals, for the integration payload.
   const thisLessonCumulativeMinutes = runningMinutes;
   const thisLessonCumulativeKm = runningKm;
@@ -695,7 +748,7 @@ export async function updateLesson(db: D1Database, learnerId: string, lessonId: 
       `UPDATE lessons SET lesson_date = ?, start_time = ?, finish_time = ?, start_odometer = ?, finish_odometer = ?,
          duration_minutes = ?, distance_km = ?, cumulative_minutes = ?, cumulative_km = ?,
          taught = ?, competencies_assessed = ?, achieved = ?, location = ?, comments = ?,
-         adi_signature = ?, learner_signature = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+         adi_signature = ?, learner_signature = ?, signature_status = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
          updated_by_instructor_id = COALESCE(?, updated_by_instructor_id)
        WHERE id = ?`,
     )
@@ -716,6 +769,7 @@ export async function updateLesson(db: D1Database, learnerId: string, lessonId: 
       comments,
       adiSignature,
       learnerSignature,
+      signatureStatus,
       actingInstructorId,
       lessonId,
     );
@@ -726,8 +780,8 @@ export async function updateLesson(db: D1Database, learnerId: string, lessonId: 
   // own totals — each downstream lesson gets its own).
   const downstreamNewCumulative = new Map<string, { minutes: number; km: number }>();
   for (const row of laterLessons) {
-    runningMinutes += Number(row.duration_minutes);
-    runningKm += Number(row.distance_km);
+    runningMinutes += Number(row.duration_minutes ?? 0);
+    runningKm += Number(row.distance_km ?? 0);
     cumulativeUpdates.push(db.prepare("UPDATE lessons SET cumulative_minutes = ?, cumulative_km = ? WHERE id = ?").bind(runningMinutes, runningKm, row.id));
     downstreamNewCumulative.set(String(row.id), { minutes: runningMinutes, km: runningKm });
   }
@@ -769,17 +823,19 @@ export async function updateLesson(db: D1Database, learnerId: string, lessonId: 
   const directSourceUpdatedAt = ensureStrictlyNewerSourceUpdatedAt(nowIso, latestByLesson.get(lessonId) ?? null);
 
   // The lesson's own instructor_id (never the transient editor) is who this teaching record belongs to.
-  const outboxInsert = await prepareIntegrationOutboxInsert(db, integration, {
+  // Paper lessons never enter the integration domain: no outbox row of their own.
+  // (App lessons always have non-NULL times/odometers/duration/distance — validated above.)
+  const outboxInsert = isPaper ? null : await prepareIntegrationOutboxInsert(db, integration, {
     learnerId,
     instructorId: existing.instructorId,
     lesson: {
       id: lessonId,
       lessonNo: existing.lessonNo,
       lessonDate,
-      startTime,
-      finishTime,
-      durationMinutes: duration,
-      distanceKm: distance,
+      startTime: startTime as string,
+      finishTime: finishTime as string,
+      durationMinutes: duration as number,
+      distanceKm: distance as number,
       cumulativeMinutes: thisLessonCumulativeMinutes,
       cumulativeKm: thisLessonCumulativeKm,
       createdAt: existing.createdAt,

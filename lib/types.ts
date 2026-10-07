@@ -107,4 +107,6 @@ export type LessonInput = {
   learnerSignature?: unknown;
   /** Which instructor actually performed this create/edit (Instructor Identity V1) — must be an existing, active instructor id. Optional: omitted requests keep prior behavior (create falls back to the learner's own instructor; edit leaves updatedByInstructorId unchanged). */
   actingInstructorId?: unknown;
+  /** Paper-imported lessons only (History Edit): "on_paper" | "unsigned". Ignored for app lessons, which are always "digital". */
+  signatureStatus?: unknown;
 };
