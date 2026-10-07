@@ -83,7 +83,8 @@ function strictEnum<T extends string>(value: unknown, allowed: readonly T[], col
   throw new Error(`lessons.${column} is missing or has an unknown value (${String(value)}).`);
 }
 
-function toLesson(row: Row): Lesson {
+/** Exported for unit tests of the strict column reads. */
+export function toLesson(row: Row): Lesson {
   return {
     id: String(row.id),
     learnerId: String(row.learner_id),

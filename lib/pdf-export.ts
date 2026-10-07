@@ -259,6 +259,7 @@ async function drawLessonRow(doc: PDFDocument, page: PDFPage, font: PDFFont, mea
     drawSingleLine(page, font, measurer, sigText, sigTop, 7);
     drawSingleLine(page, font, measurer, sigText, sigBottom, 7);
   } else if (lesson.signatureStatus === "digital") {
+    // `unsigned` intentionally draws nothing (neither text nor image).
     await drawSignature(doc, page, lesson.adiSignature, sigTop);
     await drawSignature(doc, page, lesson.learnerSignature, sigBottom);
   }

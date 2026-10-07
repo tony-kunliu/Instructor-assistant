@@ -5,7 +5,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { openTestD1 } from "../lib/db.ts";
 import type { D1Database } from "../lib/d1-types.ts";
-import { createLearner, createLesson, findInstructorByEmail, getLesson, listLessons, listLessonsForExport, updateLesson, ValidationError } from "../lib/repo.ts";
+import { createLearner, createLesson, findInstructorByEmail, getLesson, listLessons, listLessonsForExport, toLesson, updateLesson, ValidationError } from "../lib/repo.ts";
 import { resolveIntegrationConfig } from "../lib/integration/config.ts";
 import { listOutboxRowsForLearner } from "../lib/integration/outbox.ts";
 import type { IntegrationHooks, LessonUpsertedPayloadV1 } from "../lib/integration/types.ts";
@@ -274,15 +274,19 @@ test("listLessonsForExport carries a paper lesson's real recordSource/signatureS
   assert.equal(lessons[0].signatureStatus, "on_paper");
 });
 
-test("toLesson is strict: an unknown signature_status / record_source value throws instead of defaulting", async () => {
-  const { db, learner, tony } = await setup();
-  const id = await seedPaper(db, learner.id, tony.id, { lessonNo: 1 });
-  // Bypass the CHECK constraint if one exists; otherwise the DB itself rejects the value (also acceptable strictness).
-  let injected = true;
-  try {
-    await db.prepare("UPDATE lessons SET signature_status = 'bogus' WHERE id = ?").bind(id).run();
-  } catch {
-    injected = false;
-  }
-  if (injected) await assert.rejects(() => getLesson(db, learner.id, id), /signature_status/);
+const BASE_ROW = { id: "l1", learner_id: "x", instructor_id: "i", lesson_no: 1, lesson_date: "2026-01-01", cumulative_minutes: 0, cumulative_km: 0, created_at: "2026-01-01T00:00:00Z" };
+
+test("toLesson is strict: missing/unknown record_source or signature_status throws naming the column; valid values pass", () => {
+  const ok = { ...BASE_ROW, record_source: "paper_import", signature_status: "on_paper" };
+  assert.equal(toLesson(ok).recordSource, "paper_import");
+  assert.equal(toLesson(ok).signatureStatus, "on_paper");
+  assert.equal(toLesson({ ...ok, record_source: "app", signature_status: "digital" }).signatureStatus, "digital");
+  assert.equal(toLesson({ ...ok, signature_status: "unsigned" }).signatureStatus, "unsigned");
+
+  const { record_source: _r, ...noSource } = ok;
+  const { signature_status: _s, ...noStatus } = ok;
+  assert.throws(() => toLesson(noSource), /record_source/);
+  assert.throws(() => toLesson({ ...ok, record_source: "bogus" }), /record_source/);
+  assert.throws(() => toLesson(noStatus), /signature_status/);
+  assert.throws(() => toLesson({ ...ok, signature_status: "bogus" }), /signature_status/);
 });
