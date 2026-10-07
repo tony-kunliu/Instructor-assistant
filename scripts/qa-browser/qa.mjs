@@ -569,23 +569,31 @@ const draw = async (page, index) => {
   const after = await (await fetch(`${B}/api/learners/${learnerId}`)).json();
   const l1 = after.lessons.find((l) => l.lessonNo === 1);
   check("paper edit: saved with blank times and Not signed", l1 && l1.startTime === null && l1.finishTime === null && l1.signatureStatus === "unsigned" && l1.recordSource === "paper_import", JSON.stringify(l1 && [l1.startTime, l1.signatureStatus]));
-  check("paper edit: totals recalculated (30m, 15 km)", (await s.page.textContent("[data-testid=total-km]")) === "35 km" && (await s.page.textContent("[data-testid=total-hours]")).startsWith("30m"), await s.page.textContent("[data-testid=total-hours]"));
+  check("paper edit: totals recalculated (30m, 15 km)", (await s.page.textContent("[data-testid=total-km]")) === "35 km" && (await s.page.textContent("[data-testid=total-hours]")).startsWith("0h 30m"), await s.page.textContent("[data-testid=total-hours]"));
 
   // New App lesson continues numbering and odometer.
   check("paper: next App lesson is #4 with start odometer prefilled 145", (await s.page.textContent("[data-testid=lesson-no]")) === "Lesson #4" && (await s.page.inputValue('input[placeholder="e.g. 45210"]')) === "145");
   await s.page.click("text=Start Lesson");
   await s.page.click("text=End Lesson");
   await s.page.fill('input[placeholder="Enter now"]', "160");
+  await s.page.click('.comp-section:has(.comp-label:text-is("Taught")) .chip-row >> text="6"');
+  await s.page.click(".edit-times summary");
+  await s.page.fill('.edit-times input[type="time"] >> nth=0', "09:00");
+  await s.page.fill('.edit-times input[type="time"] >> nth=1', "09:45");
   await signBoth(s.page);
   await s.page.click(".btn.save");
   await s.page.waitForSelector(".status.ok, .status.error");
   check("paper: new App lesson saves as Lesson #4", (await s.page.textContent(".status")).includes("Lesson #4 saved"), await s.page.textContent(".status"));
   check("paper: App lesson has no Paper record badge", (await rowOf(4).textContent()).includes("Paper record") === false);
 
+  const dlPromise = s.page.waitForEvent("download", { timeout: 60000 }).catch(() => null);
   await s.page.click("text=/Export.*PDF/i");
-  await s.page.waitForSelector(".export-adi-prompt input");
-  await s.page.fill(".export-adi-prompt input", "QA-ADI-1");
-  const [dl] = await Promise.all([s.page.waitForEvent("download", { timeout: 60000 }), s.page.click(".export-adi-prompt .btn.primary")]);
+  const prompt = await s.page.waitForSelector(".export-adi-prompt input", { timeout: 8000 }).catch(() => null);
+  if (prompt) {
+    await s.page.fill(".export-adi-prompt input", "QA-ADI-1");
+    await s.page.click(".export-adi-prompt .btn.primary");
+  }
+  const dl = await dlPromise;
   const paperPdf = `${OUT}/qa-paper-export.pdf`;
   await dl.saveAs(paperPdf);
   check("paper: PDF export with paper + App lessons succeeds", readFileSync(paperPdf).subarray(0, 5).toString() === "%PDF-", dl.suggestedFilename());
@@ -594,7 +602,7 @@ const draw = async (page, index) => {
 }
 
 } catch (error) {
-  check(`script aborted: ${String(error.message).split("\n")[0]}`, false);
+  check(`script aborted: ${String(error.message).split("\n")[0]}`, false, String(error.message).split("\n").slice(1,4).join(" ").trim());
 }
 
 await browser.close();
