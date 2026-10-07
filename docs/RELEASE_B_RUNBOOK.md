@@ -16,29 +16,43 @@ No contract change: `contract_version` 1, schema hash
 | 3 | ACTGDS declares Receiver **PRODUCTION READY** on Issue #3 | ACTGDS | NOT YET |
 | 4 | Same secret value set as Worker secret `ACTGDS_WEBHOOK_SECRET` on `instructor-assistant-production` | Tony (Cloudflare dashboard → Worker → Settings → Variables and Secrets) | NOT SET |
 | 5 | P1b deployed to Production with Integration still disabled (paper lessons must never emit) | Claude | PENDING P1b |
-| 6 | Issue #3 notice acknowledged: imported learners' first event may be e.g. `lesson_number: 16` with non-zero cumulative values | ACTGDS | NOT POSTED |
+| 6 | Issue #3 notice acknowledged: imported learners' first event may be e.g. `lesson_number: 16` with non-zero cumulative values | ACTGDS | POSTED 2026-10-07, awaiting ACK |
 
 The secret is generated and entered by Tony directly in both dashboards;
 it never passes through chat, git, or logs.
 
 ## Production window (P1b + Release B)
 
-1. **Backup** Production D1: `npx wrangler d1 export instructor-assistant-db-production --remote --output <scratchpad>/prod-backup-<date>.sql` (never committed). Record the current Worker version as rollback target (`npx wrangler deployments list --env production`).
-2. **Migrate** Production D1: `npx wrangler d1 migrations apply DB --env production --remote` (applies `0005`, `0006`). Verify `lessons` row count unchanged and `SELECT COUNT(*) FROM integration_outbox` = 0.
-3. **Deploy** P1b with `ACTGDS_INTEGRATION_ENABLED = "false"`: `npm run cf:build && npx wrangler deploy --env production`. Verify app loads behind Access.
-4. Wait for preconditions 1–4 and 6.
-5. **Enable**: set `ACTGDS_INTEGRATION_ENABLED = "true"` under `[env.production.vars]`, merge, deploy as in step 3. `ACTGDS_WEBHOOK_URL` is already configured (`https://actgds.com/api/integrations/instructor-assistant/events`).
-6. **First event** (coordinated with ACTGDS): one real lesson save produces one outbox row; expect `202 pending_link` until Tony links the `learner_id` in the ACTGDS CRM, then ACTGDS replays → applied. Check `integration_outbox` status and ACTGDS mirror.
-7. Only then import real paper learners, one at a time.
+Production releases run through the GitHub Actions workflow
+`.github/workflows/production-release.yml` (manual `workflow_dispatch` on
+`main`, input `confirm: production`). It uses the repo secret
+`CLOUDFLARE_API_TOKEN` (Workers Scripts Edit + D1 Edit, this account only),
+set once by Tony; no token is ever handled in chat or by an agent. The
+workflow: typecheck/test/build → records the rollback version and the D1
+Time Travel restore point in the run summary → applies pending D1
+migrations (`0005`, `0006`) → deploys → checks the Worker answers.
 
-Each step stops on the first failure. Step 1 needs a temporary Cloudflare
-token with **D1 Edit** + **Workers Scripts Edit** for this account; Tony
-revokes it afterwards.
+1. **Rehearse** `0006` on Staging D1 first (Staging migrations, then QA).
+2. **Release P1b** with `ACTGDS_INTEGRATION_ENABLED = "false"`: merge to
+   `main`, run the workflow. Verify `lessons` row count unchanged and
+   `integration_outbox` empty.
+3. Wait for preconditions 1–4 and 6.
+4. **Enable**: set `ACTGDS_INTEGRATION_ENABLED = "true"` under
+   `[env.production.vars]`, merge to `main`, run the workflow with
+   `apply_migrations` off. `ACTGDS_WEBHOOK_URL` is already configured.
+5. **First event** (coordinated with ACTGDS): one real lesson save produces
+   one outbox row; expect `202 pending_link` until Tony links the
+   `learner_id` in the ACTGDS CRM, then ACTGDS replays → applied.
+6. Only then import real paper learners, one at a time.
+
+Each step stops on the first failure.
 
 ## Rollback
 
 - Integration only: set `ACTGDS_INTEGRATION_ENABLED = "false"` and redeploy
   (outbox rows stay; nothing is deleted).
 - Application: `npx wrangler rollback <version-id> --env production` to the
-  recorded target — safe before the first paper import (see spec §3).
-- D1: migrations are not reversed; the backup from step 1 is the last resort.
+  version recorded in the workflow run summary — safe before the first paper import (see spec §3).
+- D1: migrations are not reversed; restore with
+  `wrangler d1 time-travel restore instructor-assistant-db-production --bookmark=<bookmark from the run summary>`
+  as the last resort (D1 Time Travel keeps 30 days).
