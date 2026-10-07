@@ -6,6 +6,7 @@ import {
   ALL_ASSESSABLE_IDS,
   CORE_COMPETENCY_IDS,
   CompetencyRuleError,
+  FINAL_DRIVE_23,
   computeProgress,
   validateLessonCompetencies,
   type AssessmentResult,
@@ -16,7 +17,18 @@ import type { Instructor } from "./types.ts";
 
 export const MAX_IMPORT_ROWS = 1000;
 
-export const PAPER_CSV_COLUMNS = ["date", "start_time", "finish_time", "start_odometer", "finish_odometer", "taught", "assessed_achieved", "assessed_not_achieved", "location", "comments", "signature", "instructor"] as const;
+export const PAPER_CSV_COLUMNS = [
+  "date", "start_time", "finish_time", "start_odometer", "finish_odometer", "taught", "assessed_achieved", "assessed_not_achieved", "location", "comments", "signature", "instructor",
+  // Prior-instructor records (spec §12): always in the header, empty on lesson rows.
+  "prior_instructor", "prior_lessons", "prior_hours", "prior_km",
+] as const;
+
+type PaperCsvColumn = (typeof PAPER_CSV_COLUMNS)[number];
+
+/** Lesson columns a prior-instructor row must leave empty (it uses date, assessed_achieved and the prior_* columns only). */
+const PRIOR_ROW_FORBIDDEN_COLUMNS: readonly PaperCsvColumn[] = ["start_time", "finish_time", "start_odometer", "finish_odometer", "taught", "assessed_not_achieved", "location", "comments", "signature", "instructor"];
+
+const PRIOR_LABEL_MAX = 80;
 
 /** A parsed record with its 1-based spreadsheet row number (blank/empty rows are skipped but still counted). */
 export type CsvRecord = { row: number; cells: string[] };
@@ -86,14 +98,27 @@ export type PlannedPaperLesson = {
   signatureStatus: "on_paper" | "unsigned"; instructorId: string;
 };
 
+/** One previous instructor's totals for a transfer learner (spec §12). lessonNo is negative: -k..-1 oldest first. */
+export type PlannedPriorRecord = {
+  lessonNo: number; date: string;
+  label: string; lessonCount: number;
+  minutes: number; km: number | null;
+  cumulativeMinutes: number; cumulativeKm: number;
+  achievedIds: string[];
+};
+
 export type PaperImportPreview = {
-  lessonCount: number; totalMinutes: number; totalKm: number;
+  /** Lesson rows only (prior-instructor records are not lessons of this App). */
+  lessonCount: number;
+  /** Include prior-instructor hours / km. */
+  totalMinutes: number; totalKm: number;
   missingDataLessonNos: number[]; unsignedLessonNos: number[];
   progress: LearnerProgress;
+  priorRecords: { label: string; lessonCount: number; minutes: number; km: number | null }[];
 };
 
 export type PaperImportPlan =
-  | { ok: true; lessons: PlannedPaperLesson[]; preview: PaperImportPreview }
+  | { ok: true; lessons: PlannedPaperLesson[]; priorRecords: PlannedPriorRecord[]; preview: PaperImportPreview }
   | { ok: false; errors: PaperImportRowError[] };
 
 const COMPLETED_MESSAGE = "CBT&A is already completed for this learner — no further CBT&A lessons can be recorded.";
@@ -149,6 +174,11 @@ export function planPaperImport(csvText: string, instructors: readonly Pick<Inst
 
   const errors: PaperImportRowError[] = [];
   const lessons: PlannedPaperLesson[] = [];
+  const priorRecords: PlannedPriorRecord[] = [];
+  const cellOf = (cells: string[], column: PaperCsvColumn) => (cells[header.indexOf(column)] ?? "").trim();
+  const isPriorRow = (cells: string[]) => cellOf(cells, "prior_instructor") !== "";
+  const priorRowCount = dataRows.filter(({ cells }) => isPriorRow(cells)).length;
+  let sawLessonRow = false;
   const events: CompetencyEvent[] = [];
   let totalMinutes = 0;
   let totalKm = 0;
@@ -156,7 +186,7 @@ export function planPaperImport(csvText: string, instructors: readonly Pick<Inst
   let lastFinish: { odometer: number; row: number } | null = null;
 
   dataRows.forEach(({ row: rowNo, cells }) => {
-    const get = (column: (typeof PAPER_CSV_COLUMNS)[number]) => (cells[header.indexOf(column)] ?? "").trim();
+    const get = (column: PaperCsvColumn) => cellOf(cells, column);
     const fail = (message: string) => errors.push({ row: rowNo, message });
     const fieldErrors: string[] = [];
 
@@ -168,6 +198,44 @@ export function planPaperImport(csvText: string, instructors: readonly Pick<Inst
       if (previousDate !== null && date < previousDate) fieldErrors.push(`Date ${date} is earlier than the previous row (${previousDate}); rows must be in chronological order.`);
       previousDate = date;
     }
+
+    // Prior-instructor record (spec §12, D10-D12): the previous instructor's totals and stamps.
+    // Its achievements are recorded as stamped — no gate checks — but every lesson row after it
+    // is validated against progress that includes them.
+    if (isPriorRow(cells)) {
+      if (sawLessonRow) fieldErrors.push("Prior-instructor rows must come before lesson rows.");
+      if (PRIOR_ROW_FORBIDDEN_COLUMNS.some((column) => get(column) !== "")) fieldErrors.push("Prior-instructor rows only use date, assessed_achieved and the prior_* columns.");
+      const lessonCountRaw = get("prior_lessons");
+      const lessonCount = /^\d+$/.test(lessonCountRaw) ? Number(lessonCountRaw) : 0;
+      if (!(lessonCount > 0 && Number.isSafeInteger(lessonCount))) fieldErrors.push("prior_lessons must be a positive whole number.");
+      const hoursRaw = get("prior_hours");
+      const minutes = /^\d+(\.\d)?$/.test(hoursRaw) ? Math.round(Number(hoursRaw) * 60) : 0;
+      if (!(minutes > 0 && Number.isSafeInteger(minutes))) fieldErrors.push("prior_hours must be a positive number of hours with at most one decimal place (e.g. 20 or 12.5).");
+      const kmRaw = get("prior_km");
+      const km = kmRaw === "" ? null : parseOdometer(kmRaw);
+      if (kmRaw !== "" && km === null) fieldErrors.push("prior_km must be a whole number of km, or blank.");
+      const achievedIds = idCell(get("assessed_achieved"), ALL_ASSESSABLE_IDS, "assessed_achieved", fieldErrors);
+      // A stamped 23 Final Drive would make the learner CBT&A Completed by a record that is not a lesson.
+      if (achievedIds.includes(FINAL_DRIVE_23)) fieldErrors.push("23 Final Drive cannot be imported as a prior-instructor achievement.");
+      if (fieldErrors.length) { fieldErrors.forEach(fail); return; }
+
+      const lessonId = `prior-row-${rowNo}`;
+      const createdAt = new Date(Date.UTC(2000, 0, 1, 0, 0, rowNo)).toISOString();
+      for (const competencyId of achievedIds) events.push({ competencyId, action: "assessed", result: "achieved", lessonId, createdAt });
+      totalMinutes += minutes;
+      totalKm += km ?? 0;
+      priorRecords.push({
+        lessonNo: priorRecords.length - priorRowCount, // -k .. -1, oldest first
+        date,
+        label: get("prior_instructor").slice(0, PRIOR_LABEL_MAX),
+        lessonCount, minutes, km,
+        cumulativeMinutes: totalMinutes, cumulativeKm: totalKm,
+        achievedIds,
+      });
+      return;
+    }
+    sawLessonRow = true;
+    if (get("prior_lessons") || get("prior_hours") || get("prior_km")) fieldErrors.push("Lesson rows must leave prior_lessons, prior_hours and prior_km empty.");
 
     const startRaw = normaliseTime(get("start_time"));
     const finishRaw = normaliseTime(get("finish_time"));
@@ -264,6 +332,7 @@ export function planPaperImport(csvText: string, instructors: readonly Pick<Inst
   return {
     ok: true,
     lessons,
+    priorRecords,
     preview: {
       lessonCount: lessons.length,
       totalMinutes,
@@ -271,6 +340,7 @@ export function planPaperImport(csvText: string, instructors: readonly Pick<Inst
       missingDataLessonNos: lessons.filter((l) => l.durationMinutes === null || l.distanceKm === null).map((l) => l.lessonNo),
       unsignedLessonNos: lessons.filter((l) => l.signatureStatus === "unsigned").map((l) => l.lessonNo),
       progress: computeProgress(events),
+      priorRecords: priorRecords.map(({ label, lessonCount, minutes, km }) => ({ label, lessonCount, minutes, km })),
     },
   };
 }
