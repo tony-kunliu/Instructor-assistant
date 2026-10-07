@@ -13,7 +13,8 @@ export const ALL_ASSESSABLE_IDS: readonly string[] = [...CORE_COMPETENCY_IDS, ..
 /**
  * Competency 18, 20, 21, 22: may be Taught any time, but only Assessed once 1-17 and Review 1-17 are
  * Achieved. Competency 19 (Overtaking) may be assessed out of sequence — ACT Code of Practice
- * DI2016-237 cl 7.17 and Assessment Standards NI2016-463 (docs/ACT_ASSESSMENT_STANDARDS.md, S1).
+ * DI2016-237 cl 7.17 (docs/ACT_ASSESSMENT_STANDARDS.md, S1). 22 stays gated: the Standards would
+ * allow it out of sequence but the CoP does not, and Tony chose the CoP (2026-10-08).
  */
 export const POST_REVIEW_1_17_IDS: readonly string[] = ["18", "20", "21", "22"];
 export const POST_REVIEW_1_17_LOCK_MESSAGE = "Competency 18, 20, 21 and 22 can only be assessed after Competency 1-17 and Review 1-17 are all achieved (19 may be assessed out of sequence).";
@@ -137,7 +138,7 @@ export class CompetencyRuleError extends Error {}
 
 /**
  * Chronology check for every gated Assessed selection: Review 1-17, Competency
- * 18-22, Review 1-22 and Final Drive 23 (Taught is never gated). `lessons` is a
+ * 18, 20-22, Review 1-22 and Final Drive 23 (Taught is never gated). `lessons` is a
  * learner's lessons with their events, in any order; ordering is by `lessonNo`
  * (creation order, never editable). Returns `"<lessonNo>:<competencyId>"` for
  * every gated assessment whose prerequisites were not Achieved by EARLIER

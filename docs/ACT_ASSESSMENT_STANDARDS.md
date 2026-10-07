@@ -33,7 +33,7 @@ Where the two instruments differ, both are listed; Tony decides.
 
 | # | Rule | Source | App today | Status |
 |---|---|---|---|---|
-| S1 | Competency **19** may be assessed out of sequence (before Review 1). The Standards also say **22** may; the CoP names only 19. | NI 19/22; CoP 7.17 | 18–22 locked until Review 1-17 | Fix 19; 22 → Tony |
+| S1 | Competency **19** may be assessed out of sequence (before Review 1). The Standards also say **22** may; the CoP names only 19. | NI 19/22; CoP 7.17 | 19 ungated; 18, 20, 21, 22 gated | **Done** (19). 22 stays gated per CoP (Tony, 2026-10-08) |
 | S2 | Review 1 (1-17) **≥ 36 hours after 1–17 achieved**; Review 2 (1-22) **≥ 36 hours after 18–22 achieved** (Standards: Review 2 ≥ 36 h after 1–17). | CoP 7.16; NI Review 2 | Not enforced | Candidate gate |
 | S3 | Competency 23 only if learner licence held **≥ 5½ months** (interstate learner licence counts) **and** age **≥ 16 y 350 d**; a **full overseas licence** holder need not wait. If deemed competent, note the P-licence eligibility date (17 y and learner ≥ 6 months, or overseas licence) in the Certificate's restrictions section. | CoP 7.18; NI 23 | Not enforced; learner-licence issue date not stored | Candidate warning |
 | S4 | Student must hold a **valid ACT learner licence** at every lesson; identity verified before any assessment. | CoP 7.2; NI note | Expiry stored, not checked | Candidate warning |

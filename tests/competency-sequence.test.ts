@@ -224,6 +224,16 @@ test("19 achieved early counts toward Review 1-22 readiness", async () => {
   assert.equal((await progress()).review1_22.status, "ready");
 });
 
+test("Review 1-22 stays locked when 19 is the only competency not achieved", async () => {
+  const { assess, progress } = await setup();
+  await assess(ACHIEVED_1_17);
+  await assess([REVIEW_1_17]);
+  await assess(GATED);
+  const p = await progress();
+  assert.equal(p.review1_22.status, "locked");
+  assert.equal(p.review1_22.remaining, 1);
+});
+
 test("assessing 19 early does not unlock 18, 20, 21 or 22", async () => {
   const { assess } = await setup();
   await assess(["19"]);

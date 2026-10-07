@@ -43,7 +43,7 @@ function specialStatus(id: string, progress: LearnerProgress): "locked" | "ready
   return null;
 }
 
-/** Assessment lock (Competency 18-22 and the three specials) — same rule the server enforces (lib/competency.ts#assessmentLockReason). */
+/** Assessment lock (Competency 18, 20, 21, 22 and the three specials; 19 is never gated) — same rule the server enforces (lib/competency.ts#assessmentLockReason). */
 function assessLocked(id: string, progress: LearnerProgress, gateProgress: LearnerProgress = progress): boolean {
   return assessmentLockReason(id, gateProgress) !== null;
 }
