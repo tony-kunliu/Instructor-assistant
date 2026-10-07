@@ -204,3 +204,21 @@ test("server-source issue with no field persists until the next save attempt (st
 test("no state → no issues", () => {
   assert.deepEqual(currentIssues(null, goodDraft(), "new"), []);
 });
+
+// ── Paper record edit ("paper" mode) ─────────────────────────────────────
+
+test("paper mode: blank times/odometer and no signatures is valid", () => {
+  const draft = goodDraft({ startTime: "", finishTime: "", startOdometer: "", finishOdometer: "", adiSignature: "", learnerSignature: "" });
+  assert.deepEqual(validateLessonDraftFields(draft, "paper"), []);
+});
+
+test("paper mode: half-filled times or odometer is rejected, both-filled is checked", () => {
+  assert.deepEqual(fieldsOf(validateLessonDraftFields(goodDraft({ finishTime: "", adiSignature: "" }), "paper")), ["times"]);
+  assert.deepEqual(fieldsOf(validateLessonDraftFields(goodDraft({ startOdometer: "", adiSignature: "" }), "paper")), ["start-odometer"]);
+  assert.deepEqual(fieldsOf(validateLessonDraftFields(goodDraft({ startOdometer: "50", finishOdometer: "40" }), "paper")), ["finish-odometer"]);
+});
+
+test("paper mode still requires a result for every assessed competency", () => {
+  const draft = goodDraft({ assessedIds: ["5"], achievedResults: {} });
+  assert.deepEqual(fieldsOf(validateLessonDraftFields(draft, "paper")), ["competency"]);
+});
