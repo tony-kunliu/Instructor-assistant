@@ -23,6 +23,7 @@ import { buildLessonUpsertedPayload, sameContractState, type BuildLessonUpserted
 import { ensureStrictlyNewerSourceUpdatedAt, insertOutboxRowStatement, latestSendablePayloadByLesson, latestSourceUpdatedAtByLesson } from "./integration/outbox.ts";
 import { processDueOutbox } from "./integration/sender.ts";
 import type { IntegrationHooks } from "./integration/types.ts";
+import { planPaperImport, type PaperImportPreview, type PaperImportRowError } from "./paper-import.ts";
 import type { CompletionSummary, Instructor, Learner, LearnerInput, Lesson, LessonInput, SignatureStatus } from "./types.ts";
 
 export class ValidationError extends Error {}
@@ -502,6 +503,76 @@ export async function createLesson(db: D1Database, learnerId: string, input: Les
   scheduleIntegrationDelivery(db, integration);
 
   return lesson;
+}
+
+// ── Paper records import (P1b) ───────────────────────────────────────────
+
+const MAX_IMPORT_CSV_BYTES = 512 * 1024;
+
+export type PaperImportResult =
+  | { mode: "preview"; preview: PaperImportPreview }
+  | { mode: "commit"; preview: PaperImportPreview; lessonCount: number };
+
+export class PaperImportError extends ValidationError {
+  errors: PaperImportRowError[];
+  constructor(errors: PaperImportRowError[]) {
+    super("Import has errors.");
+    this.errors = errors;
+  }
+}
+
+/**
+ * Imports a paper-records CSV into a learner with no lessons yet. Preview
+ * writes nothing. Commit writes every lesson and competency event in ONE
+ * db.batch() (atomic); `UNIQUE (learner_id, lesson_no)` rejects the whole
+ * batch if a lesson appeared after the guard read. Paper lessons never
+ * enqueue integration_outbox rows.
+ */
+export async function importPaperLessons(db: D1Database, learnerId: string, csvText: string, mode: "preview" | "commit"): Promise<PaperImportResult> {
+  if (mode !== "preview" && mode !== "commit") throw new ValidationError("Import mode must be preview or commit.");
+  if (typeof csvText !== "string" || !csvText.trim()) throw new ValidationError("CSV file is required.");
+  if (new TextEncoder().encode(csvText).length > MAX_IMPORT_CSV_BYTES) throw new ValidationError("File is too large.");
+  await getLearner(db, learnerId);
+  if ((await getTotals(db, learnerId)).lessonCount !== 0) throw new ValidationError("Paper records can only be imported into a learner with no lessons.");
+
+  const plan = planPaperImport(csvText, await listActiveInstructors(db));
+  if (!plan.ok) throw new PaperImportError(plan.errors);
+  if (mode === "preview") return { mode, preview: plan.preview };
+
+  const statements: D1PreparedStatement[] = [];
+  for (const lesson of plan.lessons) {
+    const id = crypto.randomUUID();
+    statements.push(
+      db
+        .prepare(
+          `INSERT INTO lessons (id, learner_id, instructor_id, lesson_no, lesson_date, start_time, finish_time,
+             start_odometer, finish_odometer, duration_minutes, distance_km, cumulative_minutes, cumulative_km,
+             taught, competencies_assessed, achieved, location, comments, adi_signature, learner_signature,
+             record_source, signature_status)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, 'paper_import', ?)`,
+        )
+        .bind(
+          id, learnerId, lesson.instructorId, lesson.lessonNo, lesson.lessonDate, lesson.startTime, lesson.finishTime,
+          lesson.startOdometer, lesson.finishOdometer, lesson.durationMinutes, lesson.distanceKm, lesson.cumulativeMinutes, lesson.cumulativeKm,
+          formatIdList(lesson.taughtIds), formatIdList(lesson.assessedIds),
+          formatIdList(lesson.assessedIds.filter((competencyId) => lesson.achievedResults[competencyId] === "achieved")),
+          lesson.location, lesson.comments, lesson.signatureStatus,
+        ),
+    );
+    const eventInsert = (competencyId: string, action: "taught" | "assessed", result: string | null): D1PreparedStatement =>
+      db
+        .prepare("INSERT INTO competency_events (id, learner_id, lesson_id, competency_id, action, result) VALUES (?, ?, ?, ?, ?, ?)")
+        .bind(crypto.randomUUID(), learnerId, id, competencyId, action, result);
+    for (const competencyId of lesson.taughtIds) statements.push(eventInsert(competencyId, "taught", null));
+    for (const competencyId of lesson.assessedIds) statements.push(eventInsert(competencyId, "assessed", lesson.achievedResults[competencyId]));
+  }
+  try {
+    await db.batch(statements);
+  } catch (error) {
+    if (error instanceof Error && /UNIQUE/i.test(error.message)) throw new ValidationError("Paper records can only be imported into a learner with no lessons.");
+    throw error;
+  }
+  return { mode, preview: plan.preview, lessonCount: plan.lessons.length };
 }
 
 /** Fields that, if changed, invalidate both existing signatures (CBT&A V3 rule 5). */
