@@ -43,7 +43,7 @@ function specialStatus(id: string, progress: LearnerProgress): "locked" | "ready
   return null;
 }
 
-/** Assessment lock (Competency 18-22 and the three specials) — same rule the server enforces (lib/competency.ts#assessmentLockReason). */
+/** Assessment lock (Competency 18, 20, 21 and the three specials; 19 and 22 are never gated) — same rule the server enforces (lib/competency.ts#assessmentLockReason). */
 function assessLocked(id: string, progress: LearnerProgress, gateProgress: LearnerProgress = progress): boolean {
   return assessmentLockReason(id, gateProgress) !== null;
 }
@@ -120,7 +120,7 @@ export default function CompetencyPicker({ progress, gateProgress, taughtIds, as
           })}
         </div>
         {POST_REVIEW_1_17_IDS.some((id) => assessLocked(id, progress, gateProgress)) ? (
-          <p className="comp-lock-hint">18-22 can be Taught now — they can only be Assessed after 1-17 and Review 1-17 are Achieved.</p>
+          <p className="comp-lock-hint">18, 20 and 21 can be Taught now — they can only be Assessed after 1-17 and Review 1-17 are Achieved. 19 and 22 may be Assessed at any time.</p>
         ) : null}
         <div className="chip-row special">
           {SPECIAL_ASSESSMENTS.map((id) => {

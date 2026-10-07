@@ -14,7 +14,8 @@ const SIG = "data:image/png;base64,iVBORw0KGgoAAAA1";
 const SIG_NEW = "data:image/png;base64,iVBORw0KGgoAAAA9";
 const range = (a: number, b: number) => Array.from({ length: b - a + 1 }, (_, i) => String(a + i));
 const ACHIEVED_1_17 = range(1, 17);
-const GATED = range(18, 22);
+const GATED = ["18", "20", "21"];
+const ALL_18_22 = range(18, 22);
 
 type Db = ReturnType<typeof openTestD1>;
 
@@ -35,7 +36,7 @@ async function setup() {
   return { db, learner, assess, teach, progress, lesson };
 }
 
-const LOCKED_18_22 = /Competency 18-22 can only be assessed after Competency 1-17 and Review 1-17 are all achieved/;
+const LOCKED_18_22 = /Competency 18, 20 and 21 can only be assessed after Competency 1-17 and Review 1-17 are all achieved/;
 
 // ── 18-22: Taught is never restricted ────────────────────────────────────
 
@@ -93,10 +94,10 @@ test("Review 1-17 and 18 cannot be Assessed in the same lesson (gates use state 
 test("a rejected illegal 18-22 assessment leaves no lesson or competency events behind", async () => {
   const { assess, progress, db, learner } = await setup();
   await assess(ACHIEVED_1_17);
-  await assert.rejects(() => assess(["18", "19"]), LOCKED_18_22);
+  await assert.rejects(() => assess(["18", "20"]), LOCKED_18_22);
   const p = await progress();
   assert.equal(p.competencies["18"].achieved, false);
-  assert.equal(p.competencies["19"].firstAssessedAt, null);
+  assert.equal(p.competencies["20"].firstAssessedAt, null);
   const count = await db.prepare("SELECT COUNT(*) AS n FROM lessons WHERE learner_id = ?").bind(learner.id).first<{ n: number }>();
   assert.equal(count?.n, 1);
 });
@@ -130,7 +131,7 @@ test("Review 1-22 becomes READY only when 1-17 + Review 1-17 + all of 18-22 are 
   const { assess, progress } = await setup();
   await assess(ACHIEVED_1_17);
   await assess([REVIEW_1_17]);
-  await assess(GATED);
+  await assess([...GATED, "19", "22"]);
   assert.equal((await progress()).review1_22.status, "ready");
   await assess([REVIEW_1_22]);
   assert.equal((await progress()).review1_22.status, "achieved");
@@ -165,7 +166,7 @@ test("Final Drive stays locked until Review 1-22 is achieved, then completes the
   const { assess, progress } = await setup();
   await assess(ACHIEVED_1_17);
   await assess([REVIEW_1_17]);
-  await assess(GATED);
+  await assess(ALL_18_22);
   assert.equal((await progress()).finalDrive23.status, "locked");
   await assert.rejects(() => assess([FINAL_DRIVE_23]), /23 Final Drive is locked/);
   await assess([REVIEW_1_22]);
@@ -182,7 +183,7 @@ test("Review 1-22 and Final Drive cannot be Assessed in the same lesson", async 
   const { assess } = await setup();
   await assess(ACHIEVED_1_17);
   await assess([REVIEW_1_17]);
-  await assess(GATED);
+  await assess(ALL_18_22);
   await assert.rejects(() => assess([REVIEW_1_22, FINAL_DRIVE_23]), /23 Final Drive is locked/);
 });
 
@@ -204,4 +205,41 @@ test("History Edit cannot turn a lesson into an early 18-22 assessment", async (
       }),
     LOCKED_18_22,
   );
+});
+
+// ── 19 and 22 may be assessed at any time (NI2020-703 Schedule 1 preamble) ──
+
+for (const id of ["19", "22"]) {
+  test(`${id} can be Assessed on a brand-new learner, before 1-17 and Review 1-17`, async () => {
+    const { assess, progress } = await setup();
+    await assess([id]);
+    assert.equal((await progress()).competencies[id].achieved, true);
+  });
+}
+
+test("19 and 22 achieved early count toward Review 1-22 readiness", async () => {
+  const { assess, progress } = await setup();
+  await assess(["19", "22"]);
+  await assess(ACHIEVED_1_17);
+  await assess([REVIEW_1_17]);
+  await assess(GATED);
+  assert.equal((await progress()).review1_22.status, "ready");
+});
+
+for (const missing of ["19", "22"]) {
+  test(`Review 1-22 stays locked when ${missing} is the only competency not achieved`, async () => {
+    const { assess, progress } = await setup();
+    await assess(ACHIEVED_1_17);
+    await assess([REVIEW_1_17]);
+    await assess([...GATED, missing === "19" ? "22" : "19"]);
+    const p = await progress();
+    assert.equal(p.review1_22.status, "locked");
+    assert.equal(p.review1_22.remaining, 1);
+  });
+}
+
+test("assessing 19 and 22 early does not unlock 18, 20 or 21", async () => {
+  const { assess } = await setup();
+  await assess(["19", "22"]);
+  await assert.rejects(() => assess(["20"]), LOCKED_18_22);
 });
