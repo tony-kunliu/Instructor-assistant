@@ -253,10 +253,12 @@ of them at any time by saying so; this section is then updated.
    (post-merge CI green, Staging running the intended commit).
 4. **Production releases** of what is on `main`, including Production D1
    migrations and Integration configuration, under these guardrails:
-   - export a Production D1 backup before any Production migration;
+   - record the D1 Time Travel restore point (bookmark) before any Production migration;
    - record the rollback target before deploying;
    - verify after every step and stop on the first failure;
    - never delete or rewrite existing Production data.
+
+Guiding principle: fast iteration with safe development comes first.
 
 These authorizations override the "requires Tony's explicit authorization"
 wording in §3 and §5 only for the actions listed above. Everything else in

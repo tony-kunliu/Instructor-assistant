@@ -9,6 +9,8 @@ Start with the repo root docs, in this order:
 
 ## Everything else
 
+- `docs/ACT_ASSESSMENT_STANDARDS.md` — rules from the current ACT Assessment
+  Standards (NI2020-703) and Code of Practice (DI2020-294) the app must respect.
 - `docs/ECOSYSTEM_ROADMAP.md` — longer-term shared direction between this
   repo and the ACTGDS Website (`tony-kunliu/actgds.com`).
 - `docs/RELEASE_B_RUNBOOK.md` — Production Integration enablement
