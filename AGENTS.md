@@ -236,3 +236,35 @@ back to Tony.
 The final report lists just those items as a short smoke test. It never
 asks Tony to re-walk the CBT&A lesson workflow, archive/restore, competency
 gates, History Edit, PDF export or other flows that tests already cover.
+
+## 14. Standing authorizations (granted by Tony, 2026-10-07)
+
+Tony develops mainly from his phone and wants fewer manual approvals. He
+grants the following standing authorizations. He can revoke or narrow any
+of them at any time by saying so; this section is then updated.
+
+1. **Merge to `staging` and apply Staging D1 migrations** once typecheck,
+   `npm test`, build, `qa-browser` (for UI changes), Memory Guard and an
+   independent code review all pass.
+2. **Post on `tony-kunliu/actgds.com` Issue #3** for informational and
+   coordination messages. Any contract change (§10) still needs Tony's
+   explicit approval first.
+3. **Merge `staging` → `main`** after the change is verified on Staging
+   (post-merge CI green, Staging running the intended commit).
+4. **Production releases** of what is on `main`, including Production D1
+   migrations and Integration configuration, under these guardrails:
+   - export a Production D1 backup before any Production migration;
+   - record the rollback target before deploying;
+   - verify after every step and stop on the first failure;
+   - never delete or rewrite existing Production data.
+
+These authorizations override the "requires Tony's explicit authorization"
+wording in §3 and §5 only for the actions listed above. Everything else in
+this file still applies: no scope creep, no secrets or real learner data in
+git, no deleting branches or data, and §11 (stop after each task and
+report; never auto-start the next task). Secrets are always set by Tony
+directly, never sent through chat. Every action taken under a standing
+authorization is reported to Tony afterwards. Some actions may still need
+Tony to approve a tool-permission prompt or provide a credential (e.g. a
+temporary Cloudflare token); that is an environment limit, not a
+revocation of this section.
