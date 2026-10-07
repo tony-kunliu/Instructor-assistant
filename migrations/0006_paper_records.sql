@@ -4,6 +4,10 @@
 -- become nullable (a paper record may not have them), and two new columns
 -- say where the row came from (record_source) and how it was signed
 -- (signature_status). Existing rows become 'app' / 'digital' via defaults.
+-- record_source 'prior_instructor' marks a transfer learner's record from a
+-- previous instructor (spec §12): one row per prior instructor, negative
+-- lesson_no, with prior_instructor_label / prior_lesson_count (NULL on every
+-- other row).
 --
 -- SQLite cannot drop NOT NULL in place, so the table is rebuilt.
 -- competency_events.lesson_id references lessons (id), so the rebuild sets
@@ -48,8 +52,10 @@ CREATE TABLE lessons (
   created_at               TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   updated_at               TEXT,
   updated_by_instructor_id TEXT REFERENCES instructors (id),
-  record_source            TEXT NOT NULL DEFAULT 'app' CHECK (record_source IN ('app', 'paper_import')),
+  record_source            TEXT NOT NULL DEFAULT 'app' CHECK (record_source IN ('app', 'paper_import', 'prior_instructor')),
   signature_status         TEXT NOT NULL DEFAULT 'digital' CHECK (signature_status IN ('digital', 'on_paper', 'unsigned')),
+  prior_instructor_label   TEXT,
+  prior_lesson_count       INTEGER,
   UNIQUE (learner_id, lesson_no)
 );
 

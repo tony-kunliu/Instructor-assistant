@@ -136,8 +136,10 @@ CREATE TABLE lessons (
   created_at               TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   updated_at               TEXT,
   updated_by_instructor_id TEXT REFERENCES instructors (id),
-  record_source            TEXT NOT NULL DEFAULT 'app' CHECK (record_source IN ('app', 'paper_import')),
+  record_source            TEXT NOT NULL DEFAULT 'app' CHECK (record_source IN ('app', 'paper_import', 'prior_instructor')),
   signature_status         TEXT NOT NULL DEFAULT 'digital' CHECK (signature_status IN ('digital', 'on_paper', 'unsigned')),
+  prior_instructor_label   TEXT,
+  prior_lesson_count       INTEGER,
   UNIQUE (learner_id, lesson_no)
 );
 

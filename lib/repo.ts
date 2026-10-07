@@ -86,6 +86,8 @@ function strictEnum<T extends string>(value: unknown, allowed: readonly T[], col
 
 /** Exported for unit tests of the strict column reads. */
 export function toLesson(row: Row): Lesson {
+  const recordSource = strictEnum(row.record_source, ["app", "paper_import", "prior_instructor"], "record_source");
+  const isPrior = recordSource === "prior_instructor";
   return {
     id: String(row.id),
     learnerId: String(row.learner_id),
@@ -111,9 +113,17 @@ export function toLesson(row: Row): Lesson {
     updatedAt: (row.updated_at as string) ?? null,
     updatedByInstructorId: (row.updated_by_instructor_id as string) ?? null,
     updatedByInstructorName: (row.updated_by_instructor_name as string) ?? null,
-    recordSource: strictEnum(row.record_source, ["app", "paper_import"], "record_source"),
+    recordSource,
     signatureStatus: strictEnum(row.signature_status, ["digital", "on_paper", "unsigned"], "signature_status"),
+    priorInstructorLabel: isPrior ? strictPresent(row.prior_instructor_label, "prior_instructor_label", String) : nullableString(row.prior_instructor_label),
+    priorLessonCount: isPrior ? strictPresent(row.prior_lesson_count, "prior_lesson_count", Number) : nullableNumber(row.prior_lesson_count),
   };
+}
+
+/** A column a prior-instructor row must carry (the History/PDF line is printed from it) — never silently null. */
+function strictPresent<T>(value: unknown, column: string, convert: (value: unknown) => T): T {
+  if (value === null || value === undefined || value === "") throw new Error(`lessons.${column} is missing on a prior_instructor row.`);
+  return convert(value);
 }
 
 // ── Instructors ──────────────────────────────────────────────────────────
@@ -292,7 +302,8 @@ export async function listLessons(db: D1Database, learnerId: string): Promise<Le
               lessons.start_odometer, lessons.finish_odometer, lessons.duration_minutes, lessons.distance_km, lessons.cumulative_minutes, lessons.cumulative_km,
               lessons.taught, lessons.competencies_assessed, lessons.achieved, lessons.location, lessons.comments,
               NULL AS adi_signature, NULL AS learner_signature, lessons.created_at, lessons.updated_at,
-              lessons.updated_by_instructor_id, lessons.record_source, lessons.signature_status, ub.full_name AS updated_by_instructor_name
+              lessons.updated_by_instructor_id, lessons.record_source, lessons.signature_status, lessons.prior_instructor_label, lessons.prior_lesson_count,
+              ub.full_name AS updated_by_instructor_name
        FROM lessons ${UPDATED_BY_JOIN} WHERE lessons.learner_id = ? ORDER BY lessons.lesson_no DESC`,
     )
     .bind(learnerId)

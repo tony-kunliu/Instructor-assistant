@@ -45,9 +45,11 @@ test("0006 preserves existing lessons", () => {
   const after = db.prepare("SELECT * FROM lessons ORDER BY lesson_no").all() as Record<string, unknown>[];
   assert.equal(after.length, before.length);
   for (let i = 0; i < before.length; i++) {
-    const { record_source, signature_status, ...rest } = after[i];
+    const { record_source, signature_status, prior_instructor_label, prior_lesson_count, ...rest } = after[i];
     assert.equal(record_source, "app");
     assert.equal(signature_status, "digital");
+    assert.equal(prior_instructor_label, null);
+    assert.equal(prior_lesson_count, null);
     assert.deepEqual({ ...rest }, { ...before[i] });
   }
   assert.equal((after[1] as Record<string, unknown>).updated_by_instructor_id, "a1f3b6c2-2f1a-4b8e-9c6a-1a2b3c4d5e02");
@@ -103,4 +105,39 @@ test("getTotals lastFinishOdometer skips NULL", async () => {
   assert.equal(totals.totalMinutes, 60);
   assert.equal(totals.totalKm, 20);
   assert.equal(totals.lessonCount, 2);
+});
+
+// ── Task 8: prior-instructor records (spec §12) ──────────────────────────
+
+test("0006 CHECK accepts record_source 'prior_instructor' and adds nullable prior_instructor_label / prior_lesson_count", () => {
+  const db = seeded();
+  apply0006(db);
+  const columns = db.prepare("PRAGMA table_info(lessons)").all() as { name: string; type: string; notnull: number }[];
+  const label = columns.find((c) => c.name === "prior_instructor_label");
+  const count = columns.find((c) => c.name === "prior_lesson_count");
+  assert.deepEqual(label && [label.type, label.notnull], ["TEXT", 0]);
+  assert.deepEqual(count && [count.type, count.notnull], ["INTEGER", 0]);
+  // Existing rows come through with NULL prior columns.
+  for (const row of db.prepare("SELECT prior_instructor_label, prior_lesson_count FROM lessons").all() as Record<string, unknown>[]) {
+    assert.equal(row.prior_instructor_label, null);
+    assert.equal(row.prior_lesson_count, null);
+  }
+  db.prepare(
+    `INSERT INTO lessons (id, learner_id, instructor_id, lesson_no, lesson_date, duration_minutes, distance_km, cumulative_minutes, cumulative_km,
+       achieved, record_source, signature_status, prior_instructor_label, prior_lesson_count)
+     VALUES ('pr1', 'L1', 'a1f3b6c2-2f1a-4b8e-9c6a-1a2b3c4d5e01', -1, '2025-12-01', 1200, 150, 1200, 150, '1', 'prior_instructor', 'on_paper', 'QA ADI 358', 11)`,
+  ).run();
+  const row = db.prepare("SELECT * FROM lessons WHERE id = 'pr1'").get() as Record<string, unknown>;
+  assert.equal(row.record_source, "prior_instructor");
+  assert.equal(row.prior_instructor_label, "QA ADI 358");
+  assert.equal(row.prior_lesson_count, 11);
+  assert.equal(row.lesson_no, -1);
+  assert.throws(() => db.prepare("UPDATE lessons SET record_source = 'prior' WHERE id = 'pr1'").run(), /CHECK/);
+  assert.deepEqual(db.prepare("PRAGMA foreign_key_check").all(), []);
+});
+
+test("a fresh DB from lib/schema.ts SCHEMA_SQL has the prior_* columns too", async () => {
+  const db = openTestD1(":memory:");
+  const { results } = await db.prepare("SELECT name FROM pragma_table_info('lessons') WHERE name LIKE 'prior_%' ORDER BY name").all<{ name: string }>();
+  assert.deepEqual(results.map((r) => r.name), ["prior_instructor_label", "prior_lesson_count"]);
 });

@@ -31,7 +31,7 @@ export type Learner = {
   archivedAt: string | null;
 };
 
-export type RecordSource = "app" | "paper_import";
+export type RecordSource = "app" | "paper_import" | "prior_instructor";
 export type SignatureStatus = "digital" | "on_paper" | "unsigned";
 
 export type Lesson = {
@@ -60,9 +60,12 @@ export type Lesson = {
   /** Instructor who last edited this lesson (Instructor Identity V1) — null if never edited, or edited before attribution existed. */
   updatedByInstructorId: string | null;
   updatedByInstructorName: string | null;
-  /** 'paper_import' rows are historical paper-logbook lessons; time/odometer/duration/distance may be null. */
+  /** 'paper_import' rows are historical paper-logbook lessons; time/odometer/duration/distance may be null. 'prior_instructor' rows (negative lessonNo) are a previous instructor's totals, never edited, never sent to ACTGDS. */
   recordSource: RecordSource;
   signatureStatus: SignatureStatus;
+  /** 'prior_instructor' rows only (spec §12): who the transfer learner trained with before (name and/or ADI number), and how many lessons. Null on every other row. */
+  priorInstructorLabel: string | null;
+  priorLessonCount: number | null;
 };
 
 /** Set once 23 Final Drive is Assessed + Achieved (see lib/competency.ts). */
