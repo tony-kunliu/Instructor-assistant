@@ -7,8 +7,9 @@ git log and closed PRs, not here — see `TASK.md` for what's in progress.
 
 ## Repository
 
-- **main:** `b3693f51634e8b1f1fe070d6e2076bc27849cd41` — Release A UX
-  bugfix release source (deployed to Production). Release A source:
+- **main:** `76103ef7b86f7d2431e83225f25bc03ccb1365f1` — P1a promoted,
+  CI SUCCESS, NOT in Production. Production runs `b3693f5` (Release A UX
+  bugfix, Worker `a8ec37da`). Release A source:
   `92aa49623e945b90d55a10d3f47eca72cbdf9025` (application code same as
   audited `9fabe2c`). Application rollback baseline before Release A:
   `8bae4e4c211a78b2e682d8b04744f102fa1a4328`.
@@ -20,7 +21,7 @@ git log and closed PRs, not here — see `TASK.md` for what's in progress.
 ## CI
 
 - Latest `staging` GitHub Actions run: **SUCCESS**.
-- Tests: 261/261 PASS, 0 skipped (re-verified locally 2026-10-07).
+- Tests: 261/261 PASS, 0 skipped.
 - Build: PASS.
 - `npm test` requires Node's `--experimental-strip-types` flag (already in
   `package.json`'s `test` script) — CI pins Node 22.13, which needs this
@@ -168,13 +169,13 @@ Production iPhone and landed on the login flow — PASS (reported 2026-10-07).
 Full contract detail: `docs/integrations/actgds-instructor-assistant-v1.md`.
 Cross-repo coordination record: `tony-kunliu/actgds.com` Issue #3.
 
-## Recently merged to staging
+## Recently merged (P1a)
 
 - `feature/pdf-per-lesson-totals` (P1a): PDF Total hrs/kms cells show each
   lesson's own totals (matches the paper form); a cumulative line is
   printed under each page's table. Changes the exported PDF of every
-  learner. In `staging` only, not `main`/Production. Tony's visual PDF
-  check is outstanding.
+  learner. In `staging` and `main`, not Production. Tony checked an
+  exported Staging PDF: OK.
 
 ## Known Issues
 
