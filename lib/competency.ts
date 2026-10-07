@@ -10,9 +10,13 @@ export const REVIEW_1_22 = "review-1-22";
 export const FINAL_DRIVE_23 = "final-drive-23";
 export const SPECIAL_ASSESSMENT_IDS: readonly string[] = [REVIEW_1_17, REVIEW_1_22, FINAL_DRIVE_23];
 export const ALL_ASSESSABLE_IDS: readonly string[] = [...CORE_COMPETENCY_IDS, ...SPECIAL_ASSESSMENT_IDS];
-/** Competency 18-22: may be Taught any time, but only Assessed once 1-17 and Review 1-17 are Achieved. */
-export const POST_REVIEW_1_17_IDS: readonly string[] = CORE_COMPETENCY_IDS.slice(17);
-export const POST_REVIEW_1_17_LOCK_MESSAGE = "Competency 18-22 can only be assessed after Competency 1-17 and Review 1-17 are all achieved.";
+/**
+ * Competency 18, 20, 21, 22: may be Taught any time, but only Assessed once 1-17 and Review 1-17 are
+ * Achieved. Competency 19 (Overtaking) may be assessed out of sequence — ACT Code of Practice
+ * DI2016-237 cl 7.17 and Assessment Standards NI2016-463 (docs/ACT_ASSESSMENT_STANDARDS.md, S1).
+ */
+export const POST_REVIEW_1_17_IDS: readonly string[] = ["18", "20", "21", "22"];
+export const POST_REVIEW_1_17_LOCK_MESSAGE = "Competency 18, 20, 21 and 22 can only be assessed after Competency 1-17 and Review 1-17 are all achieved (19 may be assessed out of sequence).";
 
 export type CompetencyAction = "taught" | "assessed";
 export type AssessmentResult = "achieved" | "not_achieved";

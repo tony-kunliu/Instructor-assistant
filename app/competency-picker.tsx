@@ -120,7 +120,7 @@ export default function CompetencyPicker({ progress, gateProgress, taughtIds, as
           })}
         </div>
         {POST_REVIEW_1_17_IDS.some((id) => assessLocked(id, progress, gateProgress)) ? (
-          <p className="comp-lock-hint">18-22 can be Taught now — they can only be Assessed after 1-17 and Review 1-17 are Achieved.</p>
+          <p className="comp-lock-hint">18, 20, 21 and 22 can be Taught now — they can only be Assessed after 1-17 and Review 1-17 are Achieved. 19 can be Assessed any time.</p>
         ) : null}
         <div className="chip-row special">
           {SPECIAL_ASSESSMENTS.map((id) => {

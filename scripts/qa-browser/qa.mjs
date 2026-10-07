@@ -193,8 +193,9 @@ try {
   await s.page.click("text=Start Lesson");
   await s.page.click("text=End Lesson");
   const assessedRow = s.page.locator(".comp-section:has(.comp-label:text-is('Assessed')) .chip-row").first();
-  const lockedStates = await Promise.all(["18", "19", "20", "21", "22"].map(async (id) => (await assessedRow.locator(`button:text-is("${id}")`).isDisabled()) && (await assessedRow.locator(`button:text-is("${id}")`).getAttribute("data-locked")) === "true"));
-  check("1-17 achieved, Review 1-17 NOT: Assessed 18-22 all locked in the UI", lockedStates.every(Boolean), lockedStates.join());
+  const lockedStates = await Promise.all(["18", "20", "21", "22"].map(async (id) => (await assessedRow.locator(`button:text-is("${id}")`).isDisabled()) && (await assessedRow.locator(`button:text-is("${id}")`).getAttribute("data-locked")) === "true"));
+  check("1-17 achieved, Review 1-17 NOT: Assessed 18, 20, 21, 22 all locked in the UI", lockedStates.every(Boolean), lockedStates.join());
+  check("…but Assessed 19 is NOT locked (out of sequence allowed, CoP 7.17)", !(await assessedRow.locator('button:text-is("19")').isDisabled()) && (await assessedRow.locator('button:text-is("19")').getAttribute("data-locked")) !== "true");
   check("…while Assessed 17 (already achieved) / 1-17 chips are not gate-locked", (await assessedRow.locator('button:text-is("5")').getAttribute("data-locked")) === null);
   const taughtRow = s.page.locator(".comp-section:has(.comp-label:text-is('Taught')) .chip-row").first();
   const taught18Disabled = await taughtRow.locator('button:text-is("18")').isDisabled();
@@ -203,7 +204,7 @@ try {
   check("lock hint explains the rule", (await s.page.textContent(".comp-lock-hint")).includes("Review 1-17"));
   await shot(s.page, "04-gate-locked");
   const api = await postLesson(ids.gateLocked, { lessonDate: "2026-09-21", startTime: "09:00", finishTime: "10:00", startOdometer: "5000", finishOdometer: "5010", assessedIds: ["18"], achievedResults: { "18": "achieved" }, adiSignature: SIG, learnerSignature: SIG });
-  check("server rejects assessing 18 before Review 1-17 (400)", api.status === 400 && /Competency 18-22 can only be assessed/.test(api.body.error), `${api.status} ${api.body.error}`);
+  check("server rejects assessing 18 before Review 1-17 (400)", api.status === 400 && /Competency 18, 20, 21 and 22 can only be assessed/.test(api.body.error), `${api.status} ${api.body.error}`);
   await s.ctx.close();
 }
 {
@@ -288,8 +289,8 @@ try {
   const assessedRow = s.page.locator(".h-editing .comp-section:has(.comp-label:text-is('Assessed'))");
   const lockedIn = async (label) => (await assessedRow.locator(`button:has-text("${label}")`).first().isDisabled());
   check("History Edit of Lesson #1: Review 1-17, Review 1-22 and Final Drive are locked (nothing achieved before it)", (await lockedIn("Review 1-17")) && (await lockedIn("Review 1-22")) && (await lockedIn("23 Final Drive")));
-  const core = await Promise.all(["18", "19", "20", "21", "22"].map(async (id) => assessedRow.locator(`.chip-row >> nth=0 >> button:text-is("${id}")`).isDisabled()));
-  check("History Edit of Lesson #1: 18-22 are locked for Assessed", core.every(Boolean), core.join());
+  const core = await Promise.all(["18", "20", "21", "22"].map(async (id) => assessedRow.locator(`.chip-row >> nth=0 >> button:text-is("${id}")`).isDisabled()));
+  check("History Edit of Lesson #1: 18, 20, 21, 22 are locked for Assessed", core.every(Boolean), core.join());
   await shot(s.page, "05a-history-edit-chronology");
   await s.page.click(".h-editing >> text=Cancel");
   await s.page.click("[data-testid=history-row] .h-edit >> nth=1");
@@ -418,11 +419,11 @@ const draw = async (page, index) => {
   await s.page.fill('.edit-times input[type="time"] >> nth=1', "09:45");
   await draw(s.page, 0); await draw(s.page, 1);
   await s.page.route("**/api/learners/*/lessons", (route) =>
-    route.request().method() === "POST" ? route.fulfill({ status: 400, contentType: "application/json", body: JSON.stringify({ error: "Competency 18-22 can only be assessed after Competency 1-17 and Review 1-17 are all achieved." }) }) : route.continue(),
+    route.request().method() === "POST" ? route.fulfill({ status: 400, contentType: "application/json", body: JSON.stringify({ error: "Competency 18, 20, 21 and 22 can only be assessed after Competency 1-17 and Review 1-17 are all achieved (19 may be assessed out of sequence)." }) }) : route.continue(),
   );
   await s.page.click(".btn.save");
   await s.page.waitForSelector("[data-testid=lesson-save-errors]");
-  check("server rejection is shown next to Save with a jump link to the competency section", (await s.page.textContent("[data-testid=lesson-save-errors]")).includes("Competency 18-22") && (await s.page.$("[data-testid=lesson-go-competency]")) !== null);
+  check("server rejection is shown next to Save with a jump link to the competency section", (await s.page.textContent("[data-testid=lesson-save-errors]")).includes("Competency 18, 20, 21 and 22") && (await s.page.$("[data-testid=lesson-go-competency]")) !== null);
   await s.page.fill('input[placeholder="Belconnen, Gungahlin…"]', "Belconnen");
   check("an unrelated edit does not hide the server error", (await s.page.$("[data-testid=lesson-save-errors]")) !== null);
   await s.page.click("[data-testid=lesson-go-competency]");

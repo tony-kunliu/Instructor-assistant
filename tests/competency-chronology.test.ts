@@ -16,8 +16,8 @@ const freshSig = () => `data:image/png;base64,iVBORw0KGgoAAAA${100 + ++sigCounte
 const range = (a: number, b: number) => Array.from({ length: b - a + 1 }, (_, i) => String(a + i));
 const ach = (ids: string[], result: "achieved" | "not_achieved" = "achieved") => Object.fromEntries(ids.map((id) => [id, result]));
 
-const OWN = /Competency 18-22 can only be assessed after Competency 1-17 and Review 1-17 are all achieved/;
-const LATER = (n: number) => new RegExp(`would leave Lesson #${n} assessing Competency 18-22 before Competency 1-17 and Review 1-17 were achieved in earlier lessons`);
+const OWN = /Competency 18, 20, 21 and 22 can only be assessed after Competency 1-17 and Review 1-17 are all achieved/;
+const LATER = (n: number) => new RegExp(`would leave Lesson #${n} assessing Competency 18, 20, 21 or 22 before Competency 1-17 and Review 1-17 were achieved in earlier lessons`);
 
 async function setup() {
   const db = openTestD1(":memory:");
@@ -50,7 +50,7 @@ async function setup() {
 
 // ── The reported loophole: an earlier lesson edited to assess 18-22 ──────
 
-for (const id of range(18, 22)) {
+for (const id of ["18", "20", "21", "22"]) {
   test(`History Edit cannot make an EARLIER lesson (before Review 1-17) assess ${id}, even though Review 1-17 is achieved in a later lesson`, async () => {
     const { create, assess, edit } = await setup();
     const lessonA = await create({ taughtIds: [id] }); // Lesson 1: taught only
@@ -176,7 +176,7 @@ test("legacy: an edit may fix the legacy lesson by removing the early 18 assessm
 
 test("legacy: but the same lesson cannot ADD a new early 18-22 assessment", async () => {
   const { edit, lessonA } = await legacyAssessedEarly();
-  await assert.rejects(() => edit(lessonA, { taughtIds: [], assessedIds: ["18", "19"], achievedResults: ach(["18", "19"]) }), OWN);
+  await assert.rejects(() => edit(lessonA, { taughtIds: [], assessedIds: ["18", "20"], achievedResults: ach(["18", "20"]) }), OWN);
 });
 
 test("legacy: other lessons of a learner with legacy data stay editable", async () => {
@@ -196,11 +196,11 @@ test("assessmentChronologyViolations: flags exactly the 18-22 assessments made b
   const violations = assessmentChronologyViolations([
     lessonEvents(1, [ev("l1", "18", "assessed", "achieved", 0)]),
     lessonEvents(2, first17),
-    lessonEvents(3, [ev("l3", REVIEW_1_17, "assessed", "achieved", 30), ev("l3", "19", "assessed", "achieved", 31)]), // same lesson as Review 1-17 → still a violation
+    lessonEvents(3, [ev("l3", REVIEW_1_17, "assessed", "achieved", 30), ev("l3", "21", "assessed", "achieved", 31)]), // same lesson as Review 1-17 → still a violation
     lessonEvents(4, [ev("l4", "20", "assessed", "achieved", 40)]), // after the gate → fine
     lessonEvents(5, [ev("l5", "21", "taught", null, 50)]), // taught → never a violation
   ]);
-  assert.deepEqual([...violations].sort(), ["1:18", "3:19"]);
+  assert.deepEqual([...violations].sort(), ["1:18", "3:21"]);
 });
 
 test("assessmentChronologyViolations: order of the input array does not matter, only lesson numbers", () => {
@@ -210,4 +210,13 @@ test("assessmentChronologyViolations: order of the input array does not matter, 
     lessonEvents(2, [ev("l2", REVIEW_1_17, "assessed", "achieved", 20)]),
   ];
   assert.deepEqual([...assessmentChronologyViolations(events)], []);
+});
+
+test("History Edit CAN make an earlier lesson (before Review 1-17) assess 19 — out of sequence is allowed (CoP 7.17)", async () => {
+  const { create, assess, edit } = await setup();
+  const lessonA = await create({ taughtIds: ["19"] });
+  await assess(range(1, 17));
+  await assess([REVIEW_1_17]);
+  const result = await edit(lessonA, { taughtIds: [], assessedIds: ["19"], achievedResults: ach(["19"]) });
+  assert.equal(result.progress.competencies["19"].achieved, true);
 });

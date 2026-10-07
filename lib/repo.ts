@@ -609,7 +609,7 @@ export async function updateLesson(db: D1Database, learnerId: string, lessonId: 
     const laterCompetencies = introduced.filter((key) => POST_REVIEW_1_17_IDS.includes(idOf(key)));
     if (laterCompetencies.length) {
       const laterLessonNo = Math.min(...laterCompetencies.map(lessonNoOf));
-      throw new ValidationError(`This edit would leave Lesson #${laterLessonNo} assessing Competency 18-22 before Competency 1-17 and Review 1-17 were achieved in earlier lessons. Correct Lesson #${laterLessonNo} first.`);
+      throw new ValidationError(`This edit would leave Lesson #${laterLessonNo} assessing Competency 18, 20, 21 or 22 before Competency 1-17 and Review 1-17 were achieved in earlier lessons. Correct Lesson #${laterLessonNo} first.`);
     }
   }
 
