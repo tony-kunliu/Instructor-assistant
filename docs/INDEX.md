@@ -11,6 +11,9 @@ Start with the repo root docs, in this order:
 
 - `docs/ECOSYSTEM_ROADMAP.md` — longer-term shared direction between this
   repo and the ACTGDS Website (`tony-kunliu/actgds.com`).
+- `docs/runbooks/release-b-integration-production.md` — checklist for the
+  future Production enablement of Integration V1 (Release B). Not an
+  authorization.
 - `docs/integrations/actgds-instructor-assistant-v1.md` — the
   `actgds-instructor-assistant/v1` Integration contract (human-readable
   companion to the JSON Schema).
