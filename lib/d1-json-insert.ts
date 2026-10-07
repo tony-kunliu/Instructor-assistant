@@ -37,7 +37,9 @@ export function jsonInsertStatement(
         const value = row[column];
         if (value === undefined) throw new Error(`jsonInsertStatement: row is missing column ${column}`);
         if (typeof value === "number" && !Number.isFinite(value)) throw new Error(`jsonInsertStatement: column ${column} is not a finite number`);
-        return [column, value];
+        // A lone surrogate would reach SQLite as a JSON \uD800 escape; bound directly, it is stored as
+        // U+FFFD. toWellFormed() makes both paths store exactly the same text.
+        return [column, typeof value === "string" ? value.toWellFormed() : value];
       }),
     ),
   );

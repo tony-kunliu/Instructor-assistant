@@ -14,6 +14,8 @@ import {
 } from "./competency.ts";
 import type { Instructor } from "./types.ts";
 
+export const MAX_IMPORT_ROWS = 1000;
+
 export const PAPER_CSV_COLUMNS = ["date", "start_time", "finish_time", "start_odometer", "finish_odometer", "taught", "assessed_achieved", "assessed_not_achieved", "location", "comments", "signature", "instructor"] as const;
 
 /** A parsed record with its 1-based spreadsheet row number (blank/empty rows are skipped but still counted). */
@@ -142,6 +144,8 @@ export function planPaperImport(csvText: string, instructors: readonly Pick<Inst
 
   const dataRows = table.slice(1);
   if (dataRows.length === 0) return { ok: false, errors: [{ row: headerRow, message: "No lessons found in the file." }] };
+  // Keeps one import a bounded, single-learner write (one bound JSON value per table in the commit batch).
+  if (dataRows.length > MAX_IMPORT_ROWS) return { ok: false, errors: [{ row: 1, message: `Too many rows (max ${MAX_IMPORT_ROWS}). Split the file per learner.` }] };
 
   const errors: PaperImportRowError[] = [];
   const lessons: PlannedPaperLesson[] = [];

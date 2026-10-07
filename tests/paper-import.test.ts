@@ -199,3 +199,11 @@ test("blank header column, duplicate header column and cells beyond the header a
   const beyond = errors(`${HEADER}\n2026-01-01,,,,,,,,,,on_paper,Tony,extra\n`);
   assert.deepEqual(beyond, [{ row: 2, message: "Row has more fields than the header." }]);
 });
+
+test("more than 1000 data rows is rejected with one row-1 error; exactly 1000 is allowed", () => {
+  const rows = (n: number) => Array.from({ length: n }, () => ({ taught: "1" }));
+  assert.deepEqual(errors(csv(...rows(1001))), [{ row: 1, message: "Too many rows (max 1000). Split the file per learner." }]);
+  const plan = planPaperImport(csv(...rows(1000)), INSTRUCTORS);
+  assert.equal(plan.ok, true);
+  assert.equal(plan.ok && plan.lessons.length, 1000);
+});

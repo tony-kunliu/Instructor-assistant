@@ -22,7 +22,7 @@ import type { D1Database, D1PreparedStatement } from "./d1-types.ts";
 import { buildLessonUpsertedPayload, sameContractState, type BuildLessonUpsertedInput } from "./integration/contract.ts";
 import { jsonInsertStatement } from "./d1-json-insert.ts";
 import { ensureStrictlyNewerSourceUpdatedAt, insertOutboxRowsStatement, latestSendablePayloadByLesson, latestSourceUpdatedAtByLesson } from "./integration/outbox.ts";
-import { processDueOutbox } from "./integration/sender.ts";
+import { IMMEDIATE_DELIVERY_LIMIT, processDueOutbox } from "./integration/sender.ts";
 import type { IntegrationHooks, LessonUpsertedPayloadV1 } from "./integration/types.ts";
 import { planPaperImport, type PaperImportPreview, type PaperImportRowError } from "./paper-import.ts";
 import type { CompletionSummary, Instructor, Learner, LearnerInput, Lesson, LessonInput, SignatureStatus } from "./types.ts";
@@ -394,7 +394,7 @@ function insertCompetencyEventsStatement(db: D1Database, rows: readonly Record<(
 function scheduleIntegrationDelivery(db: D1Database, integration: IntegrationHooks | undefined): void {
   if (!integration?.config.enabled) return;
   const fetchImpl = integration.fetchImpl ?? fetch;
-  const attempt = () => processDueOutbox(db, integration.config, fetchImpl).then(() => undefined);
+  const attempt = () => processDueOutbox(db, integration.config, fetchImpl, new Date(), IMMEDIATE_DELIVERY_LIMIT).then(() => undefined);
   if (integration.schedule) integration.schedule(attempt);
   else void attempt();
 }
@@ -897,6 +897,11 @@ export async function updateLesson(db: D1Database, learnerId: string, lessonId: 
     )
     .bind(learnerId, existing.lessonNo);
 
+  // Concurrency: these payload values come from the reads above (before the
+  // batch); the stored values come from recomputeCumulative at commit time.
+  // They can differ only if another write to this learner's lessons lands in
+  // between — accepted (single-instructor-at-a-time usage, as elsewhere here).
+  //
   // lesson_id -> its own recalculated cumulative totals (the same running
   // sums recomputeCumulative stores), for the ACTGDS downstream-propagation
   // events built below (never the edited lesson's own totals — each

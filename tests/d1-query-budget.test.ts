@@ -23,13 +23,19 @@ import { PAPER_CSV_COLUMNS } from "../lib/paper-import.ts";
 import { jsonInsertStatement } from "../lib/d1-json-insert.ts";
 import { CORE_COMPETENCY_IDS } from "../lib/competency.ts";
 import { resolveIntegrationConfig } from "../lib/integration/config.ts";
+import { CRON_SWEEP_LIMIT, IMMEDIATE_DELIVERY_LIMIT, processDueOutbox } from "../lib/integration/sender.ts";
+import { readFileSync } from "node:fs";
 import { buildLessonUpsertedPayload } from "../lib/integration/contract.ts";
 import type { IntegrationHooks, LessonUpsertedPayloadV1 } from "../lib/integration/types.ts";
 
 const TONY_EMAIL = "Kunliu.work@gmail.com";
 const SIG1 = "data:image/png;base64,iVBORw0KGgoAAAA1";
 const SIG2 = "data:image/png;base64,iVBORw0KGgoAAAA2";
-const D1_FREE_PLAN_QUERY_LIMIT = 50;
+// Workers Free plan: about 50 D1 queries + fetch subrequests per invocation.
+const FREE_PLAN_INVOCATION_LIMIT = 50;
+// Queries the HTTP request makes outside the repo function measured here: the
+// middleware's findInstructorByEmail and the route's own reads (getTotals etc.).
+const MIDDLEWARE_AND_ROUTE_QUERIES = 3;
 
 type Row = Record<string, unknown>;
 
@@ -69,14 +75,15 @@ function countingD1(inner: D1Database): { db: D1Database; count: () => number; r
 }
 
 /** Integration enabled; delivery attempts are collected (not run) so the request path is counted on its own. */
-function deferredHooks(): { hooks: IntegrationHooks; runDeferred: () => Promise<void> } {
+function deferredHooks(): { hooks: IntegrationHooks; runDeferred: () => Promise<void>; fetches: () => number; resetFetches: () => void } {
   const attempts: Array<() => Promise<void>> = [];
+  let fetches = 0;
   const hooks: IntegrationHooks = {
     config: resolveIntegrationConfig({ ACTGDS_INTEGRATION_ENABLED: "true", ACTGDS_WEBHOOK_URL: "https://fake.example/webhook", ACTGDS_WEBHOOK_SECRET: "synthetic-test-secret-never-real", ACTGDS_INTEGRATION_ENV: "staging" }),
-    fetchImpl: (async () => new Response("{}", { status: 202 })) as typeof fetch,
+    fetchImpl: (async () => { fetches++; return new Response("{}", { status: 202 }); }) as typeof fetch,
     schedule: (attempt) => { attempts.push(attempt); },
   };
-  return { hooks, runDeferred: async () => { for (const attempt of attempts.splice(0)) await attempt(); } };
+  return { hooks, runDeferred: async () => { for (const attempt of attempts.splice(0)) await attempt(); }, fetches: () => fetches, resetFetches: () => { fetches = 0; } };
 }
 
 async function setup() {
@@ -227,7 +234,7 @@ test("budget: importPaperLessons commit of 60 lessons × 3 events stays within 1
 
 test("budget: updateLesson of lesson #1 with 59 exported downstream lessons stays within 25 statements, and propagates the same events", async (t) => {
   const { db: raw, learner, tony } = await setup();
-  const { hooks, runDeferred } = deferredHooks();
+  const { hooks, runDeferred, fetches, resetFetches } = deferredHooks();
   for (let i = 1; i <= 60; i++) {
     const minutes = 30 + (i % 3) * 15;
     await createLesson(raw, learner.id, {
@@ -251,7 +258,10 @@ test("budget: updateLesson of lesson #1 with 59 exported downstream lessons stay
 
   const { db, count, reset } = countingD1(raw);
   await runDeferred(); // creates' own delivery attempts are not part of the measured request
+  // Those attempts (5 rows each) left create events pending; mark them delivered so only the edit's 60 are due.
+  await raw.prepare("UPDATE integration_outbox SET status = 'delivered', attempt_count = 1, delivered_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE status = 'pending'").run();
   reset();
+  resetFetches();
   await updateLesson(db, learner.id, String(lesson1.id), {
     lessonDate: String(lesson1.lesson_date),
     startTime: "09:00",
@@ -285,10 +295,21 @@ test("budget: updateLesson of lesson #1 with 59 exported downstream lessons stay
 
   t.diagnostic(`updateLesson: ${requestStatements} statements`);
   assert.ok(requestStatements <= 25, `updateLesson issued ${requestStatements} statements (budget 25)`);
-  // On a deployed Worker the immediate delivery attempt runs via ctx.waitUntil in the same invocation.
+  // On a deployed Worker the immediate delivery attempt runs via ctx.waitUntil in the same invocation:
+  // 60 rows are due, but only IMMEDIATE_DELIVERY_LIMIT are attempted (1 SELECT + 5 fetches + 5 UPDATEs);
+  // the rest stay pending for the Cron sweep.
+  assert.equal(fetches(), 0);
+  reset();
   await runDeferred();
-  t.diagnostic(`updateLesson + immediate delivery attempt: ${count()} statements`);
-  assert.ok(count() <= D1_FREE_PLAN_QUERY_LIMIT, `updateLesson + its immediate delivery attempt issued ${count()} statements (D1 Free plan limit ${D1_FREE_PLAN_QUERY_LIMIT})`);
+  const deliveryStatements = count();
+  assert.equal(IMMEDIATE_DELIVERY_LIMIT, 5);
+  assert.equal(fetches(), IMMEDIATE_DELIVERY_LIMIT, "only 5 webhook fetches");
+  assert.equal(deliveryStatements, 1 + IMMEDIATE_DELIVERY_LIMIT, "1 due-rows SELECT + 5 mark-delivered UPDATEs");
+  const newStatuses = (await raw.prepare("SELECT status, COUNT(*) AS n FROM integration_outbox WHERE rowid > ? GROUP BY status ORDER BY status").bind(maxRowidBefore).all<Row>()).results;
+  assert.deepEqual(newStatuses.map((row) => [row.status, row.n]), [["delivered", 5], ["pending", 55]]);
+  const invocationTotal = requestStatements + deliveryStatements + fetches() + MIDDLEWARE_AND_ROUTE_QUERIES;
+  t.diagnostic(`updateLesson + immediate delivery + middleware/route: ${requestStatements} + ${deliveryStatements} D1 + ${fetches()} fetch + ${MIDDLEWARE_AND_ROUTE_QUERIES} = ${invocationTotal}`);
+  assert.ok(invocationTotal <= FREE_PLAN_INVOCATION_LIMIT, `edit invocation total ${invocationTotal} (Free plan limit ${FREE_PLAN_INVOCATION_LIMIT})`);
 });
 
 // ── createLesson assessing 22 competencies ──────────────────────────────
@@ -348,4 +369,43 @@ test("jsonInsertStatement round-trips integers, NULLs and exact strings, keeps r
   assert.throws(() => jsonInsertStatement(raw, "t; DROP TABLE t", ["n"], [{ n: 1 }]), /invalid identifier/);
   assert.throws(() => jsonInsertStatement(raw, "t", ["n'"], [{ "n'": 1 }]), /invalid identifier/);
   assert.throws(() => jsonInsertStatement(raw, "t", ["n", "s"], [{ n: 1 }]), /missing column s/);
+});
+
+test("jsonInsertStatement stores a lone surrogate as U+FFFD, exactly like a directly bound value", async () => {
+  const raw = openTestD1(":memory:");
+  await raw.exec("CREATE TABLE t (s TEXT)");
+  const lone = "QA a\uD800b \uDC00c";
+  await raw.prepare("INSERT INTO t (s) VALUES (?)").bind(lone).run();
+  await jsonInsertStatement(raw, "t", ["s"], [{ s: lone }])!.run();
+  const [direct, viaJson] = (await raw.prepare("SELECT s, hex(s) AS h FROM t ORDER BY rowid").all<Row>()).results;
+  assert.equal(viaJson.s, "QA a\uFFFDb \uFFFDc");
+  assert.equal(viaJson.h, direct.h, "byte-identical to the directly bound value");
+});
+
+// ── Cron sweep cap ──────────────────────────────────────────────────────
+
+test("the Cron sweep processes at most 24 due rows per invocation (1 SELECT + 24 × (fetch + UPDATE) = 49)", async () => {
+  const { db: raw, learner } = await setup();
+  const { hooks } = deferredHooks();
+  for (let i = 1; i <= 30; i++) {
+    await createLesson(raw, learner.id, { lessonDate: "2026-04-01", startTime: "09:00", finishTime: "09:30", startOdometer: String(i * 10), finishOdometer: String(i * 10 + 5), taughtIds: ["1"], adiSignature: SIG1, learnerSignature: SIG1 }, hooks);
+  }
+  assert.equal((await raw.prepare("SELECT COUNT(*) AS n FROM integration_outbox WHERE status = 'pending'").first<{ n: number }>())?.n, 30);
+  let fetches = 0;
+  const fetchImpl = (async () => { fetches++; return new Response("{}", { status: 202 }); }) as typeof fetch;
+  const { db, count } = countingD1(raw);
+
+  // worker/scheduled-entry.ts must pass the cap explicitly (it can't be imported here: it needs the OpenNext build).
+  assert.match(readFileSync(new URL("../worker/scheduled-entry.ts", import.meta.url), "utf8"), /processDueOutbox\(env\.DB, config, fetch, new Date\(\), CRON_SWEEP_LIMIT\)/);
+  assert.equal(CRON_SWEEP_LIMIT, 24);
+  await processDueOutbox(db, hooks.config, fetchImpl, new Date(Date.now() + 60_000), CRON_SWEEP_LIMIT);
+  assert.equal(fetches, 24);
+  assert.equal(count(), 1 + 24);
+  assert.ok(fetches + count() <= FREE_PLAN_INVOCATION_LIMIT);
+  assert.equal((await raw.prepare("SELECT COUNT(*) AS n FROM integration_outbox WHERE status = 'pending'").first<{ n: number }>())?.n, 6);
+
+  // The default limit is the sweep cap too.
+  fetches = 0;
+  await processDueOutbox(raw, hooks.config, fetchImpl, new Date(Date.now() + 60_000));
+  assert.equal(fetches, 6);
 });
