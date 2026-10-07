@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { PDFDocument } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
-import { buildCbtaChecklistPdf, createMeasurer, plannedPageCount, wrapText } from "../lib/pdf-export.ts";
+import { buildCbtaChecklistPdf, createMeasurer, cumulativeFooterText, lessonTotalsText, plannedPageCount, wrapText } from "../lib/pdf-export.ts";
 import type { Learner, Lesson } from "../lib/types.ts";
 
 const templateBytes = readFileSync(new URL("../public/pdf-template/adi-cbta-checklist.pdf", import.meta.url));
@@ -115,4 +115,14 @@ test("regression: this font swaps digits for context-dependent 'locl' alternate 
   const digitsLoclDisabled = fkFont.layout("ADI-1234", { locl: false }).glyphs.slice(4).map((g) => g.id);
   assert.notDeepEqual(digitsDefault, digitsAlone, "sanity check: this reproduces the substitution when locl is left enabled");
   assert.deepEqual(digitsLoclDisabled, digitsAlone, "locl: false must make digits use their plain glyph ids, matching the declared /W table");
+});
+
+test("Total hrs / Total kms cells show THIS lesson's own totals (per paper form), never the running totals", () => {
+  const l = lesson(3, { durationMinutes: 90, distanceKm: 12, cumulativeMinutes: 270, cumulativeKm: 36 });
+  assert.deepEqual(lessonTotalsText(l), { hours: "1.5 h", km: "12 km" });
+});
+
+test("cumulative footer states the running total as of the given lesson", () => {
+  const l = lesson(3, { cumulativeMinutes: 270, cumulativeKm: 36 });
+  assert.equal(cumulativeFooterText(l), "Cumulative to lesson #3: 4.5 h / 36 km");
 });

@@ -30,6 +30,7 @@ import {
   CONTINUATION_PAGE_ROWS,
   CONTINUATION_ROW_TOPS,
   CONTINUATION_TABLE_BOTTOM,
+  CUMULATIVE_FOOTER_GAP,
   FIRST_PAGE_ROWS,
   FIRST_PAGE_ROW_TOPS,
   FIRST_PAGE_TABLE_BOTTOM,
@@ -199,6 +200,22 @@ function drawHeader(page: PDFPage, font: PDFFont, measurer: Measurer, learner: L
   if (learner.transmission === "auto") checkbox(f.autoCheckbox);
 }
 
+/** This lesson's own "Total hrs" / "Total kms" cell text (not running totals — those are `cumulativeFooterText`). */
+export function lessonTotalsText(lesson: Pick<Lesson, "durationMinutes" | "distanceKm">): { hours: string; km: string } {
+  return { hours: `${decimalHours(lesson.durationMinutes)} h`, km: `${lesson.distanceKm} km` };
+}
+
+/** Running total shown under the table, as of the last lesson on the page. */
+export function cumulativeFooterText(lesson: Pick<Lesson, "lessonNo" | "cumulativeMinutes" | "cumulativeKm">): string {
+  return `Cumulative to lesson #${lesson.lessonNo}: ${decimalHours(lesson.cumulativeMinutes)} h / ${lesson.cumulativeKm} km`;
+}
+
+function drawCumulativeFooter(page: PDFPage, font: PDFFont, lesson: Lesson, tableBottom: number) {
+  const size = 7;
+  const topDownBaseline = tableBottom + CUMULATIVE_FOOTER_GAP + size;
+  page.drawText(cumulativeFooterText(lesson), { x: COLUMNS.dateLessonNo.x0, y: PAGE_HEIGHT - topDownBaseline, size, font });
+}
+
 async function drawLessonRow(doc: PDFDocument, page: PDFPage, font: PDFFont, measurer: Measurer, lesson: Lesson, rowTop: number, rowBottom: number, overflowNotes: OverflowNote[]) {
   const sub = subRows(rowTop, rowBottom);
   const col = COLUMNS;
@@ -207,15 +224,16 @@ async function drawLessonRow(doc: PDFDocument, page: PDFPage, font: PDFFont, mea
   drawSingleLine(page, font, measurer, lesson.lessonDate, { ...sub.half1, x0: col.dateLessonNo.x0, x1: col.dateLessonNo.x1 }, 7);
   drawSingleLine(page, font, measurer, `#${lesson.lessonNo}`, { ...sub.half2, x0: col.dateLessonNo.x0, x1: col.dateLessonNo.x1 }, 7);
 
-  // Time & total hrs
+  // Time & total hrs — "Total" is THIS lesson's own total, matching the paper form; running totals go in the page footer.
+  const totals = lessonTotalsText(lesson);
   drawSingleLine(page, font, measurer, lesson.startTime, { ...sub.start, x0: col.timeHrs.x0, x1: col.timeHrs.x1 }, 7);
   drawSingleLine(page, font, measurer, lesson.finishTime, { ...sub.finish, x0: col.timeHrs.x0, x1: col.timeHrs.x1 }, 7);
-  drawSingleLine(page, font, measurer, `${decimalHours(lesson.cumulativeMinutes)} h`, { ...sub.total, x0: col.timeHrs.x0, x1: col.timeHrs.x1 }, 7);
+  drawSingleLine(page, font, measurer, totals.hours, { ...sub.total, x0: col.timeHrs.x0, x1: col.timeHrs.x1 }, 7);
 
   // Odometer & total kms
   drawSingleLine(page, font, measurer, String(lesson.startOdometer), { ...sub.start, x0: col.odometerKms.x0, x1: col.odometerKms.x1 }, 7);
   drawSingleLine(page, font, measurer, String(lesson.finishOdometer), { ...sub.finish, x0: col.odometerKms.x0, x1: col.odometerKms.x1 }, 7);
-  drawSingleLine(page, font, measurer, `${lesson.cumulativeKm} km`, { ...sub.total, x0: col.odometerKms.x0, x1: col.odometerKms.x1 }, 7);
+  drawSingleLine(page, font, measurer, totals.km, { ...sub.total, x0: col.odometerKms.x0, x1: col.odometerKms.x1 }, 7);
 
   // Wide free-text columns (full row height, one cell each).
   const fullRow = (x0: number, x1: number): Box => ({ x0, x1, top: rowTop, bottom: rowBottom });
@@ -352,6 +370,7 @@ export async function buildCbtaChecklistPdf(input: PdfExportInput): Promise<PdfE
       // eslint-disable-next-line no-await-in-loop -- signatures must embed sequentially into the same page.
       await drawLessonRow(outDoc, copied, font, measurer, group[i], top, bottom, []);
     }
+    drawCumulativeFooter(copied, font, group[group.length - 1], tableBottom);
   }
 
   for (let i = 0; i < appendixPages.length; i++) {

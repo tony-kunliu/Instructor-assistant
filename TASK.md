@@ -1,23 +1,30 @@
 # TASK.md
 
-_Last updated: 2026-09-30_
+_Last updated: 2026-10-07_
 
 This file describes the **current task only**. Completed work's detail
 lives in git log and closed PRs, not here.
 
-**Current Task:** Release A UX bugfix round (Sign out return, Finish
-odometer, Integration no-op propagation) — **Completed**. Release A = PASS
-(Tony + Anna Access login PASS). Production Worker
-`a8ec37da-9939-48d4-b1d0-fef195b0a09c` (previous `b76eeb2c-163d-4b32-a49d-042d32063e00`,
-rollback target), D1 baseline `0004`, Integration V1 OFF, no migration run.
+**Current Task:** Post-merge verification and memory sync for P1a
+(`feature/pdf-per-lesson-totals`, now in `staging`) — **Completed**.
+Typecheck, 261/261 tests, build, and local 390px browser QA (96/96) PASS on
+staging HEAD. Docs-only change; nothing deployed or migrated.
 
-**Next Recommended Task:** Wait for Tony's real-phone Sign out check; then
-decide whether to authorize Release B (Integration Production enablement).
-Release B and P3-B are NOT STARTED.
+**Next Recommended Task:** Tony reviews one exported PDF on Staging. Then,
+when Tony chooses, P1b (migration 0006 for the paper-records import:
+nullable time/odometer, `record_source`, `signature_status`,
+`integration_sync_paused`, batch import function; Tony-approved decisions:
+gate not relaxed, V1 sync paused for imported learners, originals kept 5
+years from the learner's last lesson, blank signatures allowed). P1b is a
+major DB migration → Opus. NOT STARTED; Tony has deferred migrations for
+now.
 
 **Waiting on Other Repo:** NONE.
 
-**Tony Manual Action Required:** on the Production iPhone, tap Sign out
-once and confirm he is logged out and lands on the login flow.
+**Tony Manual Action Required:** look at one exported PDF on Staging
+(`https://instructor-assistant.kunliu-work.workers.dev`, Access login).
+Release A Sign-out phone check is DONE (PASS).
 
-**Non-blocking backlog (not scheduled):** none.
+**Non-blocking backlog (not scheduled):** paper-records import P1b–P4;
+promotion of P1a from `staging` to `main` needs Tony's explicit
+authorization.
