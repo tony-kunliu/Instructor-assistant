@@ -16,8 +16,8 @@ const freshSig = () => `data:image/png;base64,iVBORw0KGgoAAAA${100 + ++sigCounte
 const range = (a: number, b: number) => Array.from({ length: b - a + 1 }, (_, i) => String(a + i));
 const ach = (ids: string[], result: "achieved" | "not_achieved" = "achieved") => Object.fromEntries(ids.map((id) => [id, result]));
 
-const OWN = /Competency 18, 20, 21 and 22 can only be assessed after Competency 1-17 and Review 1-17 are all achieved/;
-const LATER = (n: number) => new RegExp(`would leave Lesson #${n} assessing Competency 18, 20, 21 or 22 before Competency 1-17 and Review 1-17 were achieved in earlier lessons`);
+const OWN = /Competency 18, 20 and 21 can only be assessed after Competency 1-17 and Review 1-17 are all achieved/;
+const LATER = (n: number) => new RegExp(`would leave Lesson #${n} assessing Competency 18, 20 or 21 before Competency 1-17 and Review 1-17 were achieved in earlier lessons`);
 
 async function setup() {
   const db = openTestD1(":memory:");
@@ -50,7 +50,7 @@ async function setup() {
 
 // ── The reported loophole: an earlier lesson edited to assess 18-22 ──────
 
-for (const id of ["18", "20", "21", "22"]) {
+for (const id of ["18", "20", "21"]) {
   test(`History Edit cannot make an EARLIER lesson (before Review 1-17) assess ${id}, even though Review 1-17 is achieved in a later lesson`, async () => {
     const { create, assess, edit } = await setup();
     const lessonA = await create({ taughtIds: [id] }); // Lesson 1: taught only
@@ -212,7 +212,7 @@ test("assessmentChronologyViolations: order of the input array does not matter, 
   assert.deepEqual([...assessmentChronologyViolations(events)], []);
 });
 
-test("History Edit CAN make an earlier lesson (before Review 1-17) assess 19 — out of sequence is allowed (CoP 7.17)", async () => {
+test("History Edit CAN make an earlier lesson (before Review 1-17) assess 19 — any time (NI2020-703)", async () => {
   const { create, assess, edit } = await setup();
   const lessonA = await create({ taughtIds: ["19"] });
   await assess(range(1, 17));

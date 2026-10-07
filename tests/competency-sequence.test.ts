@@ -14,7 +14,7 @@ const SIG = "data:image/png;base64,iVBORw0KGgoAAAA1";
 const SIG_NEW = "data:image/png;base64,iVBORw0KGgoAAAA9";
 const range = (a: number, b: number) => Array.from({ length: b - a + 1 }, (_, i) => String(a + i));
 const ACHIEVED_1_17 = range(1, 17);
-const GATED = ["18", "20", "21", "22"];
+const GATED = ["18", "20", "21"];
 const ALL_18_22 = range(18, 22);
 
 type Db = ReturnType<typeof openTestD1>;
@@ -36,7 +36,7 @@ async function setup() {
   return { db, learner, assess, teach, progress, lesson };
 }
 
-const LOCKED_18_22 = /Competency 18, 20, 21 and 22 can only be assessed after Competency 1-17 and Review 1-17 are all achieved/;
+const LOCKED_18_22 = /Competency 18, 20 and 21 can only be assessed after Competency 1-17 and Review 1-17 are all achieved/;
 
 // ── 18-22: Taught is never restricted ────────────────────────────────────
 
@@ -131,7 +131,7 @@ test("Review 1-22 becomes READY only when 1-17 + Review 1-17 + all of 18-22 are 
   const { assess, progress } = await setup();
   await assess(ACHIEVED_1_17);
   await assess([REVIEW_1_17]);
-  await assess([...GATED, "19"]);
+  await assess([...GATED, "19", "22"]);
   assert.equal((await progress()).review1_22.status, "ready");
   await assess([REVIEW_1_22]);
   assert.equal((await progress()).review1_22.status, "achieved");
@@ -207,35 +207,39 @@ test("History Edit cannot turn a lesson into an early 18-22 assessment", async (
   );
 });
 
-// ── 19 (Overtaking) may be assessed out of sequence (CoP DI2016-237 cl 7.17) ──
+// ── 19 and 22 may be assessed at any time (NI2020-703 Schedule 1 preamble) ──
 
-test("19 can be Assessed on a brand-new learner, before 1-17 and Review 1-17", async () => {
-  const { assess, progress } = await setup();
-  await assess(["19"]);
-  assert.equal((await progress()).competencies["19"].achieved, true);
-});
+for (const id of ["19", "22"]) {
+  test(`${id} can be Assessed on a brand-new learner, before 1-17 and Review 1-17`, async () => {
+    const { assess, progress } = await setup();
+    await assess([id]);
+    assert.equal((await progress()).competencies[id].achieved, true);
+  });
+}
 
-test("19 achieved early counts toward Review 1-22 readiness", async () => {
+test("19 and 22 achieved early count toward Review 1-22 readiness", async () => {
   const { assess, progress } = await setup();
-  await assess(["19"]);
+  await assess(["19", "22"]);
   await assess(ACHIEVED_1_17);
   await assess([REVIEW_1_17]);
   await assess(GATED);
   assert.equal((await progress()).review1_22.status, "ready");
 });
 
-test("Review 1-22 stays locked when 19 is the only competency not achieved", async () => {
-  const { assess, progress } = await setup();
-  await assess(ACHIEVED_1_17);
-  await assess([REVIEW_1_17]);
-  await assess(GATED);
-  const p = await progress();
-  assert.equal(p.review1_22.status, "locked");
-  assert.equal(p.review1_22.remaining, 1);
-});
+for (const missing of ["19", "22"]) {
+  test(`Review 1-22 stays locked when ${missing} is the only competency not achieved`, async () => {
+    const { assess, progress } = await setup();
+    await assess(ACHIEVED_1_17);
+    await assess([REVIEW_1_17]);
+    await assess([...GATED, missing === "19" ? "22" : "19"]);
+    const p = await progress();
+    assert.equal(p.review1_22.status, "locked");
+    assert.equal(p.review1_22.remaining, 1);
+  });
+}
 
-test("assessing 19 early does not unlock 18, 20, 21 or 22", async () => {
+test("assessing 19 and 22 early does not unlock 18, 20 or 21", async () => {
   const { assess } = await setup();
-  await assess(["19"]);
+  await assess(["19", "22"]);
   await assert.rejects(() => assess(["20"]), LOCKED_18_22);
 });

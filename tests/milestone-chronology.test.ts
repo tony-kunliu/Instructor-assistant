@@ -189,7 +189,7 @@ test("existing rollback still works: editing an earlier prerequisite lesson roll
 
 test("18-22 in a later lesson still blocks an edit that would break their prerequisites (no rollback exists for competencies)", async () => {
   const ctx = await fullChain();
-  await assert.rejects(() => ctx.edit(ctx.l3, { assessedIds: [REVIEW_1_17], achievedResults: ach([REVIEW_1_17], "not_achieved") }), /would leave Lesson #4 assessing Competency 18, 20, 21 or 22/);
+  await assert.rejects(() => ctx.edit(ctx.l3, { assessedIds: [REVIEW_1_17], achievedResults: ach([REVIEW_1_17], "not_achieved") }), /would leave Lesson #4 assessing Competency 18, 20 or 21/);
 });
 
 // ── Legacy data ──────────────────────────────────────────────────────────
