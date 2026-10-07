@@ -71,10 +71,13 @@ crons = ["*/5 * * * *"]
 
 [env.production.vars]
 ACCESS_AUD = "5d77a5074b7a9436e7610db2937f4108d9fd60a97d6c9243421fb44909ce288b"
-ACTGDS_INTEGRATION_ENABLED = "false"
+# Release B (Tony-authorized 2026-10-07): ACTGDS Receiver declared PRODUCTION
+# READY (actgds.com PR #21); ACTGDS_WEBHOOK_SECRET is a Worker secret set by
+# Tony. Kill switch: set back to "false" and redeploy. See
+# docs/RELEASE_B_RUNBOOK.md.
+ACTGDS_INTEGRATION_ENABLED = "true"
 ACTGDS_INTEGRATION_ENV = "production"
-# ACTGDS Production Receiver (public endpoint, not a credential). Inert while
-# ACTGDS_INTEGRATION_ENABLED = "false"; see docs/RELEASE_B_RUNBOOK.md.
+# ACTGDS Production Receiver (public endpoint, not a credential).
 ACTGDS_WEBHOOK_URL = "https://actgds.com/api/integrations/instructor-assistant/events"
 
 [[env.production.services]]

@@ -11,11 +11,11 @@ No contract change: `contract_version` 1, schema hash
 
 | # | Precondition | Owner | State 2026-10-07 |
 |---|---|---|---|
-| 1 | ACTGDS Admin authorization fix (`fix/admin-golden-email-escalation`) released to ACTGDS Production | ACTGDS | NOT DONE |
-| 2 | ACTGDS Production `INSTRUCTOR_ASSISTANT_WEBHOOK_SECRET` set | Tony (ACTGDS Sites env) | ABSENT |
-| 3 | ACTGDS declares Receiver **PRODUCTION READY** on Issue #3 | ACTGDS | NOT YET |
-| 4 | Same secret value set as Worker secret `ACTGDS_WEBHOOK_SECRET` on `instructor-assistant-production` | Tony (Cloudflare dashboard → Worker → Settings → Variables and Secrets) | NOT SET |
-| 5 | P1b deployed to Production with Integration still disabled (paper lessons must never emit) | Claude | PENDING P1b |
+| 1 | ACTGDS Admin authorization fix (`fix/admin-golden-email-escalation`) released to ACTGDS Production | ACTGDS | DONE (ACTGDS v24) |
+| 2 | ACTGDS Production `INSTRUCTOR_ASSISTANT_WEBHOOK_SECRET` set | Tony (ACTGDS Sites env) | DONE (re-set by Tony 2026-10-07) |
+| 3 | ACTGDS declares Receiver **PRODUCTION READY** | ACTGDS | DONE (actgds.com PR #21) |
+| 4 | Same secret value set as Worker secret `ACTGDS_WEBHOOK_SECRET` on `instructor-assistant-production` | Tony (Cloudflare dashboard → Worker → Settings → Variables and Secrets) | DONE 2026-10-07 (match proven only by the first event) |
+| 5 | Paper lessons must never emit | Claude | Satisfied by ordering: no paper lesson can exist before P1b ships, and P1b's code never enqueues them — so Release B ships first |
 | 6 | Issue #3 notice acknowledged: imported learners' first event may be e.g. `lesson_number: 16` with non-zero cumulative values | ACTGDS | POSTED 2026-10-07, awaiting ACK |
 
 The secret is generated and entered by Tony directly in both dashboards;
@@ -32,18 +32,18 @@ workflow: typecheck/test/build → records the rollback version and the D1
 Time Travel restore point in the run summary → applies pending D1
 migrations (`0005`, `0006`) → deploys → checks the Worker answers.
 
-1. **Rehearse** `0006` on Staging D1 first (Staging migrations, then QA).
-2. **Release P1b** with `ACTGDS_INTEGRATION_ENABLED = "false"`: merge to
-   `main`, run the workflow. Verify `lessons` row count unchanged and
-   `integration_outbox` empty.
-3. Wait for preconditions 1–4 and 6.
-4. **Enable**: set `ACTGDS_INTEGRATION_ENABLED = "true"` under
-   `[env.production.vars]`, merge to `main`, run the workflow with
-   `apply_migrations` off. `ACTGDS_WEBHOOK_URL` is already configured.
-5. **First event** (coordinated with ACTGDS): one real lesson save produces
+Release B ships before P1b (precondition 5):
+
+1. **Release B**: `ACTGDS_INTEGRATION_ENABLED = "true"` under
+   `[env.production.vars]`; merge to `main`; run the workflow with
+   `apply_migrations` on (applies `0005` only). Verify `lessons` row count
+   unchanged and `integration_outbox` exists and is empty.
+2. **First event** (coordinated with ACTGDS): one real lesson save produces
    one outbox row; expect `202 pending_link` until Tony links the
    `learner_id` in the ACTGDS CRM, then ACTGDS replays → applied.
-6. Only then import real paper learners, one at a time.
+3. **P1b** later: rehearse `0006` on Staging D1, merge to `main`, run the
+   workflow (applies `0006`). Only then import real paper learners, one at
+   a time.
 
 Each step stops on the first failure.
 
