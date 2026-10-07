@@ -1,17 +1,15 @@
 # STATUS.md
 
-_Last updated: 2026-10-07_ (P1a merged to staging; Release A Sign-out phone check done)
+_Last updated: 2026-10-08_ (Release B live in Production; first real event PASS)
 
 This file describes **current state only**. Development history lives in
 git log and closed PRs, not here — see `TASK.md` for what's in progress.
 
 ## Repository
 
-- **main:** `76103ef7b86f7d2431e83225f25bc03ccb1365f1` — P1a promoted,
-  CI SUCCESS, NOT in Production. Production runs `b3693f5` (Release A UX
-  bugfix, Worker `a8ec37da`). Release A source:
-  `92aa49623e945b90d55a10d3f47eca72cbdf9025` (application code same as
-  audited `9fabe2c`). Application rollback baseline before Release A:
+- **main:** `d47350bcb65fa46d3135d1dbeec52882f7012886` — Release B
+  (PR #14), deployed to Production. Previous Production source: `76103ef`
+  (P1a). Application rollback baseline before Release A:
   `8bae4e4c211a78b2e682d8b04744f102fa1a4328`.
 - **staging:** contains GitHub Actions CI, the Integration Sender source,
   and the Phase A documentation cleanup. `staging`'s HEAD moves with every
@@ -43,31 +41,24 @@ git log and closed PRs, not here — see `TASK.md` for what's in progress.
   **PASS**, see Integration V1 below)
 
 **Production**
-- Deployed Worker version: `a8ec37da-9939-48d4-b1d0-fef195b0a09c`
-  (Release A UX bugfix, from main `b3693f5`, deployed 2026-09-30).
-  Previous: `b76eeb2c-163d-4b32-a49d-042d32063e00` (Release A, the
-  immediate rollback target); before that `a5708df9-5dcf-4c10-b26b-212fb4bf9a3f`.
-- D1 migration level: `0004` (baseline; no migration executed in Release A
-  or the bugfix; the agent's token has no D1 permission, so it cannot
-  independently list Production migrations — not observable by the agent)
-- Cloudflare Access: enabled (Tony + Anna only)
-- Integration enabled: **NO** (`ACTGDS_INTEGRATION_ENABLED=false`, no
-  webhook URL, no secrets — `wrangler secret list` is empty)
-
-**Release A (application): PASS.** Deployed 2026-09-30 (Worker `b76eeb2c`).
-Real-account acceptance: Tony Access login PASS, Anna Access login PASS,
-app loads, default My Learners PASS. Migration `0005` not applied to
-Production — never run `db:migrate:remote` against Production without
-separate authorization. Release B (Integration Production enablement) is
-NOT STARTED / NOT AUTHORIZED; P3-B is NOT STARTED. The Workers Builds
-"Production branch" is `staging` and drives only the Staging Worker.
-
-**Release A UX bugfix** (Tony-requested, deployed to Production): Sign out
-now uses same-origin `/cdn-cgi/access/logout?returnTo=<app origin>/`
-(deletes this app's `CF_Authorization`, then re-enters the Access login);
-Finish odometer opens only after End Lesson; redundant downstream
-Integration events skipped. Real-phone acceptance: Tony signed out on
-Production iPhone and landed on the login flow — PASS (reported 2026-10-07).
+- **Releases:** manual GitHub Actions workflow `Production Release`
+  (`.github/workflows/production-release.yml`, `main` only,
+  `confirm=production`); token only in GitHub Secrets; each run records the
+  rollback version and a D1 Time Travel restore point in its summary. See
+  `docs/RELEASE_B_RUNBOOK.md`.
+- Deployed Worker version: `08ca0c75-cd97-44fa-87ec-ed0f7e6efbae`
+  (Release B, main `d47350b`, run 37668118567, 2026-10-07 UTC). Rollback
+  target: `7865545e-9940-4ddb-acc3-a5bbfb52a240` (P1a, `76103ef`).
+- D1 migration level: `0005` (applied by the workflow).
+- Cloudflare Access: enabled (Tony + Anna only).
+- Integration enabled: **YES** — `ACTGDS_INTEGRATION_ENV=production`,
+  Receiver `https://actgds.com/api/integrations/instructor-assistant/events`,
+  `ACTGDS_WEBHOOK_SECRET` Worker secret set by Tony (matches ACTGDS).
+  Outbox Cron `*/5`. No backfill.
+- **First real Production event: PASS** (Tony, 2026-10-08 Canberra):
+  lesson → `pending_link` → CRM link → applied → History Edit propagated.
+  ACTGDS Receiver is PRODUCTION READY (actgds.com PR #21); ACTGDS-side
+  confirmation and display fixes are tracked on actgds.com Issue #3.
 
 ## Current Product
 
