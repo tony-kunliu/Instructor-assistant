@@ -1,28 +1,28 @@
 # TASK.md
 
-_Last updated: 2026-10-07_
+_Last updated: 2026-10-08_
 
 This file describes the **current task only**. Completed work's detail
 lives in git log and closed PRs, not here.
 
-**Current Task:** P1a (`feature/pdf-per-lesson-totals`) promoted to `main`
-and memory synced — **Completed**. Typecheck, 261/261 tests, build, local
-390px browser QA (96/96) and CI PASS. Nothing deployed or migrated.
+**Current Task:** Release B (ACTGDS Integration V1 in Production) —
+**Completed**. Deployed via the Production Release workflow (Worker
+`08ca0c75`, D1 `0005`); first real event PASS end to end.
 
-**Next Recommended Task:** P1a is merged to `main` (Tony authorized the
-main merge only; Tony's Staging PDF check: OK). Production deploy of P1a
-needs Tony's separate explicit authorization. When Tony chooses, P1b
-(migration 0006 for the paper-records import: nullable time/odometer, `record_source`, `signature_status`,
-`integration_sync_paused`, batch import function; Tony-approved decisions:
-gate not relaxed, V1 sync paused for imported learners, originals kept 5
-years from the learner's last lesson, blank signatures allowed). P1b is a
-major DB migration → Opus. NOT STARTED; Tony has deferred migrations for
-now.
+**In progress (separate branch):** P1b paper records import on
+`feature/paper-records-import` (spec
+`docs/superpowers/specs/2026-10-07-paper-records-import-design.md`, incl.
+§12 prior-instructor records; plan
+`docs/superpowers/plans/2026-10-07-paper-records-import.md`). Tasks 1–5
+done and reviewed; Task 6 (UI) in progress; then D1 free-plan query-limit
+fix (set-based writes), prior-instructor records, docs + Staging rehearsal
+of `0006`.
 
-**Waiting on Other Repo:** NONE.
+**Next Recommended Task:** finish P1b, rehearse `0006` on Staging, release
+via the workflow, then import paper learners one at a time.
 
-**Tony Manual Action Required:** none now. Release A Sign-out phone check
-and the Staging PDF check are DONE (PASS). Decide whether to authorize a
-Production deploy of P1a.
+**Waiting on Other Repo:** ACTGDS — first-event confirmation, ACK of the
+mid-sequence-first-event notice, display fixes (Synced-at in Canberra
+time, sorted competency ids), merge of PR #21 (Issue #3).
 
-**Non-blocking backlog (not scheduled):** paper-records import P1b–P4.
+**Tony Manual Action Required:** NONE.

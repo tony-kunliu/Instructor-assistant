@@ -10,9 +10,14 @@ export const REVIEW_1_22 = "review-1-22";
 export const FINAL_DRIVE_23 = "final-drive-23";
 export const SPECIAL_ASSESSMENT_IDS: readonly string[] = [REVIEW_1_17, REVIEW_1_22, FINAL_DRIVE_23];
 export const ALL_ASSESSABLE_IDS: readonly string[] = [...CORE_COMPETENCY_IDS, ...SPECIAL_ASSESSMENT_IDS];
-/** Competency 18-22: may be Taught any time, but only Assessed once 1-17 and Review 1-17 are Achieved. */
-export const POST_REVIEW_1_17_IDS: readonly string[] = CORE_COMPETENCY_IDS.slice(17);
-export const POST_REVIEW_1_17_LOCK_MESSAGE = "Competency 18-22 can only be assessed after Competency 1-17 and Review 1-17 are all achieved.";
+/**
+ * Competency 18, 20, 21: may be Taught any time, but only Assessed once 1-17 and Review 1-17 are
+ * Achieved. Competencies 19 (overtaking) and 22 (vulnerable road users) "may be assessed at any
+ * time prior to Review 1 or Review 2" — ACT Assessment Standards 2020 (NI2020-703), Schedule 1
+ * preamble (docs/ACT_ASSESSMENT_STANDARDS.md).
+ */
+export const POST_REVIEW_1_17_IDS: readonly string[] = ["18", "20", "21"];
+export const POST_REVIEW_1_17_LOCK_MESSAGE = "Competency 18, 20 and 21 can only be assessed after Competency 1-17 and Review 1-17 are all achieved (19 and 22 may be assessed at any time).";
 
 export type CompetencyAction = "taught" | "assessed";
 export type AssessmentResult = "achieved" | "not_achieved";
@@ -133,7 +138,7 @@ export class CompetencyRuleError extends Error {}
 
 /**
  * Chronology check for every gated Assessed selection: Review 1-17, Competency
- * 18-22, Review 1-22 and Final Drive 23 (Taught is never gated). `lessons` is a
+ * 18, 20, 21, Review 1-22 and Final Drive 23 (Taught is never gated). `lessons` is a
  * learner's lessons with their events, in any order; ordering is by `lessonNo`
  * (creation order, never editable). Returns `"<lessonNo>:<competencyId>"` for
  * every gated assessment whose prerequisites were not Achieved by EARLIER

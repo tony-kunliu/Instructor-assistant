@@ -765,7 +765,7 @@ export async function updateLesson(db: D1Database, learnerId: string, lessonId: 
   //  - Taught: a competency can't be taught in a lesson if it was already
   //    Achieved in an EARLIER lesson (achieved LATER is normal — that's how
   //    it was learned).
-  //  - Assessed gates (Review 1-17, 18-22, Review 1-22, Final Drive 23) are
+  //  - Assessed gates (Review 1-17, 18, 20, 21, Review 1-22, Final Drive 23) are
   //    judged against earlier lessons only, below.
   const { results: lessonRows } = await db.prepare("SELECT id, lesson_no FROM lessons WHERE learner_id = ?").bind(learnerId).all<Row>();
   const lessonNoById = new Map(lessonRows.map((row) => [String(row.id), Number(row.lesson_no)]));
@@ -781,7 +781,7 @@ export async function updateLesson(db: D1Database, learnerId: string, lessonId: 
   // An edit may not introduce a NEW gated assessment (in this lesson) whose
   // prerequisites weren't Achieved in earlier lessons. Violations already in
   // legacy data are tolerated and never rewritten — only new ones block.
-  // Effects on LATER lessons: an Assessed 18-22 there has no rollback
+  // Effects on LATER lessons: an Assessed 18, 20, 21 there has no rollback
   // semantics, so an edit that would break its prerequisites is rejected;
   // later Review / Final Drive milestones keep their derived rollback and are
   // reported through `invalidated` instead of blocking the edit.
@@ -810,7 +810,7 @@ export async function updateLesson(db: D1Database, learnerId: string, lessonId: 
     const laterCompetencies = introduced.filter((key) => POST_REVIEW_1_17_IDS.includes(idOf(key)));
     if (laterCompetencies.length) {
       const laterLessonNo = Math.min(...laterCompetencies.map(lessonNoOf));
-      throw new ValidationError(`This edit would leave Lesson #${laterLessonNo} assessing Competency 18-22 before Competency 1-17 and Review 1-17 were achieved in earlier lessons. Correct Lesson #${laterLessonNo} first.`);
+      throw new ValidationError(`This edit would leave Lesson #${laterLessonNo} assessing Competency 18, 20 or 21 before Competency 1-17 and Review 1-17 were achieved in earlier lessons. Correct Lesson #${laterLessonNo} first.`);
     }
   }
 
@@ -1115,7 +1115,7 @@ export async function getProgressExcludingLesson(db: D1Database, learnerId: stri
   return computeProgress((await getCompetencyEvents(db, learnerId)).filter((event) => event.lessonId !== lessonId));
 }
 
-/** Progress from EARLIER lessons only (lower lesson number) — what the 18-22 chronology gate is judged against when editing that lesson. */
+/** Progress from EARLIER lessons only (lower lesson number) — what the 18, 20, 21 chronology gate is judged against when editing that lesson. */
 export async function getProgressBeforeLesson(db: D1Database, learnerId: string, lessonId: string): Promise<LearnerProgress> {
   const { results } = await db
     .prepare(

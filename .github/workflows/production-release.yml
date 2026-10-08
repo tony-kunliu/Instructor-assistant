@@ -1,0 +1,116 @@
+name: Production Release
+
+# Manual-only Production release of `main` to the Worker
+# `instructor-assistant-production` (see docs/RELEASE_B_RUNBOOK.md).
+# Uses the repo secret CLOUDFLARE_API_TOKEN (Workers Scripts Edit + D1 Edit,
+# this account only) so no token ever passes through chat or an agent's
+# environment. Pending D1 migrations are always applied before deploying.
+# Steps stop on the first failure.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "production" to release main to Production'
+        required: true
+        type: string
+
+concurrency:
+  group: production-release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    # GitHub adds -eo pipefail for an explicit `bash` shell.
+    shell: bash
+
+env:
+  # Account id is an identifier, not a credential.
+  CLOUDFLARE_ACCOUNT_ID: ff281f1a6f1aa8241b1d9bd1a22d485a
+  PROD_DB: instructor-assistant-db-production
+  PROD_URL: https://instructor-assistant-production.kunliu-work.workers.dev
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Guard (main + confirmation)
+        run: |
+          if [ "$GITHUB_REF" != "refs/heads/main" ] || [ "${{ inputs.confirm }}" != "production" ]; then
+            echo "Refusing: run from main with confirm=production."
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.13"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify (memory guard, typecheck, tests, build)
+        run: |
+          node scripts/check-project-memory.mjs
+          npm run typecheck
+          npm test
+          npm run cf:build
+
+      - name: Record rollback target and D1 restore point
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          deployments=$(npx wrangler deployments list --env production)
+          timetravel=$(npx wrangler d1 time-travel info "$PROD_DB" --env production)
+          [ -n "$deployments" ] && [ -n "$timetravel" ]
+          {
+            echo "## Before release"
+            echo "Source commit: \`$GITHUB_SHA\`"
+            echo '```'
+            echo "$deployments" | tail -n 8
+            echo '```'
+            echo "D1 Time Travel restore point (restore with \`wrangler d1 time-travel restore $PROD_DB --bookmark=<bookmark>\`):"
+            echo '```'
+            echo "$timetravel"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Apply D1 migrations
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          echo "## Migrations" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          npx wrangler d1 migrations apply DB --env production --remote 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: npx wrangler deploy --env production
+
+      - name: Verify deployment
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          deployments=$(npx wrangler deployments list --env production)
+          {
+            echo "## After release"
+            echo '```'
+            echo "$deployments" | tail -n 8
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          # Behind Cloudflare Access an anonymous request is redirected (302)
+          # or denied (401/403); a 5xx or no answer means the Worker is broken.
+          code=$(curl -s --max-time 20 -o /dev/null -w '%{http_code}' "$PROD_URL/" || true)
+          echo "Anonymous GET / -> HTTP $code" >> "$GITHUB_STEP_SUMMARY"
+          case "$code" in 2*|3*|401|403) ;; *) echo "Unexpected HTTP $code"; exit 1 ;; esac
