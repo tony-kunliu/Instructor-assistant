@@ -1,0 +1,108 @@
+name: Staging D1 Migrate
+
+# Manual-only: applies the pending D1 migrations of a branch to the STAGING
+# database `instructor-assistant-db` (AGENTS.md §14.1). It never touches
+# Production and never deploys a Worker (Workers Builds deploys Staging).
+# Uses the repo secret CLOUDFLARE_API_TOKEN (Workers Scripts Edit + D1 Edit,
+# this account only), so no token passes through chat or an agent's
+# environment. Steps stop on the first failure.
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Branch whose migrations/ to apply (e.g. feature/paper-records-import or staging)'
+        required: true
+        type: string
+      confirm:
+        description: 'Type "staging" to apply migrations to the Staging database'
+        required: true
+        type: string
+
+concurrency:
+  group: staging-migrate
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  CLOUDFLARE_ACCOUNT_ID: ff281f1a6f1aa8241b1d9bd1a22d485a
+  STAGING_DB: instructor-assistant-db
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Guard (confirmation)
+        env:
+          CONFIRM: ${{ inputs.confirm }}
+        run: |
+          if [ "$CONFIRM" != "staging" ]; then
+            echo "Refusing: type confirm=staging."
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.13"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Record D1 restore point and pending migrations
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          timetravel=$(npx wrangler d1 time-travel info "$STAGING_DB")
+          pending=$(npx wrangler d1 migrations list DB --remote)
+          {
+            echo "## Before migrate (Staging D1 only)"
+            echo "Source: \`$GITHUB_SHA\` (${{ inputs.ref }})"
+            echo "Time Travel restore point:"
+            echo '```'
+            echo "$timetravel"
+            echo '```'
+            echo "Migrations:"
+            echo '```'
+            echo "$pending"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Apply D1 migrations (Staging)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: npx wrangler d1 migrations apply DB --remote
+
+      - name: Verify
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          left=$(npx wrangler d1 migrations list DB --remote)
+          echo "$left"
+          if echo "$left" | grep -qi "No migrations to apply"; then :; else
+            echo "Migrations still pending after apply."; exit 1
+          fi
+          fk=$(npx wrangler d1 execute DB --remote --json --command "PRAGMA foreign_key_check;")
+          counts=$(npx wrangler d1 execute DB --remote --json --command "SELECT (SELECT COUNT(*) FROM lessons) AS lessons, (SELECT COUNT(*) FROM learners) AS learners;")
+          {
+            echo "## After migrate"
+            echo '```'
+            echo "foreign_key_check: $fk"
+            echo "counts: $counts"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "$fk" | grep -q '"results": \[\]'
