@@ -237,3 +237,13 @@ html, body {
 .save-errors-go { font: inherit; font-weight: 700; font-size: 14px; min-height: 40px; padding: 6px 12px; border: 1px solid var(--stop); border-radius: 10px; background: #fff; color: var(--stop); cursor: pointer; touch-action: manipulation; }
 .save-errors + .btn.save { margin-top: 12px; }
 .field-flash { outline: 3px solid var(--gold); outline-offset: 3px; border-radius: 10px; transition: outline-color .4s; }
+
+.h-prior-list { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 6px; }
+.history li.h-prior { border: 1px solid var(--line); border-radius: 8px; background: #efece6; padding: 8px 10px; font-size: 13px; overflow-wrap: break-word; }
+.h-paper { background: #efece6; color: var(--ink); border-radius: 8px; padding: 1px 8px; font-size: 12px; font-weight: 700; }
+.paper-hint { margin: -6px 0 10px; }
+.paper-import { overflow-wrap: anywhere; }
+.paper-import input[type="file"] { max-width: 100%; margin: 6px 0; }
+.paper-import-rows { margin: 6px 0 0; padding-left: 20px; font-weight: 500; }
+.paper-import-prior { margin: 8px 0 0; padding-left: 20px; font-size: 13px; overflow-wrap: break-word; }
+.paper-import-preview { margin: 8px 0; }

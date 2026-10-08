@@ -1,10 +1,11 @@
-import { NotFoundError, ValidationError } from "./repo.ts";
+import { NotFoundError, PaperImportError, ValidationError } from "./repo.ts";
 
 /** Run a route handler body and map domain errors to JSON responses. */
 export async function handle(work: () => unknown | Promise<unknown>, status = 200): Promise<Response> {
   try {
     return Response.json(await work(), { status });
   } catch (error) {
+    if (error instanceof PaperImportError) return Response.json({ error: error.message, rows: error.errors }, { status: 400 });
     if (error instanceof ValidationError) return Response.json({ error: error.message }, { status: 400 });
     if (error instanceof NotFoundError) return Response.json({ error: error.message }, { status: 404 });
     console.error(error);

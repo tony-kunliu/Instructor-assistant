@@ -505,8 +505,171 @@ const draw = async (page, index) => {
   await s.ctx.close();
 }
 
+// ═══ 7. Paper records import: preview, errors, commit, Paper record badge, paper edit ═
+{
+  const { tmpdir } = await import("node:os");
+  const { mkdtempSync } = await import("node:fs");
+  const dir = mkdtempSync(`${tmpdir()}/qa-paper-`);
+  const HEAD = "date,start_time,finish_time,start_odometer,finish_odometer,taught,assessed_achieved,assessed_not_achieved,location,comments,signature,instructor,prior_instructor,prior_lessons,prior_hours,prior_km";
+  const goodRows = [
+    "2026-01-01,09:00,10:00,100,120,1;2,3,4,QA Street,first,on_paper,Tony,,,,",
+    "2026-01-02,,,,,5,,,,,unsigned,Tony,,,,",
+    "2026-01-03,10:00,10:30,130,145,,1,,,,on_paper,Tony,,,,",
+  ];
+  const badFile = `${dir}/bad.csv`, goodFile = `${dir}/good.csv`;
+  writeFileSync(badFile, [HEAD, goodRows[0], "2026-13-45,09:00,10:00,120,130,,,,,,on_paper,Tony,,,,", goodRows[2]].join("\n") + "\n");
+  writeFileSync(goodFile, [HEAD, ...goodRows].join("\n") + "\n");
+
+  const s = await session("tony");
+  await ready(s.page);
+  await s.page.setViewportSize({ width: 375, height: 812 });
+  await s.page.click('button:has-text("+ New")');
+  await s.page.fill('label:has-text("Student name") input', "QA Paper Learner");
+  await s.page.click('button:has-text("Save learner")');
+  await s.page.waitForSelector("[data-testid=paper-import-open]");
+  check("paper: Import paper records button shown for a learner with no lessons", await s.page.isVisible("[data-testid=paper-import-open]"));
+  await s.page.click("[data-testid=paper-import-open]");
+  await s.page.setInputFiles('input[type="file"]', badFile);
+  await s.page.waitForSelector("[data-testid=paper-import-errors]");
+  check("paper: error row listed as 'Row 3: …'", (await s.page.textContent("[data-testid=paper-import-errors]")).includes("Row 3: Date must be a valid date"), await s.page.textContent("[data-testid=paper-import-errors]"));
+  check("paper: no Confirm button while there are errors", (await s.page.$("[data-testid=paper-import-confirm]")) === null);
+  const learnerId = await s.page.$eval('select[aria-label="Select learner"]', (el) => el.value);
+  check("paper: nothing written by a failed preview", (await (await fetch(`${B}/api/learners/${learnerId}`)).json()).lessons.length === 0);
+  check("paper: no horizontal scroll at 375px (errors)", await noHScroll(s.page));
+  await s.page.setInputFiles('input[type="file"]', goodFile);
+  await s.page.waitForSelector("[data-testid=paper-import-preview]");
+  const pv = await s.page.textContent("[data-testid=paper-import-preview]");
+  check("paper: preview shows 3 lessons, 1h 30m, 35 km", (await s.page.textContent("[data-testid=paper-import-lessons]")) === "3" && (await s.page.textContent("[data-testid=paper-import-hours]")).startsWith("1h 30m") && (await s.page.textContent("[data-testid=paper-import-km]")) === "35 km", pv);
+  check("paper: no once-per-learner warning without prior rows", (await s.page.$("[data-testid=paper-import-once-warning]")) === null);
+  check("paper: preview lists Missing data #2 and Unsigned #2", pv.includes("Missing data: #2") && pv.includes("Unsigned: #2"), pv);
+  check("paper: still nothing written before confirm", (await (await fetch(`${B}/api/learners/${learnerId}`)).json()).lessons.length === 0);
+  check("paper: no horizontal scroll at 375px (preview)", await noHScroll(s.page));
+  await shot(s.page, "07-paper-preview");
+  await s.page.click("[data-testid=paper-import-confirm]");
+  await s.page.waitForSelector("[data-testid=paper-badge]");
+  const badges = await s.page.$$eval("[data-testid=history-row]", (rows) => rows.map((r) => r.textContent));
+  check("paper: History shows 3 'Paper record' lessons", badges.length === 3 && badges.every((t) => t.includes("Paper record")), String(badges.length));
+  check("paper: History shows — for the lesson with no times/odometer", badges.some((t) => t.includes("#2") && t.includes("—–—") && t.includes("Odo — → —")));
+  check("paper: Import button gone once lessons exist", (await s.page.$("[data-testid=paper-import-open]")) === null && (await s.page.$("[data-testid=paper-import-panel]")) === null);
+  check("paper: totals derived (1h 30m, 35 km) and next lesson is #4", (await s.page.textContent("[data-testid=total-km]")) === "35 km" && (await s.page.textContent("[data-testid=lesson-no]")) === "Lesson #4");
+  check("paper: no horizontal scroll at 375px (history)", await noHScroll(s.page));
+  await shot(s.page, "07-paper-history");
+
+  // Edit paper lesson #1: blank times, Not signed.
+  const rowsLoc = s.page.locator("[data-testid=history-row]");
+  const rowOf = (n) => rowsLoc.filter({ hasText: `#${n}` }).first();
+  await rowOf(1).locator(".h-edit").click();
+  await s.page.waitForSelector("text=Editing Lesson #1");
+  check("paper edit: helper text and Signed on paper select, no signature pads", (await s.page.textContent(".h-editing")).includes("Leave both blank if not on the paper record") && (await s.page.$(".h-editing .sig canvas")) === null && (await s.page.inputValue("[data-testid=paper-signature-status]")) === "on_paper");
+  check("paper edit: no horizontal scroll at 375px", await noHScroll(s.page));
+  await shot(s.page, "07-paper-edit");
+  await s.page.fill('.h-editing input[type="time"] >> nth=0', "");
+  await s.page.fill('.h-editing input[type="time"] >> nth=1', "");
+  await s.page.selectOption("[data-testid=paper-signature-status]", "unsigned");
+  await s.page.click(".h-editing .btn.save");
+  await s.page.waitForSelector(".status.ok:has-text('Lesson updated'), .h-editing .status.error, .h-editing [data-testid=edit-save-errors]");
+  const after = await (await fetch(`${B}/api/learners/${learnerId}`)).json();
+  const l1 = after.lessons.find((l) => l.lessonNo === 1);
+  check("paper edit: saved with blank times and Not signed", l1 && l1.startTime === null && l1.finishTime === null && l1.signatureStatus === "unsigned" && l1.recordSource === "paper_import", JSON.stringify(l1 && [l1.startTime, l1.signatureStatus]));
+  check("paper edit: totals recalculated (0h 30m, 35 km; odometers kept)", (await s.page.textContent("[data-testid=total-km]")) === "35 km" && (await s.page.textContent("[data-testid=total-hours]")).startsWith("0h 30m"), await s.page.textContent("[data-testid=total-hours]"));
+
+  // New App lesson continues numbering and odometer.
+  check("paper: next App lesson is #4 with start odometer prefilled 145", (await s.page.textContent("[data-testid=lesson-no]")) === "Lesson #4" && (await s.page.inputValue('input[placeholder="e.g. 45210"]')) === "145");
+  await s.page.click("text=Start Lesson");
+  await s.page.click("text=End Lesson");
+  await s.page.fill('input[placeholder="Enter now"]', "160");
+  await s.page.click('.comp-section:has(.comp-label:text-is("Taught")) .chip-row >> text="6"');
+  await s.page.click(".edit-times summary");
+  await s.page.fill('.edit-times input[type="time"] >> nth=0', "09:00");
+  await s.page.fill('.edit-times input[type="time"] >> nth=1', "09:45");
+  await signBoth(s.page);
+  await s.page.click(".btn.save");
+  await s.page.waitForSelector(".status.ok, .status.error");
+  check("paper: new App lesson saves as Lesson #4", (await s.page.textContent(".status")).includes("Lesson #4 saved"), await s.page.textContent(".status"));
+  check("paper: App lesson has no Paper record badge", (await rowOf(4).textContent()).includes("Paper record") === false);
+
+  const dlPromise = s.page.waitForEvent("download", { timeout: 60000 }).catch(() => null);
+  await s.page.click("text=/Export.*PDF/i");
+  const prompt = await s.page.waitForSelector(".export-adi-prompt input", { timeout: 8000 }).catch(() => null);
+  if (prompt) {
+    await s.page.fill(".export-adi-prompt input", "QA-ADI-1");
+    await s.page.click(".export-adi-prompt .btn.primary");
+  }
+  const dl = await dlPromise;
+  const paperPdf = `${OUT}/qa-paper-export.pdf`;
+  await dl.saveAs(paperPdf);
+  check("paper: PDF export with paper + App lessons succeeds", readFileSync(paperPdf).subarray(0, 5).toString() === "%PDF-", dl.suggestedFilename());
+  check("paper: no page errors", s.errors.length === 0, s.errors.join("|"));
+  await s.ctx.close();
+}
+
+// ═══ 8. Prior-instructor records (spec §12): preview, History card without Edit, gates ═
+{
+  const { tmpdir } = await import("node:os");
+  const { mkdtempSync } = await import("node:fs");
+  const dir = mkdtempSync(`${tmpdir()}/qa-prior-`);
+  const HEAD = "date,start_time,finish_time,start_odometer,finish_odometer,taught,assessed_achieved,assessed_not_achieved,location,comments,signature,instructor,prior_instructor,prior_lessons,prior_hours,prior_km";
+  const all = [...Array.from({ length: 22 }, (_, i) => String(i + 1)), "review-1-17", "review-1-22"].join(";");
+  const file = `${dir}/prior.csv`;
+  writeFileSync(file, [
+    HEAD,
+    `2025-12-01,,,,,,${all},,,,,,QA ADI 358,11,20,150`,
+    "2026-01-01,09:00,10:00,100,120,,,,QA Street,,on_paper,Tony,,,,",
+    "2026-01-02,10:00,10:30,120,135,,,,,,on_paper,Tony,,,,",
+  ].join("\n") + "\n");
+
+  const s = await session("tony");
+  await ready(s.page);
+  await s.page.setViewportSize({ width: 375, height: 812 });
+  await s.page.click('button:has-text("+ New")');
+  await s.page.fill('label:has-text("Student name") input', "QA Prior Transfer Learner");
+  await s.page.click('button:has-text("Save learner")');
+  await s.page.waitForSelector("[data-testid=paper-import-open]");
+  await s.page.click("[data-testid=paper-import-open]");
+  await s.page.setInputFiles('input[type="file"]', file);
+  await s.page.waitForSelector("[data-testid=paper-import-preview]");
+  const priorPv = await s.page.textContent("[data-testid=paper-import-prior]").catch(() => "");
+  check("prior: preview lists the prior instructor and its totals", priorPv === "Prior instructor: QA ADI 358 · 11 lessons · 20.0 h · 150 km", priorPv);
+  const priorNote = await s.page.textContent("[data-testid=paper-import-prior-note]").catch(() => "");
+  check("prior: preview Hours/Km note says what came from previous instructors", priorNote === "Hours / Km incl. 20.0 h / 150 km from previous instructors", priorNote);
+  check("prior: preview shows 2 lessons, hours/km incl. prior (21h 30m, 185 km)", (await s.page.textContent("[data-testid=paper-import-lessons]")) === "2" && (await s.page.textContent("[data-testid=paper-import-hours]")).startsWith("21h 30m") && (await s.page.textContent("[data-testid=paper-import-km]")) === "185 km", await s.page.textContent("[data-testid=paper-import-preview]"));
+  check("prior: preview warns that paper import is once per learner", (await s.page.textContent("[data-testid=paper-import-once-warning]").catch(() => "")) === "Paper import can only be done once per learner; check everything before importing.");
+  check("prior: no horizontal scroll at 375px (preview)", await noHScroll(s.page));
+  await shot(s.page, "08-prior-preview");
+  await s.page.click("[data-testid=paper-import-confirm]");
+  await s.page.waitForSelector("[data-testid=prior-record]");
+  const cards = await s.page.$$eval("[data-testid=prior-record]", (els) => els.map((e) => ({ text: e.textContent, edit: !!e.querySelector("button, .h-edit") })));
+  check("prior: History shows the prior card with its line", cards.length === 1 && cards[0].text === "Prior instructor: QA ADI 358 · 11 lessons · 20.0 h · 150 km · achieved 1-22, Review 1-17, Review 1-22", JSON.stringify(cards));
+  check("prior: the prior card has no Edit button", cards.length === 1 && !cards[0].edit);
+  const histRows = await s.page.$$eval("[data-testid=history-row]", (rows) => rows.map((r) => r.querySelector(".h-no")?.textContent));
+  check("prior: History lesson rows are #2, #1 only (no negative numbers)", JSON.stringify(histRows) === JSON.stringify(["#2", "#1"]), JSON.stringify(histRows));
+  const below = await s.page.evaluate(() => {
+    const rows = [...document.querySelectorAll("[data-testid=history-row]")];
+    const card = document.querySelector("[data-testid=prior-record]");
+    return !!card && rows.length > 0 && card.getBoundingClientRect().top >= rows[rows.length - 1].getBoundingClientRect().bottom;
+  });
+  check("prior: the prior card sits at the bottom of History, below lesson #1 (newest first)", below);
+  check("prior: Edit buttons only on the 2 lessons", (await s.page.$$(".history .h-edit")).length === 2);
+  check("prior: next lesson is #3 and totals include prior (185 km)", (await s.page.textContent("[data-testid=lesson-no]")) === "Lesson #3" && (await s.page.textContent("[data-testid=total-km]")) === "185 km", await s.page.textContent("[data-testid=total-km]"));
+  check("prior: Import button gone", (await s.page.$("[data-testid=paper-import-open]")) === null);
+  check("prior: no horizontal scroll at 375px (history)", await noHScroll(s.page));
+  await shot(s.page, "08-prior-history");
+  await s.page.click("text=Start Lesson");
+  await s.page.click("text=End Lesson");
+  const fd = s.page.locator(".chip-row.special button", { hasText: "23 Final Drive" }).first();
+  check("prior: 23 Final Drive is not locked (prior achieved 1-22 + both reviews)", !(await fd.isDisabled()) && (await fd.getAttribute("data-locked")) === null);
+  const learnerId = await s.page.$eval('select[aria-label="Select learner"]', (el) => el.value);
+  const data = await (await fetch(`${B}/api/learners/${learnerId}`)).json();
+  const priorRow = data.lessons.find((l) => l.recordSource === "prior_instructor");
+  const patch = await fetch(`${B}/api/learners/${learnerId}/lessons/${priorRow.id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ lessonDate: "2025-12-02", signatureStatus: "on_paper", taughtIds: [], assessedIds: [], achievedResults: {} }) });
+  const patchBody = await patch.json().catch(() => ({}));
+  check("prior: server rejects editing the prior record (400)", patch.status === 400 && patchBody.error === "Prior-instructor records cannot be edited.", `${patch.status} ${patchBody.error}`);
+  check("prior: no page errors", s.errors.length === 0, s.errors.join("|"));
+  await s.ctx.close();
+}
+
 } catch (error) {
-  check(`script aborted: ${String(error.message).split("\n")[0]}`, false);
+  check(`script aborted: ${String(error.message).split("\n")[0]}`, false, String(error.message).split("\n").slice(1,4).join(" ").trim());
 }
 
 await browser.close();

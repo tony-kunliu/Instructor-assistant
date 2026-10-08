@@ -4,6 +4,7 @@
 // a lesson save must never fail because the website integration is down.
 
 import type { D1Database, D1PreparedStatement } from "../d1-types.ts";
+import { jsonInsertStatement } from "../d1-json-insert.ts";
 import type { LessonUpsertedPayloadV1, OutboxRow } from "./types.ts";
 
 type Row = Record<string, unknown>;
@@ -26,6 +27,24 @@ function toOutboxRow(row: Row): OutboxRow {
   };
 }
 
+const OUTBOX_INSERT_COLUMNS = ["id", "event_id", "event_type", "learner_id", "lesson_id", "source_updated_at", "payload_json", "status", "attempt_count", "next_attempt_at"] as const;
+
+/** Column values of a new, not-yet-attempted outbox row. `payload_json` is serialized exactly once, here — every delivery attempt sends these exact bytes. */
+function newOutboxRow(payload: LessonUpsertedPayloadV1): Record<(typeof OUTBOX_INSERT_COLUMNS)[number], string | number> {
+  return {
+    id: crypto.randomUUID(),
+    event_id: payload.event_id,
+    event_type: payload.event_type,
+    learner_id: payload.learner.learner_id,
+    lesson_id: payload.lesson.lesson_id,
+    source_updated_at: payload.lesson.source_updated_at,
+    payload_json: JSON.stringify(payload),
+    status: "pending",
+    attempt_count: 0,
+    next_attempt_at: new Date().toISOString(),
+  };
+}
+
 /**
  * Builds the INSERT for a new outbox row. Deliberately a single, independent statement — not run here —
  * so a caller that needs the lesson write and the outbox enqueue to commit together can put both in one
@@ -34,21 +53,16 @@ function toOutboxRow(row: Row): OutboxRow {
  * same "let SQLite's own constraint catch a race" pattern already used elsewhere in lib/repo.ts).
  */
 export function insertOutboxRowStatement(db: D1Database, payload: LessonUpsertedPayloadV1): D1PreparedStatement {
-  return db
-    .prepare(
-      `INSERT INTO integration_outbox (id, event_id, event_type, learner_id, lesson_id, source_updated_at, payload_json, status, attempt_count, next_attempt_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', 0, ?)`,
-    )
-    .bind(
-      crypto.randomUUID(),
-      payload.event_id,
-      payload.event_type,
-      payload.learner.learner_id,
-      payload.lesson.lesson_id,
-      payload.lesson.source_updated_at,
-      JSON.stringify(payload),
-      new Date().toISOString(),
-    );
+  return insertOutboxRowsStatement(db, [payload])!;
+}
+
+/**
+ * Same as insertOutboxRowStatement, for any number of events in ONE statement (rows inserted in array
+ * order) — keeps a History Edit that propagates to many downstream lessons within D1's per-invocation
+ * query limit. Returns null for an empty list. Not run here; the caller puts it in its own db.batch().
+ */
+export function insertOutboxRowsStatement(db: D1Database, payloads: readonly LessonUpsertedPayloadV1[]): D1PreparedStatement | null {
+  return jsonInsertStatement(db, "integration_outbox", OUTBOX_INSERT_COLUMNS, payloads.map(newOutboxRow));
 }
 
 /** Enqueues immediately (not batched) — used when the caller can't fold this into an existing db.batch(). */
@@ -85,10 +99,9 @@ export async function listOutboxRowsForLearner(db: D1Database, learnerId: string
 export async function latestSourceUpdatedAtByLesson(db: D1Database, lessonIds: readonly string[]): Promise<Map<string, string>> {
   const result = new Map<string, string>();
   if (lessonIds.length === 0) return result;
-  const placeholders = lessonIds.map(() => "?").join(", ");
   const { results } = await db
-    .prepare(`SELECT lesson_id, MAX(source_updated_at) AS latest FROM integration_outbox WHERE lesson_id IN (${placeholders}) GROUP BY lesson_id`)
-    .bind(...lessonIds)
+    .prepare("SELECT lesson_id, MAX(source_updated_at) AS latest FROM integration_outbox WHERE lesson_id IN (SELECT value FROM json_each(?)) GROUP BY lesson_id")
+    .bind(JSON.stringify(lessonIds))
     .all<Row>();
   for (const row of results) result.set(String(row.lesson_id), String(row.latest));
   return result;
@@ -102,15 +115,14 @@ export async function latestSourceUpdatedAtByLesson(db: D1Database, lessonIds: r
 export async function latestSendablePayloadByLesson(db: D1Database, lessonIds: readonly string[]): Promise<Map<string, string>> {
   const result = new Map<string, string>();
   if (lessonIds.length === 0) return result;
-  const placeholders = lessonIds.map(() => "?").join(", ");
   const { results } = await db
     .prepare(
       `SELECT o.lesson_id, o.payload_json FROM integration_outbox o
-       WHERE o.lesson_id IN (${placeholders}) AND o.status != 'permanent_failure'
+       WHERE o.lesson_id IN (SELECT value FROM json_each(?)) AND o.status != 'permanent_failure'
          AND o.source_updated_at = (SELECT MAX(i.source_updated_at) FROM integration_outbox i WHERE i.lesson_id = o.lesson_id AND i.status != 'permanent_failure')
        ORDER BY o.created_at ASC`,
     )
-    .bind(...lessonIds)
+    .bind(JSON.stringify(lessonIds))
     .all<Row>();
   for (const row of results) result.set(String(row.lesson_id), String(row.payload_json));
   return result;
