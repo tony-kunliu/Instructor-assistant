@@ -64,6 +64,8 @@ html, body {
 .lifecycle p { margin: 0 0 8px; }
 .lifecycle.archived { background: #efece6; }
 .lifecycle.suggest { background: #e3f3e8; color: #135c32; }
+.form-actions { display: grid; gap: 8px; margin-top: 12px; }
+.edit-learner-btn { margin-top: 10px; }
 .archive-link { display: block; margin: 10px 0 0 auto; padding: 4px 0; font-size: 13px; }
 .link:disabled { opacity: .45; cursor: not-allowed; }
 
