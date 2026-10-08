@@ -40,14 +40,16 @@ const MIDDLEWARE_AND_ROUTE_QUERIES = 3;
 type Row = Record<string, unknown>;
 
 /** Counts every statement that reaches D1: each run/first/all, and each statement inside a batch. */
-function countingD1(inner: D1Database): { db: D1Database; count: () => number; reset: () => void } {
+function countingD1(inner: D1Database): { db: D1Database; count: () => number; reset: () => void; maxBinds: () => number } {
   let statements = 0;
+  let maxBound = 0;
   class CountedStatement implements D1PreparedStatement {
     readonly inner: D1PreparedStatement;
     constructor(innerStatement: D1PreparedStatement) {
       this.inner = innerStatement;
     }
     bind(...values: unknown[]): D1PreparedStatement {
+      maxBound = Math.max(maxBound, values.length);
       return new CountedStatement(this.inner.bind(...values));
     }
     first<T = Record<string, unknown>>(colName?: string): Promise<T | null> {
@@ -71,7 +73,7 @@ function countingD1(inner: D1Database): { db: D1Database; count: () => number; r
       return inner.batch<T>(batchStatements.map((statement) => (statement instanceof CountedStatement ? statement.inner : statement)));
     },
   };
-  return { db, count: () => statements, reset: () => { statements = 0; } };
+  return { db, count: () => statements, reset: () => { statements = 0; }, maxBinds: () => maxBound };
 }
 
 /** Integration enabled; delivery attempts are collected (not run) so the request path is counted on its own. */
@@ -400,6 +402,38 @@ test("budget: updateLesson of lesson #1 with 59 exported downstream lessons stay
   const invocationTotal = requestStatements + deliveryStatements + fetches() + MIDDLEWARE_AND_ROUTE_QUERIES;
   t.diagnostic(`updateLesson + immediate delivery + middleware/route: ${requestStatements} + ${deliveryStatements} D1 + ${fetches()} fetch + ${MIDDLEWARE_AND_ROUTE_QUERIES} = ${invocationTotal}`);
   assert.ok(invocationTotal <= FREE_PLAN_INVOCATION_LIMIT, `edit invocation total ${invocationTotal} (Free plan limit ${FREE_PLAN_INVOCATION_LIMIT})`);
+});
+
+// ── Ownership + revision (migration 0007): the revision is ONE statement in the edit's atomic batch ──
+
+test("budget: a signed-in owner's edit adds exactly 2 statements (acting-instructor check + one revision INSERT...SELECT), stays within 25, and binds <= 100 parameters", async (t) => {
+  const { db: raw, learner, tony } = await setup();
+  const { hooks } = deferredHooks();
+  for (let i = 1; i <= 10; i++) {
+    await createLesson(raw, learner.id, {
+      lessonDate: new Date(Date.UTC(2026, 1, 1) + i * 86_400_000).toISOString().slice(0, 10),
+      startTime: "09:00", finishTime: "09:30", startOdometer: String(i * 100), finishOdometer: String(i * 100 + 5),
+      taughtIds: [CORE_COMPETENCY_IDS[i % 5]], adiSignature: SIG1, learnerSignature: SIG1,
+    }, hooks);
+  }
+  await raw.prepare("UPDATE integration_outbox SET status = 'delivered', attempt_count = 1, delivered_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')").run();
+  const [lesson1] = await lessonRows(raw, learner.id);
+  const editInput = (i: number, extra: Record<string, unknown>) => ({
+    lessonDate: String(lesson1.lesson_date), startTime: "09:00", finishTime: `10:${String(10 + i)}`, startOdometer: "100", finishOdometer: "150",
+    taughtIds: [CORE_COMPETENCY_IDS[1]], adiSignature: i % 2 ? SIG2 : SIG1, learnerSignature: i % 2 ? SIG2 : SIG1, ...extra,
+  });
+  const anonymous = countingD1(raw);
+  await updateLesson(anonymous.db, learner.id, String(lesson1.id), editInput(1, {}), hooks);
+  const withoutActor = anonymous.count();
+  const signedIn = countingD1(raw);
+  await updateLesson(signedIn.db, learner.id, String(lesson1.id), editInput(2, { actingInstructorId: tony.id, reason: "QA reason" }), hooks);
+  const withActor = signedIn.count();
+
+  t.diagnostic(`updateLesson #1 with 9 exported downstream: ${withoutActor} statements without an acting instructor, ${withActor} signed in as the owner`);
+  assert.equal(withActor, withoutActor + 1, "signed-in adds only the acting-instructor lookup; the revision INSERT is in both (always written)");
+  assert.ok(withActor <= 25, `updateLesson issued ${withActor} statements (budget 25)`);
+  assert.ok(signedIn.maxBinds() <= 100, `max bound parameters ${signedIn.maxBinds()} (D1 limit 100)`);
+  assert.equal(Number((await raw.prepare("SELECT COUNT(*) AS n FROM lesson_revisions WHERE lesson_id = ?").bind(lesson1.id).first<{ n: number }>())?.n), 2);
 });
 
 // ── createLesson assessing 22 competencies ──────────────────────────────

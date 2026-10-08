@@ -66,6 +66,37 @@ export type Lesson = {
   /** 'prior_instructor' rows only (spec §12): who the transfer learner trained with before (name and/or ADI number), and how many lessons. Null on every other row. */
   priorInstructorLabel: string | null;
   priorLessonCount: number | null;
+  /** How many times this lesson has been edited (rows in lesson_revisions). 0 = never amended. */
+  revisionCount: number;
+};
+
+/** Previous content of an edited lesson (lesson_revisions.snapshot_json). Signature images are never stored, only whether each was present. */
+export type LessonRevisionSnapshot = {
+  lessonDate: string;
+  startTime: string | null;
+  finishTime: string | null;
+  startOdometer: number | null;
+  finishOdometer: number | null;
+  taught: string | null;
+  competenciesAssessed: string | null;
+  achieved: string | null;
+  location: string | null;
+  comments: string | null;
+  signatureStatus: SignatureStatus;
+  adiSignaturePresent: boolean;
+  learnerSignaturePresent: boolean;
+};
+
+export type LessonRevision = {
+  id: string;
+  lessonId: string;
+  revisionNo: number;
+  editedAt: string;
+  editedByInstructorId: string | null;
+  editedByName: string | null;
+  reason: string | null;
+  /** The lesson's values BEFORE this edit was applied. */
+  snapshot: LessonRevisionSnapshot;
 };
 
 /** Set once 23 Final Drive is Assessed + Achieved (see lib/competency.ts). */
@@ -112,4 +143,6 @@ export type LessonInput = {
   actingInstructorId?: unknown;
   /** Paper-imported lessons only (History Edit): "on_paper" | "unsigned". Ignored for app lessons, which are always "digital". */
   signatureStatus?: unknown;
+  /** History Edit only: optional free-text reason for the correction, max 200 characters. */
+  reason?: unknown;
 };

@@ -26,7 +26,7 @@ import { IMMEDIATE_DELIVERY_LIMIT, processDueOutbox } from "./integration/sender
 import type { IntegrationHooks, LessonUpsertedPayloadV1 } from "./integration/types.ts";
 import { planPaperImport, type PaperImportPreview, type PaperImportRowError } from "./paper-import.ts";
 import { isPriorRecord } from "./prior-record.ts";
-import type { CompletionSummary, Instructor, Learner, LearnerInput, Lesson, LessonInput, SignatureStatus } from "./types.ts";
+import type { CompletionSummary, Instructor, Learner, LearnerInput, Lesson, LessonInput, LessonRevision, LessonRevisionSnapshot, SignatureStatus } from "./types.ts";
 
 export class ValidationError extends Error {}
 export class NotFoundError extends Error {}
@@ -118,6 +118,7 @@ export function toLesson(row: Row): Lesson {
     signatureStatus: strictEnum(row.signature_status, ["digital", "on_paper", "unsigned"], "signature_status"),
     priorInstructorLabel: isPrior ? strictPresent(row.prior_instructor_label, "prior_instructor_label", String) : nullableString(row.prior_instructor_label),
     priorLessonCount: isPrior ? strictPresent(row.prior_lesson_count, "prior_lesson_count", Number) : nullableNumber(row.prior_lesson_count),
+    revisionCount: Number(row.revision_count ?? 0),
   };
 }
 
@@ -296,6 +297,8 @@ export async function getTotals(db: D1Database, learnerId: string): Promise<Tota
 // display name is then left null too ("Last edited by <name>" UI just omits
 // that line), never guessed.
 const UPDATED_BY_JOIN = "LEFT JOIN instructors ub ON ub.id = lessons.updated_by_instructor_id";
+// "Edited N times" — computed inside the same lesson query (no extra round trip, no N+1).
+const REVISION_COUNT_SELECT = "(SELECT COUNT(*) FROM lesson_revisions lr WHERE lr.lesson_id = lessons.id) AS revision_count";
 
 /** Lessons newest first. Signatures are omitted from the list to keep it light. */
 export async function listLessons(db: D1Database, learnerId: string): Promise<Lesson[]> {
@@ -306,7 +309,7 @@ export async function listLessons(db: D1Database, learnerId: string): Promise<Le
               lessons.taught, lessons.competencies_assessed, lessons.achieved, lessons.location, lessons.comments,
               NULL AS adi_signature, NULL AS learner_signature, lessons.created_at, lessons.updated_at,
               lessons.updated_by_instructor_id, lessons.record_source, lessons.signature_status, lessons.prior_instructor_label, lessons.prior_lesson_count,
-              ub.full_name AS updated_by_instructor_name
+              ub.full_name AS updated_by_instructor_name, ${REVISION_COUNT_SELECT}
        FROM lessons ${UPDATED_BY_JOIN} WHERE lessons.learner_id = ? ORDER BY lessons.lesson_no DESC`,
     )
     .bind(learnerId)
@@ -317,7 +320,7 @@ export async function listLessons(db: D1Database, learnerId: string): Promise<Le
 /** All of a learner's saved lessons, oldest first, with real signatures — for the CBT&A PDF export (never partial/draft data). */
 export async function listLessonsForExport(db: D1Database, learnerId: string): Promise<Lesson[]> {
   const { results } = await db
-    .prepare(`SELECT lessons.*, ub.full_name AS updated_by_instructor_name FROM lessons ${UPDATED_BY_JOIN} WHERE learner_id = ? ORDER BY lesson_no ASC`)
+    .prepare(`SELECT lessons.*, ub.full_name AS updated_by_instructor_name, ${REVISION_COUNT_SELECT} FROM lessons ${UPDATED_BY_JOIN} WHERE learner_id = ? ORDER BY lesson_no ASC`)
     .bind(learnerId)
     .all<Row>();
   return results.map(toLesson);
@@ -325,7 +328,7 @@ export async function listLessonsForExport(db: D1Database, learnerId: string): P
 
 export async function getLesson(db: D1Database, learnerId: string, lessonId: string): Promise<Lesson> {
   const row = await db
-    .prepare(`SELECT lessons.*, ub.full_name AS updated_by_instructor_name FROM lessons ${UPDATED_BY_JOIN} WHERE lessons.id = ? AND lessons.learner_id = ?`)
+    .prepare(`SELECT lessons.*, ub.full_name AS updated_by_instructor_name, ${REVISION_COUNT_SELECT} FROM lessons ${UPDATED_BY_JOIN} WHERE lessons.id = ? AND lessons.learner_id = ?`)
     .bind(lessonId, learnerId)
     .first<Row>();
   if (!row) throw new NotFoundError("Lesson not found.");
@@ -648,6 +651,56 @@ export async function importPaperLessons(db: D1Database, learnerId: string, csvT
 /** Fields that, if changed, invalidate both existing signatures (CBT&A V3 rule 5). */
 const SIGNATURE_PROTECTED_FIELDS = ["lessonDate", "startTime", "finishTime", "startOdometer", "finishOdometer", "taught", "assessed", "achieved", "location", "comments"] as const;
 
+export const MAX_REVISION_REASON_LENGTH = 200;
+
+/**
+ * Revision of the lesson BEFORE the edit, as ONE set-based INSERT ... SELECT that reads the lesson's
+ * current row in the same atomic batch (must be the batch's first statement, before the UPDATE).
+ * 5 bound parameters; revision_no is the next number for this lesson. Signature images are never copied,
+ * only whether each was present.
+ */
+function revisionInsertStatement(db: D1Database, lessonId: string, editedByInstructorId: string | null, reason: string | null): D1PreparedStatement {
+  return db
+    .prepare(
+      `INSERT INTO lesson_revisions (id, lesson_id, revision_no, edited_at, edited_by_instructor_id, reason, snapshot_json)
+       SELECT ?, lessons.id, (SELECT COALESCE(MAX(r.revision_no), 0) + 1 FROM lesson_revisions r WHERE r.lesson_id = lessons.id), ?, ?, ?,
+         json_object(
+           'lessonDate', lessons.lesson_date, 'startTime', lessons.start_time, 'finishTime', lessons.finish_time,
+           'startOdometer', lessons.start_odometer, 'finishOdometer', lessons.finish_odometer,
+           'taught', lessons.taught, 'competenciesAssessed', lessons.competencies_assessed, 'achieved', lessons.achieved,
+           'location', lessons.location, 'comments', lessons.comments, 'signatureStatus', lessons.signature_status,
+           'adiSignaturePresent', json(CASE WHEN COALESCE(lessons.adi_signature, '') <> '' THEN 'true' ELSE 'false' END),
+           'learnerSignaturePresent', json(CASE WHEN COALESCE(lessons.learner_signature, '') <> '' THEN 'true' ELSE 'false' END)
+         )
+       FROM lessons WHERE lessons.id = ?`,
+    )
+    .bind(crypto.randomUUID(), new Date().toISOString(), editedByInstructorId, reason, lessonId);
+}
+
+/** A lesson's previous versions, oldest first — one query (joined to the lesson to scope it to the learner, and to instructors for the editor's name). */
+export async function listLessonRevisions(db: D1Database, learnerId: string, lessonId: string): Promise<LessonRevision[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT r.id, r.lesson_id, r.revision_no, r.edited_at, r.edited_by_instructor_id, r.reason, r.snapshot_json, i.full_name AS edited_by_name
+       FROM lesson_revisions r
+       JOIN lessons ON lessons.id = r.lesson_id AND lessons.learner_id = ?
+       LEFT JOIN instructors i ON i.id = r.edited_by_instructor_id
+       WHERE r.lesson_id = ? ORDER BY r.revision_no ASC`,
+    )
+    .bind(learnerId, lessonId)
+    .all<Row>();
+  return results.map((row) => ({
+    id: String(row.id),
+    lessonId: String(row.lesson_id),
+    revisionNo: Number(row.revision_no),
+    editedAt: String(row.edited_at),
+    editedByInstructorId: nullableString(row.edited_by_instructor_id),
+    editedByName: nullableString(row.edited_by_name),
+    reason: nullableString(row.reason),
+    snapshot: JSON.parse(String(row.snapshot_json)) as LessonRevisionSnapshot,
+  }));
+}
+
 export type UpdateLessonResult = {
   lesson: Lesson;
   progress: LearnerProgress;
@@ -671,6 +724,18 @@ export async function updateLesson(db: D1Database, learnerId: string, lessonId: 
   const existing = await getLesson(db, learnerId, lessonId);
   // D14: a previous instructor's record is never edited (a mistake is fixed by re-importing a learner with no App lessons).
   if (isPriorRecord(existing)) throw new ValidationError("Prior-instructor records cannot be edited.");
+
+  // Instructor performing this edit (Instructor Identity V1). Omitted (local dev / tests) leaves
+  // updated_by_instructor_id exactly as it was and skips the ownership rule — never guessed.
+  const actingInstructorId = await resolveActingInstructorId(db, input.actingInstructorId);
+  // Code of Practice 9.2: an instructor must not change entries made by another instructor (design E1-E3).
+  if (actingInstructorId !== null && actingInstructorId !== existing.instructorId) {
+    const owner = await db.prepare("SELECT full_name FROM instructors WHERE id = ?").bind(existing.instructorId).first<Row>();
+    throw new ValidationError(`This lesson was recorded by ${owner ? String(owner.full_name) : "another instructor"}; only they can change it (Code of Practice 9.2).`);
+  }
+  const reasonRaw = String(input.reason ?? "").trim();
+  if (reasonRaw.length > MAX_REVISION_REASON_LENGTH) throw new ValidationError(`Reason must be ${MAX_REVISION_REASON_LENGTH} characters or fewer.`);
+  const reason = reasonRaw || null;
 
   const lessonDate = isoDate(input.lessonDate);
   if (!lessonDate) throw new ValidationError("Lesson date is required.");
@@ -814,11 +879,6 @@ export async function updateLesson(db: D1Database, learnerId: string, lessonId: 
       throw new ValidationError(`This edit would leave Lesson #${laterLessonNo} assessing Competency 18, 20 or 21 before Competency 1-17 and Review 1-17 were achieved in earlier lessons. Correct Lesson #${laterLessonNo} first.`);
     }
   }
-
-  // Instructor performing this edit (Instructor Identity V1). Omitted (or
-  // not yet resolvable, e.g. before Cloudflare Access is wired up) leaves
-  // updated_by_instructor_id exactly as it was — never guessed.
-  const actingInstructorId = await resolveActingInstructorId(db, input.actingInstructorId);
 
   const location = text(input.location, 200);
   const comments = text(input.comments, 3000);
@@ -1082,7 +1142,7 @@ export async function updateLesson(db: D1Database, learnerId: string, lessonId: 
   // there is never a state where some downstream mirrors advanced and
   // others (or their outbox events) silently didn't. A fixed number of
   // statements, however many lessons follow the edited one.
-  await db.batch([updateEditedLesson, recomputeCumulative, deleteOldEvents, ...(eventsInsert ? [eventsInsert] : []), ...(outboxInsert ? [outboxInsert] : [])]);
+  await db.batch([revisionInsertStatement(db, lessonId, actingInstructorId, reason), updateEditedLesson, recomputeCumulative, deleteOldEvents, ...(eventsInsert ? [eventsInsert] : []), ...(outboxInsert ? [outboxInsert] : [])]);
 
   const [updatedLesson, completion] = await Promise.all([getLesson(db, learnerId, lessonId), getCompletionSummary(db, learnerId)]);
 

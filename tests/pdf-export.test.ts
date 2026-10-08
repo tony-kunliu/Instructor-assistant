@@ -59,6 +59,7 @@ function lesson(n: number, overrides: Partial<Lesson> = {}): Lesson {
     signatureStatus: "digital",
     priorInstructorLabel: null,
     priorLessonCount: null,
+    revisionCount: 0,
     ...overrides,
   };
 }
