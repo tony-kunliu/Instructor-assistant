@@ -190,3 +190,44 @@ test("ACTGDS: an edit enqueues nothing in integration_outbox and existing outbox
   assert.deepEqual((await db.prepare("SELECT * FROM integration_outbox ORDER BY id").all()).results, outboxBefore);
   assert.ok(!JSON.stringify(outboxBefore).includes("Renamed"));
 });
+
+// ── PATCH /api/learners/[id] body handling (lib/api.ts#patchLearner) ──
+import { patchLearner } from "../lib/api.ts";
+
+function patchRequest(body: unknown, headers: Record<string, string> = {}): Request {
+  return new Request("https://instructor-assistant.example/api/learners/x", { method: "PATCH", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify(body) });
+}
+
+test("PATCH {archived} keeps its behaviour (archive / restore, no revision)", async () => {
+  const { db, learner } = await setup();
+  const archived = (await patchLearner(db, learner.id, patchRequest({ archived: true }))) as { learner: { archivedAt: string | null } };
+  assert.ok(archived.learner.archivedAt);
+  const restored = (await patchLearner(db, learner.id, patchRequest({ archived: false }))) as { learner: { archivedAt: string | null } };
+  assert.equal(restored.learner.archivedAt, null);
+  assert.equal(await count(db, "learner_revisions"), 0);
+});
+
+test("PATCH with learner fields edits; the actor comes from x-instructor-id, never from the body", async () => {
+  const { db, tony, anna, learner } = await setup();
+  // Signed in as Anna: a body claiming to be Tony is overridden by the header, so the edit is rejected.
+  await assert.rejects(() => patchLearner(db, learner.id, patchRequest({ fullName: "QA Spoof", actingInstructorId: tony.id }, { "x-instructor-id": anna.id })), /only they can edit/);
+  assert.equal((await getLearner(db, learner.id)).fullName, "QA Original Name");
+  // Signed in as Tony: allowed, even when the body claims to be Anna.
+  const ok = (await patchLearner(db, learner.id, patchRequest({ fullName: "QA By Header", actingInstructorId: anna.id }, { "x-instructor-id": tony.id }))) as { learner: { fullName: string }; changed: boolean };
+  assert.equal(ok.learner.fullName, "QA By Header");
+  assert.equal(ok.changed, true);
+  const rev = await db.prepare("SELECT edited_by_instructor_id FROM learner_revisions").first<Record<string, unknown>>();
+  assert.equal(rev!.edited_by_instructor_id, tony.id);
+});
+
+test("PATCH no-op reports changed:false with a message; archived + fields together and bad bodies are rejected", async () => {
+  const { db, tony, learner } = await setup();
+  const noop = (await patchLearner(db, learner.id, patchRequest({ fullName: "QA Original Name" }, { "x-instructor-id": tony.id }))) as { changed: boolean; message: string };
+  assert.equal(noop.changed, false);
+  assert.match(noop.message, /No changes/);
+  await assert.rejects(() => patchLearner(db, learner.id, patchRequest({ archived: true, fullName: "QA X" })), /either/i);
+  await assert.rejects(() => patchLearner(db, learner.id, patchRequest({})), /archived/);
+  await assert.rejects(() => patchLearner(db, learner.id, patchRequest({ archived: "yes" })), /archived/);
+  await assert.rejects(() => patchLearner(db, learner.id, patchRequest({ fullName: "QA X", instructorId: "other" })), /instructor cannot be changed/i);
+  assert.equal(await count(db, "learner_revisions"), 0);
+});

@@ -1,4 +1,5 @@
-import { NotFoundError, PaperImportError, ValidationError } from "./repo.ts";
+import type { D1Database } from "./d1-types.ts";
+import { NotFoundError, PaperImportError, setLearnerArchived, updateLearner, ValidationError } from "./repo.ts";
 
 /** Run a route handler body and map domain errors to JSON responses. */
 export async function handle(work: () => unknown | Promise<unknown>, status = 200): Promise<Response> {
@@ -51,4 +52,22 @@ export async function readJsonWithDefaultInstructor(request: Request): Promise<R
   if (String(body.instructorId ?? "").trim()) return body;
   const instructorId = request.headers.get("x-instructor-id");
   return instructorId ? { ...body, instructorId } : body;
+}
+
+/**
+ * PATCH /api/learners/[id]: either `{ archived: boolean }` (archive / restore, any active instructor, unchanged)
+ * or learner fields (edit; only the learner's own instructor when signed in). The actor is the verified
+ * `x-instructor-id` header via readJsonWithActor, never the body. `instructorId` is rejected by updateLearner.
+ */
+export async function patchLearner(db: D1Database, id: string, request: Request): Promise<Record<string, unknown>> {
+  const body = await readJsonWithActor(request);
+  const { archived, actingInstructorId, ...fields } = body;
+  const editing = Object.keys(fields).length > 0;
+  if (archived !== undefined && editing) throw new ValidationError("Send either `archived` or learner fields, not both.");
+  if (!editing) {
+    if (typeof archived !== "boolean") throw new ValidationError("`archived` must be true or false.");
+    return { learner: await setLearnerArchived(db, id, archived) };
+  }
+  const result = await updateLearner(db, id, { ...fields, actingInstructorId });
+  return { ...result, ...(result.changed ? {} : { message: "No changes: the details are already up to date." }) };
 }
