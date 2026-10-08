@@ -13,6 +13,7 @@ Start with the repo root docs, in this order:
   Standards (NI2020-703) and Code of Practice (DI2020-294) the app must respect.
 - `docs/ECOSYSTEM_ROADMAP.md` — longer-term shared direction between this
   repo and the ACTGDS Website (`tony-kunliu/actgds.com`).
+- `docs/BACKLOG.md` — features not built yet, with where each is designed.
 - `docs/RELEASE_B_RUNBOOK.md` — Production Integration enablement
   (Release B) preconditions, steps and rollback.
 - `docs/integrations/actgds-instructor-assistant-v1.md` — the
