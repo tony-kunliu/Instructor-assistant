@@ -162,7 +162,8 @@ test("buildCbtaChecklistPdf with a mixed paper/app list succeeds, keeps the page
 // ── Task 8: prior-instructor records on the PDF (spec §12) ──────────────
 
 import { compactIdText, priorRecordLine, priorTotals } from "../lib/prior-record.ts";
-import { PRIOR_LINES_MAX, planPriorLines } from "../lib/pdf-export.ts";
+import { PRINT_MARGIN, PRIOR_LINES_MAX, planPriorLines, priorBand } from "../lib/pdf-export.ts";
+import { FIRST_PAGE_TABLE_BOTTOM, PAGE_HEIGHT, PAGE_WIDTH } from "../lib/pdf-layout.ts";
 
 const ACHIEVED_ALL = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, Review 1-17, Review 1-22";
 function priorLesson(n: number, overrides: Partial<Lesson> = {}): Lesson {
@@ -199,15 +200,37 @@ test("cumulative footer notes the prior hours included when any prior record exi
   assert.equal(cumulativeFooterText(l, null), "Cumulative to lesson #3: 21.5 h / 165 km");
 });
 
-test("planPriorLines: up to PRIOR_LINES_MAX lines above the table; more spill to the Additional Notes page", () => {
+test("planPriorLines: at most 2 lines (PRIOR_LINES_MAX); more spill to the Additional Notes page", () => {
   const measurer = createMeasurer(fontBytes);
-  const one = planPriorLines(measurer, ["Prior instructor: QA A · 1 lesson · 1 h"]);
+  assert.equal(PRIOR_LINES_MAX, 2);
+  const one = planPriorLines(measurer, ["Prior instructor: QA A · 1 lesson · 1 h"], 400);
   assert.deepEqual(one, { drawn: ["Prior instructor: QA A · 1 lesson · 1 h"], appendix: null });
+  const two = ["Prior instructor: QA A · 1 lesson · 1 h", "Prior instructor: QA B · 1 lesson · 1 h"];
+  assert.deepEqual(planPriorLines(measurer, two, 400), { drawn: two, appendix: null });
   const lines = Array.from({ length: PRIOR_LINES_MAX + 1 }, (_, i) => `Prior instructor: QA ${i} · 1 lesson · 1 h`);
-  const many = planPriorLines(measurer, lines);
+  const many = planPriorLines(measurer, lines, 400);
   assert.equal(many.drawn.length, PRIOR_LINES_MAX);
   assert.equal(many.drawn[PRIOR_LINES_MAX - 1], "Prior instructors continue on the Additional Notes page.");
   assert.equal(many.appendix, lines.join("\n"));
+  // One long record that wraps past 2 lines in a narrow band also spills, never cut.
+  const long = planPriorLines(measurer, [`Prior instructor: QA ${"x".repeat(60)} · 1 lesson · 1 h · achieved ${ACHIEVED_ALL}`], 120);
+  assert.equal(long.drawn.length, 2);
+  assert.notEqual(long.appendix, null);
+});
+
+test("priorBand: page 1 bottom band right of the footer, inside the printable area (≥ 18 pt from every edge), below the table", () => {
+  const measurer = createMeasurer(fontBytes);
+  for (const footer of ["Cumulative to lesson #1: 1.0 h / 10 km (incl. prior instructors 20.0 h / 150 km)", "Cumulative to lesson #999: 9999.5 h / 99999 km (incl. prior instructors 9999.5 h / 99999 km)"]) {
+    const band = priorBand(measurer, footer);
+    assert.ok(band.x0 >= 28 + measurer.widthOfTextAtSize(footer, 7) + 8, "starts right of the footer text");
+    assert.ok(band.x1 <= PAGE_WIDTH - PRINT_MARGIN, "right edge printable");
+    assert.ok(band.x1 - band.x0 >= 300, `band wide enough (${band.x1 - band.x0})`);
+    assert.equal(band.baselines.length, PRIOR_LINES_MAX);
+    for (const baseline of band.baselines) {
+      assert.ok(baseline - band.fontSize >= FIRST_PAGE_TABLE_BOTTOM + 1, "glyph tops below the table border");
+      assert.ok(baseline + band.fontSize * 0.3 <= PAGE_HEIGHT - PRINT_MARGIN, "descenders inside the bottom printable margin");
+    }
+  }
 });
 
 test("buildCbtaChecklistPdf: prior records are not table rows (page plan by lessons ≥ 1); overflowing prior lines add an appendix page", async () => {

@@ -14,9 +14,9 @@
 //    on an appendix page, never cut off.
 //  - Signatures are scaled to fit their cell, preserving aspect ratio.
 //  - Prior-instructor records (spec §12, negative lesson_no) are never table
-//    rows: page 1 prints one "Prior instructor: …" line each in the free band
-//    above the title, and every cumulative footer notes the prior hours/km
-//    it includes.
+//    rows: page 1 prints their "Prior instructor: …" lines (max 2) in the
+//    printable strip below the table, right of the cumulative footer, and
+//    every cumulative footer notes the prior hours/km it includes.
 //
 // Text-width measurement uses a plain `fontkit` font object (`Measurer`)
 // that is never embedded into the output PDF, kept entirely separate from
@@ -224,32 +224,44 @@ export function cumulativeFooterText(lesson: Pick<Lesson, "lessonNo" | "cumulati
   return prior ? `${base} (incl. prior instructors ${decimalHours(prior.minutes)} h / ${prior.km} km)` : base;
 }
 
+const CUMULATIVE_FOOTER_SIZE = 7;
+
 function drawCumulativeFooter(page: PDFPage, font: PDFFont, lesson: Lesson, tableBottom: number, prior: { minutes: number; km: number } | null) {
-  const size = 7;
+  const size = CUMULATIVE_FOOTER_SIZE;
   const topDownBaseline = tableBottom + CUMULATIVE_FOOTER_GAP + size;
   page.drawText(cumulativeFooterText(lesson, prior), { x: COLUMNS.dateLessonNo.x0, y: PAGE_HEIGHT - topDownBaseline, size, font });
 }
 
-// Prior-instructor lines: the template's only free space above the table is the band above the
-// title (title glyphs start ~29 pt from the top; the ACT / Access Canberra logos start at x ≈ 543).
-export const PRIOR_LINES_MAX = 3;
+// Prior-instructor lines. Printers cannot print the outer ~6 mm of the sheet, so the old band
+// above the title (8 pt from the top) was lost on paper. Measured on the template (poppler, 288 dpi):
+// above the title only 18-29 pt is printable and free (one line); the gap between the title and the
+// header boxes is 8 pt. The one band with room for two lines is page 1's bottom strip between the
+// table border (560.25 pt) and the bottom printable edge, right of the cumulative footer.
+export const PRINT_MARGIN = 18;
+export const PRIOR_LINES_MAX = 2;
 const PRIOR_FONT_SIZE = 6.5;
-const PRIOR_LINE_HEIGHT = 7;
-const PRIOR_LINES_TOP = 8;
-const PRIOR_LINES_X0 = 28.4;
-const PRIOR_LINES_X1 = 535;
+const PRIOR_BASELINES = [568, 575]; // top-down; glyph tops ≥ 562, last descender ≈ 576 (≤ 595 - 18)
+const PRIOR_FOOTER_GAP = 12;
 const PRIOR_CONTINUED = "Prior instructors continue on the Additional Notes page.";
 
-/** Lines drawn above the table (wrapped to the band); if they don't fit, the full text goes to the Additional Notes page instead of being cut. */
-export function planPriorLines(measurer: Measurer, lines: readonly string[]): { drawn: string[]; appendix: string | null } {
-  const wrapped = lines.flatMap((line) => wrapText(measurer, line, PRIOR_FONT_SIZE, PRIOR_LINES_X1 - PRIOR_LINES_X0));
+export type PriorBand = { x0: number; x1: number; baselines: number[]; fontSize: number };
+
+/** Where page 1's prior lines go: the bottom strip, starting right of that page's cumulative footer text. */
+export function priorBand(measurer: Measurer, footerText: string): PriorBand {
+  const x0 = COLUMNS.dateLessonNo.x0 + measurer.widthOfTextAtSize(footerText, CUMULATIVE_FOOTER_SIZE) + PRIOR_FOOTER_GAP;
+  return { x0, x1: PAGE_WIDTH - PRINT_MARGIN, baselines: PRIOR_BASELINES, fontSize: PRIOR_FONT_SIZE };
+}
+
+/** Lines wrapped to the band width, at most PRIOR_LINES_MAX; if they don't fit, the full text goes to the Additional Notes page instead of being cut. */
+export function planPriorLines(measurer: Measurer, lines: readonly string[], width: number): { drawn: string[]; appendix: string | null } {
+  const wrapped = lines.flatMap((line) => wrapText(measurer, line, PRIOR_FONT_SIZE, width));
   if (wrapped.length <= PRIOR_LINES_MAX) return { drawn: wrapped, appendix: null };
   return { drawn: [...wrapped.slice(0, PRIOR_LINES_MAX - 1), PRIOR_CONTINUED], appendix: lines.join("\n") };
 }
 
-function drawPriorLines(page: PDFPage, font: PDFFont, lines: readonly string[]) {
+function drawPriorLines(page: PDFPage, font: PDFFont, band: PriorBand, lines: readonly string[]) {
   lines.forEach((line, i) => {
-    page.drawText(line, { x: PRIOR_LINES_X0, y: PAGE_HEIGHT - (PRIOR_LINES_TOP + i * PRIOR_LINE_HEIGHT + PRIOR_FONT_SIZE), size: PRIOR_FONT_SIZE, font });
+    page.drawText(line, { x: band.x0, y: PAGE_HEIGHT - band.baselines[i], size: band.fontSize, font });
   });
 }
 
@@ -368,7 +380,9 @@ export async function buildCbtaChecklistPdf(input: PdfExportInput): Promise<PdfE
   // Dry-run the wide-column wrapping first (pure text measurement, no page needed) so we know how
   // many appendix pages are needed *before* drawing page 1's "Page 1 of N" field.
   const dryRunNotes: OverflowNote[] = [];
-  const priorPlan = planPriorLines(measurer, priorLessons.map(priorRecordLine));
+  // Page 1's prior lines sit right of its footer, so the band is measured from that footer's text.
+  const band = priorBand(measurer, cumulativeFooterText(groups[0][groups[0].length - 1], prior));
+  const priorPlan = planPriorLines(measurer, priorLessons.map(priorRecordLine), band.x1 - band.x0);
   if (priorPlan.appendix !== null) dryRunNotes.push({ lessonNo: 0, field: "Prior instructors", text: priorPlan.appendix, heading: "Prior instructors:" });
   for (const group of groups) {
     const rowTops = group === groups[0] ? FIRST_PAGE_ROW_TOPS : CONTINUATION_ROW_TOPS;
@@ -411,7 +425,7 @@ export async function buildCbtaChecklistPdf(input: PdfExportInput): Promise<PdfE
     outDoc.addPage(copied);
     if (isFirst) {
       drawHeader(copied, font, measurer, learner, pageNo, totalPages);
-      drawPriorLines(copied, font, priorPlan.drawn);
+      drawPriorLines(copied, font, band, priorPlan.drawn);
     } else drawContinuationPageNumber(copied, font, pageNo, totalPages);
 
     const rowTops = isFirst ? FIRST_PAGE_ROW_TOPS : CONTINUATION_ROW_TOPS;
