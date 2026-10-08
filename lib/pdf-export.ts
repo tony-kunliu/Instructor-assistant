@@ -13,6 +13,10 @@
 //    "(see Additional Notes page)" marker in the cell and its full content
 //    on an appendix page, never cut off.
 //  - Signatures are scaled to fit their cell, preserving aspect ratio.
+//  - Prior-instructor records (spec §12, negative lesson_no) are never table
+//    rows: page 1 prints one "Prior instructor: …" line each in the free band
+//    above the title, and every cumulative footer notes the prior hours/km
+//    it includes.
 //
 // Text-width measurement uses a plain `fontkit` font object (`Measurer`)
 // that is never embedded into the output PDF, kept entirely separate from
@@ -25,6 +29,7 @@
 import { PDFDocument, type PDFFont, type PDFPage } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
 import { decimalHours } from "./calc.ts";
+import { priorRecordLine, priorTotals } from "./prior-record.ts";
 import {
   COLUMNS,
   CONTINUATION_PAGE_ROWS,
@@ -121,7 +126,7 @@ function drawSingleLine(page: PDFPage, font: PDFFont, measurer: Measurer, text: 
   page.drawText(clipped, { x: box.x0 + 2, y, size: fontSize, font });
 }
 
-export type OverflowNote = { lessonNo: number; field: string; text: string };
+export type OverflowNote = { lessonNo: number; field: string; text: string; /** Replaces the "Lesson #n — field:" heading (prior-instructor lines). */ heading?: string };
 
 /** Draws wrapped text top-aligned in a cell; on overflow, the last visible line becomes a pointer to the appendix (nothing is cut off — the full text goes on the appendix page). */
 function drawCellText(page: PDFPage, font: PDFFont, measurer: Measurer, text: string | null, box: Box, lessonNo: number, field: string, overflowNotes: OverflowNote[]) {
@@ -213,15 +218,39 @@ export function signatureCellText(lesson: Pick<Lesson, "signatureStatus">): stri
   return lesson.signatureStatus === "on_paper" ? "Paper original" : null;
 }
 
-/** Running total shown under the table, as of the last lesson on the page. */
-export function cumulativeFooterText(lesson: Pick<Lesson, "lessonNo" | "cumulativeMinutes" | "cumulativeKm">): string {
-  return `Cumulative to lesson #${lesson.lessonNo}: ${decimalHours(lesson.cumulativeMinutes)} h / ${lesson.cumulativeKm} km`;
+/** Running total shown under the table, as of the last lesson on the page; notes the prior-instructor hours/km it includes, if any. */
+export function cumulativeFooterText(lesson: Pick<Lesson, "lessonNo" | "cumulativeMinutes" | "cumulativeKm">, prior: { minutes: number; km: number } | null = null): string {
+  const base = `Cumulative to lesson #${lesson.lessonNo}: ${decimalHours(lesson.cumulativeMinutes)} h / ${lesson.cumulativeKm} km`;
+  return prior ? `${base} (incl. prior instructors ${decimalHours(prior.minutes)} h / ${prior.km} km)` : base;
 }
 
-function drawCumulativeFooter(page: PDFPage, font: PDFFont, lesson: Lesson, tableBottom: number) {
+function drawCumulativeFooter(page: PDFPage, font: PDFFont, lesson: Lesson, tableBottom: number, prior: { minutes: number; km: number } | null) {
   const size = 7;
   const topDownBaseline = tableBottom + CUMULATIVE_FOOTER_GAP + size;
-  page.drawText(cumulativeFooterText(lesson), { x: COLUMNS.dateLessonNo.x0, y: PAGE_HEIGHT - topDownBaseline, size, font });
+  page.drawText(cumulativeFooterText(lesson, prior), { x: COLUMNS.dateLessonNo.x0, y: PAGE_HEIGHT - topDownBaseline, size, font });
+}
+
+// Prior-instructor lines: the template's only free space above the table is the band above the
+// title (title glyphs start ~29 pt from the top; the ACT / Access Canberra logos start at x ≈ 543).
+export const PRIOR_LINES_MAX = 3;
+const PRIOR_FONT_SIZE = 6.5;
+const PRIOR_LINE_HEIGHT = 7;
+const PRIOR_LINES_TOP = 8;
+const PRIOR_LINES_X0 = 28.4;
+const PRIOR_LINES_X1 = 535;
+const PRIOR_CONTINUED = "Prior instructors continue on the Additional Notes page.";
+
+/** Lines drawn above the table (wrapped to the band); if they don't fit, the full text goes to the Additional Notes page instead of being cut. */
+export function planPriorLines(measurer: Measurer, lines: readonly string[]): { drawn: string[]; appendix: string | null } {
+  const wrapped = lines.flatMap((line) => wrapText(measurer, line, PRIOR_FONT_SIZE, PRIOR_LINES_X1 - PRIOR_LINES_X0));
+  if (wrapped.length <= PRIOR_LINES_MAX) return { drawn: wrapped, appendix: null };
+  return { drawn: [...wrapped.slice(0, PRIOR_LINES_MAX - 1), PRIOR_CONTINUED], appendix: lines.join("\n") };
+}
+
+function drawPriorLines(page: PDFPage, font: PDFFont, lines: readonly string[]) {
+  lines.forEach((line, i) => {
+    page.drawText(line, { x: PRIOR_LINES_X0, y: PAGE_HEIGHT - (PRIOR_LINES_TOP + i * PRIOR_LINE_HEIGHT + PRIOR_FONT_SIZE), size: PRIOR_FONT_SIZE, font });
+  });
 }
 
 async function drawLessonRow(doc: PDFDocument, page: PDFPage, font: PDFFont, measurer: Measurer, lesson: Lesson, rowTop: number, rowBottom: number, overflowNotes: OverflowNote[]) {
@@ -286,7 +315,7 @@ function planAppendixPages(measurer: Measurer, notes: OverflowNote[]): string[][
 
   const allLines: string[] = [];
   for (const note of notes) {
-    allLines.push(`Lesson #${note.lessonNo} — ${note.field}:`);
+    allLines.push(note.heading ?? `Lesson #${note.lessonNo} — ${note.field}:`);
     allLines.push(...wrapText(measurer, note.text, APPENDIX_FONT_SIZE, usableWidth));
     allLines.push("");
   }
@@ -311,7 +340,11 @@ function drawAppendixPage(page: PDFPage, font: PDFFont, lines: string[], appendi
 }
 
 export async function buildCbtaChecklistPdf(input: PdfExportInput): Promise<PdfExportResult> {
-  const { templateBytes, fontBytes, learner, lessons } = input;
+  const { templateBytes, fontBytes, learner } = input;
+  // Table rows are lessons #1..N only; prior-instructor records are printed as lines above the table.
+  const lessons = input.lessons.filter((lesson) => lesson.lessonNo >= 1);
+  const priorLessons = input.lessons.filter((lesson) => lesson.recordSource === "prior_instructor").sort((a, b) => a.lessonNo - b.lessonNo);
+  const prior = priorTotals(priorLessons);
   if (lessons.length === 0) throw new Error("No saved lessons to export.");
 
   const groups: Lesson[][] = [lessons.slice(0, FIRST_PAGE_ROWS)];
@@ -335,6 +368,8 @@ export async function buildCbtaChecklistPdf(input: PdfExportInput): Promise<PdfE
   // Dry-run the wide-column wrapping first (pure text measurement, no page needed) so we know how
   // many appendix pages are needed *before* drawing page 1's "Page 1 of N" field.
   const dryRunNotes: OverflowNote[] = [];
+  const priorPlan = planPriorLines(measurer, priorLessons.map(priorRecordLine));
+  if (priorPlan.appendix !== null) dryRunNotes.push({ lessonNo: 0, field: "Prior instructors", text: priorPlan.appendix, heading: "Prior instructors:" });
   for (const group of groups) {
     const rowTops = group === groups[0] ? FIRST_PAGE_ROW_TOPS : CONTINUATION_ROW_TOPS;
     const tableBottom = group === groups[0] ? FIRST_PAGE_TABLE_BOTTOM : CONTINUATION_TABLE_BOTTOM;
@@ -374,8 +409,10 @@ export async function buildCbtaChecklistPdf(input: PdfExportInput): Promise<PdfE
     pageNo += 1;
     const [copied] = await outDoc.copyPages(templateDoc, [isFirst ? 0 : 1]);
     outDoc.addPage(copied);
-    if (isFirst) drawHeader(copied, font, measurer, learner, pageNo, totalPages);
-    else drawContinuationPageNumber(copied, font, pageNo, totalPages);
+    if (isFirst) {
+      drawHeader(copied, font, measurer, learner, pageNo, totalPages);
+      drawPriorLines(copied, font, priorPlan.drawn);
+    } else drawContinuationPageNumber(copied, font, pageNo, totalPages);
 
     const rowTops = isFirst ? FIRST_PAGE_ROW_TOPS : CONTINUATION_ROW_TOPS;
     const tableBottom = isFirst ? FIRST_PAGE_TABLE_BOTTOM : CONTINUATION_TABLE_BOTTOM;
@@ -385,7 +422,7 @@ export async function buildCbtaChecklistPdf(input: PdfExportInput): Promise<PdfE
       // eslint-disable-next-line no-await-in-loop -- signatures must embed sequentially into the same page.
       await drawLessonRow(outDoc, copied, font, measurer, group[i], top, bottom, []);
     }
-    drawCumulativeFooter(copied, font, group[group.length - 1], tableBottom);
+    drawCumulativeFooter(copied, font, group[group.length - 1], tableBottom, prior);
   }
 
   for (let i = 0; i < appendixPages.length; i++) {

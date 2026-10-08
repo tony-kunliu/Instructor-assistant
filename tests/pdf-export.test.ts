@@ -158,3 +158,66 @@ test("buildCbtaChecklistPdf with a mixed paper/app list succeeds, keeps the page
   assert.equal((await PDFDocument.load(result.bytes)).getPageCount(), result.pageCount);
   assert.equal(cumulativeFooterText(lessons[2]), "Cumulative to lesson #3: 0.5 h / 5 km");
 });
+
+// ── Task 8: prior-instructor records on the PDF (spec §12) ──────────────
+
+import { compactIdText, priorRecordLine, priorTotals } from "../lib/prior-record.ts";
+import { PRIOR_LINES_MAX, planPriorLines } from "../lib/pdf-export.ts";
+
+const ACHIEVED_ALL = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, Review 1-17, Review 1-22";
+function priorLesson(n: number, overrides: Partial<Lesson> = {}): Lesson {
+  return lesson(n, {
+    recordSource: "prior_instructor", signatureStatus: "on_paper", adiSignature: null, learnerSignature: null,
+    startTime: null, finishTime: null, startOdometer: null, finishOdometer: null, taught: null, location: null, comments: null,
+    durationMinutes: 1200, distanceKm: 150, cumulativeMinutes: 1200, cumulativeKm: 150,
+    competenciesAssessed: ACHIEVED_ALL, achieved: ACHIEVED_ALL, priorInstructorLabel: "QA ADI 358", priorLessonCount: 11,
+    ...overrides,
+  });
+}
+
+test("compactIdText collapses runs of 3+ consecutive competency numbers and keeps reviews", () => {
+  assert.equal(compactIdText(ACHIEVED_ALL), "1-22, Review 1-17, Review 1-22");
+  assert.equal(compactIdText("1, 2, 4, 5, 6, 9, 23 Final Drive"), "1, 2, 4-6, 9, 23 Final Drive");
+  assert.equal(compactIdText("7"), "7");
+  assert.equal(compactIdText(null), null);
+});
+
+test("priorRecordLine: 'Prior instructor: <label> · <n> lessons · <h> h[ · <km> km] · achieved <ids>'", () => {
+  assert.equal(priorRecordLine(priorLesson(-1)), "Prior instructor: QA ADI 358 · 11 lessons · 20 h · 150 km · achieved 1-22, Review 1-17, Review 1-22");
+  assert.equal(priorRecordLine(priorLesson(-1, { priorLessonCount: 1, durationMinutes: 390, distanceKm: null, achieved: "3" })), "Prior instructor: QA ADI 358 · 1 lesson · 6.5 h · achieved 3");
+  assert.equal(priorRecordLine(priorLesson(-1, { achieved: null })), "Prior instructor: QA ADI 358 · 11 lessons · 20 h · 150 km");
+});
+
+test("priorTotals sums prior-instructor rows only (null when there are none)", () => {
+  assert.equal(priorTotals([lesson(1), lesson(2)]), null);
+  assert.deepEqual(priorTotals([priorLesson(-2, { durationMinutes: 390, distanceKm: null }), priorLesson(-1), lesson(1)]), { minutes: 1590, km: 150 });
+});
+
+test("cumulative footer notes the prior hours included when any prior record exists", () => {
+  const l = lesson(3, { cumulativeMinutes: 1290, cumulativeKm: 165 });
+  assert.equal(cumulativeFooterText(l, { minutes: 1200, km: 150 }), "Cumulative to lesson #3: 21.5 h / 165 km (incl. prior instructors 20.0 h / 150 km)");
+  assert.equal(cumulativeFooterText(l, null), "Cumulative to lesson #3: 21.5 h / 165 km");
+});
+
+test("planPriorLines: up to PRIOR_LINES_MAX lines above the table; more spill to the Additional Notes page", () => {
+  const measurer = createMeasurer(fontBytes);
+  const one = planPriorLines(measurer, ["Prior instructor: QA A · 1 lesson · 1 h"]);
+  assert.deepEqual(one, { drawn: ["Prior instructor: QA A · 1 lesson · 1 h"], appendix: null });
+  const lines = Array.from({ length: PRIOR_LINES_MAX + 1 }, (_, i) => `Prior instructor: QA ${i} · 1 lesson · 1 h`);
+  const many = planPriorLines(measurer, lines);
+  assert.equal(many.drawn.length, PRIOR_LINES_MAX);
+  assert.equal(many.drawn[PRIOR_LINES_MAX - 1], "Prior instructors continue on the Additional Notes page.");
+  assert.equal(many.appendix, lines.join("\n"));
+});
+
+test("buildCbtaChecklistPdf: prior records are not table rows (page plan by lessons ≥ 1); overflowing prior lines add an appendix page", async () => {
+  const lessons = [priorLesson(-2, { priorInstructorLabel: "QA Old School" }), priorLesson(-1), ...Array.from({ length: 5 }, (_, i) => lesson(i + 1))];
+  const result = await buildCbtaChecklistPdf({ templateBytes, fontBytes, learner, lessons });
+  assert.equal(result.pageCount, plannedPageCount(5), "2 prior + 5 lessons still fit one page");
+  assert.equal(result.hadOverflow, false);
+  const many = [...Array.from({ length: PRIOR_LINES_MAX + 1 }, (_, i) => priorLesson(i - PRIOR_LINES_MAX - 1, { priorInstructorLabel: `QA ${i}` })), lesson(1)];
+  const spilled = await buildCbtaChecklistPdf({ templateBytes, fontBytes, learner, lessons: many });
+  assert.equal(spilled.hadOverflow, true);
+  assert.equal(spilled.pageCount, plannedPageCount(1) + 1);
+  await assert.rejects(() => buildCbtaChecklistPdf({ templateBytes, fontBytes, learner, lessons: [priorLesson(-1)] }), /No saved lessons/);
+});
