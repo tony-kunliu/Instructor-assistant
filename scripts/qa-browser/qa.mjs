@@ -733,6 +733,18 @@ const draw = async (page, index) => {
   const { execFileSync } = await import("node:child_process");
   const pdfText = execFileSync("pdftotext", ["-layout", revPdf, "-"], { encoding: "utf8" });
   check("revisions: PDF marks the amended lesson \"(amended)\" next to the lesson number", /#1\s*\(amended\)/.test(pdfText), pdfText.match(/#1[^\n]{0,20}/)?.[0] ?? "no #1");
+  // Reason-only re-save: the revisions panel must not stay open/stale, and the new version says no value changed.
+  await t.page.click("[data-testid=history-row] .h-edit");
+  await t.page.waitForSelector("text=Editing Lesson #1");
+  await t.page.fill("[data-testid=edit-reason]", "QA reason only");
+  await t.page.click(".h-editing .btn.save");
+  await t.page.waitForSelector(".status.ok:has-text('Lesson updated'), .h-editing .status.error");
+  check("revisions: panel closed after an edit (never stale)", (await t.page.$("[data-testid=revisions-list]")) === null);
+  check("revisions: History shows \"Edited 2 times\"", (await t.page.textContent("[data-testid=revisions-toggle]")).trim() === "Edited 2 times");
+  await t.page.click("[data-testid=revisions-toggle]");
+  await t.page.waitForSelector("[data-testid=revision-item] >> nth=1");
+  const second = await t.page.textContent("[data-testid=revision-item] >> nth=1");
+  check("revisions: reason-only re-save says no recorded value changed (not 'signatures only')", second.includes("QA reason only") && second.includes("No recorded value changed.") && !second.includes("Signatures only"), second);
   check("revisions: Tony: no page errors", t.errors.length === 0, t.errors.join("|"));
   await t.ctx.close();
 }

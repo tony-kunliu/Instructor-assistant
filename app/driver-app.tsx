@@ -208,6 +208,10 @@ export default function DriverApp() {
     setDetail(null);
     setDraft(null);
     cancelEditLesson();
+    // The revisions panel belongs to one loaded copy of a lesson; never keep it across a reload or an edit.
+    setRevisionsOpenId(null);
+    setRevisions(null);
+    setRevisionsError(null);
     setInvalidation(null);
     if (!id) return;
     storage.set(LAST_LEARNER_KEY, id);
@@ -417,6 +421,8 @@ export default function DriverApp() {
       );
       // Editing a lesson can shift every subsequent lesson's cumulative
       // totals, so re-fetch the whole learner rather than patch one row.
+      setRevisionsOpenId(null);
+      setRevisions(null);
       await loadLearner(detail.learner.id);
       setInvalidation(result.invalidated);
       cancelEditLesson();
@@ -896,7 +902,7 @@ export default function DriverApp() {
                                           <li key={change.field}><span>{change.label}: </span><del data-testid="revision-struck">{change.before}</del> → <b>{change.after}</b></li>
                                         ))}
                                       </ul>
-                                    ) : <p className="meta">Signatures only; no value changed.</p>}
+                                    ) : <p className="meta" data-testid="revision-no-change">No recorded value changed.</p>}
                                   </li>
                                 );
                               })}
