@@ -274,3 +274,11 @@ test("priorPreviewNote: import preview Hours/Km note when the plan has prior row
   assert.equal(priorPreviewNote([{ label: "QA A", lessonCount: 4, minutes: 390, km: null }, { label: "QA B", lessonCount: 11, minutes: 1200, km: 150 }]), "incl. 26.5 h / 150 km from previous instructors");
   assert.equal(priorPreviewNote([{ label: "QA A", lessonCount: 1, minutes: 1200, km: null }]), "incl. 20.0 h / 0 km from previous instructors");
 });
+
+import { isPriorRecord } from "../lib/prior-record.ts";
+
+test("isPriorRecord is the one predicate: recordSource === 'prior_instructor'", () => {
+  assert.equal(isPriorRecord(priorLesson(-1)), true);
+  assert.equal(isPriorRecord(lesson(1)), false);
+  assert.equal(isPriorRecord(lesson(1, { recordSource: "paper_import" })), false);
+});

@@ -4,6 +4,11 @@
 import { decimalHours } from "./calc.ts";
 import type { Lesson } from "./types.ts";
 
+/** The one test for "is this a prior-instructor record" (spec §12), used by the PDF, the UI and the repo. */
+export function isPriorRecord(lesson: Pick<Lesson, "recordSource">): boolean {
+  return lesson.recordSource === "prior_instructor";
+}
+
 /**
  * Collapses runs of 3+ consecutive competency numbers in a stored achieved
  * list ("1, 2, 3, 4, Review 1-17" → "1-4, Review 1-17"). Non-numeric entries
@@ -55,14 +60,14 @@ export function priorRecordLine(lesson: PriorFields): string {
 /** Splits a learner's rows for display: prior-instructor records (oldest first) and lessons #1..N (order kept). */
 export function splitPriorRecords<T extends Pick<Lesson, "recordSource" | "lessonNo">>(rows: readonly T[]): { prior: T[]; lessons: T[] } {
   return {
-    prior: rows.filter((row) => row.recordSource === "prior_instructor").sort((a, b) => a.lessonNo - b.lessonNo),
-    lessons: rows.filter((row) => row.recordSource !== "prior_instructor"),
+    prior: rows.filter(isPriorRecord).sort((a, b) => a.lessonNo - b.lessonNo),
+    lessons: rows.filter((row) => !isPriorRecord(row)),
   };
 }
 
 /** Sum of the prior-instructor rows' hours/km, or null when the learner has none. */
 export function priorTotals(lessons: readonly Pick<Lesson, "recordSource" | "durationMinutes" | "distanceKm">[]): { minutes: number; km: number } | null {
-  const prior = lessons.filter((lesson) => lesson.recordSource === "prior_instructor");
+  const prior = lessons.filter(isPriorRecord);
   if (!prior.length) return null;
   return {
     minutes: prior.reduce((sum, lesson) => sum + (lesson.durationMinutes ?? 0), 0),

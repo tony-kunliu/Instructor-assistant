@@ -25,6 +25,7 @@ import { ensureStrictlyNewerSourceUpdatedAt, insertOutboxRowsStatement, latestSe
 import { IMMEDIATE_DELIVERY_LIMIT, processDueOutbox } from "./integration/sender.ts";
 import type { IntegrationHooks, LessonUpsertedPayloadV1 } from "./integration/types.ts";
 import { planPaperImport, type PaperImportPreview, type PaperImportRowError } from "./paper-import.ts";
+import { isPriorRecord } from "./prior-record.ts";
 import type { CompletionSummary, Instructor, Learner, LearnerInput, Lesson, LessonInput, SignatureStatus } from "./types.ts";
 
 export class ValidationError extends Error {}
@@ -87,7 +88,7 @@ function strictEnum<T extends string>(value: unknown, allowed: readonly T[], col
 /** Exported for unit tests of the strict column reads. */
 export function toLesson(row: Row): Lesson {
   const recordSource = strictEnum(row.record_source, ["app", "paper_import", "prior_instructor"], "record_source");
-  const isPrior = recordSource === "prior_instructor";
+  const isPrior = isPriorRecord({ recordSource });
   return {
     id: String(row.id),
     learnerId: String(row.learner_id),
@@ -669,7 +670,7 @@ export type UpdateLessonResult = {
 export async function updateLesson(db: D1Database, learnerId: string, lessonId: string, input: LessonInput, integration?: IntegrationHooks): Promise<UpdateLessonResult> {
   const existing = await getLesson(db, learnerId, lessonId);
   // D14: a previous instructor's record is never edited (a mistake is fixed by re-importing a learner with no App lessons).
-  if (existing.recordSource === "prior_instructor") throw new ValidationError("Prior-instructor records cannot be edited.");
+  if (isPriorRecord(existing)) throw new ValidationError("Prior-instructor records cannot be edited.");
 
   const lessonDate = isoDate(input.lessonDate);
   if (!lessonDate) throw new ValidationError("Lesson date is required.");

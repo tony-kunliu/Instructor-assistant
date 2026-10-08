@@ -29,7 +29,7 @@
 import { PDFDocument, type PDFFont, type PDFPage } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
 import { decimalHours } from "./calc.ts";
-import { priorRecordLine, priorTotals } from "./prior-record.ts";
+import { isPriorRecord, priorRecordLine, priorTotals } from "./prior-record.ts";
 import {
   COLUMNS,
   CONTINUATION_PAGE_ROWS,
@@ -354,8 +354,8 @@ function drawAppendixPage(page: PDFPage, font: PDFFont, lines: string[], appendi
 export async function buildCbtaChecklistPdf(input: PdfExportInput): Promise<PdfExportResult> {
   const { templateBytes, fontBytes, learner } = input;
   // Table rows are lessons #1..N only; prior-instructor records are printed as lines above the table.
-  const lessons = input.lessons.filter((lesson) => lesson.lessonNo >= 1);
-  const priorLessons = input.lessons.filter((lesson) => lesson.recordSource === "prior_instructor").sort((a, b) => a.lessonNo - b.lessonNo);
+  const lessons = input.lessons.filter((lesson) => !isPriorRecord(lesson));
+  const priorLessons = input.lessons.filter(isPriorRecord).sort((a, b) => a.lessonNo - b.lessonNo);
   const prior = priorTotals(priorLessons);
   if (lessons.length === 0) throw new Error("No saved lessons to export.");
 
