@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import { formatMinutes } from "@/lib/calc.ts";
 import type { PaperImportPreview } from "@/lib/paper-import.ts";
+import { priorSummaryLine } from "@/lib/prior-record.ts";
 
 type RowError = { row: number; message: string };
 type ImportResponse = { mode: "preview" | "commit"; preview: PaperImportPreview; lessonCount?: number };
@@ -102,7 +103,7 @@ export default function PaperImportPanel({ learnerId, onImported }: { learnerId:
   return (
     <section className="card paper-import" data-testid="paper-import-panel">
       <h2>Import paper records</h2>
-      <p className="meta">Choose a CSV of this learner's paper logbook lessons. Nothing is saved until you confirm.</p>
+      <p className="meta">Choose a CSV of this learner's paper logbook lessons (and any prior-instructor records). Nothing is saved until you confirm.</p>
       <input ref={inputRef} type="file" accept=".csv,text/csv" aria-label="Paper records CSV file" disabled={busy} onChange={(e) => void choose(e.target.files?.[0])} />
       {fileName ? <p className="meta paper-import-file">{fileName}</p> : null}
 
@@ -124,6 +125,11 @@ export default function PaperImportPanel({ learnerId, onImported }: { learnerId:
             <div><dt>Km</dt><dd data-testid="paper-import-km">{preview.totalKm} km</dd></div>
             <div><dt>Achieved</dt><dd data-testid="paper-import-achieved">{preview.progress.achievedCount}</dd></div>
           </dl>
+          {preview.priorRecords.length ? (
+            <ul className="paper-import-prior" data-testid="paper-import-prior">
+              {preview.priorRecords.map((record, i) => <li key={i}>{priorSummaryLine(record)}</li>)}
+            </ul>
+          ) : null}
           {preview.missingDataLessonNos.length ? <p className="meta">Missing data: {list(preview.missingDataLessonNos)}</p> : null}
           {preview.unsignedLessonNos.length ? <p className="meta">Unsigned: {list(preview.unsignedLessonNos)}</p> : null}
           <button type="button" className="btn primary block" data-testid="paper-import-confirm" disabled={busy} onClick={() => void confirm()}>

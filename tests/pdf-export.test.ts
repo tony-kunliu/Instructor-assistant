@@ -221,3 +221,18 @@ test("buildCbtaChecklistPdf: prior records are not table rows (page plan by less
   assert.equal(spilled.pageCount, plannedPageCount(1) + 1);
   await assert.rejects(() => buildCbtaChecklistPdf({ templateBytes, fontBytes, learner, lessons: [priorLesson(-1)] }), /No saved lessons/);
 });
+
+import { priorSummaryLine, splitPriorRecords } from "../lib/prior-record.ts";
+
+test("splitPriorRecords: History rows are lessons ≥ 1 (order kept); prior records oldest first", () => {
+  const listed = [lesson(2), lesson(1), priorLesson(-1, { priorInstructorLabel: "QA B" }), priorLesson(-2, { priorInstructorLabel: "QA A" })];
+  const { prior, lessons } = splitPriorRecords(listed);
+  assert.deepEqual(lessons.map((l) => l.lessonNo), [2, 1]);
+  assert.deepEqual(prior.map((l) => l.priorInstructorLabel), ["QA A", "QA B"]);
+  assert.deepEqual(splitPriorRecords([lesson(1)]).prior, []);
+});
+
+test("priorSummaryLine (import preview): label, lessons, hours, km when known — no achieved list", () => {
+  assert.equal(priorSummaryLine({ label: "QA ADI 358", lessonCount: 11, minutes: 1200, km: 150 }), "Prior instructor: QA ADI 358 · 11 lessons · 20 h · 150 km");
+  assert.equal(priorSummaryLine({ label: "QA A", lessonCount: 1, minutes: 390, km: null }), "Prior instructor: QA A · 1 lesson · 6.5 h");
+});

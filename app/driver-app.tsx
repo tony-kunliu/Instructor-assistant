@@ -18,6 +18,7 @@ import { accessLogoutUrl } from "@/lib/access-logout.ts";
 import { filterLearners } from "@/lib/learner-filter.ts";
 import { currentIssues, issueFromServerMessage, validateLessonDraftFields, type IssueState } from "@/lib/lesson-form-errors.ts";
 import { availableViews, initialSelection, learnerPanel, selectionAfterViewChange, viewLearners, type PickerView } from "@/lib/learner-picker.ts";
+import { priorRecordLine, splitPriorRecords } from "@/lib/prior-record.ts";
 import type { CompletionSummary, Instructor, Learner, Lesson, SignatureStatus } from "@/lib/types.ts";
 import CompetencyPicker from "./competency-picker.tsx";
 import CompetencyProgressCard from "./competency-progress.tsx";
@@ -498,6 +499,8 @@ export default function DriverApp() {
   const elapsed = startedMinutes !== null && nowMinutes !== null && nowMinutes >= startedMinutes ? nowMinutes - startedMinutes : null;
   const phase: "ready" | "running" | "ended" = !draft?.startTime ? "ready" : !draft.finishTime ? "running" : "ended";
   const lessonNo = nextLessonNo(totals);
+  // Prior-instructor records (spec §12) are shown as compact cards, never as editable lessons.
+  const history = splitPriorRecords(detail?.lessons ?? []);
   const shownSaveIssues = draft ? currentIssues(saveIssues, draft, "new") : [];
   const shownEditIssues = editDraft ? currentIssues(editIssues, editDraft, editPaperSignature ? "paper" : "edit") : [];
 
@@ -642,7 +645,7 @@ export default function DriverApp() {
               Integration ID: <code>{detail.learner.id}</code>
               <button type="button" className="link" onClick={() => void copyIntegrationId(detail.learner.id)}>Copy ID</button>
             </p>
-            <ExportPdfButton learnerId={detail.learner.id} lessonCount={detail.lessons.length} />
+            <ExportPdfButton learnerId={detail.learner.id} lessonCount={history.lessons.length} />
             {panel === "archived" ? (
               <div className="lifecycle archived" data-testid="archived-banner">
                 <p><b>Archived</b> {detail.learner.archivedAt?.slice(0, 10)} — hidden from the daily learner list. Lessons, signatures, progress and PDF are kept.</p>
@@ -657,7 +660,7 @@ export default function DriverApp() {
 
           <CompetencyProgressCard progress={detail.progress} completion={detail.completion} invalidated={invalidation} />
 
-          {totals.lessonCount === 0 && panel === "active" ? (
+          {detail.lessons.length === 0 && panel === "active" ? (
             <PaperImportPanel key={detail.learner.id} learnerId={detail.learner.id} onImported={() => loadLearner(detail.learner.id)} />
           ) : null}
 
@@ -749,9 +752,16 @@ export default function DriverApp() {
 
           <section className="card history">
             <h2>History</h2>
-            {!detail.lessons.length ? <p className="empty">No lessons yet.</p> : (
+            {history.prior.length ? (
+              <ul className="h-prior-list">
+                {history.prior.map((record) => (
+                  <li key={record.id} className="h-prior" data-testid="prior-record">{priorRecordLine(record)}</li>
+                ))}
+              </ul>
+            ) : null}
+            {!history.lessons.length ? <p className="empty">No lessons yet.</p> : (
               <ol>
-                {detail.lessons.map((lesson) =>
+                {history.lessons.map((lesson) =>
                   editingLessonId === lesson.id ? (
                     <li key={lesson.id} className="h-editing">
                       {editLoading || !editDraft || !editProgress ? (

@@ -39,18 +39,30 @@ export function compactIdText(text: string | null): string | null {
 
 type PriorFields = Pick<Lesson, "priorInstructorLabel" | "priorLessonCount" | "durationMinutes" | "distanceKm" | "achieved">;
 
+/** "Prior instructor: ADI 358 · 11 lessons · 20 h · 150 km" — the totals part, also used by the import preview. */
+export function priorSummaryLine(record: { label: string; lessonCount: number; minutes: number; km: number | null }): string {
+  const parts = [
+    `Prior instructor: ${record.label}`,
+    `${record.lessonCount} ${record.lessonCount === 1 ? "lesson" : "lessons"}`,
+    `${shortHours(record.minutes)} h`,
+  ];
+  if (record.km !== null) parts.push(`${record.km} km`);
+  return parts.join(" · ");
+}
+
 /** "Prior instructor: ADI 358 · 11 lessons · 20 h · 150 km · achieved 1-22, Review 1-17, Review 1-22" (km and achieved only when present). */
 export function priorRecordLine(lesson: PriorFields): string {
-  const count = lesson.priorLessonCount ?? 0;
-  const parts = [
-    `Prior instructor: ${lesson.priorInstructorLabel ?? ""}`,
-    `${count} ${count === 1 ? "lesson" : "lessons"}`,
-    `${shortHours(lesson.durationMinutes ?? 0)} h`,
-  ];
-  if (lesson.distanceKm !== null) parts.push(`${lesson.distanceKm} km`);
+  const summary = priorSummaryLine({ label: lesson.priorInstructorLabel ?? "", lessonCount: lesson.priorLessonCount ?? 0, minutes: lesson.durationMinutes ?? 0, km: lesson.distanceKm });
   const achieved = compactIdText(lesson.achieved);
-  if (achieved) parts.push(`achieved ${achieved}`);
-  return parts.join(" · ");
+  return achieved ? `${summary} · achieved ${achieved}` : summary;
+}
+
+/** Splits a learner's rows for display: prior-instructor records (oldest first) and lessons #1..N (order kept). */
+export function splitPriorRecords<T extends Pick<Lesson, "recordSource" | "lessonNo">>(rows: readonly T[]): { prior: T[]; lessons: T[] } {
+  return {
+    prior: rows.filter((row) => row.recordSource === "prior_instructor").sort((a, b) => a.lessonNo - b.lessonNo),
+    lessons: rows.filter((row) => row.recordSource !== "prior_instructor"),
+  };
 }
 
 /** Sum of the prior-instructor rows' hours/km, or null when the learner has none. */
