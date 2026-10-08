@@ -19,7 +19,8 @@ import { filterLearners } from "@/lib/learner-filter.ts";
 import { currentIssues, issueFromServerMessage, validateLessonDraftFields, type IssueState } from "@/lib/lesson-form-errors.ts";
 import { availableViews, initialSelection, learnerPanel, selectionAfterViewChange, viewLearners, type PickerView } from "@/lib/learner-picker.ts";
 import { priorRecordLine, splitPriorRecords } from "@/lib/prior-record.ts";
-import type { CompletionSummary, Instructor, Learner, Lesson, SignatureStatus } from "@/lib/types.ts";
+import { revisionChanges, snapshotOfLesson } from "@/lib/revision-diff.ts";
+import type { CompletionSummary, Instructor, Learner, Lesson, LessonRevision, SignatureStatus } from "@/lib/types.ts";
 import CompetencyPicker from "./competency-picker.tsx";
 import CompetencyProgressCard from "./competency-progress.tsx";
 import ExportPdfButton from "./export-pdf-button.tsx";
@@ -179,6 +180,12 @@ export default function DriverApp() {
   const [editIssues, setEditIssues] = useState<IssueState | null>(null);
   const [editAttempt, setEditAttempt] = useState(0);
   const [editLoading, setEditLoading] = useState(false);
+  // Optional reason for this correction (max 200 chars), sent with the edit and kept in the lesson's revision.
+  const [editReason, setEditReason] = useState("");
+  // Lazily loaded previous versions of ONE lesson at a time ("Edited N times" → open).
+  const [revisionsOpenId, setRevisionsOpenId] = useState<string | null>(null);
+  const [revisions, setRevisions] = useState<LessonRevision[] | null>(null);
+  const [revisionsError, setRevisionsError] = useState<string | null>(null);
   const [editStatus, setEditStatus] = useState<string | null>(null);
   const [invalidation, setInvalidation] = useState<MilestoneInvalidation | null>(null);
   const [signedInAs, setSignedInAs] = useState<string | null>(null);
@@ -201,6 +208,10 @@ export default function DriverApp() {
     setDetail(null);
     setDraft(null);
     cancelEditLesson();
+    // The revisions panel belongs to one loaded copy of a lesson; never keep it across a reload or an edit.
+    setRevisionsOpenId(null);
+    setRevisions(null);
+    setRevisionsError(null);
     setInvalidation(null);
     if (!id) return;
     storage.set(LAST_LEARNER_KEY, id);
@@ -331,6 +342,7 @@ export default function DriverApp() {
     setEditDraft(null);
     setEditIssues(null);
     setEditStatus(null);
+    setEditReason("");
     setEditLoading(true);
     try {
       const data = await api<{ lesson: Lesson; selections: LessonSelections; progressExcludingThisLesson: LearnerProgress; progressBeforeThisLesson: LearnerProgress }>(
@@ -358,6 +370,7 @@ export default function DriverApp() {
     setEditGateProgress(null);
     setEditIssues(null);
     setEditStatus(null);
+    setEditReason("");
   };
 
   const setEditFieldValue = (updater: (current: LessonDraft) => LessonDraft) => {
@@ -374,6 +387,23 @@ export default function DriverApp() {
     });
   };
 
+  const toggleRevisions = async (lessonId: string) => {
+    if (!detail) return;
+    if (revisionsOpenId === lessonId) {
+      setRevisionsOpenId(null);
+      return;
+    }
+    setRevisionsOpenId(lessonId);
+    setRevisions(null);
+    setRevisionsError(null);
+    try {
+      const data = await api<{ revisions: LessonRevision[] }>(`/api/learners/${encodeURIComponent(detail.learner.id)}/lessons/${encodeURIComponent(lessonId)}/revisions`);
+      setRevisions(data.revisions);
+    } catch (error) {
+      setRevisionsError((error as Error).message);
+    }
+  };
+
   const saveEditLesson = async () => {
     if (!detail || !editingLessonId || !editDraft) return;
     const problems = validateLessonDraftFields(editDraft, editPaperSignature ? "paper" : "edit");
@@ -387,10 +417,12 @@ export default function DriverApp() {
     try {
       const result = await api<{ lesson: Lesson; totals: Totals; progress: LearnerProgress; completion: CompletionSummary | null; invalidated: MilestoneInvalidation }>(
         `/api/learners/${encodeURIComponent(detail.learner.id)}/lessons/${encodeURIComponent(editingLessonId)}`,
-        { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(editPaperSignature ? { ...editDraft, adiSignature: "", learnerSignature: "", signatureStatus: editPaperSignature } : editDraft) },
+        { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(editPaperSignature ? { ...editDraft, adiSignature: "", learnerSignature: "", signatureStatus: editPaperSignature, reason: editReason } : { ...editDraft, reason: editReason }) },
       );
       // Editing a lesson can shift every subsequent lesson's cumulative
       // totals, so re-fetch the whole learner rather than patch one row.
+      setRevisionsOpenId(null);
+      setRevisions(null);
       await loadLearner(detail.learner.id);
       setInvalidation(result.invalidated);
       cancelEditLesson();
@@ -811,6 +843,11 @@ export default function DriverApp() {
                             </>
                           )}
 
+                          <label className="field full"><span>Reason for this change (optional)</span>
+                            <input data-testid="edit-reason" value={editReason} maxLength={200} onChange={(e) => setEditReason(e.target.value)} placeholder="e.g. wrong odometer reading" autoComplete="off" />
+                            <small className="hint">{editReason.length}/200 · kept with the previous version, like initialling a correction on paper</small>
+                          </label>
+
                           <SaveErrorSummary issues={shownEditIssues} prefix="edit" attempt={editAttempt} />
                           <button type="button" className="btn huge save" disabled={saving} onClick={() => void saveEditLesson()}>
                             {saving ? "Saving…" : "Save changes"}
@@ -825,7 +862,11 @@ export default function DriverApp() {
                         <span className="h-no">#{lesson.lessonNo}</span>
                         {lesson.recordSource === "paper_import" ? <span className="h-paper" data-testid="paper-badge">Paper record</span> : null}
                         <span>{lesson.lessonDate} · {lesson.startTime ?? "—"}–{lesson.finishTime ?? "—"}</span>
-                        <button type="button" className="link h-edit" onClick={() => void startEditLesson(lesson.id)}>Edit</button>
+                        {signedInInstructorId && lesson.instructorId !== signedInInstructorId ? (
+                          <span className="h-readonly" data-testid="history-readonly">Recorded by {instructors.find((i) => i.id === lesson.instructorId)?.fullName ?? "another instructor"}</span>
+                        ) : (
+                          <button type="button" className="link h-edit" onClick={() => void startEditLesson(lesson.id)}>Edit</button>
+                        )}
                       </div>
                       <div className="h-nums">
                         <span>{lesson.durationMinutes === null ? "—" : formatMinutes(lesson.durationMinutes)} · {lesson.distanceKm === null ? "—" : lesson.distanceKm} km</span>
@@ -836,9 +877,42 @@ export default function DriverApp() {
                       {lesson.competenciesAssessed ? <p><b>Assessed:</b> {lesson.competenciesAssessed}</p> : null}
                       {lesson.achieved ? <p><b>Achieved:</b> {lesson.achieved}</p> : null}
                       {lesson.comments ? <p><b>Comments:</b> {lesson.comments}</p> : null}
+                      {lesson.revisionCount > 0 ? (
+                        <p className="h-revisions">
+                          <button type="button" className="link" data-testid="revisions-toggle" aria-expanded={revisionsOpenId === lesson.id} onClick={() => void toggleRevisions(lesson.id)}>
+                            Edited {lesson.revisionCount} {lesson.revisionCount === 1 ? "time" : "times"}
+                          </button>
+                        </p>
+                      ) : null}
+                      {revisionsOpenId === lesson.id ? (
+                        <div className="revisions" data-testid="revisions-list">
+                          {revisionsError ? <p className="status error">{revisionsError}</p> : !revisions ? <p className="empty">Loading…</p> : (
+                            <ol>
+                              {revisions.map((revision, index) => {
+                                const next = index + 1 < revisions.length ? revisions[index + 1].snapshot : snapshotOfLesson(lesson);
+                                const changes = revisionChanges(revision.snapshot, next);
+                                return (
+                                  <li key={revision.id} data-testid="revision-item">
+                                    <strong>Version {revision.revisionNo}</strong>
+                                    <small> replaced {revision.editedAt.slice(0, 16).replace("T", " ")} UTC{revision.editedByName ? ` by ${revision.editedByName}` : ""}</small>
+                                    {revision.reason ? <p className="rev-reason">Reason: {revision.reason}</p> : null}
+                                    {changes.length ? (
+                                      <ul>
+                                        {changes.map((change) => (
+                                          <li key={change.field}><span>{change.label}: </span><del data-testid="revision-struck">{change.before}</del> → <b>{change.after}</b></li>
+                                        ))}
+                                      </ul>
+                                    ) : <p className="meta" data-testid="revision-no-change">No recorded value changed.</p>}
+                                  </li>
+                                );
+                              })}
+                            </ol>
+                          )}
+                        </div>
+                      ) : null}
                       {lesson.updatedAt ? (
                         <p className="h-edited">
-                          Edited {lesson.updatedAt}
+                          {lesson.editedBeforeRevisionHistory ? <span data-testid="edited-before-history">Edited (before revision history) </span> : "Edited "}{lesson.updatedAt}
                           {lesson.updatedByInstructorName ? ` · Last edited by ${lesson.updatedByInstructorName}` : ""}
                         </p>
                       ) : null}

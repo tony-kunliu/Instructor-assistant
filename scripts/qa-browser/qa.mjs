@@ -668,6 +668,87 @@ const draw = async (page, index) => {
   await s.ctx.close();
 }
 
+// ═══ 9. Lesson edit ownership + revision history (design 2026-10-08, E1-E8) ═
+{
+  const created = await fetch(`${B}/api/learners`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ fullName: "QA Tony Revision", instructorId: WHO.tony[0] }) });
+  const revLearner = (await created.json()).learner;
+  const lessonRes = await postLesson(revLearner.id, { lessonDate: "2026-09-21", startTime: "09:00", finishTime: "10:00", startOdometer: "2000", finishOdometer: "2020", taughtIds: ["1"], location: "QA Old Place", adiSignature: SIG, learnerSignature: SIG });
+  check("ownership: seed lesson created for QA Tony Revision", lessonRes.status === 201 || lessonRes.status === 200, String(lessonRes.status));
+  const lessonId = lessonRes.body.lesson.id;
+
+  // Anna: Tony's lesson is read-only in the UI and rejected by the server.
+  const a = await session("anna");
+  await ready(a.page);
+  await tab(a.page, "All");
+  await pick(a.page, "QA Tony Revision · Tony");
+  await a.page.waitForSelector("[data-testid=history-row]");
+  check("ownership: Anna sees Tony's lesson in History but NO Edit button", (await a.page.$$(".history .h-edit")).length === 0 && (await a.page.$("[data-testid=history-readonly]")) !== null);
+  check("ownership: read-only label names the recorder", (await a.page.textContent("[data-testid=history-readonly]")).includes("Recorded by Tony"));
+  const rejected = await fetch(`${B}/api/learners/${revLearner.id}/lessons/${lessonId}`, {
+    method: "PATCH", headers: { "content-type": "application/json", "x-instructor-id": WHO.anna[0], "x-instructor-name": "Anna" },
+    body: JSON.stringify({ lessonDate: "2026-09-21", startTime: "09:00", finishTime: "10:00", startOdometer: "2000", finishOdometer: "2020", taughtIds: ["1"], location: "QA Anna Hack", adiSignature: SIG, learnerSignature: SIG }),
+  });
+  const rejectedBody = await rejected.json().catch(() => ({}));
+  check("ownership: server rejects Anna's edit of Tony's lesson (400, Code of Practice 9.2)", rejected.status === 400 && rejectedBody.error === "This lesson was recorded by Tony; only they can change it (Code of Practice 9.2).", `${rejected.status} ${rejectedBody.error}`);
+  check("ownership: rejected edit changed nothing and wrote no revision", (await (await fetch(`${B}/api/learners/${revLearner.id}`)).json()).lessons[0].location === "QA Old Place" && (await (await fetch(`${B}/api/learners/${revLearner.id}/lessons/${lessonId}/revisions`)).json()).revisions.length === 0);
+  check("ownership: Anna's History at phone width has no horizontal scroll", await noHScroll(a.page));
+  await shot(a.page, "09-anna-readonly-history");
+  check("ownership: Anna: no page errors", a.errors.length === 0, a.errors.join("|"));
+  await a.ctx.close();
+
+  // Tony: edits his own lesson at 375px, sees "Edited 1 time" and the struck-through old value, then the PDF is "(amended)".
+  const t = await session("tony");
+  await t.page.setViewportSize({ width: 375, height: 812 });
+  await ready(t.page);
+  await pick(t.page, "QA Tony Revision");
+  await t.page.waitForSelector("[data-testid=history-row]");
+  check("revisions: a never-edited lesson shows no 'Edited N times'", (await t.page.$("[data-testid=revisions-toggle]")) === null);
+  await t.page.click("[data-testid=history-row] .h-edit");
+  await t.page.waitForSelector("text=Editing Lesson #1");
+  const locationInput = t.page.locator('.h-editing .field:has(span:text-is("Location")) input');
+  await locationInput.fill("QA New Place");
+  check("revisions: edit form has the optional reason field (max 200)", (await t.page.getAttribute("[data-testid=edit-reason]", "maxlength")) === "200");
+  await t.page.fill("[data-testid=edit-reason]", "QA wrong place recorded");
+  await signBoth(t.page);
+  check("revisions: edit form has no horizontal scroll at 375px", await noHScroll(t.page));
+  await shot(t.page, "09-tony-edit-reason-375");
+  await t.page.click(".h-editing .btn.save");
+  await t.page.waitForSelector(".status.ok:has-text('Lesson updated'), .h-editing .status.error");
+  check("revisions: Tony's own edit saves", (await t.page.$(".h-editing .status.error")) === null);
+  check("revisions: History shows \"Edited 1 time\"", (await t.page.textContent("[data-testid=revisions-toggle]")).trim() === "Edited 1 time", await t.page.textContent("[data-testid=revisions-toggle]").catch(() => "none"));
+  let revisionRequests = 0;
+  t.page.on("request", (r) => { if (r.url().includes("/revisions")) revisionRequests++; });
+  await t.page.click("[data-testid=revisions-toggle]");
+  await t.page.waitForSelector("[data-testid=revision-item]");
+  check("revisions: opening lists the previous version with the old value struck through", (await t.page.textContent("[data-testid=revision-struck]")) === "QA Old Place" && (await t.page.$eval("[data-testid=revision-struck]", (el) => getComputedStyle(el).textDecorationLine)) === "line-through");
+  check("revisions: shows the new value and the reason", (await t.page.textContent("[data-testid=revision-item]")).includes("QA New Place") && (await t.page.textContent("[data-testid=revision-item]")).includes("Reason: QA wrong place recorded"));
+  check("revisions: details loaded lazily with exactly one request for this lesson", revisionRequests === 1, String(revisionRequests));
+  check("revisions: list has no horizontal scroll at 375px", await noHScroll(t.page));
+  await shot(t.page, "09-tony-revisions-375");
+  await t.page.click("text=/Export.*PDF/i");
+  if (await t.page.$(".export-adi-prompt input")) await t.page.fill(".export-adi-prompt input", "QA-ADI-1");
+  const [dl] = await Promise.all([t.page.waitForEvent("download", { timeout: 60000 }), t.page.click(".export-adi-prompt .btn.primary").catch(() => {})]);
+  const revPdf = `${OUT}/qa-amended.pdf`;
+  await dl.saveAs(revPdf);
+  const { execFileSync } = await import("node:child_process");
+  const pdfText = execFileSync("pdftotext", ["-layout", revPdf, "-"], { encoding: "utf8" });
+  check("revisions: PDF marks the amended lesson \"(amended)\" next to the lesson number", /#1\s*\(amended\)/.test(pdfText), pdfText.match(/#1[^\n]{0,20}/)?.[0] ?? "no #1");
+  // Reason-only re-save: the revisions panel must not stay open/stale, and the new version says no value changed.
+  await t.page.click("[data-testid=history-row] .h-edit");
+  await t.page.waitForSelector("text=Editing Lesson #1");
+  await t.page.fill("[data-testid=edit-reason]", "QA reason only");
+  await t.page.click(".h-editing .btn.save");
+  await t.page.waitForSelector(".status.ok:has-text('Lesson updated'), .h-editing .status.error");
+  check("revisions: panel closed after an edit (never stale)", (await t.page.$("[data-testid=revisions-list]")) === null);
+  check("revisions: History shows \"Edited 2 times\"", (await t.page.textContent("[data-testid=revisions-toggle]")).trim() === "Edited 2 times");
+  await t.page.click("[data-testid=revisions-toggle]");
+  await t.page.waitForSelector("[data-testid=revision-item] >> nth=1");
+  const second = await t.page.textContent("[data-testid=revision-item] >> nth=1");
+  check("revisions: reason-only re-save says no recorded value changed (not 'signatures only')", second.includes("QA reason only") && second.includes("No recorded value changed.") && !second.includes("Signatures only"), second);
+  check("revisions: Tony: no page errors", t.errors.length === 0, t.errors.join("|"));
+  await t.ctx.close();
+}
+
 } catch (error) {
   check(`script aborted: ${String(error.message).split("\n")[0]}`, false, String(error.message).split("\n").slice(1,4).join(" ").trim());
 }

@@ -5,21 +5,20 @@ _Last updated: 2026-10-08_
 This file describes the **current task only**. Completed work's detail
 lives in git log and closed PRs, not here.
 
-**Current Task:** Release B (ACTGDS Integration V1 in Production) —
-**Completed**. Deployed via the Production Release workflow (Worker
-`08ca0c75`, D1 `0005`); first real event PASS end to end.
+**Current Task:** Lesson edit ownership + revision history (R6) —
+**Completed** on `feature/lesson-ownership-revisions` (not merged). Spec:
+`docs/superpowers/specs/2026-10-08-lesson-edit-ownership-and-revisions-design.md`.
+Typecheck, 364 tests, `cf:build`, qa-browser 159/159 and the local `0007`
+rehearsal pass. P1b is in Production (run 37796457888, Worker `96228a32`,
+migration `0006`).
 
-**In progress (separate branch):** P1b paper records import on
-`feature/paper-records-import` (spec
-`docs/superpowers/specs/2026-10-07-paper-records-import-design.md`) is
-implemented, reviewed and verified. Migration `0006` is pending rehearsal
-on Staging and Production; merge needs Tony's authorization.
+**Next Recommended Task:** apply migration `0007` (additive) to Staging
+D1 FIRST with the `Staging D1 Migrate` workflow (`ref` =
+`feature/lesson-ownership-revisions`, `confirm` = `staging`), then merge to
+`staging` (AGENTS.md §14), verify on Staging, `staging` -> `main`, and
+release via the Production Release workflow.
 
-**Next Recommended Task:** merge to `staging`, rehearse `0006` on Staging,
-release via the workflow, then import paper learners one at a time.
-
-**Waiting on Other Repo:** ACTGDS — first-event confirmation, ACK of the
-mid-sequence-first-event notice, display fixes (Synced-at in Canberra
-time, sorted competency ids), merge of PR #21 (Issue #3).
+**Waiting on Other Repo:** ACTGDS display fixes and first-event
+confirmations (Issue #3). Nothing blocks this task (no contract change).
 
 **Tony Manual Action Required:** NONE.

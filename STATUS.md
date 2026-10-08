@@ -1,16 +1,16 @@
 # STATUS.md
 
-_Last updated: 2026-10-08_ (Release B live in Production; first real event PASS)
+_Last updated: 2026-10-08_ (P1b in Production; lesson ownership + revisions implemented on a branch)
 
 This file describes **current state only**. Development history lives in
 git log and closed PRs, not here — see `TASK.md` for what's in progress.
 
 ## Repository
 
-- **main:** `d47350bcb65fa46d3135d1dbeec52882f7012886` — Release B
-  (PR #14), deployed to Production. Previous Production source: `76103ef`
-  (P1a). Application rollback baseline before Release A:
-  `8bae4e4c211a78b2e682d8b04744f102fa1a4328`.
+- **main:** contains Release B (PR #14) and P1b; `git fetch` for its
+  exact head (it moves). Durable references: Release B source
+  `d47350bcb65fa46d3135d1dbeec52882f7012886`; application rollback
+  baseline before Release A `8bae4e4c211a78b2e682d8b04744f102fa1a4328`.
 - **staging:** contains GitHub Actions CI, the Integration Sender source,
   and the Phase A documentation cleanup. `staging`'s HEAD moves with every
   merge — do not record its exact SHA here as durable state; `git fetch`
@@ -19,7 +19,7 @@ git log and closed PRs, not here — see `TASK.md` for what's in progress.
 ## CI
 
 - Latest `staging` GitHub Actions run: **SUCCESS**.
-- Tests: 346/346 PASS, 0 skipped.
+- Tests: 364/364 PASS on `feature/lesson-ownership-revisions` (`staging`: 346), 0 skipped.
 - Build: PASS.
 - `npm test` requires Node's `--experimental-strip-types` flag (already in
   `package.json`'s `test` script) — CI pins Node 22.13, which needs this
@@ -35,7 +35,7 @@ git log and closed PRs, not here — see `TASK.md` for what's in progress.
   Builds' commit mapping, so the live commit is inferred from push time.
 - Current Worker version: `280f14f3-fbde-4af5-99ba-ad24eb49e4bf`
   (deployed right after the `b3693f5` staging push).
-- D1 migration level: `0005` (applied remotely)
+- D1 migration level: last recorded `0005` (re-check with `wrangler d1 migrations list` before the next apply)
 - Cloudflare Access: enabled
 - Integration enabled: **YES** (non-Production only; coordinated QA
   **PASS**, see Integration V1 below)
@@ -46,10 +46,11 @@ git log and closed PRs, not here — see `TASK.md` for what's in progress.
   `confirm=production`); token only in GitHub Secrets; each run records the
   rollback version and a D1 Time Travel restore point in its summary. See
   `docs/RELEASE_B_RUNBOOK.md`.
-- Deployed Worker version: `08ca0c75-cd97-44fa-87ec-ed0f7e6efbae`
-  (Release B, main `d47350b`, run 37668118567, 2026-10-07 UTC). Rollback
-  target: `7865545e-9940-4ddb-acc3-a5bbfb52a240` (P1a, `76103ef`).
-- D1 migration level: `0005` (applied by the workflow).
+- Deployed Worker version: `96228a32-5f32-42b5-8f0d-7985e59c5d82`
+  (P1b, Production Release run 37796457888, 2026-10-08). Rollback target:
+  `08ca0c75-cd97-44fa-87ec-ed0f7e6efbae` (Release B, main `d47350b`,
+  run 37668118567).
+- D1 migration level: `0006` (applied by the workflow). `0007` pending.
 - Cloudflare Access: enabled (Tony + Anna only).
 - Integration enabled: **YES** — `ACTGDS_INTEGRATION_ENV=production`,
   Receiver `https://actgds.com/api/integrations/instructor-assistant/events`,
@@ -121,27 +122,11 @@ git log and closed PRs, not here — see `TASK.md` for what's in progress.
   `ACTGDS_WEBHOOK_SECRET` binding confirmed present by name (value never
   read by this repo's agents). Production has neither configured.
 - **Integration enabled:** YES on Staging only; NO on Production.
-- **Coordinated non-Production Integration V1 QA: PASS.** Final Receiver
-  adjudication in `tony-kunliu/actgds.com` Issue #3 (comment 5880411046):
-  "FINAL COORDINATED NON-PRODUCTION INTEGRATION V1 QA: PASS; outstanding
-  Integration V1 blockers: NONE". Tested scope, all on the same synthetic
-  learner / lesson, driven through Tony's real Access session:
-  1. Create — first real signed delivery, accepted as `pending_link`, then
-     explicit learner↔student mapping and replay → applied.
-  2. Real History Edit update — newer `source_updated_at` upserted the same
-     mirror row.
-  3. Retryable failure + real hosted Cloudflare Cron recovery — temporary
-     Staging-only `.invalid` webhook URL gave a real HTTP 530 and a durable
-     pending outbox row; after the URL was restored, the hosted Cron
-     delivered the same immutable row with no manual retry, and the
-     Receiver applied it (final values 83 min / 30 km).
-  4. Duplicate / stale / event-id immutability — verified by the Receiver's
-     isolated protocol tests (PASS).
-  5. Privacy minimization and CRM independence — PASS.
-  The earlier 64/20 vs 83/30 discrepancy was a Sender *reporting* error (an
-  unverified value copied into a handoff), not a code or data defect; source
-  lesson, outbox payload and Receiver mirror all agree at 83/30, and no
-  corrective resend is needed.
+- **Coordinated non-Production Integration V1 QA: PASS** (Receiver
+  adjudication: `tony-kunliu/actgds.com` Issue #3, comment 5880411046;
+  blockers: NONE). Covered create, History Edit update, retryable failure
+  with Cron recovery, duplicate/stale protocol tests and privacy
+  minimization, all on a synthetic learner.
 - **Known non-blocking limitations:** duplicate/stale were isolated
   Receiver protocol tests, not hosted duplicate/stale deliveries;
   historical backfill is intentionally not part of V1; the literal
@@ -157,19 +142,31 @@ git log and closed PRs, not here — see `TASK.md` for what's in progress.
 Full contract detail: `docs/integrations/actgds-instructor-assistant-v1.md`.
 Cross-repo coordination record: `tony-kunliu/actgds.com` Issue #3.
 
-## Recently merged (P1a)
+## P1a / P1b (both released)
 
-- `feature/pdf-per-lesson-totals` (P1a): PDF Total hrs/kms cells show each
-  lesson's own totals (matches the paper form); a cumulative line is
-  printed under each page's table. Changes the exported PDF of every
-  learner. In `staging` and `main`, not Production. Tony checked an
-  exported Staging PDF: OK.
+- P1a: PDF Total hrs/kms show each lesson's own totals plus a cumulative
+  line per page.
+- **P1b Paper Records Import: in Production since 2026-10-08** (run
+  37796457888, Worker `96228a32`, migration `0006` applied). Paper and
+  prior-instructor rows never emit Integration events.
 
-## P1b Paper Records Import
+## Lesson edit ownership + revision history (R6)
 
-- Implemented on `feature/paper-records-import` (not merged). Migration
-  `0006` is pending rehearsal and Production; Staging and Production D1
-  are still at `0005`. Paper and prior-instructor rows never emit events.
+- Implemented on `feature/lesson-ownership-revisions` (not merged; spec
+  `docs/superpowers/specs/2026-10-08-lesson-edit-ownership-and-revisions-design.md`,
+  approved by Tony). Migration **`0007` (`lesson_revisions`, additive) is
+  pending** on Staging and Production.
+- Only the lesson's own instructor can edit it (Code of Practice 9.2);
+  without an Access identity (local dev, tests) behaviour is unchanged.
+- Every edit writes a snapshot of the previous values (no signature images)
+  in the same atomic `db.batch` as the edit: +1 statement per edit (18
+  statements for a 10-lesson learner, 19 with an Access identity, budget
+  25). Lessons edited before `0007` are marked amended / "Edited (before
+  revision history)" from `updated_at`. History shows "Edited N times" and the
+  struck-through old values; PDF marks "(amended)". No ACTGDS contract
+  change (schema hash unchanged).
+- Verified: typecheck, 364 tests, `cf:build`, qa-browser 159/159 (QA_PORT
+  3331, 375px), local `scripts/rehearse-0007-local.sh`.
 
 ## Known Issues
 
