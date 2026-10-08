@@ -1,6 +1,6 @@
 # STATUS.md
 
-_Last updated: 2026-10-08_ (P1b in Production; lesson ownership + revisions implemented on a branch)
+_Last updated: 2026-10-08_ (P1b in Production; lesson ownership + learner edit implemented on branches)
 
 This file describes **current state only**. Development history lives in
 git log and closed PRs, not here — see `TASK.md` for what's in progress.
@@ -19,7 +19,7 @@ git log and closed PRs, not here — see `TASK.md` for what's in progress.
 ## CI
 
 - Latest `staging` GitHub Actions run: **SUCCESS**.
-- Tests: 364/364 PASS on `feature/lesson-ownership-revisions` (`staging`: 346), 0 skipped.
+- Tests: 384/384 PASS on `feature/learner-edit` (`staging`: 364), 0 skipped.
 - Build: PASS.
 - `npm test` requires Node's `--experimental-strip-types` flag (already in
   `package.json`'s `test` script) — CI pins Node 22.13, which needs this
@@ -86,21 +86,10 @@ git log and closed PRs, not here — see `TASK.md` for what's in progress.
   acceptance is complete.
 - **CBT&A chronology (History Edit).** A lesson may only Assess a gated
   item if its prerequisites were Achieved in EARLIER lessons (lesson number
-  = creation order, never editable); a later lesson can never legitimise an
-  earlier one:
-  Review 1-17 needs 1-17; Competency 18-22 needs 1-17 + Review 1-17;
-  Review 1-22 needs 1-17 + Review 1-17 + 18-22; Final Drive 23 needs
-  Review 1-22 (and its chain). The same lesson never counts. Taught is
-  unrestricted except "already achieved in an EARLIER lesson" (achieved
-  later is normal — this also fixes editing an early lesson that taught a
-  competency achieved afterwards, which used to be rejected).
-  Enforced server-side (`assessmentChronologyViolations`,
-  `assessmentLockReason`); the edit form's chips use the earlier-lessons
-  progress. Legacy violations are tolerated and never rewritten (only NEW
-  ones block an edit). Effects on LATER lessons: an Assessed 18-22 there has
-  no rollback, so an edit that breaks its prerequisites is rejected
-  ("Correct Lesson #N first"); later Review / Final Drive milestones keep
-  the existing derived rollback and are reported via `invalidated`.
+  = creation order). Enforced server-side (`assessmentChronologyViolations`,
+  `assessmentLockReason`); legacy violations are tolerated, never rewritten.
+  An edit that breaks a later Assessed 18-22 is rejected; later milestones
+  roll back via the derived `invalidated` report.
 - Save failure UX: error summary above Save with per-problem "Go to …"
   jump links (new lesson and History Edit), kept until fixed.
 - Working rule: `AGENTS.md` §13 (agent owns automatable QA and deployment
@@ -127,12 +116,6 @@ git log and closed PRs, not here — see `TASK.md` for what's in progress.
   blockers: NONE). Covered create, History Edit update, retryable failure
   with Cron recovery, duplicate/stale protocol tests and privacy
   minimization, all on a synthetic learner.
-- **Known non-blocking limitations:** duplicate/stale were isolated
-  Receiver protocol tests, not hosted duplicate/stale deliveries;
-  historical backfill is intentionally not part of V1; the literal
-  historical Receiver HTTP response was not retained; the hosted Cron
-  invocation is evidenced by the Sender's own tail, corroborated by the
-  Receiver's arrival time.
 - **Production rollout is NOT authorized.** It needs Tony's separate,
   explicit authorization (migration `0005`, webhook URL/secret, enablement
   and deploy are all still to be done for Production). Production remains
@@ -152,21 +135,36 @@ Cross-repo coordination record: `tony-kunliu/actgds.com` Issue #3.
 
 ## Lesson edit ownership + revision history (R6)
 
-- Implemented on `feature/lesson-ownership-revisions` (not merged; spec
-  `docs/superpowers/specs/2026-10-08-lesson-edit-ownership-and-revisions-design.md`,
-  approved by Tony). Migration **`0007` (`lesson_revisions`, additive) is
-  pending** on Staging and Production.
+- Implemented on `feature/lesson-ownership-revisions` (merged to `staging`
+  via PR #26; spec `docs/superpowers/specs/2026-10-08-lesson-edit-ownership-and-revisions-design.md`).
+  Migration `0007` (`lesson_revisions`): re-check its level on Staging and Production (`wrangler d1 migrations list`) before the next release.
 - Only the lesson's own instructor can edit it (Code of Practice 9.2);
   without an Access identity (local dev, tests) behaviour is unchanged.
-- Every edit writes a snapshot of the previous values (no signature images)
-  in the same atomic `db.batch` as the edit: +1 statement per edit (18
-  statements for a 10-lesson learner, 19 with an Access identity, budget
-  25). Lessons edited before `0007` are marked amended / "Edited (before
-  revision history)" from `updated_at`. History shows "Edited N times" and the
-  struck-through old values; PDF marks "(amended)". No ACTGDS contract
-  change (schema hash unchanged).
-- Verified: typecheck, 364 tests, `cf:build`, qa-browser 159/159 (QA_PORT
-  3331, 375px), local `scripts/rehearse-0007-local.sh`.
+  Every edit snapshots the previous values in the same atomic `db.batch`;
+  History shows "Edited N times"; PDF marks "(amended)".
+
+## Learner edit (learner management Phase 1)
+
+- Implemented on `feature/learner-edit` (not merged; plan
+  `docs/superpowers/specs/2026-10-08-learner-management-plan.md`).
+  Migration **`0008` (`learner_revisions`, additive) must be applied to
+  Staging D1 BEFORE the merge to `staging`** (Staging D1 Migrate workflow,
+  `ref` = `feature/learner-edit`, `confirm` = `staging`).
+- `PATCH /api/learners/[id]` with learner fields (`fullName`, `address`,
+  `phone`, `dob`, `licenceNumber`, `licenceExpiry`, `eligibility`,
+  `transmission`, `schoolWork`, `licenceStage`); `{archived}` unchanged.
+  Same field rules as create (shared `parseLearnerFields`); edit also
+  rejects unparseable dates/enums instead of clearing them. `instructorId`
+  is not editable. Only the learner's own instructor (verified
+  `x-instructor-id`); a non-owner gets a 400 and nothing is written. Each
+  real change stores the previous values in `learner_revisions` in the same
+  `db.batch` as the UPDATE; a no-op writes nothing. Archived learners may be
+  edited. 5 D1 statements per edit (2 for a no-op). No ACTGDS contract
+  change, no outbox event (schema hash unchanged).
+- UI: "Edit learner" on the selected learner (owner only), reuses the form.
+  Revisions are recorded only; no display yet.
+- Verified: typecheck, 384 tests, `cf:build`, qa-browser (QA_PORT 3341,
+  375px), local `scripts/rehearse-0008-local.sh`.
 
 ## Known Issues
 

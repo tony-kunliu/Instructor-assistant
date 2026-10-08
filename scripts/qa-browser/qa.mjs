@@ -749,6 +749,63 @@ const draw = async (page, index) => {
   await t.ctx.close();
 }
 
+// ── Learner edit (learner management Phase 1): rename, picker + History, owner-only, 375px ──
+{
+  const t = await session("tony");
+  await ready(t.page);
+  await t.page.setViewportSize({ width: 375, height: 812 });
+  await pick(t.page, "QA Tony Bravo");
+  await t.page.waitForSelector(".summary");
+  check("learner edit: owner sees the Edit learner button", (await t.page.$("[data-testid=edit-learner]")) !== null);
+  await t.page.click("[data-testid=edit-learner]");
+  await t.page.waitForSelector("[data-testid=save-learner]");
+  check("learner edit: form is pre-filled with the current name", (await t.page.inputValue("label:has-text("Student name") input")) === "QA Tony Bravo");
+  check("learner edit: no instructor selector (transfer is not editable)", (await t.page.$("text=Instructor *")) === null);
+  check("learner edit: no horizontal scroll at 375px", await noHScroll(t.page));
+  await shot(t.page, "10-learner-edit-375");
+  await t.page.click("[data-testid=cancel-edit-learner]");
+  check("learner edit: Cancel closes the form and keeps the name", (await t.page.$("[data-testid=save-learner]")) === null && (await t.page.textContent(".summary-main small")) === "QA Tony Bravo");
+  await t.page.click("[data-testid=edit-learner]");
+  await t.page.fill("label:has-text("Student name") input", "QA Tony Bravo Renamed");
+  await t.page.fill("label:has-text("Phone") input", "0400 000 123");
+  await t.page.click("[data-testid=save-learner]");
+  await t.page.waitForSelector(".status.ok");
+  check("learner edit: Save shows a success status", (await t.page.textContent(".status.ok")).includes("QA Tony Bravo Renamed updated"), await t.page.textContent(".status"));
+  check("learner edit: form closed, summary shows the new name", (await t.page.$("[data-testid=save-learner]")) === null && (await t.page.textContent(".summary-main small")) === "QA Tony Bravo Renamed");
+  check("learner edit: the picker lists the new name (and not the old one)", (await options(t.page)).includes("QA Tony Bravo Renamed") && !(await options(t.page)).includes("QA Tony Bravo"), (await options(t.page)).join(","));
+  check("learner edit: History header shows the new name", (await t.page.textContent("[data-testid=history-learner]")) === "QA Tony Bravo Renamed");
+  check("learner edit: no horizontal scroll after save", await noHScroll(t.page));
+  await t.page.reload();
+  await ready(t.page);
+  check("learner edit: the new name persists after a reload", (await options(t.page)).includes("QA Tony Bravo Renamed"));
+  const saved = (await (await fetch(`${B}/api/learners/${ids.bravo}`)).json()).learner;
+  check("learner edit: server stored the new name and phone, instructor unchanged", saved.fullName === "QA Tony Bravo Renamed" && saved.phone === "0400 000 123" && saved.instructorId === WHO.tony[0]);
+  // No-op save says so.
+  await pick(t.page, "QA Tony Bravo Renamed");
+  await t.page.waitForSelector(".summary");
+  await t.page.click("[data-testid=edit-learner]");
+  await t.page.click("[data-testid=save-learner]");
+  await t.page.waitForSelector(".status.ok");
+  check("learner edit: a save with nothing changed says so", (await t.page.textContent(".status.ok")).includes("No changes"), await t.page.textContent(".status"));
+  check("learner edit: Tony: no page errors", t.errors.length === 0, t.errors.join("|"));
+  await t.ctx.close();
+
+  const a = await session("anna");
+  await ready(a.page);
+  await a.page.setViewportSize({ width: 375, height: 812 });
+  await tab(a.page, "All");
+  await pick(a.page, "QA Tony Bravo Renamed · Tony");
+  await a.page.waitForSelector(".summary");
+  check("learner edit: a second instructor (Anna) sees no Edit button on Tony's learner", (await a.page.$("[data-testid=edit-learner]")) === null);
+  const denied = await fetch(`${B}/api/learners/${ids.bravo}`, { method: "PATCH", headers: { "content-type": "application/json", "x-instructor-id": WHO.anna[0] }, body: JSON.stringify({ fullName: "QA Anna Hijack" }) });
+  const deniedBody = await denied.json();
+  check("learner edit: the server rejects Anna editing Tony's learner (400, clear message)", denied.status === 400 && /only they can edit/.test(deniedBody.error), `${denied.status} ${deniedBody.error}`);
+  check("learner edit: nothing was written by the rejected edit", (await (await fetch(`${B}/api/learners/${ids.bravo}`)).json()).learner.fullName === "QA Tony Bravo Renamed");
+  check("learner edit: no horizontal scroll (Anna, 375px)", await noHScroll(a.page));
+  check("learner edit: Anna: no page errors", a.errors.length === 0, a.errors.join("|"));
+  await a.ctx.close();
+}
+
 } catch (error) {
   check(`script aborted: ${String(error.message).split("\n")[0]}`, false, String(error.message).split("\n").slice(1,4).join(" ").trim());
 }

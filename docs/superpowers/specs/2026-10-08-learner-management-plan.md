@@ -1,8 +1,9 @@
 # Learner management — phased plan
 
 _Date: 2026-10-08 · Status: PLAN, approved by Tony in chat (phases and the two
-defaults below) · Not yet implemented. Phase 1 starts after
-`feature/lesson-ownership-revisions` ships._
+defaults below) · **Phase 1 implemented on `feature/learner-edit`** (not
+merged; migration `0008` must be applied to Staging D1 first). Phases 2-3 are
+not started._
 
 Today the app can create and archive a learner (`PATCH /api/learners/[id]`
 accepts only `archived`). There is no way to correct a learner's details. Tony
@@ -21,7 +22,17 @@ wants this strengthened over time, in phases that each ship on their own
   stored in Instructor Assistant.
 - No automatic matching of learners across the two systems.
 
-## Phase 1 — basic edit (one small task)
+## Phase 1 — basic edit (one small task) — IMPLEMENTED on `feature/learner-edit`
+
+Implementation notes: `PATCH /api/learners/[id]` with learner fields calls
+`updateLearner` (lib/repo.ts), which shares its field rules with `createLearner`
+(`parseLearnerFields`). Omitted fields stay unchanged; "" clears to null. Edit
+is stricter than create in one way: an unparseable date, transmission or
+licence stage is rejected instead of silently cleared. `instructorId` in the
+body is rejected. A no-op edit writes no revision and replies
+`changed: false`. Archived learners may be edited. 5 D1 statements per edit
+(2 for a no-op). The UI "Edit learner" button reuses the New learner form.
+Last-edited-by display was skipped (revisions are recorded only).
 
 | # | Decision |
 |---|---|
