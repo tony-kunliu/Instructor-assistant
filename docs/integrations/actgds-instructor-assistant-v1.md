@@ -213,7 +213,7 @@ deliberate task.
 
 ### Paper-imported lessons
 
-Lessons imported from a paper logbook (`record_source = 'paper'`) and a
+Lessons imported from a paper logbook (`record_source = 'paper_import'`) and a
 transfer learner's prior-instructor records (`'prior_instructor'`) never
 emit `lesson.upserted` events and never create `integration_outbox` rows.
 Later App lessons' cumulative values and progress include them. There is

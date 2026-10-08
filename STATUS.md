@@ -19,7 +19,7 @@ git log and closed PRs, not here — see `TASK.md` for what's in progress.
 ## CI
 
 - Latest `staging` GitHub Actions run: **SUCCESS**.
-- Tests: 261/261 PASS, 0 skipped.
+- Tests: 346/346 PASS, 0 skipped.
 - Build: PASS.
 - `npm test` requires Node's `--experimental-strip-types` flag (already in
   `package.json`'s `test` script) — CI pins Node 22.13, which needs this
