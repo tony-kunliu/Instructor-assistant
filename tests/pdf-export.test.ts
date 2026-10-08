@@ -3,7 +3,11 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { PDFDocument } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
-import { buildCbtaChecklistPdf, createMeasurer, cumulativeFooterText, lessonTotalsText, plannedPageCount, signatureCellText, wrapText } from "../lib/pdf-export.ts";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { buildCbtaChecklistPdf, createMeasurer, lessonNoFontSize, lessonNoLabel, cumulativeFooterText, lessonTotalsText, plannedPageCount, signatureCellText, wrapText } from "../lib/pdf-export.ts";
 import type { Learner, Lesson } from "../lib/types.ts";
 
 const templateBytes = readFileSync(new URL("../public/pdf-template/adi-cbta-checklist.pdf", import.meta.url));
@@ -284,4 +288,24 @@ test("isPriorRecord is the one predicate: recordSource === 'prior_instructor'", 
   assert.equal(isPriorRecord(priorLesson(-1)), true);
   assert.equal(isPriorRecord(lesson(1)), false);
   assert.equal(isPriorRecord(lesson(1, { recordSource: "paper_import" })), false);
+});
+
+test("amended lessons (revisionCount > 0) are marked \"(amended)\" next to the lesson number; never-edited lessons are not", async () => {
+  assert.equal(lessonNoLabel({ lessonNo: 7, revisionCount: 0 }), "#7");
+  assert.equal(lessonNoLabel({ lessonNo: 12, revisionCount: 2 }), "#12 (amended)");
+  const measurer = createMeasurer(fontBytes);
+  // The label must fit the narrow date/lesson-no cell on one line (never clipped by drawSingleLine).
+  assert.ok(lessonNoFontSize({ revisionCount: 1 }) <= 7);
+  assert.ok(measurer.widthOfTextAtSize(lessonNoLabel({ lessonNo: 112, revisionCount: 1 }), lessonNoFontSize({ revisionCount: 1 })) <= 47.6 - 4);
+
+  const result = await buildCbtaChecklistPdf({ templateBytes, fontBytes, learner, lessons: [lesson(1), lesson(2, { revisionCount: 1 })] });
+  const dir = mkdtempSync(path.join(os.tmpdir(), "amended-pdf-"));
+  const file = path.join(dir, "out.pdf");
+  writeFileSync(file, result.bytes);
+  let extracted: string | null = null;
+  try { extracted = execFileSync("pdftotext", ["-layout", file, "-"], { encoding: "utf8" }); } catch { /* pdftotext not installed: label checks above still run */ }
+  if (extracted !== null) {
+    assert.equal((extracted.match(/\(amended\)/g) ?? []).length, 1, "exactly the edited lesson is marked");
+    assert.match(extracted, /#2\s*\(amended\)/);
+  }
 });
