@@ -406,7 +406,7 @@ test("budget: updateLesson of lesson #1 with 59 exported downstream lessons stay
 
 // ── Ownership + revision (migration 0007): the revision is ONE statement in the edit's atomic batch ──
 
-test("budget: a signed-in owner's edit adds exactly 2 statements (acting-instructor check + one revision INSERT...SELECT), stays within 25, and binds <= 100 parameters", async (t) => {
+test("budget: an edit's revision is ONE INSERT...SELECT (+1 statement; signed in as the owner adds only the acting-instructor lookup on top), stays within 25, and binds <= 100 parameters", async (t) => {
   const { db: raw, learner, tony } = await setup();
   const { hooks } = deferredHooks();
   for (let i = 1; i <= 10; i++) {

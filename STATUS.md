@@ -7,10 +7,10 @@ git log and closed PRs, not here — see `TASK.md` for what's in progress.
 
 ## Repository
 
-- **main:** `d47350bcb65fa46d3135d1dbeec52882f7012886` — Release B
-  (PR #14), deployed to Production. Previous Production source: `76103ef`
-  (P1a). Application rollback baseline before Release A:
-  `8bae4e4c211a78b2e682d8b04744f102fa1a4328`.
+- **main:** contains Release B (PR #14) and P1b; `git fetch` for its
+  exact head (it moves). Durable references: Release B source
+  `d47350bcb65fa46d3135d1dbeec52882f7012886`; application rollback
+  baseline before Release A `8bae4e4c211a78b2e682d8b04744f102fa1a4328`.
 - **staging:** contains GitHub Actions CI, the Integration Sender source,
   and the Phase A documentation cleanup. `staging`'s HEAD moves with every
   merge — do not record its exact SHA here as durable state; `git fetch`
@@ -19,7 +19,7 @@ git log and closed PRs, not here — see `TASK.md` for what's in progress.
 ## CI
 
 - Latest `staging` GitHub Actions run: **SUCCESS**.
-- Tests: 363/363 PASS on `feature/lesson-ownership-revisions` (`staging`: 346), 0 skipped.
+- Tests: 364/364 PASS on `feature/lesson-ownership-revisions` (`staging`: 346), 0 skipped.
 - Build: PASS.
 - `npm test` requires Node's `--experimental-strip-types` flag (already in
   `package.json`'s `test` script) — CI pins Node 22.13, which needs this
@@ -159,11 +159,13 @@ Cross-repo coordination record: `tony-kunliu/actgds.com` Issue #3.
 - Only the lesson's own instructor can edit it (Code of Practice 9.2);
   without an Access identity (local dev, tests) behaviour is unchanged.
 - Every edit writes a snapshot of the previous values (no signature images)
-  in the same atomic `db.batch` as the edit: +1 statement per edit (18 for
-  a 10-lesson learner, budget 25). History shows "Edited N times" and the
+  in the same atomic `db.batch` as the edit: +1 statement per edit (18
+  statements for a 10-lesson learner, 19 with an Access identity, budget
+  25). Lessons edited before `0007` are marked amended / "Edited (before
+  revision history)" from `updated_at`. History shows "Edited N times" and the
   struck-through old values; PDF marks "(amended)". No ACTGDS contract
   change (schema hash unchanged).
-- Verified: typecheck, 363 tests, `cf:build`, qa-browser 156/156 (QA_PORT
+- Verified: typecheck, 364 tests, `cf:build`, qa-browser 159/159 (QA_PORT
   3331, 375px), local `scripts/rehearse-0007-local.sh`.
 
 ## Known Issues
