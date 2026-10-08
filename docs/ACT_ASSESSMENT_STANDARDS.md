@@ -41,7 +41,7 @@ The instruments win over this summary. If they disagree, fix this file.
 | R3 | Competency 23 only Mon–Thu & Sat 07:00–19:00 and Fri 07:00–21:00; never on Sundays or ACT public holidays. | NI2020-703 Competency 23 | Not checked | Planned (warning) |
 | R4 | Competency 23 booking (see the breakdown below). | CoP 9.2 m–p | — | Planned (copyable booking text) |
 | R5 | Student must hold a **current ACT learner licence** before CBT&A training/assessment. | NI2020-703 note | Expiry stored, not checked | Planned (warning) |
-| R6 | **Corrections**: strike out and initial. Never change entries **made by other instructors**. Never record something not assessed at the time of entry. | CoP 9.1 f–g, 9.2 c–d | History Edit overwrites; any instructor can edit any lesson | **Approved by Tony 2026-10-08**: own lessons only + keep revision history |
+| R6 | **Corrections**: strike out and initial. Never change entries **made by other instructors**. Never record something not assessed at the time of entry. | CoP 9.1 f–g, 9.2 c–d | History Edit overwrites; any instructor can edit any lesson | **Implemented on branch** `feature/lesson-ownership-revisions` (approved by Tony 2026-10-08): own lessons only + revision history; migration 0007 pending |
 | R7 | Rear-view cameras **permitted**; no automated/assisted reverse parking. Instructors must teach safe use of in-car technology. | NI2020-703 Comp 23 NB; CoP | — | Note |
 | R8 | Removing the 'A' condition in the first 12 months: Review 2 drive in a manual vehicle, with ADI Audit notified beforehand. | CoP 9.4 | Not modelled | Backlog |
 | R9 | Record keeping (see the breakdown below). | CoP 9.3, 10 f | PDF export; paper originals kept 5 years | Possible certificate-number field |
