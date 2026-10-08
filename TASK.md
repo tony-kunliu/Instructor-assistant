@@ -8,7 +8,7 @@ lives in git log and closed PRs, not here.
 **Current Task:** Learner management Phase 1 (edit learner details) —
 **Completed** on `feature/learner-edit` (not merged). Plan:
 `docs/superpowers/specs/2026-10-08-learner-management-plan.md` (L1-L6).
-Typecheck, 384 tests, `cf:build`, qa-browser and the local `0008` rehearsal
+Typecheck, 384 tests, `cf:build`, qa-browser 178/178 and the local `0008` rehearsal
 pass. Lesson ownership + revisions (`0007`) is on `staging`; re-check
 Production's migration level before release.
 

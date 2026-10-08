@@ -759,15 +759,15 @@ const draw = async (page, index) => {
   check("learner edit: owner sees the Edit learner button", (await t.page.$("[data-testid=edit-learner]")) !== null);
   await t.page.click("[data-testid=edit-learner]");
   await t.page.waitForSelector("[data-testid=save-learner]");
-  check("learner edit: form is pre-filled with the current name", (await t.page.inputValue("label:has-text("Student name") input")) === "QA Tony Bravo");
+  check("learner edit: form is pre-filled with the current name", (await t.page.inputValue("label:has-text('Student name') input")) === "QA Tony Bravo");
   check("learner edit: no instructor selector (transfer is not editable)", (await t.page.$("text=Instructor *")) === null);
   check("learner edit: no horizontal scroll at 375px", await noHScroll(t.page));
   await shot(t.page, "10-learner-edit-375");
   await t.page.click("[data-testid=cancel-edit-learner]");
   check("learner edit: Cancel closes the form and keeps the name", (await t.page.$("[data-testid=save-learner]")) === null && (await t.page.textContent(".summary-main small")) === "QA Tony Bravo");
   await t.page.click("[data-testid=edit-learner]");
-  await t.page.fill("label:has-text("Student name") input", "QA Tony Bravo Renamed");
-  await t.page.fill("label:has-text("Phone") input", "0400 000 123");
+  await t.page.fill("label:has-text('Student name') input", "QA Tony Bravo Renamed");
+  await t.page.fill("label:has-text('Phone') input", "0400 000 123");
   await t.page.click("[data-testid=save-learner]");
   await t.page.waitForSelector(".status.ok");
   check("learner edit: Save shows a success status", (await t.page.textContent(".status.ok")).includes("QA Tony Bravo Renamed updated"), await t.page.textContent(".status"));

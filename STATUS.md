@@ -163,7 +163,7 @@ Cross-repo coordination record: `tony-kunliu/actgds.com` Issue #3.
   change, no outbox event (schema hash unchanged).
 - UI: "Edit learner" on the selected learner (owner only), reuses the form.
   Revisions are recorded only; no display yet.
-- Verified: typecheck, 384 tests, `cf:build`, qa-browser (QA_PORT 3341,
+- Verified: typecheck, 384 tests, `cf:build`, qa-browser 178/178 (QA_PORT 3341,
   375px), local `scripts/rehearse-0008-local.sh`.
 
 ## Known Issues
