@@ -19,7 +19,7 @@ git log and closed PRs, not here — see `TASK.md` for what's in progress.
 ## CI
 
 - Latest `staging` GitHub Actions run: **SUCCESS**.
-- Tests: 261/261 PASS, 0 skipped.
+- Tests: 346/346 PASS, 0 skipped.
 - Build: PASS.
 - `npm test` requires Node's `--experimental-strip-types` flag (already in
   `package.json`'s `test` script) — CI pins Node 22.13, which needs this
@@ -104,10 +104,7 @@ git log and closed PRs, not here — see `TASK.md` for what's in progress.
   jump links (new lesson and History Edit), kept until fixed.
 - Working rule: `AGENTS.md` §13 (agent owns automatable QA and deployment
   verification; Tony/Anna only real-login / real-phone smoke checks).
-- Verified: typecheck, 261/261 tests, build, Memory Guard, GitHub CI;
-  real-browser QA at 390px 96/96 PASS (2026-10-07, staging HEAD) (`bash scripts/qa-browser/run.sh`:
-  local D1, header-simulated Tony/Anna, synthetic QA learners, Integration
-  off).
+- Verified: Memory Guard, GitHub CI, real-browser QA (synthetic learners).
 
 ## Integration V1
 
@@ -168,8 +165,17 @@ Cross-repo coordination record: `tony-kunliu/actgds.com` Issue #3.
   learner. In `staging` and `main`, not Production. Tony checked an
   exported Staging PDF: OK.
 
+## P1b Paper Records Import
+
+- Implemented on `feature/paper-records-import` (not merged). Migration
+  `0006` is pending rehearsal and Production; Staging and Production D1
+  are still at `0005`. Paper and prior-instructor rows never emit events.
+
 ## Known Issues
 
+- `lib/db.ts` runs `SCHEMA_SQL` on every local file-DB open; it already
+  failed on reopen (0003 ALTER) and now also re-runs the 0006 rebuild. Use
+  `:memory:` or `wrangler d1 migrations apply` instead.
 - Legacy data created before the 18-22 gate may hold 18-22 assessed too
   early; it is tolerated and never rewritten (only newly introduced
   violations block a History Edit).

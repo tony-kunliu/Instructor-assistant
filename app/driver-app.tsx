@@ -18,11 +18,13 @@ import { accessLogoutUrl } from "@/lib/access-logout.ts";
 import { filterLearners } from "@/lib/learner-filter.ts";
 import { currentIssues, issueFromServerMessage, validateLessonDraftFields, type IssueState } from "@/lib/lesson-form-errors.ts";
 import { availableViews, initialSelection, learnerPanel, selectionAfterViewChange, viewLearners, type PickerView } from "@/lib/learner-picker.ts";
-import type { CompletionSummary, Instructor, Learner, Lesson } from "@/lib/types.ts";
+import { priorRecordLine, splitPriorRecords } from "@/lib/prior-record.ts";
+import type { CompletionSummary, Instructor, Learner, Lesson, SignatureStatus } from "@/lib/types.ts";
 import CompetencyPicker from "./competency-picker.tsx";
 import CompetencyProgressCard from "./competency-progress.tsx";
 import ExportPdfButton from "./export-pdf-button.tsx";
 import SaveErrorSummary from "./save-error-summary.tsx";
+import PaperImportPanel from "./paper-import-panel.tsx";
 import SignaturePad from "./signature-pad.tsx";
 
 type LessonDraft = {
@@ -93,10 +95,10 @@ type LessonSelections = { taughtIds: string[]; assessedIds: string[]; achievedRe
 function lessonToDraft(lesson: Lesson, selections: LessonSelections): LessonDraft {
   return {
     lessonDate: lesson.lessonDate,
-    startTime: lesson.startTime,
-    finishTime: lesson.finishTime,
-    startOdometer: String(lesson.startOdometer),
-    finishOdometer: String(lesson.finishOdometer),
+    startTime: lesson.startTime ?? "",
+    finishTime: lesson.finishTime ?? "",
+    startOdometer: lesson.startOdometer === null ? "" : String(lesson.startOdometer),
+    finishOdometer: lesson.finishOdometer === null ? "" : String(lesson.finishOdometer),
     taughtIds: selections.taughtIds,
     assessedIds: selections.assessedIds,
     achievedResults: selections.achievedResults,
@@ -167,6 +169,8 @@ export default function DriverApp() {
   const [editingLessonId, setEditingLessonId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState<LessonDraft | null>(null);
   const [editOriginal, setEditOriginal] = useState<LessonDraft | null>(null);
+  // Set while editing a paper_import lesson: optional times/odometer, "Signed on paper" select instead of signature pads.
+  const [editPaperSignature, setEditPaperSignature] = useState<SignatureStatus | null>(null);
   const [editProgress, setEditProgress] = useState<LearnerProgress | null>(null);
   const [editGateProgress, setEditGateProgress] = useState<LearnerProgress | null>(null);
   // Save-failure summaries (rendered next to the Save button; see lib/lesson-form-errors.ts).
@@ -335,6 +339,7 @@ export default function DriverApp() {
       const draft = lessonToDraft(data.lesson, data.selections);
       setEditDraft(draft);
       setEditOriginal(draft);
+      setEditPaperSignature(data.lesson.recordSource === "paper_import" ? (data.lesson.signatureStatus === "unsigned" ? "unsigned" : "on_paper") : null);
       setEditProgress(data.progressExcludingThisLesson);
       setEditGateProgress(data.progressBeforeThisLesson);
     } catch (error) {
@@ -348,6 +353,7 @@ export default function DriverApp() {
     setEditingLessonId(null);
     setEditDraft(null);
     setEditOriginal(null);
+    setEditPaperSignature(null);
     setEditProgress(null);
     setEditGateProgress(null);
     setEditIssues(null);
@@ -361,7 +367,7 @@ export default function DriverApp() {
       // Any protected-field change invalidates both signatures (CBT&A V3 rule
       // 5) — clear them here too so the instructor is visibly forced to
       // redraw; the server enforces this independently regardless.
-      if (contentChanged(editOriginal, next) && (next.adiSignature === editOriginal.adiSignature || next.learnerSignature === editOriginal.learnerSignature)) {
+      if (!editPaperSignature && contentChanged(editOriginal, next) && (next.adiSignature === editOriginal.adiSignature || next.learnerSignature === editOriginal.learnerSignature)) {
         return { ...next, adiSignature: "", learnerSignature: "" };
       }
       return next;
@@ -370,7 +376,7 @@ export default function DriverApp() {
 
   const saveEditLesson = async () => {
     if (!detail || !editingLessonId || !editDraft) return;
-    const problems = validateLessonDraftFields(editDraft, "edit");
+    const problems = validateLessonDraftFields(editDraft, editPaperSignature ? "paper" : "edit");
     if (problems.length) {
       setEditIssues({ source: "client", issues: problems, snapshot: editDraft });
       setEditAttempt((n) => n + 1);
@@ -381,7 +387,7 @@ export default function DriverApp() {
     try {
       const result = await api<{ lesson: Lesson; totals: Totals; progress: LearnerProgress; completion: CompletionSummary | null; invalidated: MilestoneInvalidation }>(
         `/api/learners/${encodeURIComponent(detail.learner.id)}/lessons/${encodeURIComponent(editingLessonId)}`,
-        { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(editDraft) },
+        { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(editPaperSignature ? { ...editDraft, adiSignature: "", learnerSignature: "", signatureStatus: editPaperSignature } : editDraft) },
       );
       // Editing a lesson can shift every subsequent lesson's cumulative
       // totals, so re-fetch the whole learner rather than patch one row.
@@ -493,8 +499,10 @@ export default function DriverApp() {
   const elapsed = startedMinutes !== null && nowMinutes !== null && nowMinutes >= startedMinutes ? nowMinutes - startedMinutes : null;
   const phase: "ready" | "running" | "ended" = !draft?.startTime ? "ready" : !draft.finishTime ? "running" : "ended";
   const lessonNo = nextLessonNo(totals);
+  // Prior-instructor records (spec §12) are shown as compact cards, never as editable lessons.
+  const history = splitPriorRecords(detail?.lessons ?? []);
   const shownSaveIssues = draft ? currentIssues(saveIssues, draft, "new") : [];
-  const shownEditIssues = editDraft ? currentIssues(editIssues, editDraft, "edit") : [];
+  const shownEditIssues = editDraft ? currentIssues(editIssues, editDraft, editPaperSignature ? "paper" : "edit") : [];
 
   const learnerField = (key: keyof LearnerDraft, value: string) => setLearnerDraft((current) => ({ ...current, [key]: value }));
 
@@ -637,7 +645,7 @@ export default function DriverApp() {
               Integration ID: <code>{detail.learner.id}</code>
               <button type="button" className="link" onClick={() => void copyIntegrationId(detail.learner.id)}>Copy ID</button>
             </p>
-            <ExportPdfButton learnerId={detail.learner.id} lessonCount={detail.lessons.length} />
+            <ExportPdfButton learnerId={detail.learner.id} lessonCount={history.lessons.length} />
             {panel === "archived" ? (
               <div className="lifecycle archived" data-testid="archived-banner">
                 <p><b>Archived</b> {detail.learner.archivedAt?.slice(0, 10)} — hidden from the daily learner list. Lessons, signatures, progress and PDF are kept.</p>
@@ -651,6 +659,10 @@ export default function DriverApp() {
           </section>
 
           <CompetencyProgressCard progress={detail.progress} completion={detail.completion} invalidated={invalidation} />
+
+          {detail.lessons.length === 0 && panel === "active" ? (
+            <PaperImportPanel key={detail.learner.id} learnerId={detail.learner.id} onImported={() => loadLearner(detail.learner.id)} />
+          ) : null}
 
           {panel === "completed" ? (
             <section className="card lesson-completed" data-testid="cbta-completed-card">
@@ -740,9 +752,9 @@ export default function DriverApp() {
 
           <section className="card history">
             <h2>History</h2>
-            {!detail.lessons.length ? <p className="empty">No lessons yet.</p> : (
+            {!history.lessons.length ? <p className="empty">No lessons yet.</p> : (
               <ol>
-                {detail.lessons.map((lesson) =>
+                {history.lessons.map((lesson) =>
                   editingLessonId === lesson.id ? (
                     <li key={lesson.id} className="h-editing">
                       {editLoading || !editDraft || !editProgress ? (
@@ -754,11 +766,12 @@ export default function DriverApp() {
                           <div className="grid">
                             <label className="field"><span>Date</span><input id="edit-field-date" type="date" value={editDraft.lessonDate} onChange={(e) => setEditFieldValue((d) => ({ ...d, lessonDate: e.target.value }))} /></label>
                             <label className="field"><span>Location</span><input value={editDraft.location} onChange={(e) => setEditFieldValue((d) => ({ ...d, location: e.target.value }))} /></label>
-                            <label className="field"><span>Start time</span><input id="edit-field-times" type="time" value={editDraft.startTime} onChange={(e) => setEditFieldValue((d) => ({ ...d, startTime: e.target.value }))} /></label>
-                            <label className="field"><span>Finish time</span><input type="time" value={editDraft.finishTime} onChange={(e) => setEditFieldValue((d) => ({ ...d, finishTime: e.target.value }))} /></label>
-                            <label className="field"><span>Start odometer (km)</span><input id="edit-field-start-odometer" type="text" inputMode="numeric" pattern="[0-9]*" value={editDraft.startOdometer} onChange={(e) => setEditFieldValue((d) => ({ ...d, startOdometer: e.target.value.replace(/\D/g, "") }))} /></label>
-                            <label className="field"><span>Finish odometer (km)</span><input id="edit-field-finish-odometer" type="text" inputMode="numeric" pattern="[0-9]*" value={editDraft.finishOdometer} onChange={(e) => setEditFieldValue((d) => ({ ...d, finishOdometer: e.target.value.replace(/\D/g, "") }))} /></label>
+                            <label className="field"><span>Start time{editPaperSignature ? " (optional)" : ""}</span><input id="edit-field-times" type="time" value={editDraft.startTime} onChange={(e) => setEditFieldValue((d) => ({ ...d, startTime: e.target.value }))} /></label>
+                            <label className="field"><span>Finish time{editPaperSignature ? " (optional)" : ""}</span><input type="time" value={editDraft.finishTime} onChange={(e) => setEditFieldValue((d) => ({ ...d, finishTime: e.target.value }))} /></label>
+                            <label className="field"><span>Start odometer (km){editPaperSignature ? " (optional)" : ""}</span><input id="edit-field-start-odometer" type="text" inputMode="numeric" pattern="[0-9]*" value={editDraft.startOdometer} onChange={(e) => setEditFieldValue((d) => ({ ...d, startOdometer: e.target.value.replace(/\D/g, "") }))} /></label>
+                            <label className="field"><span>Finish odometer (km){editPaperSignature ? " (optional)" : ""}</span><input id="edit-field-finish-odometer" type="text" inputMode="numeric" pattern="[0-9]*" value={editDraft.finishOdometer} onChange={(e) => setEditFieldValue((d) => ({ ...d, finishOdometer: e.target.value.replace(/\D/g, "") }))} /></label>
                           </div>
+                          {editPaperSignature ? <p className="meta paper-hint">Leave both blank if not on the paper record</p> : null}
                           <p className="derived">
                             Recalculated: <b>{(() => { const m = durationMinutes(editDraft.startTime, editDraft.finishTime); return m !== null ? formatMinutes(m) : "—"; })()}</b> ·{" "}
                             <b>{(() => { const k = distanceKm(parseOdometer(editDraft.startOdometer), parseOdometer(editDraft.finishOdometer)); return k !== null ? `${k} km` : "—"; })()}</b>
@@ -780,11 +793,23 @@ export default function DriverApp() {
 
                           <label className="field full"><span>Comments</span><textarea rows={2} value={editDraft.comments} onChange={(e) => setEditFieldValue((d) => ({ ...d, comments: e.target.value }))} /></label>
 
-                          {editOriginal && contentChanged(editOriginal, editDraft) ? (
-                            <p className="hint danger">Content changed — both signatures were cleared. Please redraw both before saving.</p>
-                          ) : null}
-                          <div id="edit-field-adi-signature"><SignaturePad label="ADI signature" value={editDraft.adiSignature} onChange={(value) => setEditFieldValue((d) => ({ ...d, adiSignature: value }))} /></div>
-                          <div id="edit-field-learner-signature"><SignaturePad label="Learner signature" value={editDraft.learnerSignature} onChange={(value) => setEditFieldValue((d) => ({ ...d, learnerSignature: value }))} /></div>
+                          {editPaperSignature ? (
+                            <label className="field full"><span>Signature</span>
+                              <select data-testid="paper-signature-status" value={editPaperSignature} onChange={(e) => setEditPaperSignature(e.target.value as SignatureStatus)}>
+                                <option value="on_paper">Signed on paper</option>
+                                <option value="unsigned">Not signed</option>
+                              </select>
+                            </label>
+                          ) : (
+                            <>
+                              {editOriginal && contentChanged(editOriginal, editDraft) ? (
+                                <p className="hint danger">Content changed — both signatures were cleared. Please redraw both before saving.</p>
+                              ) : null}
+                              <div id="edit-field-adi-signature"><SignaturePad label="ADI signature" value={editDraft.adiSignature} onChange={(value) => setEditFieldValue((d) => ({ ...d, adiSignature: value }))} /></div>
+                              <div id="edit-field-learner-signature"><SignaturePad label="Learner signature" value={editDraft.learnerSignature} onChange={(value) => setEditFieldValue((d) => ({ ...d, learnerSignature: value }))} /></div>
+
+                            </>
+                          )}
 
                           <SaveErrorSummary issues={shownEditIssues} prefix="edit" attempt={editAttempt} />
                           <button type="button" className="btn huge save" disabled={saving} onClick={() => void saveEditLesson()}>
@@ -798,14 +823,15 @@ export default function DriverApp() {
                     <li key={lesson.id} data-testid="history-row">
                       <div className="h-top">
                         <span className="h-no">#{lesson.lessonNo}</span>
-                        <span>{lesson.lessonDate} · {lesson.startTime}–{lesson.finishTime}</span>
+                        {lesson.recordSource === "paper_import" ? <span className="h-paper" data-testid="paper-badge">Paper record</span> : null}
+                        <span>{lesson.lessonDate} · {lesson.startTime ?? "—"}–{lesson.finishTime ?? "—"}</span>
                         <button type="button" className="link h-edit" onClick={() => void startEditLesson(lesson.id)}>Edit</button>
                       </div>
                       <div className="h-nums">
-                        <span>{formatMinutes(lesson.durationMinutes)} · {lesson.distanceKm} km</span>
+                        <span>{lesson.durationMinutes === null ? "—" : formatMinutes(lesson.durationMinutes)} · {lesson.distanceKm === null ? "—" : lesson.distanceKm} km</span>
                         <span>Total {formatMinutes(lesson.cumulativeMinutes)} · {lesson.cumulativeKm} km</span>
                       </div>
-                      <div className="h-odo">Odo {lesson.startOdometer} → {lesson.finishOdometer}{lesson.location ? ` · ${lesson.location}` : ""}</div>
+                      <div className="h-odo">Odo {lesson.startOdometer ?? "—"} → {lesson.finishOdometer ?? "—"}{lesson.location ? ` · ${lesson.location}` : ""}</div>
                       {lesson.taught ? <p><b>Taught:</b> {lesson.taught}</p> : null}
                       {lesson.competenciesAssessed ? <p><b>Assessed:</b> {lesson.competenciesAssessed}</p> : null}
                       {lesson.achieved ? <p><b>Achieved:</b> {lesson.achieved}</p> : null}
@@ -821,6 +847,14 @@ export default function DriverApp() {
                 )}
               </ol>
             )}
+            {/* Newest first: prior-instructor records come before lesson #1, so they sit below it. */}
+            {history.prior.length ? (
+              <ul className="h-prior-list">
+                {[...history.prior].reverse().map((record) => (
+                  <li key={record.id} className="h-prior" data-testid="prior-record">{priorRecordLine(record)}</li>
+                ))}
+              </ul>
+            ) : null}
           </section>
         </>
       ) : null}

@@ -24,7 +24,7 @@ import openNextWorker from "../.open-next/worker.js";
 export * from "../.open-next/worker.js";
 
 import { resolveIntegrationConfig } from "../lib/integration/config.ts";
-import { processDueOutbox } from "../lib/integration/sender.ts";
+import { CRON_SWEEP_LIMIT, processDueOutbox } from "../lib/integration/sender.ts";
 
 type MinimalScheduledEvent = { cron: string; scheduledTime: number };
 type MinimalExecutionContext = { waitUntil(promise: Promise<unknown>): void };
@@ -48,6 +48,6 @@ export default {
   async scheduled(_event: MinimalScheduledEvent, env: CloudflareEnv, ctx: MinimalExecutionContext) {
     const config = resolveIntegrationConfig(env);
     if (!config.enabled || !env.DB) return;
-    ctx.waitUntil(processDueOutbox(env.DB, config, fetch));
+    ctx.waitUntil(processDueOutbox(env.DB, config, fetch, new Date(), CRON_SWEEP_LIMIT));
   },
 };

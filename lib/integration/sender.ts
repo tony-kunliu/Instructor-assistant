@@ -6,6 +6,16 @@ import { signWebhookBody } from "./hmac.ts";
 import { listDueOutboxRows, markOutboxDelivered, markOutboxPermanentFailure, markOutboxRetry } from "./outbox.ts";
 import type { DeliveryOutcome, IntegrationConfig, OutboxRow } from "./types.ts";
 
+/**
+ * Workers Free plan: about 50 D1 queries + fetch subrequests per invocation. Each delivered row costs one
+ * fetch and one UPDATE, so these caps keep a delivery pass (plus whatever the same invocation already did)
+ * under that limit. The immediate attempt after a save/edit shares the request's invocation (waitUntil),
+ * so it only takes a few rows; anything left stays pending for the Cron sweep, which has the invocation to
+ * itself: 1 SELECT + 24 × (fetch + UPDATE) = 49.
+ */
+export const IMMEDIATE_DELIVERY_LIMIT = 5;
+export const CRON_SWEEP_LIMIT = 24;
+
 /** Backoff after each successive retryable failure: 1min, 5min, 30min, 2hr, 12hr. After the 5th retry fails (6 attempts total, counting the initial one), the row becomes permanent_failure. */
 const RETRY_BACKOFF_MINUTES = [1, 5, 30, 120, 720];
 
@@ -108,7 +118,7 @@ export async function processOutboxRow(db: D1Database, config: IntegrationConfig
  * after an enqueue (to attempt immediate delivery of that one new row) and as a periodic retry sweep
  * (whatever mechanism schedules that — see STATUS.md for what this round does and doesn't wire up).
  */
-export async function processDueOutbox(db: D1Database, config: IntegrationConfig, fetchImpl: typeof fetch, now: Date = new Date(), limit = 25): Promise<void> {
+export async function processDueOutbox(db: D1Database, config: IntegrationConfig, fetchImpl: typeof fetch, now: Date = new Date(), limit = CRON_SWEEP_LIMIT): Promise<void> {
   const dueRows = await listDueOutboxRows(db, now.toISOString(), limit);
   for (const row of dueRows) {
     await processOutboxRow(db, config, fetchImpl, row, now);

@@ -211,6 +211,14 @@ turned on for an environment produce events. Existing historical lessons
 are not backfilled by this contract version — that would be a separate,
 deliberate task.
 
+### Paper-imported lessons
+
+Lessons imported from a paper logbook (`record_source = 'paper_import'`) and a
+transfer learner's prior-instructor records (`'prior_instructor'`) never
+emit `lesson.upserted` events and never create `integration_outbox` rows.
+Later App lessons' cumulative values and progress include them. There is
+no contract or schema change; `contract_version` stays `1`.
+
 ## Versioning
 
 Any breaking change to this contract bumps `contract_version` and is

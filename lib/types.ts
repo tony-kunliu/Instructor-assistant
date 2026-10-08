@@ -31,18 +31,21 @@ export type Learner = {
   archivedAt: string | null;
 };
 
+export type RecordSource = "app" | "paper_import" | "prior_instructor";
+export type SignatureStatus = "digital" | "on_paper" | "unsigned";
+
 export type Lesson = {
   id: string;
   learnerId: string;
   instructorId: string;
   lessonNo: number;
   lessonDate: string;
-  startTime: string;
-  finishTime: string;
-  startOdometer: number;
-  finishOdometer: number;
-  durationMinutes: number;
-  distanceKm: number;
+  startTime: string | null;
+  finishTime: string | null;
+  startOdometer: number | null;
+  finishOdometer: number | null;
+  durationMinutes: number | null;
+  distanceKm: number | null;
   cumulativeMinutes: number;
   cumulativeKm: number;
   taught: string | null;
@@ -57,6 +60,12 @@ export type Lesson = {
   /** Instructor who last edited this lesson (Instructor Identity V1) — null if never edited, or edited before attribution existed. */
   updatedByInstructorId: string | null;
   updatedByInstructorName: string | null;
+  /** 'paper_import' rows are historical paper-logbook lessons; time/odometer/duration/distance may be null. 'prior_instructor' rows (negative lessonNo) are a previous instructor's totals, never edited, never sent to ACTGDS. */
+  recordSource: RecordSource;
+  signatureStatus: SignatureStatus;
+  /** 'prior_instructor' rows only (spec §12): who the transfer learner trained with before (name and/or ADI number), and how many lessons. Null on every other row. */
+  priorInstructorLabel: string | null;
+  priorLessonCount: number | null;
 };
 
 /** Set once 23 Final Drive is Assessed + Achieved (see lib/competency.ts). */
@@ -101,4 +110,6 @@ export type LessonInput = {
   learnerSignature?: unknown;
   /** Which instructor actually performed this create/edit (Instructor Identity V1) — must be an existing, active instructor id. Optional: omitted requests keep prior behavior (create falls back to the learner's own instructor; edit leaves updatedByInstructorId unchanged). */
   actingInstructorId?: unknown;
+  /** Paper-imported lessons only (History Edit): "on_paper" | "unsigned". Ignored for app lessons, which are always "digital". */
+  signatureStatus?: unknown;
 };

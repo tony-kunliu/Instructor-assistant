@@ -13,6 +13,10 @@
 //    "(see Additional Notes page)" marker in the cell and its full content
 //    on an appendix page, never cut off.
 //  - Signatures are scaled to fit their cell, preserving aspect ratio.
+//  - Prior-instructor records (spec §12, negative lesson_no) are never table
+//    rows: page 1 prints their "Prior instructor: …" lines (max 2) in the
+//    printable strip below the table, right of the cumulative footer, and
+//    every cumulative footer notes the prior hours/km it includes.
 //
 // Text-width measurement uses a plain `fontkit` font object (`Measurer`)
 // that is never embedded into the output PDF, kept entirely separate from
@@ -25,6 +29,7 @@
 import { PDFDocument, type PDFFont, type PDFPage } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
 import { decimalHours } from "./calc.ts";
+import { isPriorRecord, priorRecordLine, priorTotals } from "./prior-record.ts";
 import {
   COLUMNS,
   CONTINUATION_PAGE_ROWS,
@@ -121,7 +126,7 @@ function drawSingleLine(page: PDFPage, font: PDFFont, measurer: Measurer, text: 
   page.drawText(clipped, { x: box.x0 + 2, y, size: fontSize, font });
 }
 
-export type OverflowNote = { lessonNo: number; field: string; text: string };
+export type OverflowNote = { lessonNo: number; field: string; text: string; /** Replaces the "Lesson #n — field:" heading (prior-instructor lines). */ heading?: string };
 
 /** Draws wrapped text top-aligned in a cell; on overflow, the last visible line becomes a pointer to the appendix (nothing is cut off — the full text goes on the appendix page). */
 function drawCellText(page: PDFPage, font: PDFFont, measurer: Measurer, text: string | null, box: Box, lessonNo: number, field: string, overflowNotes: OverflowNote[]) {
@@ -202,18 +207,62 @@ function drawHeader(page: PDFPage, font: PDFFont, measurer: Measurer, learner: L
 
 /** This lesson's own "Total hrs" / "Total kms" cell text (not running totals — those are `cumulativeFooterText`). */
 export function lessonTotalsText(lesson: Pick<Lesson, "durationMinutes" | "distanceKm">): { hours: string; km: string } {
-  return { hours: `${decimalHours(lesson.durationMinutes)} h`, km: `${lesson.distanceKm} km` };
+  return {
+    hours: lesson.durationMinutes === null ? "" : `${decimalHours(lesson.durationMinutes)} h`,
+    km: lesson.distanceKm === null ? "" : `${lesson.distanceKm} km`,
+  };
 }
 
-/** Running total shown under the table, as of the last lesson on the page. */
-export function cumulativeFooterText(lesson: Pick<Lesson, "lessonNo" | "cumulativeMinutes" | "cumulativeKm">): string {
-  return `Cumulative to lesson #${lesson.lessonNo}: ${decimalHours(lesson.cumulativeMinutes)} h / ${lesson.cumulativeKm} km`;
+/** Text printed in both signature boxes: "Paper original" for lessons whose signatures are on the paper original; null otherwise (digital draws the PNG, unsigned draws nothing). */
+export function signatureCellText(lesson: Pick<Lesson, "signatureStatus">): string | null {
+  return lesson.signatureStatus === "on_paper" ? "Paper original" : null;
 }
 
-function drawCumulativeFooter(page: PDFPage, font: PDFFont, lesson: Lesson, tableBottom: number) {
-  const size = 7;
+/** Running total shown under the table, as of the last lesson on the page; notes the prior-instructor hours/km it includes, if any. */
+export function cumulativeFooterText(lesson: Pick<Lesson, "lessonNo" | "cumulativeMinutes" | "cumulativeKm">, prior: { minutes: number; km: number } | null = null): string {
+  const base = `Cumulative to lesson #${lesson.lessonNo}: ${decimalHours(lesson.cumulativeMinutes)} h / ${lesson.cumulativeKm} km`;
+  return prior ? `${base} (incl. prior instructors ${decimalHours(prior.minutes)} h / ${prior.km} km)` : base;
+}
+
+const CUMULATIVE_FOOTER_SIZE = 7;
+
+function drawCumulativeFooter(page: PDFPage, font: PDFFont, lesson: Lesson, tableBottom: number, prior: { minutes: number; km: number } | null) {
+  const size = CUMULATIVE_FOOTER_SIZE;
   const topDownBaseline = tableBottom + CUMULATIVE_FOOTER_GAP + size;
-  page.drawText(cumulativeFooterText(lesson), { x: COLUMNS.dateLessonNo.x0, y: PAGE_HEIGHT - topDownBaseline, size, font });
+  page.drawText(cumulativeFooterText(lesson, prior), { x: COLUMNS.dateLessonNo.x0, y: PAGE_HEIGHT - topDownBaseline, size, font });
+}
+
+// Prior-instructor lines. Printers cannot print the outer ~6 mm of the sheet, so the old band
+// above the title (8 pt from the top) was lost on paper. Measured on the template (poppler, 288 dpi):
+// above the title only 18-29 pt is printable and free (one line); the gap between the title and the
+// header boxes is 8 pt. The one band with room for two lines is page 1's bottom strip between the
+// table border (560.25 pt) and the bottom printable edge, right of the cumulative footer.
+export const PRINT_MARGIN = 18;
+export const PRIOR_LINES_MAX = 2;
+const PRIOR_FONT_SIZE = 6.5;
+const PRIOR_BASELINES = [568, 575]; // top-down; glyph tops ≥ 562, last descender ≈ 576 (≤ 595 - 18)
+const PRIOR_FOOTER_GAP = 12;
+const PRIOR_CONTINUED = "Prior instructors continue on the Additional Notes page.";
+
+export type PriorBand = { x0: number; x1: number; baselines: number[]; fontSize: number };
+
+/** Where page 1's prior lines go: the bottom strip, starting right of that page's cumulative footer text. */
+export function priorBand(measurer: Measurer, footerText: string): PriorBand {
+  const x0 = COLUMNS.dateLessonNo.x0 + measurer.widthOfTextAtSize(footerText, CUMULATIVE_FOOTER_SIZE) + PRIOR_FOOTER_GAP;
+  return { x0, x1: PAGE_WIDTH - PRINT_MARGIN, baselines: PRIOR_BASELINES, fontSize: PRIOR_FONT_SIZE };
+}
+
+/** Lines wrapped to the band width, at most PRIOR_LINES_MAX; if they don't fit, the full text goes to the Additional Notes page instead of being cut. */
+export function planPriorLines(measurer: Measurer, lines: readonly string[], width: number): { drawn: string[]; appendix: string | null } {
+  const wrapped = lines.flatMap((line) => wrapText(measurer, line, PRIOR_FONT_SIZE, width));
+  if (wrapped.length <= PRIOR_LINES_MAX) return { drawn: wrapped, appendix: null };
+  return { drawn: [...wrapped.slice(0, PRIOR_LINES_MAX - 1), PRIOR_CONTINUED], appendix: lines.join("\n") };
+}
+
+function drawPriorLines(page: PDFPage, font: PDFFont, band: PriorBand, lines: readonly string[]) {
+  lines.forEach((line, i) => {
+    page.drawText(line, { x: band.x0, y: PAGE_HEIGHT - band.baselines[i], size: band.fontSize, font });
+  });
 }
 
 async function drawLessonRow(doc: PDFDocument, page: PDFPage, font: PDFFont, measurer: Measurer, lesson: Lesson, rowTop: number, rowBottom: number, overflowNotes: OverflowNote[]) {
@@ -226,13 +275,13 @@ async function drawLessonRow(doc: PDFDocument, page: PDFPage, font: PDFFont, mea
 
   // Time & total hrs — "Total" is THIS lesson's own total, matching the paper form; running totals go in the page footer.
   const totals = lessonTotalsText(lesson);
-  drawSingleLine(page, font, measurer, lesson.startTime, { ...sub.start, x0: col.timeHrs.x0, x1: col.timeHrs.x1 }, 7);
-  drawSingleLine(page, font, measurer, lesson.finishTime, { ...sub.finish, x0: col.timeHrs.x0, x1: col.timeHrs.x1 }, 7);
+  drawSingleLine(page, font, measurer, lesson.startTime ?? "", { ...sub.start, x0: col.timeHrs.x0, x1: col.timeHrs.x1 }, 7);
+  drawSingleLine(page, font, measurer, lesson.finishTime ?? "", { ...sub.finish, x0: col.timeHrs.x0, x1: col.timeHrs.x1 }, 7);
   drawSingleLine(page, font, measurer, totals.hours, { ...sub.total, x0: col.timeHrs.x0, x1: col.timeHrs.x1 }, 7);
 
   // Odometer & total kms
-  drawSingleLine(page, font, measurer, String(lesson.startOdometer), { ...sub.start, x0: col.odometerKms.x0, x1: col.odometerKms.x1 }, 7);
-  drawSingleLine(page, font, measurer, String(lesson.finishOdometer), { ...sub.finish, x0: col.odometerKms.x0, x1: col.odometerKms.x1 }, 7);
+  drawSingleLine(page, font, measurer, lesson.startOdometer === null ? "" : String(lesson.startOdometer), { ...sub.start, x0: col.odometerKms.x0, x1: col.odometerKms.x1 }, 7);
+  drawSingleLine(page, font, measurer, lesson.finishOdometer === null ? "" : String(lesson.finishOdometer), { ...sub.finish, x0: col.odometerKms.x0, x1: col.odometerKms.x1 }, 7);
   drawSingleLine(page, font, measurer, totals.km, { ...sub.total, x0: col.odometerKms.x0, x1: col.odometerKms.x1 }, 7);
 
   // Wide free-text columns (full row height, one cell each).
@@ -246,8 +295,15 @@ async function drawLessonRow(doc: PDFDocument, page: PDFPage, font: PDFFont, mea
   // Signatures: top half = ADI, bottom half = Learner.
   const sigTop: Box = { x0: col.signatures.x0, x1: col.signatures.x1, top: rowTop + 9, bottom: rowTop + ROW_SUB_OFFSETS.signatureSplit };
   const sigBottom: Box = { x0: col.signatures.x0, x1: col.signatures.x1, top: rowTop + ROW_SUB_OFFSETS.signatureSplit + 9, bottom: rowBottom };
-  await drawSignature(doc, page, lesson.adiSignature, sigTop);
-  await drawSignature(doc, page, lesson.learnerSignature, sigBottom);
+  const sigText = signatureCellText(lesson);
+  if (sigText !== null) {
+    drawSingleLine(page, font, measurer, sigText, sigTop, 7);
+    drawSingleLine(page, font, measurer, sigText, sigBottom, 7);
+  } else if (lesson.signatureStatus === "digital") {
+    // `unsigned` intentionally draws nothing (neither text nor image).
+    await drawSignature(doc, page, lesson.adiSignature, sigTop);
+    await drawSignature(doc, page, lesson.learnerSignature, sigBottom);
+  }
 }
 
 function drawContinuationPageNumber(page: PDFPage, font: PDFFont, pageNo: number, totalPages: number) {
@@ -271,7 +327,7 @@ function planAppendixPages(measurer: Measurer, notes: OverflowNote[]): string[][
 
   const allLines: string[] = [];
   for (const note of notes) {
-    allLines.push(`Lesson #${note.lessonNo} — ${note.field}:`);
+    allLines.push(note.heading ?? `Lesson #${note.lessonNo} — ${note.field}:`);
     allLines.push(...wrapText(measurer, note.text, APPENDIX_FONT_SIZE, usableWidth));
     allLines.push("");
   }
@@ -296,7 +352,11 @@ function drawAppendixPage(page: PDFPage, font: PDFFont, lines: string[], appendi
 }
 
 export async function buildCbtaChecklistPdf(input: PdfExportInput): Promise<PdfExportResult> {
-  const { templateBytes, fontBytes, learner, lessons } = input;
+  const { templateBytes, fontBytes, learner } = input;
+  // Table rows are lessons #1..N only; prior-instructor records are printed as lines above the table.
+  const lessons = input.lessons.filter((lesson) => !isPriorRecord(lesson));
+  const priorLessons = input.lessons.filter(isPriorRecord).sort((a, b) => a.lessonNo - b.lessonNo);
+  const prior = priorTotals(priorLessons);
   if (lessons.length === 0) throw new Error("No saved lessons to export.");
 
   const groups: Lesson[][] = [lessons.slice(0, FIRST_PAGE_ROWS)];
@@ -320,6 +380,10 @@ export async function buildCbtaChecklistPdf(input: PdfExportInput): Promise<PdfE
   // Dry-run the wide-column wrapping first (pure text measurement, no page needed) so we know how
   // many appendix pages are needed *before* drawing page 1's "Page 1 of N" field.
   const dryRunNotes: OverflowNote[] = [];
+  // Page 1's prior lines sit right of its footer, so the band is measured from that footer's text.
+  const band = priorBand(measurer, cumulativeFooterText(groups[0][groups[0].length - 1], prior));
+  const priorPlan = planPriorLines(measurer, priorLessons.map(priorRecordLine), band.x1 - band.x0);
+  if (priorPlan.appendix !== null) dryRunNotes.push({ lessonNo: 0, field: "Prior instructors", text: priorPlan.appendix, heading: "Prior instructors:" });
   for (const group of groups) {
     const rowTops = group === groups[0] ? FIRST_PAGE_ROW_TOPS : CONTINUATION_ROW_TOPS;
     const tableBottom = group === groups[0] ? FIRST_PAGE_TABLE_BOTTOM : CONTINUATION_TABLE_BOTTOM;
@@ -359,8 +423,10 @@ export async function buildCbtaChecklistPdf(input: PdfExportInput): Promise<PdfE
     pageNo += 1;
     const [copied] = await outDoc.copyPages(templateDoc, [isFirst ? 0 : 1]);
     outDoc.addPage(copied);
-    if (isFirst) drawHeader(copied, font, measurer, learner, pageNo, totalPages);
-    else drawContinuationPageNumber(copied, font, pageNo, totalPages);
+    if (isFirst) {
+      drawHeader(copied, font, measurer, learner, pageNo, totalPages);
+      drawPriorLines(copied, font, band, priorPlan.drawn);
+    } else drawContinuationPageNumber(copied, font, pageNo, totalPages);
 
     const rowTops = isFirst ? FIRST_PAGE_ROW_TOPS : CONTINUATION_ROW_TOPS;
     const tableBottom = isFirst ? FIRST_PAGE_TABLE_BOTTOM : CONTINUATION_TABLE_BOTTOM;
@@ -370,7 +436,7 @@ export async function buildCbtaChecklistPdf(input: PdfExportInput): Promise<PdfE
       // eslint-disable-next-line no-await-in-loop -- signatures must embed sequentially into the same page.
       await drawLessonRow(outDoc, copied, font, measurer, group[i], top, bottom, []);
     }
-    drawCumulativeFooter(copied, font, group[group.length - 1], tableBottom);
+    drawCumulativeFooter(copied, font, group[group.length - 1], tableBottom, prior);
   }
 
   for (let i = 0; i < appendixPages.length; i++) {

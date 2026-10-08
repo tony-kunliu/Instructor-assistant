@@ -20,10 +20,13 @@ import {
 } from "./competency.ts";
 import type { D1Database, D1PreparedStatement } from "./d1-types.ts";
 import { buildLessonUpsertedPayload, sameContractState, type BuildLessonUpsertedInput } from "./integration/contract.ts";
-import { ensureStrictlyNewerSourceUpdatedAt, insertOutboxRowStatement, latestSendablePayloadByLesson, latestSourceUpdatedAtByLesson } from "./integration/outbox.ts";
-import { processDueOutbox } from "./integration/sender.ts";
-import type { IntegrationHooks } from "./integration/types.ts";
-import type { CompletionSummary, Instructor, Learner, LearnerInput, Lesson, LessonInput } from "./types.ts";
+import { jsonInsertStatement } from "./d1-json-insert.ts";
+import { ensureStrictlyNewerSourceUpdatedAt, insertOutboxRowsStatement, latestSendablePayloadByLesson, latestSourceUpdatedAtByLesson } from "./integration/outbox.ts";
+import { IMMEDIATE_DELIVERY_LIMIT, processDueOutbox } from "./integration/sender.ts";
+import type { IntegrationHooks, LessonUpsertedPayloadV1 } from "./integration/types.ts";
+import { planPaperImport, type PaperImportPreview, type PaperImportRowError } from "./paper-import.ts";
+import { isPriorRecord } from "./prior-record.ts";
+import type { CompletionSummary, Instructor, Learner, LearnerInput, Lesson, LessonInput, SignatureStatus } from "./types.ts";
 
 export class ValidationError extends Error {}
 export class NotFoundError extends Error {}
@@ -68,19 +71,36 @@ function toLearner(row: Row): Learner {
   };
 }
 
-function toLesson(row: Row): Lesson {
+function nullableString(v: unknown): string | null {
+  return v === null || v === undefined ? null : String(v);
+}
+
+function nullableNumber(v: unknown): number | null {
+  return v === null || v === undefined ? null : Number(v);
+}
+
+/** Reads a column that must be present and one of `allowed` — never silently defaults (the PDF prints signature text from it). */
+function strictEnum<T extends string>(value: unknown, allowed: readonly T[], column: string): T {
+  if (typeof value === "string" && (allowed as readonly string[]).includes(value)) return value as T;
+  throw new Error(`lessons.${column} is missing or has an unknown value (${String(value)}).`);
+}
+
+/** Exported for unit tests of the strict column reads. */
+export function toLesson(row: Row): Lesson {
+  const recordSource = strictEnum(row.record_source, ["app", "paper_import", "prior_instructor"], "record_source");
+  const isPrior = isPriorRecord({ recordSource });
   return {
     id: String(row.id),
     learnerId: String(row.learner_id),
     instructorId: String(row.instructor_id),
     lessonNo: Number(row.lesson_no),
     lessonDate: String(row.lesson_date),
-    startTime: String(row.start_time),
-    finishTime: String(row.finish_time),
-    startOdometer: Number(row.start_odometer),
-    finishOdometer: Number(row.finish_odometer),
-    durationMinutes: Number(row.duration_minutes),
-    distanceKm: Number(row.distance_km),
+    startTime: nullableString(row.start_time),
+    finishTime: nullableString(row.finish_time),
+    startOdometer: nullableNumber(row.start_odometer),
+    finishOdometer: nullableNumber(row.finish_odometer),
+    durationMinutes: isPrior ? strictPresent(row.duration_minutes, "duration_minutes", Number) : nullableNumber(row.duration_minutes),
+    distanceKm: nullableNumber(row.distance_km),
     cumulativeMinutes: Number(row.cumulative_minutes),
     cumulativeKm: Number(row.cumulative_km),
     taught: (row.taught as string) ?? null,
@@ -94,7 +114,17 @@ function toLesson(row: Row): Lesson {
     updatedAt: (row.updated_at as string) ?? null,
     updatedByInstructorId: (row.updated_by_instructor_id as string) ?? null,
     updatedByInstructorName: (row.updated_by_instructor_name as string) ?? null,
+    recordSource,
+    signatureStatus: strictEnum(row.signature_status, ["digital", "on_paper", "unsigned"], "signature_status"),
+    priorInstructorLabel: isPrior ? strictPresent(row.prior_instructor_label, "prior_instructor_label", String) : nullableString(row.prior_instructor_label),
+    priorLessonCount: isPrior ? strictPresent(row.prior_lesson_count, "prior_lesson_count", Number) : nullableNumber(row.prior_lesson_count),
   };
+}
+
+/** A column a prior-instructor row must carry (the History/PDF line is printed from it) — never silently null. */
+function strictPresent<T>(value: unknown, column: string, convert: (value: unknown) => T): T {
+  if (value === null || value === undefined || value === "") throw new Error(`lessons.${column} is missing on a prior_instructor row.`);
+  return convert(value);
 }
 
 // ── Instructors ──────────────────────────────────────────────────────────
@@ -242,10 +272,12 @@ export async function createLearner(db: D1Database, input: LearnerInput): Promis
 export async function getTotals(db: D1Database, learnerId: string): Promise<Totals> {
   const row = await db
     .prepare(
-      `SELECT COUNT(*) AS lesson_count,
+      // lessonCount (and so the next lesson number) counts lessons only: prior-instructor
+      // records have negative lesson_no. Their hours/km DO count in the totals (spec §12).
+      `SELECT COUNT(CASE WHEN lesson_no > 0 THEN 1 END) AS lesson_count,
               COALESCE(SUM(duration_minutes), 0) AS total_minutes,
               COALESCE(SUM(distance_km), 0) AS total_km,
-              (SELECT finish_odometer FROM lessons WHERE learner_id = ? ORDER BY lesson_no DESC LIMIT 1) AS last_finish
+              (SELECT finish_odometer FROM lessons WHERE learner_id = ? AND finish_odometer IS NOT NULL ORDER BY lesson_no DESC LIMIT 1) AS last_finish
        FROM lessons WHERE learner_id = ?`,
     )
     .bind(learnerId, learnerId)
@@ -273,7 +305,8 @@ export async function listLessons(db: D1Database, learnerId: string): Promise<Le
               lessons.start_odometer, lessons.finish_odometer, lessons.duration_minutes, lessons.distance_km, lessons.cumulative_minutes, lessons.cumulative_km,
               lessons.taught, lessons.competencies_assessed, lessons.achieved, lessons.location, lessons.comments,
               NULL AS adi_signature, NULL AS learner_signature, lessons.created_at, lessons.updated_at,
-              lessons.updated_by_instructor_id, ub.full_name AS updated_by_instructor_name
+              lessons.updated_by_instructor_id, lessons.record_source, lessons.signature_status, lessons.prior_instructor_label, lessons.prior_lesson_count,
+              ub.full_name AS updated_by_instructor_name
        FROM lessons ${UPDATED_BY_JOIN} WHERE lessons.learner_id = ? ORDER BY lessons.lesson_no DESC`,
     )
     .bind(learnerId)
@@ -301,34 +334,33 @@ export async function getLesson(db: D1Database, learnerId: string, lessonId: str
 
 /**
  * ACTGDS Integration V1 (see docs/integrations/actgds-instructor-assistant-v1.md):
- * builds the outbox INSERT for this lesson's event as a plain
- * `D1PreparedStatement` — not run here. The caller must push it into the
- * *same* `db.batch([...])` call as the lesson/competency_events write, so
- * the two commit together or not at all. This is what actually closes the
- * durability gap an earlier round of this feature left open and
- * documented as a known trade-off: there is no window where the lesson
- * exists but its integration event silently doesn't.
+ * builds this lesson's lesson.upserted payload for the outbox. The caller
+ * turns its payloads into ONE outbox INSERT (insertOutboxRowsStatement) and
+ * must push it into the *same* `db.batch([...])` call as the
+ * lesson/competency_events write, so the two commit together or not at all.
+ * This is what actually closes the durability gap an earlier round of this
+ * feature left open and documented as a known trade-off: there is no window
+ * where the lesson exists but its integration event silently doesn't.
  *
- * Returns `null` (nothing to add to the batch) when `integration` is
- * omitted or disabled — the default for every caller that doesn't pass it,
- * so this never affects existing behavior (see AGENTS.md §10). The one
- * read this performs (the instructor's display name) happens before the
- * batch — reads don't need the same transactional guarantee as the write.
+ * Returns `null` (nothing to enqueue) when `integration` is omitted or
+ * disabled — the default for every caller that doesn't pass it, so this never
+ * affects existing behavior (see AGENTS.md §10). Instructor display names are
+ * read beforehand in one query (integrationInstructorNames) — reads don't
+ * need the same transactional guarantee as the write.
  */
-async function prepareIntegrationOutboxInsert(
-  db: D1Database,
+function buildIntegrationPayload(
   integration: IntegrationHooks | undefined,
+  instructorNames: ReadonlyMap<string, string>,
   params: { learnerId: string; instructorId: string; lesson: BuildLessonUpsertedInput["lesson"]; taughtIds: string[]; assessedIds: string[]; achievedIds: string[]; progress: LearnerProgress },
   /** Payload of the lesson's latest event the receiver has (or will get). When the new payload says exactly the same, no event is enqueued (returns null). */
   redundantIfSameAs?: string,
-): Promise<D1PreparedStatement | null> {
+): LessonUpsertedPayloadV1 | null {
   if (!integration?.config.enabled) return null;
-  const instructorRow = await db.prepare("SELECT full_name FROM instructors WHERE id = ?").bind(params.instructorId).first<Row>();
   const payload = buildLessonUpsertedPayload({
     environment: integration.config.environment,
     learnerId: params.learnerId,
     instructorId: params.instructorId,
-    instructorDisplayName: String(instructorRow?.full_name ?? ""),
+    instructorDisplayName: instructorNames.get(params.instructorId) ?? "",
     lesson: params.lesson,
     taughtIds: params.taughtIds,
     assessedIds: params.assessedIds,
@@ -336,14 +368,47 @@ async function prepareIntegrationOutboxInsert(
     progress: params.progress,
   });
   if (redundantIfSameAs !== undefined && sameContractState(JSON.stringify(payload), redundantIfSameAs)) return null;
-  return insertOutboxRowStatement(db, payload);
+  return payload;
+}
+
+/** Display names of the given instructors, in one query — only read when integration is enabled (no read otherwise, as before). */
+async function integrationInstructorNames(db: D1Database, integration: IntegrationHooks | undefined, instructorIds: readonly string[]): Promise<Map<string, string>> {
+  const names = new Map<string, string>();
+  if (!integration?.config.enabled || instructorIds.length === 0) return names;
+  const { results } = await db
+    .prepare("SELECT id, full_name FROM instructors WHERE id IN (SELECT value FROM json_each(?))")
+    .bind(JSON.stringify([...new Set(instructorIds)]))
+    .all<Row>();
+  for (const row of results) names.set(String(row.id), String(row.full_name ?? ""));
+  return names;
+}
+
+const COMPETENCY_EVENT_COLUMNS = ["id", "learner_id", "lesson_id", "competency_id", "action", "result"] as const;
+
+/** Rows for one lesson's competency_events: every Taught id, then every Assessed id with its result — the order they have always been inserted in. */
+function competencyEventRows(
+  learnerId: string,
+  lessonId: string,
+  taughtIds: readonly string[],
+  assessedIds: readonly string[],
+  achievedResults: Readonly<Record<string, string>>,
+): Record<(typeof COMPETENCY_EVENT_COLUMNS)[number], string | null>[] {
+  return [
+    ...taughtIds.map((competencyId) => ({ id: crypto.randomUUID(), learner_id: learnerId, lesson_id: lessonId, competency_id: competencyId, action: "taught", result: null })),
+    ...assessedIds.map((competencyId) => ({ id: crypto.randomUUID(), learner_id: learnerId, lesson_id: lessonId, competency_id: competencyId, action: "assessed", result: achievedResults[competencyId] ?? null })),
+  ];
+}
+
+/** One set-based INSERT for any number of competency events (null when there are none). */
+function insertCompetencyEventsStatement(db: D1Database, rows: readonly Record<(typeof COMPETENCY_EVENT_COLUMNS)[number], string | null>[]): D1PreparedStatement | null {
+  return jsonInsertStatement(db, "competency_events", COMPETENCY_EVENT_COLUMNS, rows);
 }
 
 /** Fires a best-effort immediate delivery attempt for whatever is now due in the outbox, once the batch that enqueued it has committed. A no-op when integration is disabled. Never awaited by the caller unless its own `schedule` hook chooses to (see IntegrationHooks — tests do, the real deployed Worker uses ExecutionContext.waitUntil instead). */
 function scheduleIntegrationDelivery(db: D1Database, integration: IntegrationHooks | undefined): void {
   if (!integration?.config.enabled) return;
   const fetchImpl = integration.fetchImpl ?? fetch;
-  const attempt = () => processDueOutbox(db, integration.config, fetchImpl).then(() => undefined);
+  const attempt = () => processDueOutbox(db, integration.config, fetchImpl, new Date(), IMMEDIATE_DELIVERY_LIMIT).then(() => undefined);
   if (integration.schedule) integration.schedule(attempt);
   else void attempt();
 }
@@ -419,7 +484,8 @@ export async function createLesson(db: D1Database, learnerId: string, input: Les
     ...assessedIds.map((competencyId) => ({ competencyId, action: "assessed" as const, result: achievedResults[competencyId] ?? null, lessonId: id, createdAt: nowIso })),
   ];
   const progressAfter = computeProgress([...priorEvents, ...newEvents]);
-  const outboxInsert = await prepareIntegrationOutboxInsert(db, integration, {
+  const instructorNames = await integrationInstructorNames(db, integration, [actingInstructorId]);
+  const outboxPayload = buildIntegrationPayload(integration, instructorNames, {
     learnerId,
     instructorId: actingInstructorId,
     lesson: {
@@ -471,20 +537,15 @@ export async function createLesson(db: D1Database, learnerId: string, input: Les
       learnerSignature,
     );
 
-  const eventInsert = (competencyId: string, action: "taught" | "assessed", result: string | null): D1PreparedStatement =>
-    db
-      .prepare("INSERT INTO competency_events (id, learner_id, lesson_id, competency_id, action, result) VALUES (?, ?, ?, ?, ?, ?)")
-      .bind(crypto.randomUUID(), learnerId, id, competencyId, action, result);
-
-  const eventStatements = [
-    ...taughtIds.map((competencyId) => eventInsert(competencyId, "taught", null)),
-    ...assessedIds.map((competencyId) => eventInsert(competencyId, "assessed", achievedResults[competencyId])),
-  ];
+  // Set-based: one statement for all of this lesson's events, whatever their
+  // number (D1 counts every batch statement against its per-request limit).
+  const eventsInsert = insertCompetencyEventsStatement(db, competencyEventRows(learnerId, id, taughtIds, assessedIds, achievedResults));
+  const outboxInsert = outboxPayload ? insertOutboxRowsStatement(db, [outboxPayload]) : null;
   // db.batch() runs as a single atomic transaction on both the real D1
   // binding and the local node:sqlite adapter (see lib/d1-sqlite.ts) — the
   // lesson row, its competency events, and (when integration is enabled)
   // its outbox row are committed together or not at all.
-  await db.batch([lessonInsert, ...eventStatements, ...(outboxInsert ? [outboxInsert] : [])]);
+  await db.batch([lessonInsert, ...(eventsInsert ? [eventsInsert] : []), ...(outboxInsert ? [outboxInsert] : [])]);
 
   const row = await db.prepare("SELECT * FROM lessons WHERE id = ?").bind(id).first<Row>();
   const lesson = toLesson(row as Row);
@@ -492,6 +553,96 @@ export async function createLesson(db: D1Database, learnerId: string, input: Les
   scheduleIntegrationDelivery(db, integration);
 
   return lesson;
+}
+
+// ── Paper records import (P1b) ───────────────────────────────────────────
+
+const MAX_IMPORT_CSV_BYTES = 512 * 1024;
+
+const PAPER_LESSON_COLUMNS = [
+  "id", "learner_id", "instructor_id", "lesson_no", "lesson_date", "start_time", "finish_time",
+  "start_odometer", "finish_odometer", "duration_minutes", "distance_km", "cumulative_minutes", "cumulative_km",
+  "taught", "competencies_assessed", "achieved", "location", "comments", "adi_signature", "learner_signature",
+  "record_source", "signature_status", "prior_instructor_label", "prior_lesson_count",
+] as const;
+
+export type PaperImportResult =
+  | { mode: "preview"; preview: PaperImportPreview }
+  | { mode: "commit"; preview: PaperImportPreview; lessonCount: number };
+
+export class PaperImportError extends ValidationError {
+  errors: PaperImportRowError[];
+  constructor(errors: PaperImportRowError[]) {
+    super("Import has errors.");
+    this.errors = errors;
+  }
+}
+
+/**
+ * Imports a paper-records CSV into a learner with no lessons yet. Preview
+ * writes nothing. Commit writes every lesson and competency event in ONE
+ * db.batch() (atomic); `UNIQUE (learner_id, lesson_no)` rejects the whole
+ * batch if a lesson appeared after the guard read. Paper lessons never
+ * enqueue integration_outbox rows.
+ *
+ * Prior-instructor records (spec §12) are written in the same statements:
+ * one lessons row each (record_source 'prior_instructor', negative lesson_no,
+ * owned by the learner's own instructor, signed on paper) whose achievements
+ * become assessed/achieved competency events. They are never sent to ACTGDS.
+ */
+export async function importPaperLessons(db: D1Database, learnerId: string, csvText: string, mode: "preview" | "commit"): Promise<PaperImportResult> {
+  if (mode !== "preview" && mode !== "commit") throw new ValidationError("Import mode must be preview or commit.");
+  if (typeof csvText !== "string" || !csvText.trim()) throw new ValidationError("CSV file is required.");
+  if (new TextEncoder().encode(csvText).length > MAX_IMPORT_CSV_BYTES) throw new ValidationError("File is too large.");
+  const learner = await getLearner(db, learnerId);
+  // No rows at all — getTotals().lessonCount would not see prior-instructor records (negative lesson_no).
+  const existing = await db.prepare("SELECT COUNT(*) AS n FROM lessons WHERE learner_id = ?").bind(learnerId).first<Row>();
+  if (Number(existing?.n ?? 0) !== 0) throw new ValidationError("Paper records can only be imported into a learner with no lessons.");
+
+  const plan = planPaperImport(csvText, await listActiveInstructors(db));
+  if (!plan.ok) throw new PaperImportError(plan.errors);
+  if (mode === "preview") return { mode, preview: plan.preview };
+
+  // Set-based: one INSERT for all lessons and one for all their competency
+  // events, however many rows the file has (D1 counts every batch statement
+  // against its per-request query limit). Lessons first, in lesson_no order.
+  const lessonRowsToInsert: Record<(typeof PAPER_LESSON_COLUMNS)[number], string | number | null>[] = [];
+  const eventRowsToInsert: ReturnType<typeof competencyEventRows> = [];
+  for (const prior of plan.priorRecords) {
+    const id = crypto.randomUUID();
+    const achieved = formatIdList(prior.achievedIds);
+    lessonRowsToInsert.push({
+      id, learner_id: learnerId, instructor_id: learner.instructorId, lesson_no: prior.lessonNo, lesson_date: prior.date,
+      start_time: null, finish_time: null, start_odometer: null, finish_odometer: null,
+      duration_minutes: prior.minutes, distance_km: prior.km, cumulative_minutes: prior.cumulativeMinutes, cumulative_km: prior.cumulativeKm,
+      taught: null, competencies_assessed: achieved, achieved, location: null, comments: null, adi_signature: null, learner_signature: null,
+      record_source: "prior_instructor", signature_status: "on_paper", prior_instructor_label: prior.label, prior_lesson_count: prior.lessonCount,
+    });
+    eventRowsToInsert.push(...competencyEventRows(learnerId, id, [], prior.achievedIds, Object.fromEntries(prior.achievedIds.map((competencyId) => [competencyId, "achieved"]))));
+  }
+  for (const lesson of plan.lessons) {
+    const id = crypto.randomUUID();
+    lessonRowsToInsert.push({
+      id, learner_id: learnerId, instructor_id: lesson.instructorId, lesson_no: lesson.lessonNo, lesson_date: lesson.lessonDate,
+      start_time: lesson.startTime, finish_time: lesson.finishTime, start_odometer: lesson.startOdometer, finish_odometer: lesson.finishOdometer,
+      duration_minutes: lesson.durationMinutes, distance_km: lesson.distanceKm, cumulative_minutes: lesson.cumulativeMinutes, cumulative_km: lesson.cumulativeKm,
+      taught: formatIdList(lesson.taughtIds), competencies_assessed: formatIdList(lesson.assessedIds),
+      achieved: formatIdList(lesson.assessedIds.filter((competencyId) => lesson.achievedResults[competencyId] === "achieved")),
+      location: lesson.location, comments: lesson.comments, adi_signature: null, learner_signature: null,
+      record_source: "paper_import", signature_status: lesson.signatureStatus, prior_instructor_label: null, prior_lesson_count: null,
+    });
+    eventRowsToInsert.push(...competencyEventRows(learnerId, id, lesson.taughtIds, lesson.assessedIds, lesson.achievedResults));
+  }
+  const statements = [jsonInsertStatement(db, "lessons", PAPER_LESSON_COLUMNS, lessonRowsToInsert), insertCompetencyEventsStatement(db, eventRowsToInsert)].filter(
+    (statement): statement is D1PreparedStatement => statement !== null,
+  );
+  try {
+    await db.batch(statements);
+  } catch (error) {
+    if (error instanceof Error && /UNIQUE/i.test(error.message)) throw new ValidationError("Paper records can only be imported into a learner with no lessons.");
+    throw error;
+  }
+  return { mode, preview: plan.preview, lessonCount: plan.lessons.length };
 }
 
 /** Fields that, if changed, invalidate both existing signatures (CBT&A V3 rule 5). */
@@ -518,33 +669,84 @@ export type UpdateLessonResult = {
  */
 export async function updateLesson(db: D1Database, learnerId: string, lessonId: string, input: LessonInput, integration?: IntegrationHooks): Promise<UpdateLessonResult> {
   const existing = await getLesson(db, learnerId, lessonId);
+  // D14: a previous instructor's record is never edited (a mistake is fixed by re-importing a learner with no App lessons).
+  if (isPriorRecord(existing)) throw new ValidationError("Prior-instructor records cannot be edited.");
 
   const lessonDate = isoDate(input.lessonDate);
   if (!lessonDate) throw new ValidationError("Lesson date is required.");
-  const startTime = String(input.startTime ?? "").trim();
-  const finishTime = String(input.finishTime ?? "").trim();
-  const duration = durationMinutes(startTime, finishTime);
-  if (duration === null) throw new ValidationError("Start and finish time are required, and finish must be after start.");
+  // Paper-imported lessons (record_source = 'paper_import') may legitimately
+  // lack times / odometer readings and carry no digital signatures; app
+  // lessons keep every original requirement unchanged.
+  const isPaper = existing.recordSource === "paper_import";
+  const startTimeRaw = String(input.startTime ?? "").trim();
+  const finishTimeRaw = String(input.finishTime ?? "").trim();
+  let startTime: string | null = startTimeRaw;
+  let finishTime: string | null = finishTimeRaw;
+  let duration: number | null;
+  let startOdometer: number | null;
+  let finishOdometer: number | null;
+  let distance: number | null;
+  let signatureStatus: SignatureStatus = "digital";
 
-  const startOdometer = parseOdometer(input.startOdometer as string);
-  const finishOdometer = parseOdometer(input.finishOdometer as string);
-  if (startOdometer === null) throw new ValidationError("Start odometer is required.");
-  if (finishOdometer === null) throw new ValidationError("Finish odometer is required.");
-  const distance = distanceKm(startOdometer, finishOdometer);
-  if (distance === null) throw new ValidationError("Finish odometer must not be less than start odometer.");
+  if (isPaper) {
+    if (input.signatureStatus !== "on_paper" && input.signatureStatus !== "unsigned") {
+      throw new ValidationError('Signature status must be "on_paper" or "unsigned" for a paper record.');
+    }
+    signatureStatus = input.signatureStatus;
+    if (!startTimeRaw && !finishTimeRaw) {
+      startTime = null;
+      finishTime = null;
+      duration = null;
+    } else if (!startTimeRaw || !finishTimeRaw) {
+      throw new ValidationError("Enter both start and finish time, or leave both blank.");
+    } else {
+      duration = durationMinutes(startTimeRaw, finishTimeRaw);
+      if (duration === null) throw new ValidationError("Start and finish time are required, and finish must be after start.");
+    }
+    const startOdoRaw = String(input.startOdometer ?? "").trim();
+    const finishOdoRaw = String(input.finishOdometer ?? "").trim();
+    if (!startOdoRaw && !finishOdoRaw) {
+      startOdometer = null;
+      finishOdometer = null;
+      distance = null;
+    } else if (!startOdoRaw || !finishOdoRaw) {
+      throw new ValidationError("Enter both start and finish odometer, or leave both blank.");
+    } else {
+      startOdometer = parseOdometer(startOdoRaw);
+      finishOdometer = parseOdometer(finishOdoRaw);
+      if (startOdometer === null) throw new ValidationError("Start odometer is required.");
+      if (finishOdometer === null) throw new ValidationError("Finish odometer is required.");
+      distance = distanceKm(startOdometer, finishOdometer);
+      if (distance === null) throw new ValidationError("Finish odometer must not be less than start odometer.");
+    }
+  } else {
+    duration = durationMinutes(startTimeRaw, finishTimeRaw);
+    if (duration === null) throw new ValidationError("Start and finish time are required, and finish must be after start.");
+    startOdometer = parseOdometer(input.startOdometer as string);
+    finishOdometer = parseOdometer(input.finishOdometer as string);
+    if (startOdometer === null) throw new ValidationError("Start odometer is required.");
+    if (finishOdometer === null) throw new ValidationError("Finish odometer is required.");
+    distance = distanceKm(startOdometer, finishOdometer);
+    if (distance === null) throw new ValidationError("Finish odometer must not be less than start odometer.");
+  }
 
   // Carry-forward consistency: the odometer is one physical instrument, so
   // its readings must stay monotonic across the learner's whole lesson
-  // sequence, not just within this one lesson.
-  const [prevLesson, nextLesson] = await Promise.all([
-    db.prepare("SELECT finish_odometer FROM lessons WHERE learner_id = ? AND lesson_no = ?").bind(learnerId, existing.lessonNo - 1).first<Row>(),
-    db.prepare("SELECT start_odometer FROM lessons WHERE learner_id = ? AND lesson_no = ?").bind(learnerId, existing.lessonNo + 1).first<Row>(),
-  ]);
-  if (prevLesson && startOdometer < Number(prevLesson.finish_odometer)) {
-    throw new ValidationError(`Start odometer cannot be less than Lesson #${existing.lessonNo - 1}'s finish odometer (${prevLesson.finish_odometer}).`);
-  }
-  if (nextLesson && finishOdometer > Number(nextLesson.start_odometer)) {
-    throw new ValidationError(`Finish odometer cannot exceed Lesson #${existing.lessonNo + 1}'s start odometer (${nextLesson.start_odometer}).`);
+  // sequence, not just within this one lesson. Paper lessons can have NULL
+  // readings, so compare against the nearest earlier lesson that has a
+  // finish reading and the nearest later lesson that has a start reading
+  // (not merely the adjacent lesson number).
+  if (startOdometer !== null && finishOdometer !== null) {
+    const [prevLesson, nextLesson] = await Promise.all([
+      db.prepare("SELECT lesson_no, finish_odometer FROM lessons WHERE learner_id = ? AND lesson_no < ? AND finish_odometer IS NOT NULL ORDER BY lesson_no DESC LIMIT 1").bind(learnerId, existing.lessonNo).first<Row>(),
+      db.prepare("SELECT lesson_no, start_odometer FROM lessons WHERE learner_id = ? AND lesson_no > ? AND start_odometer IS NOT NULL ORDER BY lesson_no ASC LIMIT 1").bind(learnerId, existing.lessonNo).first<Row>(),
+    ]);
+    if (prevLesson && startOdometer < Number(prevLesson.finish_odometer)) {
+      throw new ValidationError(`Start odometer cannot be less than Lesson #${prevLesson.lesson_no}'s finish odometer (${prevLesson.finish_odometer}).`);
+    }
+    if (nextLesson && finishOdometer > Number(nextLesson.start_odometer)) {
+      throw new ValidationError(`Finish odometer cannot exceed Lesson #${nextLesson.lesson_no}'s start odometer (${nextLesson.start_odometer}).`);
+    }
   }
 
   const taughtIds = parseIdList(input.taughtIds, CORE_COMPETENCY_IDS);
@@ -636,9 +838,13 @@ export async function updateLesson(db: D1Database, learnerId: string, lessonId: 
     location !== existing.location ||
     comments !== existing.comments;
 
-  let adiSignature: string;
-  let learnerSignature: string;
-  if (contentChanged) {
+  let adiSignature: string | null;
+  let learnerSignature: string | null;
+  if (isPaper) {
+    // Paper records carry no digital signatures: whatever is stored stays untouched.
+    adiSignature = existing.adiSignature;
+    learnerSignature = existing.learnerSignature;
+  } else if (contentChanged) {
     const newAdi = signature(input.adiSignature);
     const newLearner = signature(input.learnerSignature);
     if (!newAdi || !newLearner) {
@@ -674,8 +880,8 @@ export async function updateLesson(db: D1Database, learnerId: string, lessonId: 
     .bind(learnerId, existing.lessonNo)
     .all<Row>();
 
-  let runningMinutes = Number(priorTotals?.m ?? 0) + duration;
-  let runningKm = Number(priorTotals?.k ?? 0) + distance;
+  let runningMinutes = Number(priorTotals?.m ?? 0) + (duration ?? 0);
+  let runningKm = Number(priorTotals?.k ?? 0) + (distance ?? 0);
   // Captured before the laterLessons loop below mutates runningMinutes/Km further — this lesson's own new cumulative totals, for the integration payload.
   const thisLessonCumulativeMinutes = runningMinutes;
   const thisLessonCumulativeKm = runningKm;
@@ -685,7 +891,7 @@ export async function updateLesson(db: D1Database, learnerId: string, lessonId: 
       `UPDATE lessons SET lesson_date = ?, start_time = ?, finish_time = ?, start_odometer = ?, finish_odometer = ?,
          duration_minutes = ?, distance_km = ?, cumulative_minutes = ?, cumulative_km = ?,
          taught = ?, competencies_assessed = ?, achieved = ?, location = ?, comments = ?,
-         adi_signature = ?, learner_signature = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+         adi_signature = ?, learner_signature = ?, signature_status = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
          updated_by_instructor_id = COALESCE(?, updated_by_instructor_id)
        WHERE id = ?`,
     )
@@ -706,31 +912,44 @@ export async function updateLesson(db: D1Database, learnerId: string, lessonId: 
       comments,
       adiSignature,
       learnerSignature,
+      signatureStatus,
       actingInstructorId,
       lessonId,
     );
 
-  const cumulativeUpdates: D1PreparedStatement[] = [];
-  // lesson_id -> its own recalculated cumulative totals, for the ACTGDS
-  // downstream-propagation events built below (never the edited lesson's
-  // own totals — each downstream lesson gets its own).
+  // Every lesson from this one on gets its cumulative totals recomputed as a
+  // running sum in lesson_no order (NULL duration/distance counts as 0), in
+  // ONE set-based statement however many lessons follow — D1 counts every
+  // batch statement against its per-request query limit. It runs after
+  // updateEditedLesson in the same batch, so it sums this lesson's new
+  // duration/distance; for this lesson it yields the same value as above.
+  const recomputeCumulative = db
+    .prepare(
+      `UPDATE lessons SET
+         cumulative_minutes = (SELECT COALESCE(SUM(COALESCE(l2.duration_minutes, 0)), 0) FROM lessons l2 WHERE l2.learner_id = lessons.learner_id AND l2.lesson_no <= lessons.lesson_no),
+         cumulative_km = (SELECT COALESCE(SUM(COALESCE(l2.distance_km, 0)), 0) FROM lessons l2 WHERE l2.learner_id = lessons.learner_id AND l2.lesson_no <= lessons.lesson_no)
+       WHERE learner_id = ? AND lesson_no >= ?`,
+    )
+    .bind(learnerId, existing.lessonNo);
+
+  // Concurrency: these payload values come from the reads above (before the
+  // batch); the stored values come from recomputeCumulative at commit time.
+  // They can differ only if another write to this learner's lessons lands in
+  // between — accepted (single-instructor-at-a-time usage, as elsewhere here).
+  //
+  // lesson_id -> its own recalculated cumulative totals (the same running
+  // sums recomputeCumulative stores), for the ACTGDS downstream-propagation
+  // events built below (never the edited lesson's own totals — each
+  // downstream lesson gets its own).
   const downstreamNewCumulative = new Map<string, { minutes: number; km: number }>();
   for (const row of laterLessons) {
-    runningMinutes += Number(row.duration_minutes);
-    runningKm += Number(row.distance_km);
-    cumulativeUpdates.push(db.prepare("UPDATE lessons SET cumulative_minutes = ?, cumulative_km = ? WHERE id = ?").bind(runningMinutes, runningKm, row.id));
+    runningMinutes += Number(row.duration_minutes ?? 0);
+    runningKm += Number(row.distance_km ?? 0);
     downstreamNewCumulative.set(String(row.id), { minutes: runningMinutes, km: runningKm });
   }
 
   const deleteOldEvents = db.prepare("DELETE FROM competency_events WHERE lesson_id = ?").bind(lessonId);
-  const eventInsert = (competencyId: string, action: "taught" | "assessed", result: string | null): D1PreparedStatement =>
-    db
-      .prepare("INSERT INTO competency_events (id, learner_id, lesson_id, competency_id, action, result) VALUES (?, ?, ?, ?, ?, ?)")
-      .bind(crypto.randomUUID(), learnerId, lessonId, competencyId, action, result);
-  const eventInserts = [
-    ...taughtIds.map((competencyId) => eventInsert(competencyId, "taught", null)),
-    ...assessedIds.map((competencyId) => eventInsert(competencyId, "assessed", achievedResults[competencyId])),
-  ];
+  const eventsInsert = insertCompetencyEventsStatement(db, competencyEventRows(learnerId, lessonId, taughtIds, assessedIds, achievedResults));
 
   // Same reasoning as createLesson: build the "after" progress snapshot
   // in memory (otherLessonsEvents + this lesson's own new events) so the
@@ -757,19 +976,25 @@ export async function updateLesson(db: D1Database, learnerId: string, lessonId: 
   const downstreamLessonIds = laterLessons.map((row) => String(row.id));
   const latestByLesson = integration?.config.enabled ? await latestSourceUpdatedAtByLesson(db, [lessonId, ...downstreamLessonIds]) : new Map<string, string>();
   const directSourceUpdatedAt = ensureStrictlyNewerSourceUpdatedAt(nowIso, latestByLesson.get(lessonId) ?? null);
+  // Only already-exported downstream lessons can get a propagated event (see below).
+  const exportedDownstream = laterLessons.filter((row) => latestByLesson.has(String(row.id)));
+  // Every display name the payloads below need, in one read.
+  const instructorNames = await integrationInstructorNames(db, integration, [...(isPaper ? [] : [existing.instructorId]), ...exportedDownstream.map((row) => String(row.instructor_id))]);
 
   // The lesson's own instructor_id (never the transient editor) is who this teaching record belongs to.
-  const outboxInsert = await prepareIntegrationOutboxInsert(db, integration, {
+  // Paper lessons never enter the integration domain: no outbox row of their own.
+  // (App lessons always have non-NULL times/odometers/duration/distance — validated above.)
+  const outboxPayload = isPaper ? null : buildIntegrationPayload(integration, instructorNames, {
     learnerId,
     instructorId: existing.instructorId,
     lesson: {
       id: lessonId,
       lessonNo: existing.lessonNo,
       lessonDate,
-      startTime,
-      finishTime,
-      durationMinutes: duration,
-      distanceKm: distance,
+      startTime: startTime as string,
+      finishTime: finishTime as string,
+      durationMinutes: duration as number,
+      distanceKm: distance as number,
       cumulativeMinutes: thisLessonCumulativeMinutes,
       cumulativeKm: thisLessonCumulativeKm,
       createdAt: existing.createdAt,
@@ -804,7 +1029,7 @@ export async function updateLesson(db: D1Database, learnerId: string, lessonId: 
   // is identical to the lesson's latest event the receiver has or will get
   // (e.g. a location/comments-only edit), it is skipped as redundant.
   // Anything that differs — or that can't be compared — is still sent.
-  const downstreamOutboxInserts: D1PreparedStatement[] = [];
+  const downstreamPayloads: LessonUpsertedPayloadV1[] = [];
   const downstreamBaseline = integration?.config.enabled && laterLessons.length > 0 ? await latestSendablePayloadByLesson(db, downstreamLessonIds) : new Map<string, string>();
   if (integration?.config.enabled && laterLessons.length > 0) {
     for (const row of laterLessons) {
@@ -819,7 +1044,7 @@ export async function updateLesson(db: D1Database, learnerId: string, lessonId: 
       const ownAchievedIds = ownAssessedEvents.filter((event) => event.result === "achieved").map((event) => event.competencyId);
       const cumulative = downstreamNewCumulative.get(downstreamLessonId)!;
 
-      const downstreamInsert = await prepareIntegrationOutboxInsert(db, integration, {
+      const downstreamPayload = buildIntegrationPayload(integration, instructorNames, {
         learnerId,
         instructorId: String(row.instructor_id),
         lesson: {
@@ -840,9 +1065,13 @@ export async function updateLesson(db: D1Database, learnerId: string, lessonId: 
         achievedIds: ownAchievedIds,
         progress: after,
       }, downstreamBaseline.get(downstreamLessonId));
-      if (downstreamInsert) downstreamOutboxInserts.push(downstreamInsert);
+      if (downstreamPayload) downstreamPayloads.push(downstreamPayload);
     }
   }
+
+  // The direct edit's own event first, then the propagated ones in lesson_no
+  // order — one set-based INSERT for all of them.
+  const outboxInsert = insertOutboxRowsStatement(db, [...(outboxPayload ? [outboxPayload] : []), ...downstreamPayloads]);
 
   // One atomic transaction: the edited lesson, every downstream lesson's
   // recomputed cumulative totals, the swapped competency events, the
@@ -851,8 +1080,9 @@ export async function updateLesson(db: D1Database, learnerId: string, lessonId: 
   // all — a failure anywhere in this list rolls back the whole edit,
   // including every downstream lesson's cumulative totals and events, so
   // there is never a state where some downstream mirrors advanced and
-  // others (or their outbox events) silently didn't.
-  await db.batch([updateEditedLesson, deleteOldEvents, ...eventInserts, ...cumulativeUpdates, ...(outboxInsert ? [outboxInsert] : []), ...downstreamOutboxInserts]);
+  // others (or their outbox events) silently didn't. A fixed number of
+  // statements, however many lessons follow the edited one.
+  await db.batch([updateEditedLesson, recomputeCumulative, deleteOldEvents, ...(eventsInsert ? [eventsInsert] : []), ...(outboxInsert ? [outboxInsert] : [])]);
 
   const [updatedLesson, completion] = await Promise.all([getLesson(db, learnerId, lessonId), getCompletionSummary(db, learnerId)]);
 

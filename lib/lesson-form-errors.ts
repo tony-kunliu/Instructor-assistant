@@ -33,12 +33,14 @@ export type LessonDraftLike = {
   learnerSignature: string;
 };
 
-export type FormMode = "new" | "edit";
+/** "paper" = History Edit of a paper_import lesson: times / odometer optional (both or neither), no signature pads. */
+export type FormMode = "new" | "edit" | "paper";
 
 // Top-to-bottom order of each form, so the first issue listed is the first one on the page.
 const ORDER: Record<FormMode, FormFieldId[]> = {
   new: ["start-odometer", "finish-odometer", "competency", "date", "times", "adi-signature", "learner-signature"],
   edit: ["date", "times", "start-odometer", "finish-odometer", "competency", "adi-signature", "learner-signature"],
+  paper: ["date", "times", "start-odometer", "finish-odometer", "competency"],
 };
 
 /** Draft keys whose change means the user has touched the problem (used to clear a server-reported issue). */
@@ -56,6 +58,23 @@ export const DRAFT_KEYS_BY_FIELD: Record<FormFieldId, (keyof LessonDraftLike)[]>
 export function validateLessonDraftFields(draft: LessonDraftLike, mode: FormMode): FormIssue[] {
   const found = new Map<FormFieldId, string>();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(draft.lessonDate.trim())) found.set("date", "Lesson date is required.");
+  if (mode === "paper") {
+    const hasStart = draft.startTime.trim() !== "";
+    const hasFinish = draft.finishTime.trim() !== "";
+    if (hasStart !== hasFinish) found.set("times", "Enter both start and finish time, or leave both blank.");
+    else if (hasStart && durationMinutes(draft.startTime, draft.finishTime) === null) found.set("times", "Start and finish time are required, and finish must be after start.");
+    const startRaw = draft.startOdometer.trim();
+    const finishRaw = draft.finishOdometer.trim();
+    if ((startRaw === "") !== (finishRaw === "")) found.set("start-odometer", "Enter both start and finish odometer, or leave both blank.");
+    else if (startRaw !== "") {
+      const a = parseOdometer(startRaw);
+      const b = parseOdometer(finishRaw);
+      if (a === null || b === null) found.set("start-odometer", "Odometer readings must be whole km.");
+      else if (distanceKm(a, b) === null) found.set("finish-odometer", "Finish odometer must not be less than start odometer.");
+    }
+    if (draft.assessedIds.some((id) => !(id in draft.achievedResults))) found.set("competency", "Mark Achieved / Not achieved for every Assessed competency.");
+    return ORDER.paper.filter((field) => found.has(field)).map((field) => ({ field, message: found.get(field)! }));
+  }
   if (durationMinutes(draft.startTime, draft.finishTime) === null) found.set("times", "Start and finish time are required, and finish must be after start.");
   const start = parseOdometer(draft.startOdometer);
   const finish = parseOdometer(draft.finishOdometer);

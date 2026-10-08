@@ -11,15 +11,12 @@ lives in git log and closed PRs, not here.
 
 **In progress (separate branch):** P1b paper records import on
 `feature/paper-records-import` (spec
-`docs/superpowers/specs/2026-10-07-paper-records-import-design.md`, incl.
-§12 prior-instructor records; plan
-`docs/superpowers/plans/2026-10-07-paper-records-import.md`). Tasks 1–5
-done and reviewed; Task 6 (UI) in progress; then D1 free-plan query-limit
-fix (set-based writes), prior-instructor records, docs + Staging rehearsal
-of `0006`.
+`docs/superpowers/specs/2026-10-07-paper-records-import-design.md`) is
+implemented, reviewed and verified. Migration `0006` is pending rehearsal
+on Staging and Production; merge needs Tony's authorization.
 
-**Next Recommended Task:** finish P1b, rehearse `0006` on Staging, release
-via the workflow, then import paper learners one at a time.
+**Next Recommended Task:** merge to `staging`, rehearse `0006` on Staging,
+release via the workflow, then import paper learners one at a time.
 
 **Waiting on Other Repo:** ACTGDS — first-event confirmation, ACK of the
 mid-sequence-first-event notice, display fixes (Synced-at in Canberra
