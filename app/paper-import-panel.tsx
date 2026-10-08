@@ -133,6 +133,7 @@ export default function PaperImportPanel({ learnerId, onImported }: { learnerId:
           ) : null}
           {preview.missingDataLessonNos.length ? <p className="meta">Missing data: {list(preview.missingDataLessonNos)}</p> : null}
           {preview.unsignedLessonNos.length ? <p className="meta">Unsigned: {list(preview.unsignedLessonNos)}</p> : null}
+          {preview.priorRecords.length ? <p className="status info" data-testid="paper-import-once-warning">Paper import can only be done once per learner; check everything before importing.</p> : null}
           <button type="button" className="btn primary block" data-testid="paper-import-confirm" disabled={busy} onClick={() => void confirm()}>
             {busy ? "Importing…" : "Confirm import"}
           </button>

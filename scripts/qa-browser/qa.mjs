@@ -540,6 +540,7 @@ const draw = async (page, index) => {
   await s.page.waitForSelector("[data-testid=paper-import-preview]");
   const pv = await s.page.textContent("[data-testid=paper-import-preview]");
   check("paper: preview shows 3 lessons, 1h 30m, 35 km", (await s.page.textContent("[data-testid=paper-import-lessons]")) === "3" && (await s.page.textContent("[data-testid=paper-import-hours]")).startsWith("1h 30m") && (await s.page.textContent("[data-testid=paper-import-km]")) === "35 km", pv);
+  check("paper: no once-per-learner warning without prior rows", (await s.page.$("[data-testid=paper-import-once-warning]")) === null);
   check("paper: preview lists Missing data #2 and Unsigned #2", pv.includes("Missing data: #2") && pv.includes("Unsigned: #2"), pv);
   check("paper: still nothing written before confirm", (await (await fetch(`${B}/api/learners/${learnerId}`)).json()).lessons.length === 0);
   check("paper: no horizontal scroll at 375px (preview)", await noHScroll(s.page));
@@ -632,6 +633,7 @@ const draw = async (page, index) => {
   const priorNote = await s.page.textContent("[data-testid=paper-import-prior-note]").catch(() => "");
   check("prior: preview Hours/Km note says what came from previous instructors", priorNote === "Hours / Km incl. 20.0 h / 150 km from previous instructors", priorNote);
   check("prior: preview shows 2 lessons, hours/km incl. prior (21h 30m, 185 km)", (await s.page.textContent("[data-testid=paper-import-lessons]")) === "2" && (await s.page.textContent("[data-testid=paper-import-hours]")).startsWith("21h 30m") && (await s.page.textContent("[data-testid=paper-import-km]")) === "185 km", await s.page.textContent("[data-testid=paper-import-preview]"));
+  check("prior: preview warns that paper import is once per learner", (await s.page.textContent("[data-testid=paper-import-once-warning]").catch(() => "")) === "Paper import can only be done once per learner; check everything before importing.");
   check("prior: no horizontal scroll at 375px (preview)", await noHScroll(s.page));
   await shot(s.page, "08-prior-preview");
   await s.page.click("[data-testid=paper-import-confirm]");
