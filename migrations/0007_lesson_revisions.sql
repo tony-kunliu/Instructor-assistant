@@ -8,6 +8,12 @@
 -- signature image was present, never the image itself), who edited, when, and an
 -- optional reason (max 200 chars, validated in lib/repo.ts).
 --
+-- Future lessons rebuild: lesson_revisions.lesson_id references lessons (id),
+-- exactly like competency_events. Any later migration that rebuilds lessons
+-- must use the 0006 pattern (PRAGMA defer_foreign_keys = ON, copy to a backup
+-- table, DROP, re-create, re-insert from the backup); that pattern covers
+-- lesson_revisions as well, and a lessons_new + RENAME rebuild would fail at COMMIT.
+--
 -- Must stay in sync with lib/schema.ts SCHEMA_SQL — tests/d1-storage.test.ts
 -- checks migrations/0001..0007 concatenated equal SCHEMA_SQL. Apply with:
 --   wrangler d1 migrations apply DB --local   (local dev, no account needed)

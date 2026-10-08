@@ -65,6 +65,11 @@ The instruments win over this summary. If they disagree, fix this file.
 - Report cancellations and changes within 2 hours where possible.
 - Notify ADI Audit if more than 5 minutes late.
 
+**R6 — Corrections (derived values)**
+- Cumulative totals on later lessons are derived values: editing a lesson
+  recomputes them without a revision for those lessons. They are not an
+  instructor's entry under CoP 9.2; only the edited lesson gets a revision.
+
 **R9 — Record keeping**
 - Keep the lesson checklist in the vehicle; keep records ≥ 12 months.
 - Keep certificate copies ≥ 6 months.

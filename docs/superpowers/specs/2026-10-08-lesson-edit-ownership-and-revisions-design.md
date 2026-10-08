@@ -37,6 +37,10 @@ New table `lesson_revisions`. Additive only; no existing data changes.
 | `reason` | optional reason (E7) |
 | `snapshot_json` | the previous values of every editable field plus `signature_status`; signature images are excluded, only whether each signature was present |
 
+## Derived values
+
+Cumulative totals on later lessons are derived values: editing a lesson recomputes them (`recomputeCumulative`) without writing a revision for those lessons. They are calculated, not an instructor's entry, so they are not covered by Code of Practice 9.2; only the edited lesson gets a revision.
+
 ## Testing
 
 **Unit tests**
