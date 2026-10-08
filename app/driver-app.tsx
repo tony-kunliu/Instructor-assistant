@@ -906,7 +906,7 @@ export default function DriverApp() {
                       ) : null}
                       {lesson.updatedAt ? (
                         <p className="h-edited">
-                          Edited {lesson.updatedAt}
+                          {lesson.editedBeforeRevisionHistory ? <span data-testid="edited-before-history">Edited (before revision history) </span> : "Edited "}{lesson.updatedAt}
                           {lesson.updatedByInstructorName ? ` · Last edited by ${lesson.updatedByInstructorName}` : ""}
                         </p>
                       ) : null}

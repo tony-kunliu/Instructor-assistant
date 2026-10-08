@@ -159,3 +159,16 @@ test("listLessonRevisions is scoped to the learner: a lesson id under another le
   const other = await createLearner(db, { fullName: "QA Other Learner", instructorId: tony.id });
   assert.deepEqual(await listLessonRevisions(db, other.id, lesson.id), []);
 });
+
+test("a lesson edited before revision history existed (updated_at set, no revision rows) is flagged; a created-only lesson is not; once revised the flag clears", async () => {
+  const { db, tony, learner, lesson } = await setup();
+  assert.equal(lesson.editedBeforeRevisionHistory, false, "createLesson never sets updated_at");
+  // Simulate a pre-0007 edit: updateLesson used to set updated_at and nothing else.
+  await db.prepare("UPDATE lessons SET updated_at = '2026-09-05T00:00:00.000Z', updated_by_instructor_id = ? WHERE id = ?").bind(tony.id, lesson.id).run();
+  assert.equal((await listLessons(db, learner.id))[0].editedBeforeRevisionHistory, true);
+  assert.equal((await listLessonsForExport(db, learner.id))[0].editedBeforeRevisionHistory, true);
+  await updateLesson(db, learner.id, lesson.id, edit({ actingInstructorId: tony.id }));
+  const after = (await listLessons(db, learner.id))[0];
+  assert.equal(after.revisionCount, 1);
+  assert.equal(after.editedBeforeRevisionHistory, false);
+});

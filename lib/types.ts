@@ -68,6 +68,8 @@ export type Lesson = {
   priorLessonCount: number | null;
   /** How many times this lesson has been edited (rows in lesson_revisions). 0 = never amended. */
   revisionCount: number;
+  /** Edited before revision history existed (migration 0007): updated_at is set only by updateLesson, so a set updated_at with no revision rows is a reliable "edited" signal. */
+  editedBeforeRevisionHistory: boolean;
 };
 
 /** Previous content of an edited lesson (lesson_revisions.snapshot_json). Signature images are never stored, only whether each was present. */

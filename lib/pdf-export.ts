@@ -127,13 +127,17 @@ function drawSingleLine(page: PDFPage, font: PDFFont, measurer: Measurer, text: 
 }
 
 /** Lesson number cell text; a lesson edited after it was first saved is marked "(amended)" (Code of Practice 9.2: corrections must be visible). */
-export function lessonNoLabel(lesson: Pick<Lesson, "lessonNo" | "revisionCount">): string {
-  return lesson.revisionCount > 0 ? `#${lesson.lessonNo} (amended)` : `#${lesson.lessonNo}`;
+export function isAmended(lesson: Pick<Lesson, "revisionCount" | "editedBeforeRevisionHistory">): boolean {
+  return lesson.revisionCount > 0 || lesson.editedBeforeRevisionHistory;
+}
+
+export function lessonNoLabel(lesson: Pick<Lesson, "lessonNo" | "revisionCount" | "editedBeforeRevisionHistory">): string {
+  return isAmended(lesson) ? `#${lesson.lessonNo} (amended)` : `#${lesson.lessonNo}`;
 }
 
 /** Amended labels are longer, so they use a smaller size to stay on one line in the narrow date/lesson-no cell. */
-export function lessonNoFontSize(lesson: Pick<Lesson, "revisionCount">): number {
-  return lesson.revisionCount > 0 ? 5.5 : 7;
+export function lessonNoFontSize(lesson: Pick<Lesson, "revisionCount" | "editedBeforeRevisionHistory">): number {
+  return isAmended(lesson) ? 5.5 : 7;
 }
 
 export type OverflowNote = { lessonNo: number; field: string; text: string; /** Replaces the "Lesson #n — field:" heading (prior-instructor lines). */ heading?: string };

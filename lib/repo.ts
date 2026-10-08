@@ -119,6 +119,7 @@ export function toLesson(row: Row): Lesson {
     priorInstructorLabel: isPrior ? strictPresent(row.prior_instructor_label, "prior_instructor_label", String) : nullableString(row.prior_instructor_label),
     priorLessonCount: isPrior ? strictPresent(row.prior_lesson_count, "prior_lesson_count", Number) : nullableNumber(row.prior_lesson_count),
     revisionCount: Number(row.revision_count ?? 0),
+    editedBeforeRevisionHistory: row.updated_at != null && Number(row.revision_count ?? 0) === 0 && !isPrior,
   };
 }
 

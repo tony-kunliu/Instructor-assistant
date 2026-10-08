@@ -64,6 +64,7 @@ function lesson(n: number, overrides: Partial<Lesson> = {}): Lesson {
     priorInstructorLabel: null,
     priorLessonCount: null,
     revisionCount: 0,
+    editedBeforeRevisionHistory: false,
     ...overrides,
   };
 }
@@ -291,12 +292,14 @@ test("isPriorRecord is the one predicate: recordSource === 'prior_instructor'", 
 });
 
 test("amended lessons (revisionCount > 0) are marked \"(amended)\" next to the lesson number; never-edited lessons are not", async () => {
-  assert.equal(lessonNoLabel({ lessonNo: 7, revisionCount: 0 }), "#7");
-  assert.equal(lessonNoLabel({ lessonNo: 12, revisionCount: 2 }), "#12 (amended)");
+  const never = { revisionCount: 0, editedBeforeRevisionHistory: false };
+  assert.equal(lessonNoLabel({ lessonNo: 7, ...never }), "#7");
+  assert.equal(lessonNoLabel({ lessonNo: 12, revisionCount: 2, editedBeforeRevisionHistory: false }), "#12 (amended)");
+  assert.equal(lessonNoLabel({ lessonNo: 3, revisionCount: 0, editedBeforeRevisionHistory: true }), "#3 (amended)", "edited before revision history existed");
   const measurer = createMeasurer(fontBytes);
   // The label must fit the narrow date/lesson-no cell on one line (never clipped by drawSingleLine).
-  assert.ok(lessonNoFontSize({ revisionCount: 1 }) <= 7);
-  assert.ok(measurer.widthOfTextAtSize(lessonNoLabel({ lessonNo: 112, revisionCount: 1 }), lessonNoFontSize({ revisionCount: 1 })) <= 47.6 - 4);
+  assert.ok(lessonNoFontSize({ revisionCount: 1, editedBeforeRevisionHistory: false }) <= 7);
+  assert.ok(measurer.widthOfTextAtSize(lessonNoLabel({ lessonNo: 112, revisionCount: 1, editedBeforeRevisionHistory: false }), lessonNoFontSize({ revisionCount: 1, editedBeforeRevisionHistory: false })) <= 47.6 - 4);
 
   const result = await buildCbtaChecklistPdf({ templateBytes, fontBytes, learner, lessons: [lesson(1), lesson(2, { revisionCount: 1 })] });
   const dir = mkdtempSync(path.join(os.tmpdir(), "amended-pdf-"));
