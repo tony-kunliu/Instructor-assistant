@@ -509,14 +509,14 @@ const draw = async (page, index) => {
   const { tmpdir } = await import("node:os");
   const { mkdtempSync } = await import("node:fs");
   const dir = mkdtempSync(`${tmpdir()}/qa-paper-`);
-  const HEAD = "date,start_time,finish_time,start_odometer,finish_odometer,taught,assessed_achieved,assessed_not_achieved,location,comments,signature,instructor";
+  const HEAD = "date,start_time,finish_time,start_odometer,finish_odometer,taught,assessed_achieved,assessed_not_achieved,location,comments,signature,instructor,prior_instructor,prior_lessons,prior_hours,prior_km";
   const goodRows = [
-    "2026-01-01,09:00,10:00,100,120,1;2,3,4,QA Street,first,on_paper,Tony",
-    "2026-01-02,,,,,5,,,,,unsigned,Tony",
-    "2026-01-03,10:00,10:30,130,145,,1,,,,on_paper,Tony",
+    "2026-01-01,09:00,10:00,100,120,1;2,3,4,QA Street,first,on_paper,Tony,,,,",
+    "2026-01-02,,,,,5,,,,,unsigned,Tony,,,,",
+    "2026-01-03,10:00,10:30,130,145,,1,,,,on_paper,Tony,,,,",
   ];
   const badFile = `${dir}/bad.csv`, goodFile = `${dir}/good.csv`;
-  writeFileSync(badFile, [HEAD, goodRows[0], "2026-13-45,09:00,10:00,120,130,,,,,,on_paper,Tony", goodRows[2]].join("\n") + "\n");
+  writeFileSync(badFile, [HEAD, goodRows[0], "2026-13-45,09:00,10:00,120,130,,,,,,on_paper,Tony,,,,", goodRows[2]].join("\n") + "\n");
   writeFileSync(goodFile, [HEAD, ...goodRows].join("\n") + "\n");
 
   const s = await session("tony");
@@ -598,6 +598,62 @@ const draw = async (page, index) => {
   await dl.saveAs(paperPdf);
   check("paper: PDF export with paper + App lessons succeeds", readFileSync(paperPdf).subarray(0, 5).toString() === "%PDF-", dl.suggestedFilename());
   check("paper: no page errors", s.errors.length === 0, s.errors.join("|"));
+  await s.ctx.close();
+}
+
+// ═══ 8. Prior-instructor records (spec §12): preview, History card without Edit, gates ═
+{
+  const { tmpdir } = await import("node:os");
+  const { mkdtempSync } = await import("node:fs");
+  const dir = mkdtempSync(`${tmpdir()}/qa-prior-`);
+  const HEAD = "date,start_time,finish_time,start_odometer,finish_odometer,taught,assessed_achieved,assessed_not_achieved,location,comments,signature,instructor,prior_instructor,prior_lessons,prior_hours,prior_km";
+  const all = [...Array.from({ length: 22 }, (_, i) => String(i + 1)), "review-1-17", "review-1-22"].join(";");
+  const file = `${dir}/prior.csv`;
+  writeFileSync(file, [
+    HEAD,
+    `2025-12-01,,,,,,${all},,,,,,QA ADI 358,11,20,150`,
+    "2026-01-01,09:00,10:00,100,120,,,,QA Street,,on_paper,Tony,,,,",
+    "2026-01-02,10:00,10:30,120,135,,,,,,on_paper,Tony,,,,",
+  ].join("\n") + "\n");
+
+  const s = await session("tony");
+  await ready(s.page);
+  await s.page.setViewportSize({ width: 375, height: 812 });
+  await s.page.click('button:has-text("+ New")');
+  await s.page.fill('label:has-text("Student name") input', "QA Prior Transfer Learner");
+  await s.page.click('button:has-text("Save learner")');
+  await s.page.waitForSelector("[data-testid=paper-import-open]");
+  await s.page.click("[data-testid=paper-import-open]");
+  await s.page.setInputFiles('input[type="file"]', file);
+  await s.page.waitForSelector("[data-testid=paper-import-preview]");
+  const priorPv = await s.page.textContent("[data-testid=paper-import-prior]").catch(() => "");
+  check("prior: preview lists the prior instructor and its totals", priorPv === "Prior instructor: QA ADI 358 · 11 lessons · 20 h · 150 km", priorPv);
+  check("prior: preview shows 2 lessons, hours/km incl. prior (21h 30m, 185 km)", (await s.page.textContent("[data-testid=paper-import-lessons]")) === "2" && (await s.page.textContent("[data-testid=paper-import-hours]")).startsWith("21h 30m") && (await s.page.textContent("[data-testid=paper-import-km]")) === "185 km", await s.page.textContent("[data-testid=paper-import-preview]"));
+  check("prior: no horizontal scroll at 375px (preview)", await noHScroll(s.page));
+  await shot(s.page, "08-prior-preview");
+  await s.page.click("[data-testid=paper-import-confirm]");
+  await s.page.waitForSelector("[data-testid=prior-record]");
+  const cards = await s.page.$$eval("[data-testid=prior-record]", (els) => els.map((e) => ({ text: e.textContent, edit: !!e.querySelector("button, .h-edit") })));
+  check("prior: History shows the prior card with its line", cards.length === 1 && cards[0].text === "Prior instructor: QA ADI 358 · 11 lessons · 20 h · 150 km · achieved 1-22, Review 1-17, Review 1-22", JSON.stringify(cards));
+  check("prior: the prior card has no Edit button", cards.length === 1 && !cards[0].edit);
+  const histRows = await s.page.$$eval("[data-testid=history-row]", (rows) => rows.map((r) => r.querySelector(".h-no")?.textContent));
+  check("prior: History lesson rows are #2, #1 only (no negative numbers)", JSON.stringify(histRows) === JSON.stringify(["#2", "#1"]), JSON.stringify(histRows));
+  check("prior: Edit buttons only on the 2 lessons", (await s.page.$$(".history .h-edit")).length === 2);
+  check("prior: next lesson is #3 and totals include prior (185 km)", (await s.page.textContent("[data-testid=lesson-no]")) === "Lesson #3" && (await s.page.textContent("[data-testid=total-km]")) === "185 km", await s.page.textContent("[data-testid=total-km]"));
+  check("prior: Import button gone", (await s.page.$("[data-testid=paper-import-open]")) === null);
+  check("prior: no horizontal scroll at 375px (history)", await noHScroll(s.page));
+  await shot(s.page, "08-prior-history");
+  await s.page.click("text=Start Lesson");
+  await s.page.click("text=End Lesson");
+  const fd = s.page.locator(".chip-row.special button", { hasText: "23 Final Drive" }).first();
+  check("prior: 23 Final Drive is not locked (prior achieved 1-22 + both reviews)", !(await fd.isDisabled()) && (await fd.getAttribute("data-locked")) === null);
+  const learnerId = await s.page.$eval('select[aria-label="Select learner"]', (el) => el.value);
+  const data = await (await fetch(`${B}/api/learners/${learnerId}`)).json();
+  const priorRow = data.lessons.find((l) => l.recordSource === "prior_instructor");
+  const patch = await fetch(`${B}/api/learners/${learnerId}/lessons/${priorRow.id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ lessonDate: "2025-12-02", signatureStatus: "on_paper", taughtIds: [], assessedIds: [], achievedResults: {} }) });
+  const patchBody = await patch.json().catch(() => ({}));
+  check("prior: server rejects editing the prior record (400)", patch.status === 400 && patchBody.error === "Prior-instructor records cannot be edited.", `${patch.status} ${patchBody.error}`);
+  check("prior: no page errors", s.errors.length === 0, s.errors.join("|"));
   await s.ctx.close();
 }
 
