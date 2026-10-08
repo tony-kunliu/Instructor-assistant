@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { openTestD1 } from "../lib/db.ts";
-import { createLearner, createLesson, findInstructorByEmail, listActiveInstructors, listInstructors, listLessons, updateLesson, ValidationError } from "../lib/repo.ts";
+import { createLearner, createLesson, findInstructorByEmail, getLesson, listActiveInstructors, listInstructors, listLessons, updateLesson, ValidationError } from "../lib/repo.ts";
 
 const SIG_A = "data:image/png;base64,iVBORw0KGgoAAAA1";
 const SIG_B = "data:image/png;base64,iVBORw0KGgoAAAA2";
@@ -130,7 +130,7 @@ test("createLesson rejects an actingInstructorId that doesn't exist", async () =
   );
 });
 
-test("G: Anna editing a history lesson originally created under a different instructor does not change the original instructor_id, only records updated_by_instructor_id = Anna", async () => {
+test("G: Anna cannot edit a history lesson recorded by Tony (Code of Practice 9.2, superseding the earlier any-instructor-may-edit rule); Tony editing it keeps instructor_id and records updated_by_instructor_id = Tony", async () => {
   const db = openTestD1(":memory:");
   const tony = await findInstructorByEmail(db, TONY_EMAIL);
   const anna = await findInstructorByEmail(db, ANNA_EMAIL);
@@ -150,7 +150,7 @@ test("G: Anna editing a history lesson originally created under a different inst
   assert.equal(created.instructorId, tony?.id);
   assert.equal(created.updatedByInstructorId, null, "never edited yet");
 
-  const result = await updateLesson(db, learner.id, created.id, {
+  await assert.rejects(() => updateLesson(db, learner.id, created.id, {
     lessonDate: "2026-09-01",
     startTime: "09:00",
     finishTime: "10:00",
@@ -161,10 +161,25 @@ test("G: Anna editing a history lesson originally created under a different inst
     adiSignature: SIG_B,
     learnerSignature: SIG_B,
     actingInstructorId: anna?.id,
+  }), /recorded by Tony; only they can change it/);
+
+  assert.equal((await getLesson(db, learner.id, created.id)).updatedByInstructorId, null, "rejected edit changed nothing");
+
+  const result = await updateLesson(db, learner.id, created.id, {
+    lessonDate: "2026-09-01",
+    startTime: "09:00",
+    finishTime: "10:00",
+    startOdometer: "0",
+    finishOdometer: "20",
+    taughtIds: ["1"],
+    location: "Belconnen",
+    adiSignature: SIG_B,
+    learnerSignature: SIG_B,
+    actingInstructorId: tony?.id,
   });
 
   assert.equal(result.lesson.instructorId, tony?.id, "the original creating instructor must never be silently rewritten by someone else's edit");
-  assert.equal(result.lesson.updatedByInstructorId, anna?.id);
+  assert.equal(result.lesson.updatedByInstructorId, tony?.id);
 });
 
 test("H: history (listLessons) surfaces the editor's display name (\"Last edited by <name>\") alongside updatedAt", async () => {

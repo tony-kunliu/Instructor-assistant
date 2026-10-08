@@ -126,6 +126,20 @@ function drawSingleLine(page: PDFPage, font: PDFFont, measurer: Measurer, text: 
   page.drawText(clipped, { x: box.x0 + 2, y, size: fontSize, font });
 }
 
+/** Lesson number cell text; a lesson edited after it was first saved is marked "(amended)" (Code of Practice 9.2: corrections must be visible). */
+export function isAmended(lesson: Pick<Lesson, "revisionCount" | "editedBeforeRevisionHistory">): boolean {
+  return lesson.revisionCount > 0 || lesson.editedBeforeRevisionHistory;
+}
+
+export function lessonNoLabel(lesson: Pick<Lesson, "lessonNo" | "revisionCount" | "editedBeforeRevisionHistory">): string {
+  return isAmended(lesson) ? `#${lesson.lessonNo} (amended)` : `#${lesson.lessonNo}`;
+}
+
+/** Amended labels are longer, so they use a smaller size to stay on one line in the narrow date/lesson-no cell. */
+export function lessonNoFontSize(lesson: Pick<Lesson, "revisionCount" | "editedBeforeRevisionHistory">): number {
+  return isAmended(lesson) ? 5.5 : 7;
+}
+
 export type OverflowNote = { lessonNo: number; field: string; text: string; /** Replaces the "Lesson #n — field:" heading (prior-instructor lines). */ heading?: string };
 
 /** Draws wrapped text top-aligned in a cell; on overflow, the last visible line becomes a pointer to the appendix (nothing is cut off — the full text goes on the appendix page). */
@@ -271,7 +285,7 @@ async function drawLessonRow(doc: PDFDocument, page: PDFPage, font: PDFFont, mea
 
   // Date and lesson no.
   drawSingleLine(page, font, measurer, lesson.lessonDate, { ...sub.half1, x0: col.dateLessonNo.x0, x1: col.dateLessonNo.x1 }, 7);
-  drawSingleLine(page, font, measurer, `#${lesson.lessonNo}`, { ...sub.half2, x0: col.dateLessonNo.x0, x1: col.dateLessonNo.x1 }, 7);
+  drawSingleLine(page, font, measurer, lessonNoLabel(lesson), { ...sub.half2, x0: col.dateLessonNo.x0, x1: col.dateLessonNo.x1 }, lessonNoFontSize(lesson));
 
   // Time & total hrs — "Total" is THIS lesson's own total, matching the paper form; running totals go in the page footer.
   const totals = lessonTotalsText(lesson);

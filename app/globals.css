@@ -222,6 +222,13 @@ html, body {
 .h-nums { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
 .h-odo { color: var(--muted); font-size: 13px; }
 .h-edit { margin-left: auto; padding: 2px 0; }
+.h-readonly { margin-left: auto; color: var(--muted); font-size: 12px; font-weight: 400; }
+.h-revisions { margin: 4px 0 0; }
+.revisions { margin-top: 6px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; font-size: 13px; overflow-wrap: anywhere; }
+.revisions ol, .revisions ul { list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 8px; }
+.history .revisions li { border: 0; padding: 0; background: none; }
+.revisions del { color: var(--muted); text-decoration: line-through; }
+.rev-reason { margin: 2px 0; font-style: italic; }
 .h-edited { color: var(--muted); font-size: 12px; font-style: italic; }
 .h-editing { padding: 12px 0; }
 .h-editing h3 { margin: 0 0 10px; font-size: 16px; }
