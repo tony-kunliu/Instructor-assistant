@@ -19,8 +19,8 @@ actgds-instructor-assistant-v1.md` for the contract.
 
 **Current gate status:**
 
-- **Status:** NON-PRODUCTION COORDINATED QA PASS (no outstanding
-  blockers); NOT LIVE IN PRODUCTION
+- **Status:** LIVE IN PRODUCTION (Release B, 2026-10-07; first real event
+  verified); paper-import mid-sequence first events ACKed by ACTGDS 2026-10-08
 - **Canonical contract hash:**
   `c43d28164bb1c5c0e316e2d2f1cee77ad627508ef7dca4d58516adab8852b7e6`
 - **Next:** Production rollout — requires Tony's separate, explicit
@@ -31,7 +31,11 @@ migration levels, webhook/secret/enablement status).
 
 ## P1 — Student Account
 
-**Status:** NOT STARTED.
+**Status:** IN PROGRESS on the ACTGDS side (2026-10-08). Tony gave the go-ahead
+to continue P1. The work lives in `tony-kunliu/actgds.com` ("My Driving"):
+Phase 1 (identity linking, secure resolver, read-only `GET /api/account/my-driving`)
+is done and released; Phase 2 (the student-facing page) is design-ready. Instructor
+Assistant needs no change for P1: no contract change, no new event fields.
 
 Students can view their own lesson history, hours, km, and CBT&A progress
 on the ACTGDS website, fed by the P0 integration data ACTGDS has received
