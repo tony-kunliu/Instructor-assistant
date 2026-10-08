@@ -752,13 +752,6 @@ export default function DriverApp() {
 
           <section className="card history">
             <h2>History</h2>
-            {history.prior.length ? (
-              <ul className="h-prior-list">
-                {history.prior.map((record) => (
-                  <li key={record.id} className="h-prior" data-testid="prior-record">{priorRecordLine(record)}</li>
-                ))}
-              </ul>
-            ) : null}
             {!history.lessons.length ? <p className="empty">No lessons yet.</p> : (
               <ol>
                 {history.lessons.map((lesson) =>
@@ -854,6 +847,14 @@ export default function DriverApp() {
                 )}
               </ol>
             )}
+            {/* Newest first: prior-instructor records come before lesson #1, so they sit below it. */}
+            {history.prior.length ? (
+              <ul className="h-prior-list">
+                {[...history.prior].reverse().map((record) => (
+                  <li key={record.id} className="h-prior" data-testid="prior-record">{priorRecordLine(record)}</li>
+                ))}
+              </ul>
+            ) : null}
           </section>
         </>
       ) : null}

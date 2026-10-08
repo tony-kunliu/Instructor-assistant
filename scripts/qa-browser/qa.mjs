@@ -639,6 +639,12 @@ const draw = async (page, index) => {
   check("prior: the prior card has no Edit button", cards.length === 1 && !cards[0].edit);
   const histRows = await s.page.$$eval("[data-testid=history-row]", (rows) => rows.map((r) => r.querySelector(".h-no")?.textContent));
   check("prior: History lesson rows are #2, #1 only (no negative numbers)", JSON.stringify(histRows) === JSON.stringify(["#2", "#1"]), JSON.stringify(histRows));
+  const below = await s.page.evaluate(() => {
+    const rows = [...document.querySelectorAll("[data-testid=history-row]")];
+    const card = document.querySelector("[data-testid=prior-record]");
+    return !!card && rows.length > 0 && card.getBoundingClientRect().top >= rows[rows.length - 1].getBoundingClientRect().bottom;
+  });
+  check("prior: the prior card sits at the bottom of History, below lesson #1 (newest first)", below);
   check("prior: Edit buttons only on the 2 lessons", (await s.page.$$(".history .h-edit")).length === 2);
   check("prior: next lesson is #3 and totals include prior (185 km)", (await s.page.textContent("[data-testid=lesson-no]")) === "Lesson #3" && (await s.page.textContent("[data-testid=total-km]")) === "185 km", await s.page.textContent("[data-testid=total-km]"));
   check("prior: Import button gone", (await s.page.$("[data-testid=paper-import-open]")) === null);

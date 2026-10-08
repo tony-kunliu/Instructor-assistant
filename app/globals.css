@@ -238,7 +238,7 @@ html, body {
 .save-errors + .btn.save { margin-top: 12px; }
 .field-flash { outline: 3px solid var(--gold); outline-offset: 3px; border-radius: 10px; transition: outline-color .4s; }
 
-.h-prior-list { list-style: none; margin: 0 0 10px; padding: 0; display: grid; gap: 6px; }
+.h-prior-list { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 6px; }
 .history li.h-prior { border: 1px solid var(--line); border-radius: 8px; background: #efece6; padding: 8px 10px; font-size: 13px; overflow-wrap: break-word; }
 .h-paper { background: #efece6; color: var(--ink); border-radius: 8px; padding: 1px 8px; font-size: 12px; font-weight: 700; }
 .paper-hint { margin: -6px 0 10px; }
