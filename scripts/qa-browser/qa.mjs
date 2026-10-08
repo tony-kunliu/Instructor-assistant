@@ -629,6 +629,8 @@ const draw = async (page, index) => {
   await s.page.waitForSelector("[data-testid=paper-import-preview]");
   const priorPv = await s.page.textContent("[data-testid=paper-import-prior]").catch(() => "");
   check("prior: preview lists the prior instructor and its totals", priorPv === "Prior instructor: QA ADI 358 · 11 lessons · 20.0 h · 150 km", priorPv);
+  const priorNote = await s.page.textContent("[data-testid=paper-import-prior-note]").catch(() => "");
+  check("prior: preview Hours/Km note says what came from previous instructors", priorNote === "Hours / Km incl. 20.0 h / 150 km from previous instructors", priorNote);
   check("prior: preview shows 2 lessons, hours/km incl. prior (21h 30m, 185 km)", (await s.page.textContent("[data-testid=paper-import-lessons]")) === "2" && (await s.page.textContent("[data-testid=paper-import-hours]")).startsWith("21h 30m") && (await s.page.textContent("[data-testid=paper-import-km]")) === "185 km", await s.page.textContent("[data-testid=paper-import-preview]"));
   check("prior: no horizontal scroll at 375px (preview)", await noHScroll(s.page));
   await shot(s.page, "08-prior-preview");

@@ -266,3 +266,11 @@ test("priorSummaryLine (import preview): label, lessons, hours, km when known 鈥
   assert.equal(priorSummaryLine({ label: "QA ADI 358", lessonCount: 11, minutes: 1200, km: 150 }), "Prior instructor: QA ADI 358 路 11 lessons 路 20.0 h 路 150 km");
   assert.equal(priorSummaryLine({ label: "QA A", lessonCount: 1, minutes: 390, km: null }), "Prior instructor: QA A 路 1 lesson 路 6.5 h");
 });
+
+import { priorPreviewNote } from "../lib/prior-record.ts";
+
+test("priorPreviewNote: import preview Hours/Km note when the plan has prior rows (null otherwise)", () => {
+  assert.equal(priorPreviewNote([]), null);
+  assert.equal(priorPreviewNote([{ label: "QA A", lessonCount: 4, minutes: 390, km: null }, { label: "QA B", lessonCount: 11, minutes: 1200, km: 150 }]), "incl. 26.5 h / 150 km from previous instructors");
+  assert.equal(priorPreviewNote([{ label: "QA A", lessonCount: 1, minutes: 1200, km: null }]), "incl. 20.0 h / 0 km from previous instructors");
+});

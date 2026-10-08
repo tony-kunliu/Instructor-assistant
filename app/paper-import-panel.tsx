@@ -3,7 +3,7 @@
 import { useRef, useState } from "react";
 import { formatMinutes } from "@/lib/calc.ts";
 import type { PaperImportPreview } from "@/lib/paper-import.ts";
-import { priorSummaryLine } from "@/lib/prior-record.ts";
+import { priorPreviewNote, priorSummaryLine } from "@/lib/prior-record.ts";
 
 type RowError = { row: number; message: string };
 type ImportResponse = { mode: "preview" | "commit"; preview: PaperImportPreview; lessonCount?: number };
@@ -125,6 +125,7 @@ export default function PaperImportPanel({ learnerId, onImported }: { learnerId:
             <div><dt>Km</dt><dd data-testid="paper-import-km">{preview.totalKm} km</dd></div>
             <div><dt>Achieved</dt><dd data-testid="paper-import-achieved">{preview.progress.achievedCount}</dd></div>
           </dl>
+          {priorPreviewNote(preview.priorRecords) ? <p className="meta" data-testid="paper-import-prior-note">Hours / Km {priorPreviewNote(preview.priorRecords)}</p> : null}
           {preview.priorRecords.length ? (
             <ul className="paper-import-prior" data-testid="paper-import-prior">
               {preview.priorRecords.map((record, i) => <li key={i}>{priorSummaryLine(record)}</li>)}

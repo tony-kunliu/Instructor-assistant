@@ -69,3 +69,11 @@ export function priorTotals(lessons: readonly Pick<Lesson, "recordSource" | "dur
     km: prior.reduce((sum, lesson) => sum + (lesson.distanceKm ?? 0), 0),
   };
 }
+
+/** Import preview: the part of the Hours / Km totals that comes from prior-instructor records, or null when there are none. */
+export function priorPreviewNote(records: readonly { label: string; lessonCount: number; minutes: number; km: number | null }[]): string | null {
+  if (!records.length) return null;
+  const minutes = records.reduce((sum, record) => sum + record.minutes, 0);
+  const km = records.reduce((sum, record) => sum + (record.km ?? 0), 0);
+  return `incl. ${decimalHours(minutes)} h / ${km} km from previous instructors`;
+}
