@@ -161,19 +161,21 @@ test("buildCbtaChecklistPdf with a mixed paper/app list succeeds, keeps the page
 
 // ── Task 8: prior-instructor records on the PDF (spec §12) ──────────────
 
-import { compactIdText, priorRecordLine, priorTotals } from "../lib/prior-record.ts";
+import { compactIdText, priorRecordLine, priorTotals, type PriorRecord } from "../lib/prior-record.ts";
 import { PRINT_MARGIN, PRIOR_LINES_MAX, planPriorLines, priorBand } from "../lib/pdf-export.ts";
 import { FIRST_PAGE_TABLE_BOTTOM, PAGE_HEIGHT, PAGE_WIDTH } from "../lib/pdf-layout.ts";
 
 const ACHIEVED_ALL = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, Review 1-17, Review 1-22";
-function priorLesson(n: number, overrides: Partial<Lesson> = {}): Lesson {
-  return lesson(n, {
+function priorLesson(n: number, overrides: Partial<PriorRecord> = {}): PriorRecord {
+  const row = lesson(n, {
     recordSource: "prior_instructor", signatureStatus: "on_paper", adiSignature: null, learnerSignature: null,
     startTime: null, finishTime: null, startOdometer: null, finishOdometer: null, taught: null, location: null, comments: null,
     durationMinutes: 1200, distanceKm: 150, cumulativeMinutes: 1200, cumulativeKm: 150,
     competenciesAssessed: ACHIEVED_ALL, achieved: ACHIEVED_ALL, priorInstructorLabel: "QA ADI 358", priorLessonCount: 11,
     ...overrides,
   });
+  assert.ok(isPriorRecord(row));
+  return row;
 }
 
 test("compactIdText collapses runs of 3+ consecutive competency numbers and keeps reviews", () => {

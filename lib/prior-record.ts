@@ -4,8 +4,15 @@
 import { decimalHours } from "./calc.ts";
 import type { Lesson } from "./types.ts";
 
+/**
+ * Fields a prior-instructor record always has: toLesson (lib/repo.ts) refuses a
+ * 'prior_instructor' row without its label, lesson count or duration.
+ */
+export type PriorRecordFields = { recordSource: "prior_instructor"; priorInstructorLabel: string; priorLessonCount: number; durationMinutes: number };
+export type PriorRecord = Lesson & PriorRecordFields;
+
 /** The one test for "is this a prior-instructor record" (spec §12), used by the PDF, the UI and the repo. */
-export function isPriorRecord(lesson: Pick<Lesson, "recordSource">): boolean {
+export function isPriorRecord<T extends Pick<Lesson, "recordSource">>(lesson: T): lesson is T & PriorRecordFields {
   return lesson.recordSource === "prior_instructor";
 }
 
@@ -37,7 +44,7 @@ export function compactIdText(text: string | null): string | null {
   return out.join(", ");
 }
 
-type PriorFields = Pick<Lesson, "priorInstructorLabel" | "priorLessonCount" | "durationMinutes" | "distanceKm" | "achieved">;
+type PriorFields = Pick<PriorRecord, "priorInstructorLabel" | "priorLessonCount" | "durationMinutes" | "distanceKm" | "achieved">;
 
 /** "Prior instructor: ADI 358 · 11 lessons · 20.0 h · 150 km" — the totals part, also used by the import preview. */
 export function priorSummaryLine(record: { label: string; lessonCount: number; minutes: number; km: number | null }): string {
@@ -52,13 +59,13 @@ export function priorSummaryLine(record: { label: string; lessonCount: number; m
 
 /** "Prior instructor: ADI 358 · 11 lessons · 20.0 h · 150 km · achieved 1-22, Review 1-17, Review 1-22" (km and achieved only when present). */
 export function priorRecordLine(lesson: PriorFields): string {
-  const summary = priorSummaryLine({ label: lesson.priorInstructorLabel ?? "", lessonCount: lesson.priorLessonCount ?? 0, minutes: lesson.durationMinutes ?? 0, km: lesson.distanceKm });
+  const summary = priorSummaryLine({ label: lesson.priorInstructorLabel, lessonCount: lesson.priorLessonCount, minutes: lesson.durationMinutes, km: lesson.distanceKm });
   const achieved = compactIdText(lesson.achieved);
   return achieved ? `${summary} · achieved ${achieved}` : summary;
 }
 
 /** Splits a learner's rows for display: prior-instructor records (oldest first) and lessons #1..N (order kept). */
-export function splitPriorRecords<T extends Pick<Lesson, "recordSource" | "lessonNo">>(rows: readonly T[]): { prior: T[]; lessons: T[] } {
+export function splitPriorRecords<T extends Pick<Lesson, "recordSource" | "lessonNo">>(rows: readonly T[]): { prior: (T & PriorRecordFields)[]; lessons: T[] } {
   return {
     prior: rows.filter(isPriorRecord).sort((a, b) => a.lessonNo - b.lessonNo),
     lessons: rows.filter((row) => !isPriorRecord(row)),
@@ -70,7 +77,7 @@ export function priorTotals(lessons: readonly Pick<Lesson, "recordSource" | "dur
   const prior = lessons.filter(isPriorRecord);
   if (!prior.length) return null;
   return {
-    minutes: prior.reduce((sum, lesson) => sum + (lesson.durationMinutes ?? 0), 0),
+    minutes: prior.reduce((sum, lesson) => sum + lesson.durationMinutes, 0),
     km: prior.reduce((sum, lesson) => sum + (lesson.distanceKm ?? 0), 0),
   };
 }

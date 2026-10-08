@@ -99,7 +99,7 @@ export function toLesson(row: Row): Lesson {
     finishTime: nullableString(row.finish_time),
     startOdometer: nullableNumber(row.start_odometer),
     finishOdometer: nullableNumber(row.finish_odometer),
-    durationMinutes: nullableNumber(row.duration_minutes),
+    durationMinutes: isPrior ? strictPresent(row.duration_minutes, "duration_minutes", Number) : nullableNumber(row.duration_minutes),
     distanceKm: nullableNumber(row.distance_km),
     cumulativeMinutes: Number(row.cumulative_minutes),
     cumulativeKm: Number(row.cumulative_km),

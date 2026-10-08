@@ -26,6 +26,7 @@ test("toLesson reads prior-instructor rows and their label / lesson count", () =
 test("toLesson is strict for prior rows: a prior_instructor row without label or lesson count throws naming the column", () => {
   assert.throws(() => toLesson({ ...BASE_ROW, prior_instructor_label: null }), /prior_instructor_label/);
   assert.throws(() => toLesson({ ...BASE_ROW, prior_lesson_count: null }), /prior_lesson_count/);
+  assert.throws(() => toLesson({ ...BASE_ROW, duration_minutes: null }), /duration_minutes/);
   const { prior_lesson_count: _c, ...missing } = BASE_ROW;
   assert.throws(() => toLesson(missing), /prior_lesson_count/);
 });
