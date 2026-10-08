@@ -184,14 +184,21 @@ test("compactIdText collapses runs of 3+ consecutive competency numbers and keep
 });
 
 test("priorRecordLine: 'Prior instructor: <label> · <n> lessons · <h> h[ · <km> km] · achieved <ids>'", () => {
-  assert.equal(priorRecordLine(priorLesson(-1)), "Prior instructor: QA ADI 358 · 11 lessons · 20 h · 150 km · achieved 1-22, Review 1-17, Review 1-22");
+  assert.equal(priorRecordLine(priorLesson(-1)), "Prior instructor: QA ADI 358 · 11 lessons · 20.0 h · 150 km · achieved 1-22, Review 1-17, Review 1-22");
   assert.equal(priorRecordLine(priorLesson(-1, { priorLessonCount: 1, durationMinutes: 390, distanceKm: null, achieved: "3" })), "Prior instructor: QA ADI 358 · 1 lesson · 6.5 h · achieved 3");
-  assert.equal(priorRecordLine(priorLesson(-1, { achieved: null })), "Prior instructor: QA ADI 358 · 11 lessons · 20 h · 150 km");
+  assert.equal(priorRecordLine(priorLesson(-1, { achieved: null })), "Prior instructor: QA ADI 358 · 11 lessons · 20.0 h · 150 km");
 });
 
 test("priorTotals sums prior-instructor rows only (null when there are none)", () => {
   assert.equal(priorTotals([lesson(1), lesson(2)]), null);
   assert.deepEqual(priorTotals([priorLesson(-2, { durationMinutes: 390, distanceKm: null }), priorLesson(-1), lesson(1)]), { minutes: 1590, km: 150 });
+});
+
+test("one hours format: the prior line uses the same decimal hours as the PDF footer and table", () => {
+  const p = priorLesson(-1, { durationMinutes: 1200 });
+  const footer = cumulativeFooterText(lesson(1, { cumulativeMinutes: 1260, cumulativeKm: 160 }), priorTotals([p]));
+  assert.ok(footer.includes("prior instructors 20.0 h"), footer);
+  assert.ok(priorRecordLine(p).includes("· 20.0 h ·"), priorRecordLine(p));
 });
 
 test("cumulative footer notes the prior hours included when any prior record exists", () => {
@@ -256,6 +263,6 @@ test("splitPriorRecords: History rows are lessons ≥ 1 (order kept); prior reco
 });
 
 test("priorSummaryLine (import preview): label, lessons, hours, km when known — no achieved list", () => {
-  assert.equal(priorSummaryLine({ label: "QA ADI 358", lessonCount: 11, minutes: 1200, km: 150 }), "Prior instructor: QA ADI 358 · 11 lessons · 20 h · 150 km");
+  assert.equal(priorSummaryLine({ label: "QA ADI 358", lessonCount: 11, minutes: 1200, km: 150 }), "Prior instructor: QA ADI 358 · 11 lessons · 20.0 h · 150 km");
   assert.equal(priorSummaryLine({ label: "QA A", lessonCount: 1, minutes: 390, km: null }), "Prior instructor: QA A · 1 lesson · 6.5 h");
 });

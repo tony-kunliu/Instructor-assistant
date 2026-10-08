@@ -628,14 +628,14 @@ const draw = async (page, index) => {
   await s.page.setInputFiles('input[type="file"]', file);
   await s.page.waitForSelector("[data-testid=paper-import-preview]");
   const priorPv = await s.page.textContent("[data-testid=paper-import-prior]").catch(() => "");
-  check("prior: preview lists the prior instructor and its totals", priorPv === "Prior instructor: QA ADI 358 · 11 lessons · 20 h · 150 km", priorPv);
+  check("prior: preview lists the prior instructor and its totals", priorPv === "Prior instructor: QA ADI 358 · 11 lessons · 20.0 h · 150 km", priorPv);
   check("prior: preview shows 2 lessons, hours/km incl. prior (21h 30m, 185 km)", (await s.page.textContent("[data-testid=paper-import-lessons]")) === "2" && (await s.page.textContent("[data-testid=paper-import-hours]")).startsWith("21h 30m") && (await s.page.textContent("[data-testid=paper-import-km]")) === "185 km", await s.page.textContent("[data-testid=paper-import-preview]"));
   check("prior: no horizontal scroll at 375px (preview)", await noHScroll(s.page));
   await shot(s.page, "08-prior-preview");
   await s.page.click("[data-testid=paper-import-confirm]");
   await s.page.waitForSelector("[data-testid=prior-record]");
   const cards = await s.page.$$eval("[data-testid=prior-record]", (els) => els.map((e) => ({ text: e.textContent, edit: !!e.querySelector("button, .h-edit") })));
-  check("prior: History shows the prior card with its line", cards.length === 1 && cards[0].text === "Prior instructor: QA ADI 358 · 11 lessons · 20 h · 150 km · achieved 1-22, Review 1-17, Review 1-22", JSON.stringify(cards));
+  check("prior: History shows the prior card with its line", cards.length === 1 && cards[0].text === "Prior instructor: QA ADI 358 · 11 lessons · 20.0 h · 150 km · achieved 1-22, Review 1-17, Review 1-22", JSON.stringify(cards));
   check("prior: the prior card has no Edit button", cards.length === 1 && !cards[0].edit);
   const histRows = await s.page.$$eval("[data-testid=history-row]", (rows) => rows.map((r) => r.querySelector(".h-no")?.textContent));
   check("prior: History lesson rows are #2, #1 only (no negative numbers)", JSON.stringify(histRows) === JSON.stringify(["#2", "#1"]), JSON.stringify(histRows));

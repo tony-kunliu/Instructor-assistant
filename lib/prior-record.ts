@@ -4,11 +4,6 @@
 import { decimalHours } from "./calc.ts";
 import type { Lesson } from "./types.ts";
 
-/** 1200 → "20", 390 → "6.5" (decimal hours, one place, no trailing ".0"). */
-export function shortHours(minutes: number): string {
-  return decimalHours(minutes).replace(/\.0$/, "");
-}
-
 /**
  * Collapses runs of 3+ consecutive competency numbers in a stored achieved
  * list ("1, 2, 3, 4, Review 1-17" → "1-4, Review 1-17"). Non-numeric entries
@@ -39,18 +34,18 @@ export function compactIdText(text: string | null): string | null {
 
 type PriorFields = Pick<Lesson, "priorInstructorLabel" | "priorLessonCount" | "durationMinutes" | "distanceKm" | "achieved">;
 
-/** "Prior instructor: ADI 358 · 11 lessons · 20 h · 150 km" — the totals part, also used by the import preview. */
+/** "Prior instructor: ADI 358 · 11 lessons · 20.0 h · 150 km" — the totals part, also used by the import preview. */
 export function priorSummaryLine(record: { label: string; lessonCount: number; minutes: number; km: number | null }): string {
   const parts = [
     `Prior instructor: ${record.label}`,
     `${record.lessonCount} ${record.lessonCount === 1 ? "lesson" : "lessons"}`,
-    `${shortHours(record.minutes)} h`,
+    `${decimalHours(record.minutes)} h`,
   ];
   if (record.km !== null) parts.push(`${record.km} km`);
   return parts.join(" · ");
 }
 
-/** "Prior instructor: ADI 358 · 11 lessons · 20 h · 150 km · achieved 1-22, Review 1-17, Review 1-22" (km and achieved only when present). */
+/** "Prior instructor: ADI 358 · 11 lessons · 20.0 h · 150 km · achieved 1-22, Review 1-17, Review 1-22" (km and achieved only when present). */
 export function priorRecordLine(lesson: PriorFields): string {
   const summary = priorSummaryLine({ label: lesson.priorInstructorLabel ?? "", lessonCount: lesson.priorLessonCount ?? 0, minutes: lesson.durationMinutes ?? 0, km: lesson.distanceKm });
   const achieved = compactIdText(lesson.achieved);
