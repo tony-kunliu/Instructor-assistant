@@ -283,6 +283,10 @@ test("prior row field validation: date, prior_lessons, prior_hours, prior_km, id
   for (const v of ["-1", "1.5", "x"]) assert.deepEqual(msgs({ prior_km: v }), ["prior_km must be a whole number of km, or blank."], v);
   assert.deepEqual(msgs({ assessed_achieved: "1;99" }), ["Unknown competency id in assessed_achieved: 99"]);
   assert.deepEqual(msgs({ assessed_achieved: "final-drive-23" }), ["23 Final Drive cannot be imported as a prior-instructor achievement."]);
+  // A label over 80 characters is a row error (with its spreadsheet row number), never silently cut.
+  assert.deepEqual(errors(csv(prior({ prior_instructor: "QA " + "x".repeat(78) }))), [{ row: 2, message: "prior_instructor must be at most 80 characters." }]);
+  const at80 = planPaperImport(csv(prior({ prior_instructor: "QA " + "x".repeat(77) })), INSTRUCTORS);
+  assert.equal(at80.ok && at80.priorRecords[0].label, "QA " + "x".repeat(77));
   // prior_km blank and 0 are fine; hours keep one decimal.
   const plan = planPaperImport(csv(prior({ prior_km: "0", prior_hours: "12.5" })), INSTRUCTORS);
   assert.equal(plan.ok && plan.priorRecords[0].km, 0);

@@ -205,6 +205,7 @@ export function planPaperImport(csvText: string, instructors: readonly Pick<Inst
     if (isPriorRow(cells)) {
       if (sawLessonRow) fieldErrors.push("Prior-instructor rows must come before lesson rows.");
       if (PRIOR_ROW_FORBIDDEN_COLUMNS.some((column) => get(column) !== "")) fieldErrors.push("Prior-instructor rows only use date, assessed_achieved and the prior_* columns.");
+      if (get("prior_instructor").length > PRIOR_LABEL_MAX) fieldErrors.push(`prior_instructor must be at most ${PRIOR_LABEL_MAX} characters.`);
       const lessonCountRaw = get("prior_lessons");
       const lessonCount = /^\d+$/.test(lessonCountRaw) ? Number(lessonCountRaw) : 0;
       if (!(lessonCount > 0 && Number.isSafeInteger(lessonCount))) fieldErrors.push("prior_lessons must be a positive whole number.");
@@ -227,7 +228,7 @@ export function planPaperImport(csvText: string, instructors: readonly Pick<Inst
       priorRecords.push({
         lessonNo: priorRecords.length - priorRowCount, // -k .. -1, oldest first
         date,
-        label: get("prior_instructor").slice(0, PRIOR_LABEL_MAX),
+        label: get("prior_instructor"),
         lessonCount, minutes, km,
         cumulativeMinutes: totalMinutes, cumulativeKm: totalKm,
         achievedIds,
