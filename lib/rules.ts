@@ -265,3 +265,179 @@ export function learnerLicenceReminder(learner: { licenceStage: string; licenceE
   if (days <= 30) return { id, tone: "amber", text: `Learner licence expires ${expiry} (${days} ${days === 1 ? "day" : "days"}).` };
   return { id, tone: "plain", text: `Learner licence current: expires ${expiry}.` };
 }
+
+// ───────────────────────── R2: Competency 23 eligibility ─────────────────────────
+
+/** The learner fields R2 needs (all optional data; `Learner` from lib/types.ts satisfies this). */
+export type EligibilityLearner = {
+  dob: string | null;
+  licenceExpiry: string | null;
+  learnerLicenceIssuedOn: string | null;
+  learnerLicenceFirstIssuedOn: string | null;
+  hptPassedOn: string | null;
+  loggedHours: number | null;
+  loggedHoursOn: string | null;
+};
+
+const isoOf = (y: number, m: number, d: number) => `${String(y).padStart(4, "0")}-${pad(m)}-${pad(d)}`;
+
+/**
+ * D12: calendar months, clamped FORWARD. A day that does not exist in the target month rolls to the 1st of the
+ * next month (31 Aug + 6 months = 1 Mar; 29 Feb + 12 months = 1 Mar). Negative `months` go back with the same
+ * rule. Returns null for an invalid date.
+ */
+export function addMonthsClamped(date: string, months: number): string | null {
+  const parsed = parseIsoDate(date);
+  if (!parsed) return null;
+  const total = parsed.y * 12 + (parsed.m - 1) + months;
+  const y = Math.floor(total / 12);
+  const m = (total % 12 + 12) % 12 + 1;
+  const daysInMonth = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  return parsed.d > daysInMonth ? (m === 12 ? isoOf(y + 1, 1, 1) : isoOf(y, m + 1, 1)) : isoOf(y, m, parsed.d);
+}
+
+export function addDaysIso(date: string, days: number): string | null {
+  const parsed = parseIsoDate(date);
+  if (!parsed) return null;
+  const next = new Date(Date.UTC(parsed.y, parsed.m - 1, parsed.d) + days * DAY_MS);
+  return isoOf(next.getUTCFullYear(), next.getUTCMonth() + 1, next.getUTCDate());
+}
+
+/** D21: an ACT learner licence expires 5 years after issue, so the issue date is estimated as expiry minus 5 years (29 Feb -> 1 Mar). */
+export function estimateIssueFromExpiry(licenceExpiry: string): string | null {
+  return addMonthsClamped(licenceExpiry, -60);
+}
+
+/** D15: the instrument's definition, "new" = issued or renewed on or after 1 January 2020. */
+export const NEW_LICENCE_FROM = "2020-01-01";
+/** D21: how far the estimated issue date is moved either way to test whether the result is stable. */
+export const ESTIMATE_BORDERLINE_DAYS = 14;
+export const ESTIMATE_LABEL = "estimated from the licence expiry";
+
+type Condition = { key: string; met: boolean | "unknown"; text: string };
+type Evaluation = { missing: string[]; conditions: Condition[]; unclear: boolean; kind: string };
+
+/** One reading of R2 for a concrete issue date. Pure; `onDate` is the day the Competency 23 drive would happen (D13). */
+function evaluateEligibility(learner: EligibilityLearner, issue: string, onDate: string): Evaluation {
+  const missing: string[] = [];
+  const conditions: Condition[] = [];
+  const dob = learner.dob && parseIsoDate(learner.dob) ? learner.dob : null;
+  if (!dob) missing.push("date of birth");
+  const isOld = issue < NEW_LICENCE_FROM;
+  const dueText = (label: string, metOn: string | null) => (metOn ? `${label} on ${formatDate(metOn)}` : label);
+
+  if (isOld) {
+    // Old licence: age at least 16 years 350 days (17th birthday minus 15 days) and held at least 5½ months (D12, Q5).
+    const heldFrom = learner.learnerLicenceFirstIssuedOn && parseIsoDate(learner.learnerLicenceFirstIssuedOn) ? learner.learnerLicenceFirstIssuedOn : issue;
+    const heldOn = addDaysIso(addMonthsClamped(heldFrom, 5) ?? heldFrom, 16);
+    if (heldOn) conditions.push({ key: "held", met: onDate >= heldOn, text: dueText("licence held 5½ months", heldOn) });
+    if (dob) {
+      const ageOn = addDaysIso(addMonthsClamped(dob, 17 * 12) ?? dob, -15);
+      if (ageOn) conditions.push({ key: "age", met: onDate >= ageOn, text: dueText("age 16 years 350 days", ageOn) });
+    }
+    return { missing, conditions, unclear: false, kind: "old licence" };
+  }
+
+  // New licence: HPT and logged hours are needed whatever the band.
+  if (!learner.hptPassedOn || !parseIsoDate(learner.hptPassedOn)) missing.push("HPT pass date");
+  if (learner.loggedHours === null) missing.push("logged hours");
+  else if (!learner.loggedHoursOn || !parseIsoDate(learner.loggedHoursOn)) missing.push("logged hours as-of date");
+  if (missing.length) return { missing, conditions, unclear: false, kind: "new licence" };
+
+  const under25At = (issuedOn: string) => {
+    const twentyFifth = dob ? addMonthsClamped(dob, 25 * 12) : null;
+    return twentyFifth ? issuedOn < twentyFifth : true;
+  };
+  const first = learner.learnerLicenceFirstIssuedOn && parseIsoDate(learner.learnerLicenceFirstIssuedOn) ? learner.learnerLicenceFirstIssuedOn : null;
+  if (!dob) return { missing, conditions, unclear: false, kind: "new licence" };
+  if (first && first !== issue && under25At(first) !== under25At(issue)) {
+    return { missing, conditions, unclear: true, kind: "new licence" };
+  }
+  const under25 = under25At(issue);
+  const needHours = under25 ? 100 : 50;
+  const needMonths = under25 ? 12 : 6;
+  const hours = learner.loggedHours as number;
+  const hoursOn = learner.loggedHoursOn as string;
+  if (hoursOn > onDate && hours < needHours) {
+    // Recorded after the checked date and already short: the count on that earlier date was no higher, so definitely unmet.
+    conditions.push({ key: "hours", met: false, text: `${hours} of ${needHours} logged hours (as of ${formatDate(hoursOn)}, after this date)` });
+  } else if (hoursOn > onDate) {
+    conditions.push({ key: "hours", met: "unknown", text: `logged hours were recorded on ${formatDate(hoursOn)}, after this date, so ${needHours} hours cannot be checked for it` });
+  } else {
+    conditions.push({ key: "hours", met: hours >= needHours, text: `${hours} of ${needHours} logged hours (as of ${formatDate(hoursOn)})` });
+  }
+  const heldOn = addMonthsClamped(issue, needMonths);
+  if (heldOn) conditions.push({ key: "held", met: onDate >= heldOn, text: dueText(`licence held ${needMonths} months`, heldOn) });
+  const hpt = learner.hptPassedOn as string;
+  conditions.push({ key: "hpt", met: hpt <= onDate, text: `HPT passed on ${formatDate(hpt)}, after this date` });
+  if (under25) {
+    const ageOn = addMonthsClamped(dob, 17 * 12);
+    if (ageOn) conditions.push({ key: "age", met: onDate >= ageOn, text: dueText("age 17", ageOn) });
+  }
+  return { missing, conditions, unclear: false, kind: under25 ? "new licence, under 25 at issue" : "new licence, 25 or over at issue" };
+}
+
+const signatureOf = (evaluation: Evaluation) => JSON.stringify([evaluation.kind, evaluation.unclear, evaluation.conditions.map((c) => [c.key, c.met])]);
+
+const listOf = (items: string[]) => (items.length < 2 ? items.join("") : `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`);
+
+/**
+ * R2 (NI2020-703 Competency 23; CoP 9.2 k-l): Competency 23 eligibility per the entered data, on `onDate` (D13: today in
+ * the Start Lesson panel, the draft lesson date in the form). The licence type (old/new) comes from the issue date (D15);
+ * with no typed issue date it is estimated from the licence expiry (D21), always labelled, and a result that changes when
+ * the estimate moves 14 days either way is "Borderline", never a pass. Missing data is a neutral "add X" (never a pass).
+ */
+export function finalDriveEligibilityReminder(learner: EligibilityLearner, onDate: string): Reminder {
+  const id = "r2";
+  if (!parseIsoDate(onDate)) return { id, tone: "grey", text: "Add the lesson date to check Competency 23 eligibility." };
+  // An expired learner licence (expiry before the checking date; the expiry day itself is still current, D14) is never a pass.
+  if (learner.licenceExpiry && parseIsoDate(learner.licenceExpiry) && learner.licenceExpiry < onDate) {
+    return { id, tone: "grey", text: `Learner licence expired ${formatDate(learner.licenceExpiry)}: update the licence details to check Competency 23 eligibility.` };
+  }
+  const typedIssue = learner.learnerLicenceIssuedOn && parseIsoDate(learner.learnerLicenceIssuedOn) ? learner.learnerLicenceIssuedOn : null;
+  const estimate = !typedIssue && learner.licenceExpiry ? estimateIssueFromExpiry(learner.licenceExpiry) : null;
+  const issue = typedIssue ?? estimate;
+  const estimatedNote = estimate ? ` (licence issue date ${ESTIMATE_LABEL})` : "";
+  const addNote = (missing: string[]): Reminder => ({ id, tone: "grey", text: `Add ${listOf(missing)} to check Competency 23 eligibility.${estimatedNote}` });
+  const firstIssued = learner.learnerLicenceFirstIssuedOn && parseIsoDate(learner.learnerLicenceFirstIssuedOn) ? learner.learnerLicenceFirstIssuedOn : null;
+  if (issue && firstIssued && firstIssued > issue) {
+    return {
+      id,
+      tone: "grey",
+      text: estimate
+        ? "Licence dates look inconsistent (estimated issue date is before the first issue date): check the licence card."
+        : "Licence dates look inconsistent (the issue date is before the first issue date): check the licence card.",
+    };
+  }
+
+  if (!issue) {
+    const missing = ["licence issue date"];
+    if (!learner.dob) missing.push("date of birth");
+    if (!learner.hptPassedOn) missing.push("HPT pass date");
+    if (learner.loggedHours === null) missing.push("logged hours");
+    return addNote(missing);
+  }
+
+  const readings = estimate
+    ? [addDaysIso(issue, -ESTIMATE_BORDERLINE_DAYS), issue, addDaysIso(issue, ESTIMATE_BORDERLINE_DAYS)].map((date) => evaluateEligibility(learner, date as string, onDate))
+    : [evaluateEligibility(learner, issue, onDate)];
+  const missing = [...new Set(readings.flatMap((reading) => reading.missing))];
+  if (missing.length) return addNote(missing);
+
+  const main = readings[estimate ? 1 : 0];
+  const estimateText = `licence issue date ${ESTIMATE_LABEL} (${formatDate(issue)})`;
+  if (estimate && new Set(readings.map(signatureOf)).size > 1) {
+    // A condition that is unmet under every reading stays visible: borderline must not hide a definite "not yet".
+    const definite = main.conditions.filter((c) => c.met === false && readings.every((reading) => reading.conditions.some((o) => o.key === c.key && o.met === false)));
+    const also = definite.length ? ` Also not yet: ${definite.map((c) => c.text).join("; ")}.` : "";
+    return { id, tone: "amber", text: `Borderline, check the licence card: the ${estimateText} could be a few days out, which changes the Competency 23 result.${also}` };
+  }
+  if (main.unclear) return { id, tone: "grey", text: `Age band unclear for a renewed licence: check the instrument (the first and current issue dates are in different age bands).${estimatedNote}` };
+
+  const unmet = main.conditions.filter((condition) => condition.met === false);
+  const unknown = main.conditions.filter((condition) => condition.met === "unknown");
+  const suffix = estimate ? ` (${estimateText})` : "";
+  if (unmet.length) return { id, tone: "amber", text: `Competency 23 not yet: ${unmet.map((c) => c.text).join("; ")}.${suffix}` };
+  if (unknown.length) return { id, tone: "grey", text: `Cannot check Competency 23 eligibility: ${unknown.map((c) => c.text).join("; ")}.${suffix}` };
+  return { id, tone: "plain", text: `Competency 23 eligibility met per entered data (${main.kind}${estimate ? `; ${estimateText}` : ""}).` };
+}

@@ -266,3 +266,8 @@ html, body {
 .reminder.booking { background: transparent; padding: 2px 0; }
 .reminder.booking a { font-weight: 600; color: var(--ink); }
 .reminder.booking small { display: block; color: var(--muted); font-size: 13px; margin-top: 2px; }
+
+.rules-group { margin: 2px 0 4px; min-width: 0; }
+.rules-group summary { font-size: 14px; font-weight: 600; color: var(--muted); padding: 8px 0; cursor: pointer; }
+.rules-group .hint-note { margin: 0 0 8px; font-size: 13px; color: var(--muted); }
+.rules-group .field small { font-size: 12px; color: var(--muted); }

@@ -96,6 +96,7 @@ test("snapshot holds the PREVIOUS values of all editable fields; revision_no inc
   assert.deepEqual(JSON.parse(rows[0].snapshot_json), {
     fullName: "QA Original Name", address: "1 Test St", phone: "0400 000 001", dob: "2008-05-06", licenceNumber: "QA123",
     licenceExpiry: "2027-01-02", eligibility: "Eligible", transmission: "manual", schoolWork: "QA College", licenceStage: "learner",
+    learnerLicenceIssuedOn: null, learnerLicenceFirstIssuedOn: null, hptPassedOn: null, loggedHours: null, loggedHoursOn: null,
   });
   assert.equal(JSON.parse(rows[1].snapshot_json).fullName, "QA Second");
   assert.equal(JSON.parse(rows[1].snapshot_json).phone, "0400 111 111");

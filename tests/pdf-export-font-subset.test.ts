@@ -20,7 +20,7 @@ const fullFont = readFileSync(new URL("../public/fonts/NotoSansSC-Regular.otf", 
 const learner: Learner = {
   id: "learner-1", instructorId: "instructor-1", instructorName: "Test Instructor", instructorAdiNumber: "ADI-9", fullName: "Test Learner",
   address: "1 Test St", phone: "0400 000 000", dob: "2008-01-01", licenceNumber: "L1", licenceExpiry: "2030-01-01", eligibility: "Eligible",
-  transmission: "manual", schoolWork: null, licenceStage: "learner", archivedAt: null,
+  transmission: "manual", schoolWork: null, licenceStage: "learner", learnerLicenceIssuedOn: null, learnerLicenceFirstIssuedOn: null, hptPassedOn: null, loggedHours: null, loggedHoursOn: null, archivedAt: null,
 };
 
 function lesson(n: number, overrides: Partial<Lesson> = {}): Lesson {
