@@ -41,9 +41,9 @@ test("edit sets, changes and clears the fields (\"\" -> null); a snapshot holds 
     licenceStage: "learner", learnerLicenceIssuedOn: null, learnerLicenceFirstIssuedOn: null, hptPassedOn: null, loggedHours: null, loggedHoursOn: null,
   });
   assert.deepEqual(JSON.parse(rows[1].snapshot_json), { ...JSON.parse(rows[0].snapshot_json), ...FULL });
-  // A snapshot written before 0009 simply lacks the keys; readers treat that as null.
-  const old = JSON.parse('{"fullName":"Old"}') as Record<string, unknown>;
-  assert.equal(old.loggedHours ?? null, null);
+  // A learner whose columns are NULL (as every row is right after 0009) gets a real snapshot with explicit nulls for the new keys.
+  const snapshot = JSON.parse(rows[0].snapshot_json) as Record<string, unknown>;
+  for (const key of ["learnerLicenceIssuedOn", "learnerLicenceFirstIssuedOn", "hptPassedOn", "loggedHours", "loggedHoursOn"]) assert.ok(key in snapshot && snapshot[key] === null, key);
 });
 
 test("an unchanged value is a no-op (no revision), including hours given as a numeric string", async () => {
@@ -91,4 +91,14 @@ test("create validates the new fields the same way (strict, even though old fiel
   await rejects(make({ loggedHours: 10 }), /need an as-of date/, "create hours without date");
   await rejects(make({ dob: "2010-01-01", learnerLicenceIssuedOn: "2009-12-31" }), /before the date of birth/, "create issue before DOB");
   assert.equal((await make({ dob: "garbage" })).dob, null, "old lenient dob behaviour unchanged");
+});
+
+test("M4: re-sending unchanged stored values never blocks an unrelated edit (only changed keys trigger the cross-field rules)", async () => {
+  const { db, tony, learner } = await setup();
+  await updateLearner(db, learner.id, { hptPassedOn: "2026-10-09", learnerLicenceIssuedOn: "2025-11-15", actingInstructorId: tony.id }, NOW);
+  // Clock earlier than the stored dates (as if the stored data were now "in the future"): the form re-sends them unchanged.
+  const early = new Date("2026-10-01T02:00:00Z");
+  const result = await updateLearner(db, learner.id, { phone: "0400 111 222", hptPassedOn: "2026-10-09", learnerLicenceIssuedOn: "2025-11-15", actingInstructorId: tony.id }, early);
+  assert.deepEqual(result.changedFields, ["phone"]);
+  await rejects(updateLearner(db, learner.id, { hptPassedOn: "2026-10-05", actingInstructorId: tony.id }, early), /future/, "a changed value is still checked");
 });

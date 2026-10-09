@@ -434,9 +434,10 @@ export async function updateLearner(db: D1Database, id: string, input: LearnerEd
   const fields = parseLearnerFields(input, true);
   const keys = LEARNER_EDIT_KEYS.filter((key) => fields[key] !== undefined);
   if (!keys.length) throw new ValidationError("Nothing to change: send at least one learner field.");
-  checkRulesFields({ ...existing, ...fields } as Learner, new Set(keys), localNow(now).date);
   const changedFields = keys.filter((key) => fields[key] !== existing[key]);
   if (!changedFields.length) return { learner: existing, changed: false, changedFields: [] };
+  // Only CHANGED keys trigger the cross-field rules: the form re-sends every field, and unchanged older data must never block an unrelated edit.
+  checkRulesFields({ ...existing, ...fields } as Learner, new Set(changedFields), localNow(now).date);
 
   await db.batch([
     learnerRevisionInsertStatement(db, id, actingInstructorId),
