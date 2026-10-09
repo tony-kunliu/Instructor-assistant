@@ -27,7 +27,7 @@ closed PRs; see `TASK.md` for what is in progress.
 
 ## CI
 
-- Latest `staging` GitHub Actions run: **SUCCESS**. Tests: 404 on staging (2 poppler
+- Latest `staging` GitHub Actions run: **SUCCESS**. Tests: 452 on the T1 branch, 404 on staging (2 poppler
   tests skip without `pdftotext`; they hard-fail only with `REQUIRE_POPPLER=1`,
   set in `ci.yml` only).
 - `npm test` needs `--experimental-strip-types` (already in `package.json`).
