@@ -67,8 +67,13 @@ export type PdfExportResult = {
   hadOverflow: boolean;
   /** Characters in the exported text that no available font has (they are drawn as empty boxes). Empty in normal use. */
   unsupportedChars: string[];
-  /** "used": the full font was loaded and embedded; "failed": a rare CJK character needed it but it could not be loaded; "not-needed": the compact font sufficed. */
-  fullFontStatus: "not-needed" | "used" | "failed";
+  /**
+   * "not-needed": the compact font covered every character (or only non-CJK characters were missing, so the full font was never fetched);
+   * "used": the full font was loaded and it reduced the missing characters, so it is embedded;
+   * "unhelpful": the full font loaded but has none of the missing characters, so the compact font is kept;
+   * "failed": a CJK character needed the full font and it could not be loaded (offline, 404, login page).
+   */
+  fullFontStatus: "not-needed" | "used" | "unhelpful" | "failed";
 };
 
 export type PdfExportInput = {
@@ -487,6 +492,8 @@ export async function buildCbtaChecklistPdf(input: PdfExportInput): Promise<PdfE
         fkFont = fullFont;
         unsupported = stillMissing;
         fullFontStatus = "used";
+      } else {
+        fullFontStatus = "unhelpful";
       }
     } catch {
       // Full font unavailable (offline, 404, login page): keep the compact font. The caller sees

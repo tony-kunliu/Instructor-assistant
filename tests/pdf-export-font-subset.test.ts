@@ -149,6 +149,13 @@ test("a non-CJK symbol the full font has (☂) does NOT download the full font: 
   assert.deepEqual(result.unsupportedChars, [SYMBOL]);
 });
 
+test("a full font that loads but cannot draw the missing character is reported as 'unhelpful' (not 'used'), and the compact font is kept", async () => {
+  // The compact font as the 'full' font: loads fine but also lacks the rare character.
+  const result = await buildCbtaChecklistPdf({ ...compact({ fallbackFontBytes: async () => subsetFont }), learner, lessons: [lesson(1, { comments: `x ${RARE_HANZI}` })] });
+  assert.equal(result.fullFontStatus, "unhelpful");
+  assert.deepEqual(result.unsupportedChars, [RARE_HANZI]);
+});
+
 test("the full font is not loaded when the compact font covers everything (Chinese names, common hanzi)", async () => {
   let loads = 0;
   const result = await buildCbtaChecklistPdf({ ...compact({ fallbackFontBytes: async () => { loads++; return fullFont; } }), ...SHAPES.chinese });
