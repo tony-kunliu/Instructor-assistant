@@ -11,12 +11,12 @@ here is DESUBROUTINIZED (no subrs), which is what makes fontkit's per-document s
 lib/pdf-export.ts refuses to subset any font that still has subroutines, and repairs the CFF header.
 
 Coverage: Basic Latin, Latin-1, Latin Extended-A, general punctuation, CJK symbols/punctuation,
-fullwidth forms, a few arrows/shapes/ticks, and every hanzi of GB2312 (6763 simplified characters).
+fullwidth forms, a few arrows/shapes/ticks, and 10,035 hanzi (simplified common + GB2312 + common traditional).
 Licence: the subset is a Modified Version of Noto Sans SC (Adobe/Google, SIL Open Font License 1.1),
 so it is distributed under the same OFL; the name table (copyright, licence, licence URL) is kept with
 --name-IDs='*'. See public/fonts/NotoSansSC-LICENSE.txt.
 
-Characters outside this set make lib/pdf-export.ts fall back to the full font
+Characters outside this set are reported and, if they are CJK ideographs, make lib/pdf-export.ts fetch the full font
 (public/fonts/NotoSansSC-Regular.otf, embedded whole as before), so nothing is ever dropped.
 """
 import subprocess, sys, tempfile, pathlib
@@ -25,20 +25,20 @@ root = pathlib.Path(__file__).resolve().parent.parent
 src = root / "public/fonts/NotoSansSC-Regular.otf"
 out = root / "public/fonts/NotoSansSC-Subset.otf"
 
-hanzi = set()
-for hi in range(0xB0, 0xF8):
-    for lo in range(0xA1, 0xFF):
-        try:
-            hanzi.add(bytes([hi, lo]).decode("gb2312"))
-        except UnicodeDecodeError:
-            pass
-assert len(hanzi) == 6763, len(hanzi)
+# The hanzi list is committed (scripts/pdf-font-hanzi.txt, 10,035 characters, one line of text).
+# Its provenance, so it can be regenerated: (1) the 8,105 most frequent simplified hanzi in the
+# jieba dictionary's word frequencies (dict.txt, jieba 0.42.1), restricted to glyphs the font has,
+# standing in for 通用规范汉字表 (the official table was not available offline when this was built);
+# (2) every GB2312 hanzi (6,763); (3) the 1,600 most common traditional variants of (1), via OpenCC
+# s2t, so traditional name characters such as 陳 and 鄭 are covered. Total 10,035 characters.
+hanzi = open(root / "scripts/pdf-font-hanzi.txt", encoding="utf-8").read().strip()
+assert len(hanzi) >= 10000, len(hanzi)
 
 unicodes = ("U+0020-007E,U+00A0-00FF,U+0100-017F,U+2010-2027,U+2030-203A,U+20AC,U+2190-2193,"
             "U+2212,U+2022,U+3000-303F,U+FF00-FFEF,U+2460-2473,U+25A0-25CF,U+2713,U+2714")
 
 with tempfile.NamedTemporaryFile("w", suffix=".txt", encoding="utf-8", delete=False) as f:
-    f.write("".join(sorted(hanzi)))
+    f.write(hanzi)
     text_file = f.name
 
 subprocess.run([
