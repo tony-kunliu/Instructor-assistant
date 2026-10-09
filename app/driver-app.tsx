@@ -13,7 +13,7 @@ import {
   parseTime,
   type Totals,
 } from "@/lib/calc.ts";
-import type { AssessmentResult, LearnerProgress, MilestoneInvalidation } from "@/lib/competency.ts";
+import { FINAL_DRIVE_23, REVIEW_1_17, REVIEW_1_22, type AssessmentResult, type LearnerProgress, type MilestoneInvalidation } from "@/lib/competency.ts";
 import { accessLogoutUrl } from "@/lib/access-logout.ts";
 import { filterLearners } from "@/lib/learner-filter.ts";
 import { currentIssues, issueFromServerMessage, validateLessonDraftFields, type IssueState } from "@/lib/lesson-form-errors.ts";
@@ -27,6 +27,8 @@ import ExportPdfButton from "./export-pdf-button.tsx";
 import SaveErrorSummary from "./save-error-summary.tsx";
 import PaperImportPanel from "./paper-import-panel.tsx";
 import SignaturePad from "./signature-pad.tsx";
+import { BookingLink, RulesReminders } from "./rules-reminders.tsx";
+import { finalDriveFormReminders, finalDrivePanelReminder, learnerLicenceReminder, reviewGapReminder, type Reminder } from "@/lib/rules.ts";
 
 type LessonDraft = {
   lessonDate: string;
@@ -601,6 +603,32 @@ export default function DriverApp() {
   const optionLabel = (l: Learner) => (activeView === "mine" ? l.fullName : `${l.fullName} · ${l.instructorName}`);
   const panel = detail ? learnerPanel({ archivedAt: detail.learner.archivedAt, completed: detail.progress.completed }) : "active";
 
+  // Assessment-rule reminders (display only; lib/rules.ts, spec D1/D2). `clock` ticks each minute so the lines stay current.
+  void clock;
+  const rulesNow = new Date();
+  const lessonRefs = detail?.lessons ?? [];
+  const licenceReminder: Reminder | null = detail ? learnerLicenceReminder(detail.learner, localNow(rulesNow).date) : null;
+  const panelReminders: Reminder[] = [];
+  let showBookingLink = false;
+  if (detail && phase === "ready" && panel === "active") {
+    const gap = (review: typeof REVIEW_1_17 | typeof REVIEW_1_22) => reviewGapReminder({ review, progress: detail.progress, lessons: lessonRefs, moment: { kind: "now", now: rulesNow }, where: "panel" });
+    const next = detail.progress.review1_17.status === "ready" ? gap(REVIEW_1_17) : detail.progress.review1_22.status === "ready" ? gap(REVIEW_1_22) : null;
+    if (next) panelReminders.push(next);
+    if (detail.progress.finalDrive23.status === "ready") {
+      panelReminders.push(finalDrivePanelReminder(rulesNow));
+      showBookingLink = true;
+    }
+  }
+  const formReminders: Reminder[] = [];
+  if (detail && draft && phase !== "ready") {
+    for (const review of [REVIEW_1_17, REVIEW_1_22] as const) {
+      if (!draft.assessedIds.includes(review)) continue;
+      const r = reviewGapReminder({ review, progress: detail.progress, lessons: lessonRefs, moment: { kind: "draft", date: draft.lessonDate, startTime: draft.startTime }, where: "form" });
+      if (r) formReminders.push(r);
+    }
+    if (draft.assessedIds.includes(FINAL_DRIVE_23)) formReminders.push(...finalDriveFormReminders({ date: draft.lessonDate, startTime: draft.startTime, finishTime: draft.finishTime }));
+  }
+
   return (
     <main className="app">
       <header className="topbar">
@@ -737,6 +765,7 @@ export default function DriverApp() {
                 detail.learner.licenceExpiry ? `exp ${detail.learner.licenceExpiry}` : null,
                 `ADI ${detail.learner.instructorName}`].filter(Boolean).join(" · ")}
             </p>
+            {licenceReminder ? <RulesReminders reminders={[licenceReminder]} testId="licence-reminder" /> : null}
             <p className="meta integration-id">
               Integration ID: <code>{detail.learner.id}</code>
               <button type="button" className="link" onClick={() => void copyIntegrationId(detail.learner.id)}>Copy ID</button>
@@ -779,7 +808,15 @@ export default function DriverApp() {
           {panel !== "active" ? null : (
           <section className="card lesson">
             {phase === "ready" ? (
-              <button type="button" className="btn huge go" onClick={startLesson}>Start Lesson</button>
+              <>
+                {panelReminders.length || showBookingLink ? (
+                  <div className="start-reminders" data-testid="start-reminders">
+                    <RulesReminders reminders={panelReminders} testId="panel-reminders" />
+                    {showBookingLink ? <BookingLink /> : null}
+                  </div>
+                ) : null}
+                <button type="button" className="btn huge go" onClick={startLesson}>Start Lesson</button>
+              </>
             ) : (
               <div className="timebar">
                 <div><small>Started</small><strong>{draft.startTime}</strong></div>
@@ -821,6 +858,7 @@ export default function DriverApp() {
                   onChangeAchieved={(results) => setDraft((current) => (current ? { ...current, achievedResults: results } : current))}
                 />
                 </div>
+                <RulesReminders reminders={formReminders} testId="form-reminders" />
 
                 <div className="grid">
                   <label className="field full"><span>Location</span><input value={draft.location} onChange={(e) => setField("location", e.target.value)} placeholder="Belconnen, Gungahlin…" /></label>
