@@ -193,7 +193,7 @@ test("D21 borderline: 6 months held and 5.5 months held (old licence) thresholds
 });
 
 test("D21 borderline: the 1 Jan 2020 old/new cut-off and the 25th birthday at issue", () => {
-  const edge = (expiry: string) => finalDriveEligibilityReminder(L({ dob: "2000-01-01", licenceExpiry: expiry, hptPassedOn: "2020-06-01", loggedHours: 100, loggedHoursOn: "2026-10-01" }), TODAY);
+  const edge = (expiry: string) => finalDriveEligibilityReminder(L({ dob: "2000-01-01", licenceExpiry: expiry, hptPassedOn: "2020-06-01", loggedHours: 100, loggedHoursOn: "2024-05-01" }), "2024-06-01");
   assert.match(edge("2025-01-14").text, /^Borderline/);
   assert.equal(edge("2025-01-15").tone, "plain");
   assert.match(edge("2025-01-15").text, /new licence/);
@@ -217,4 +217,15 @@ test("D21: a borderline result is never a pass, even when every reading of the e
     const r = finalDriveEligibilityReminder(newOk({ learnerLicenceIssuedOn: null, licenceExpiry: expiry, loggedHours: 500 }), TODAY);
     assert.notEqual(r.tone, "plain", expiry);
   }
+});
+
+test("I1: an expired learner licence is never a pass (grey), for estimates and typed issue dates; expiry day itself is current", () => {
+  const exp = "Learner licence expired 1 Jun 2024: update the licence details to check Competency 23 eligibility.";
+  const empty = finalDriveEligibilityReminder(newOk({ learnerLicenceIssuedOn: null, licenceExpiry: "2024-06-01" }), TODAY);
+  assert.deepEqual([empty.tone, empty.text], ["grey", exp]);
+  const typed = finalDriveEligibilityReminder(newOk({ licenceExpiry: "2024-06-01" }), TODAY);
+  assert.deepEqual([typed.tone, typed.text], ["grey", exp]);
+  assert.equal(finalDriveEligibilityReminder(newOk({ learnerLicenceIssuedOn: "2025-09-01", licenceExpiry: TODAY }), TODAY).tone, "plain", "expiry on the checking date is still current");
+  assert.equal(finalDriveEligibilityReminder(newOk({ licenceExpiry: "2026-10-10" }), TODAY).tone, "plain", "expiry tomorrow");
+  assert.equal(finalDriveEligibilityReminder(newOk({ licenceExpiry: "2026-10-08" }), TODAY).tone, "grey", "expired yesterday");
 });

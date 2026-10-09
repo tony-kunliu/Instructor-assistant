@@ -387,6 +387,10 @@ const listOf = (items: string[]) => (items.length < 2 ? items.join("") : `${item
 export function finalDriveEligibilityReminder(learner: EligibilityLearner, onDate: string): Reminder {
   const id = "r2";
   if (!parseIsoDate(onDate)) return { id, tone: "grey", text: "Add the lesson date to check Competency 23 eligibility." };
+  // An expired learner licence (expiry before the checking date; the expiry day itself is still current, D14) is never a pass.
+  if (learner.licenceExpiry && parseIsoDate(learner.licenceExpiry) && learner.licenceExpiry < onDate) {
+    return { id, tone: "grey", text: `Learner licence expired ${formatDate(learner.licenceExpiry)}: update the licence details to check Competency 23 eligibility.` };
+  }
   const typedIssue = learner.learnerLicenceIssuedOn && parseIsoDate(learner.learnerLicenceIssuedOn) ? learner.learnerLicenceIssuedOn : null;
   const estimate = !typedIssue && learner.licenceExpiry ? estimateIssueFromExpiry(learner.licenceExpiry) : null;
   const issue = typedIssue ?? estimate;
