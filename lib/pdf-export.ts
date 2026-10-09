@@ -18,6 +18,21 @@
 //    printable strip below the table, right of the cumulative footer, and
 //    every cumulative footer notes the prior hours/km it includes.
 //
+// Font embedding: the output PDF embeds only the glyphs it uses (a ~30-200 KB font program instead of
+// the 16 MB Noto Sans SC, which made every export 10+ MB). `fontBytes` is the static compact font
+// (public/fonts/NotoSansSC-Subset.otf, built by scripts/build-pdf-font-subset.py: Latin, punctuation and
+// all GB2312 hanzi, with subroutines removed). Two fontkit/pdf-lib CFF-subsetting defects are worked
+// around here, both found by rendering with poppler + MuPDF + PDFium and diffing against the whole-font
+// export (text extraction alone looked fine while glyphs were silently missing):
+//   1. fontkit's subsetter mangles local subroutines, so CJK glyphs of a font that still has subrs
+//      disappear. We therefore only subset fonts without subrs (`fontHasSubroutines`); any other font
+//      is embedded whole, exactly as before.
+//   2. fontkit writes an invalid CFF header (offSize byte), which FreeType-based renderers reject
+//      (`patchCffHeader`).
+// If a document uses a character the compact font lacks, the optional `fallbackFontBytes` loader supplies
+// the full font (embedded whole, as before), so no character is ever dropped that the full font has.
+// Characters neither font has are drawn as the font's .notdef glyph and listed in `unsupportedChars`.
+//
 // Text-width measurement uses a plain `fontkit` font object (`Measurer`)
 // that is never embedded into the output PDF, kept entirely separate from
 // the pdf-lib `PDFFont` used for actual drawing. Measuring glyphs through
@@ -46,11 +61,33 @@ import {
 } from "./pdf-layout.ts";
 import type { Learner, Lesson } from "./types.ts";
 
-export type PdfExportResult = { bytes: Uint8Array; pageCount: number; hadOverflow: boolean };
+export type FontTrigger = { char: string; codePoint: string; /** Up to 3 places the character appears, e.g. "lesson #3 comments". */ fields: string[] };
+
+export type PdfExportResult = {
+  bytes: Uint8Array;
+  pageCount: number;
+  hadOverflow: boolean;
+  /** Characters in the exported text that no available font has (they are drawn as empty boxes). Empty in normal use. */
+  unsupportedChars: string[];
+  /**
+   * "not-needed": the compact font covered every character (or only non-CJK characters were missing, so the full font was never fetched);
+   * "used": the full font was loaded and it reduced the missing characters, so it is embedded;
+   * "unhelpful": the full font loaded but has none of the missing characters, so the compact font is kept;
+   * "failed": a CJK character needed the full font and it could not be loaded (offline, 404, login page).
+   */
+  fullFontStatus: "not-needed" | "used" | "unhelpful" | "failed";
+  /** Which embedded font program the PDF uses: the compact `fontBytes`, or the full fallback font. Diagnostic only; does not affect the PDF bytes. */
+  embeddedFont: "compact" | "full";
+  /** The CJK characters missing from the compact font, i.e. why the full font was requested (empty when it was not), with where they occur. */
+  fontTriggers: FontTrigger[];
+};
 
 export type PdfExportInput = {
   templateBytes: Uint8Array | ArrayBuffer;
+  /** The compact font (public/fonts/NotoSansSC-Subset.otf); embedded as a per-document subset. Any font works, but one with subroutines is embedded whole. */
   fontBytes: Uint8Array | ArrayBuffer;
+  /** Loads the full font (public/fonts/NotoSansSC-Regular.otf); called only if the text has characters `fontBytes` lacks. */
+  fallbackFontBytes?: () => Promise<Uint8Array | ArrayBuffer>;
   learner: Learner;
   lessons: Lesson[];
 };
@@ -64,8 +101,83 @@ function toUint8Array(bytes: Uint8Array | ArrayBuffer): Uint8Array {
   return bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
 }
 
+type FkFont = ReturnType<typeof fontkit.create>;
+
+function loadFont(fontBytes: Uint8Array | ArrayBuffer): FkFont {
+  return fontkit.create(toUint8Array(fontBytes) as unknown as Buffer);
+}
+
+/** True if a CFF font still has global or local subroutines (fontkit's subsetter corrupts those glyphs; see file header). */
+export function fontHasSubroutines(font: FkFont): boolean {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- fontkit's typings don't expose the CFF table internals.
+  const cff = (font as any)["CFF "];
+  if (!cff) return false;
+  if (cff.globalSubrIndex?.length > 0) return true;
+  const privates = [cff.topDict?.Private, ...(cff.topDict?.FDArray ?? []).map((fd: { Private?: unknown }) => fd.Private)];
+  return privates.some((p) => ((p as { Subrs?: { length: number } } | undefined)?.Subrs?.length ?? 0) > 0);
+}
+
+/** fontkit writes a nonsense CFF header offSize byte; FreeType (poppler, MuPDF, PDFium) rejects the font program, so glyphs vanish. */
+export function patchCffHeader(font: unknown) {
+  const embedder = (font as { embedder?: { serializeFont?: () => Promise<Uint8Array> } }).embedder;
+  const original = embedder?.serializeFont?.bind(embedder);
+  // Fail loudly if a pdf-lib upgrade removes this hook: a silent skip would ship a PDF with missing glyphs.
+  if (!embedder || !original) throw new Error("pdf-lib internals changed: PDFFont.embedder.serializeFont is required to repair the subset CFF header");
+  embedder.serializeFont = async () => {
+    const bytes = await original();
+    if (bytes[0] === 1 && !(bytes[3] >= 1 && bytes[3] <= 4)) bytes[3] = 4;
+    return bytes;
+  };
+}
+
+/** CJK ideographs and CJK/fullwidth punctuation: the only characters worth downloading the 16 MB full font for (emoji and symbols are not in it either). */
+export function isCjkChar(ch: string): boolean {
+  const cp = ch.codePointAt(0) as number;
+  return (cp >= 0x3000 && cp <= 0x303f) || (cp >= 0x3400 && cp <= 0x4dbf) || (cp >= 0x4e00 && cp <= 0x9fff) || (cp >= 0xf900 && cp <= 0xfaff) || (cp >= 0xff00 && cp <= 0xffef) || (cp >= 0x20000 && cp <= 0x2ebef);
+}
+
+/** Distinct printable characters (code points) of `text` that `font` has no glyph for. */
+function missingChars(font: FkFont, text: string): string[] {
+  const missing = new Set<string>();
+  for (const ch of text) {
+    const cp = ch.codePointAt(0) as number;
+    if (cp < 0x20 || (cp >= 0x7f && cp < 0xa0)) continue; // control characters are never drawn
+    if (!font.hasGlyphForCodePoint(cp)) missing.add(ch);
+  }
+  return [...missing];
+}
+
+type TextPart = { field: string; text: string };
+
+/** Every user-entered string that ends up in the PDF (signatures and ids excluded), labelled by where it comes from. */
+function exportedTextParts(learner: Learner, lessons: Lesson[]): TextPart[] {
+  const parts: TextPart[] = [];
+  const collect = (row: object, label: (key: string) => string) => {
+    for (const [key, value] of Object.entries(row)) if (typeof value === "string" && key !== "adiSignature" && key !== "learnerSignature") parts.push({ field: label(key), text: value });
+  };
+  collect(learner, (key) => (key === "fullName" ? "learner name" : `learner ${key}`));
+  for (const lesson of lessons) {
+    const where = isPriorRecord(lesson) ? "prior record" : `lesson #${lesson.lessonNo}`;
+    collect(lesson, (key) => `${where} ${key}`);
+    if (isPriorRecord(lesson)) parts.push({ field: "prior record line", text: priorRecordLine(lesson) });
+  }
+  return parts;
+}
+
+/** The CJK characters in `missing`, each with up to 3 fields it occurs in. */
+function fontTriggersFor(missing: string[], parts: TextPart[]): FontTrigger[] {
+  return missing.filter(isCjkChar).map((char) => ({
+    char,
+    codePoint: `U+${(char.codePointAt(0) as number).toString(16).toUpperCase().padStart(4, "0")}`,
+    fields: [...new Set(parts.filter((part) => part.text.includes(char)).map((part) => part.field))].slice(0, 3),
+  }));
+}
+
 export function createMeasurer(fontBytes: Uint8Array | ArrayBuffer): Measurer {
-  const fkFont = fontkit.create(toUint8Array(fontBytes) as unknown as Buffer);
+  return measurerFor(loadFont(fontBytes));
+}
+
+function measurerFor(fkFont: FkFont): Measurer {
   return {
     widthOfTextAtSize(text: string, size: number): number {
       if (!text) return 0;
@@ -380,7 +492,37 @@ export async function buildCbtaChecklistPdf(input: PdfExportInput): Promise<PdfE
     rest = rest.slice(CONTINUATION_PAGE_ROWS);
   }
 
-  const measurer = createMeasurer(fontBytes);
+  // Pick the font: the compact one unless a rare CJK character needs the full font. Emoji and symbols
+  // that neither font has are reported without downloading the full font.
+  const parts = exportedTextParts(learner, input.lessons);
+  const text = parts.map((part) => part.text).join("\n");
+  let fontData = toUint8Array(fontBytes);
+  let fkFont = loadFont(fontData);
+  let unsupported = missingChars(fkFont, text);
+  let fullFontStatus: PdfExportResult["fullFontStatus"] = "not-needed";
+  const fontTriggers = fontTriggersFor(unsupported, parts);
+  if (fontTriggers.length > 0) {
+    try {
+      if (!input.fallbackFontBytes) throw new Error("no full font loader");
+      const fullData = toUint8Array(await input.fallbackFontBytes());
+      const fullFont = loadFont(fullData);
+      const stillMissing = missingChars(fullFont, text);
+      if (stillMissing.length < unsupported.length) {
+        fontData = fullData;
+        fkFont = fullFont;
+        unsupported = stillMissing;
+        fullFontStatus = "used";
+      } else {
+        fullFontStatus = "unhelpful";
+      }
+    } catch {
+      // Full font unavailable (offline, 404, login page): keep the compact font. The caller sees
+      // fullFontStatus "failed" and unsupportedChars, and must warn before anything is downloaded.
+      fullFontStatus = "failed";
+    }
+  }
+  const measurer = measurerFor(fkFont);
+  const subsetFont = !fontHasSubroutines(fkFont);
 
   const templateDoc = await PDFDocument.load(templateBytes);
   const outDoc = await PDFDocument.create();
@@ -389,7 +531,8 @@ export async function buildCbtaChecklistPdf(input: PdfExportInput): Promise<PdfE
   // under it that pdf-lib's width table (built from each codepoint's *default* glyph) doesn't cover,
   // making every digit render with a wrong (too-wide) advance — found via this feature's own visual
   // QA, confirmed with two independent PDF renderers (poppler and Chromium's PDFium).
-  const font = await outDoc.embedFont(fontBytes, { subset: false, features: { locl: false } });
+  const font = await outDoc.embedFont(fontData, { subset: subsetFont, features: { locl: false } });
+  if (subsetFont) patchCffHeader(font);
 
   // Dry-run the wide-column wrapping first (pure text measurement, no page needed) so we know how
   // many appendix pages are needed *before* drawing page 1's "Page 1 of N" field.
@@ -460,7 +603,25 @@ export async function buildCbtaChecklistPdf(input: PdfExportInput): Promise<PdfE
   }
 
   const bytes = await outDoc.save();
-  return { bytes, pageCount: outDoc.getPageCount(), hadOverflow: dryRunNotes.length > 0 };
+  return { bytes, pageCount: outDoc.getPageCount(), hadOverflow: dryRunNotes.length > 0, unsupportedChars: unsupported, fullFontStatus, embeddedFont: fullFontStatus === "used" ? "full" : "compact", fontTriggers };
+}
+
+/** What the export UI must say before handing over a PDF; null when the PDF is complete. */
+export function exportWarning(result: Pick<PdfExportResult, "unsupportedChars" | "fullFontStatus">): string | null {
+  if (result.unsupportedChars.length === 0) return null;
+  const list = result.unsupportedChars.map((c) => `"${c}"`).join(" ");
+  const why = result.fullFontStatus === "failed" ? " The full font for some Chinese characters could not be downloaded, so those characters may be missing; try again when online." : "";
+  return `The PDF cannot draw ${result.unsupportedChars.length === 1 ? "this character" : "these characters"}: ${list}. ${result.unsupportedChars.length === 1 ? "It" : "They"} will print as empty boxes.${why}`;
+}
+
+/** Short status line shown after an export: size, which font, and (when the full font was requested) which characters forced it. */
+export function exportStatusLine(result: Pick<PdfExportResult, "bytes" | "fullFontStatus" | "embeddedFont" | "fontTriggers">): string {
+  const size = result.bytes.length >= 100_000 ? `${(result.bytes.length / 1_000_000).toFixed(1)} MB` : `${Math.max(1, Math.round(result.bytes.length / 1000))} KB`;
+  if (result.embeddedFont === "compact" && result.fontTriggers.length === 0) return `PDF ready: ${size} (compact font)`;
+  const shown = result.fontTriggers.slice(0, 10).map((t) => `${t.char} ${t.codePoint}${t.fields.length ? ` in ${t.fields.join(", ")}` : ""}`);
+  const more = result.fontTriggers.length > 10 ? `, +${result.fontTriggers.length - 10} more` : "";
+  const what = result.fullFontStatus === "used" ? "full font used for" : result.fullFontStatus === "failed" ? "full font needed but could not be loaded, for" : "full font did not help for";
+  return `PDF ready: ${size} (${what}: ${shown.join("; ")}${more})`;
 }
 
 export function plannedPageCount(lessonCount: number): number {

@@ -27,10 +27,16 @@ jobs:
       - name: Project memory guard
         run: node scripts/check-project-memory.mjs
 
+      - name: Install poppler-utils (pdftotext for PDF export tests)
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq poppler-utils && pdftotext -v
+
       - name: Type check
         run: npm run typecheck
 
       - name: Run tests
+        # poppler-utils is installed above, so the poppler checks must run here (they skip elsewhere, e.g. Cloudflare builds).
+        env:
+          REQUIRE_POPPLER: "1"
         run: npm test
 
       - name: Build

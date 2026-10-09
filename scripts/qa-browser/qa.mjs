@@ -499,6 +499,9 @@ const draw = async (page, index) => {
   const pdfPath = `${OUT}/qa-export.pdf`;
   await download.saveAs(pdfPath);
   check("regression: PDF export downloads a real PDF", readFileSync(pdfPath).subarray(0, 5).toString() === "%PDF-", download.suggestedFilename());
+  await s.page.waitForSelector("[data-testid=export-status-line]", { timeout: 15000 }).catch(() => {});
+  check("pdf status line: an English export says compact font", /^PDF ready: \d+ KB \(compact font\)$/.test((await s.page.textContent("[data-testid=export-status-line]").catch(() => "")) ?? ""), await s.page.textContent("[data-testid=export-status-line]").catch(() => "none"));
+  check("pdf size: the export embeds only the glyphs it uses (was 10+ MB with the whole font)", readFileSync(pdfPath).length < 1_000_000, `${readFileSync(pdfPath).length} bytes`);
   check("no horizontal scroll (lesson + history)", await noHScroll(s.page));
   await shot(s.page, "06-regression-lesson");
   check("Tony: no page errors (regression)", s.errors.length === 0, s.errors.join("|"));
@@ -746,6 +749,77 @@ const draw = async (page, index) => {
   const second = await t.page.textContent("[data-testid=revision-item] >> nth=1");
   check("revisions: reason-only re-save says no recorded value changed (not 'signatures only')", second.includes("QA reason only") && second.includes("No recorded value changed.") && !second.includes("Signatures only"), second);
   check("revisions: Tony: no page errors", t.errors.length === 0, t.errors.join("|"));
+  await t.ctx.close();
+}
+
+// ── PDF missing characters: warn before any box-filled PDF, full-font download failure is visible (375px) ──
+{
+  const make = async (name, comments) => {
+    const created = await fetch(`${B}/api/learners`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ fullName: name, instructorId: WHO.tony[0] }) });
+    const learner = (await created.json()).learner;
+    const res = await postLesson(learner.id, { lessonDate: "2026-09-22", startTime: "09:00", finishTime: "10:00", startOdometer: "2000", finishOdometer: "2020", taughtIds: ["1"], location: "QA Glyph", comments, adiSignature: SIG, learnerSignature: SIG });
+    return { learner, status: res.status };
+  };
+  const emoji = await make("QA Glyph Emoji", "car 🚗 ok");
+  const rare = await make("QA Glyph Rare", "x 龘 y");
+  check("pdf glyph: seed learners and lessons created", emoji.status < 300 && rare.status < 300, `${emoji.status} ${rare.status}`);
+  const t = await session("tony");
+  await t.page.setViewportSize({ width: 375, height: 812 });
+  await ready(t.page);
+  let downloads = 0;
+  t.page.on("download", () => { downloads++; });
+  const exportFor = async (name) => {
+    await pick(t.page, name);
+    await t.page.waitForSelector("[data-testid=history-row]");
+    await t.page.click("text=/Export.*PDF/i");
+    if (await t.page.$(".export-adi-prompt input")) await t.page.fill(".export-adi-prompt input", "QA-ADI-1");
+  };
+  // 1. Rare CJK character: full font downloads, no warning, PDF downloads directly.
+  await exportFor("QA Glyph Rare");
+  const d1 = t.page.waitForEvent("download", { timeout: 60000 }).catch(() => null);
+  if (await t.page.$(".export-adi-prompt .btn.primary")) await t.page.click(".export-adi-prompt .btn.primary");
+  check("pdf glyph: a rare Chinese character downloads the PDF with no warning", (await d1) !== null && (await t.page.$("[data-testid=export-missing-warning]")) === null);
+  await t.page.waitForSelector("[data-testid=export-status-line]");
+  const rareLine = await t.page.textContent("[data-testid=export-status-line]");
+  check("pdf status line: names the character, code point and field that forced the full font", /full font used for: 龘 U\+9F98 in lesson #1 comments/.test(rareLine) && /\d+\.\d MB/.test(rareLine), rareLine);
+  // 2. Emoji no font has: warning names it, nothing downloads until confirmed; fits 375px.
+  const before = downloads;
+  await exportFor("QA Glyph Emoji");
+  await t.page.waitForSelector("[data-testid=export-missing-warning]", { timeout: 60000 });
+  check("pdf glyph: the warning names the missing emoji", (await t.page.textContent("[data-testid=export-missing-warning]")).includes("🚗"));
+  await new Promise((r) => setTimeout(r, 1500));
+  check("pdf glyph: nothing downloads before the user confirms", downloads === before, `${downloads - before}`);
+  const box = await t.page.locator("[data-testid=export-missing-warning]").boundingBox();
+  check("pdf glyph: warning fits the 375px width (no clipping, no horizontal scroll)", box !== null && box.x >= 0 && box.x + box.width <= 375 && (await noHScroll(t.page)), JSON.stringify(box));
+  await shot(t.page, "11-pdf-missing-glyph-375");
+  const dl = t.page.waitForEvent("download", { timeout: 60000 });
+  await t.page.click("text=Download anyway");
+  await dl;
+  check("pdf glyph: 'Download anyway' downloads after confirmation", downloads === before + 1);
+  // Learner switch: a warning open for learner A must not survive into learner B (the button is keyed by learner id).
+  const beforeSwitch = downloads;
+  await exportFor("QA Glyph Emoji");
+  await t.page.waitForSelector("[data-testid=export-missing-warning]", { timeout: 60000 });
+  await pick(t.page, "QA Glyph Rare");
+  await t.page.waitForSelector("[data-testid=history-row]");
+  check("pdf glyph: switching learner removes the open warning dialog", (await t.page.$("[data-testid=export-missing-warning]")) === null && (await t.page.$("text=Download anyway")) === null);
+  check("pdf glyph: switching learner shows the export button again", (await t.page.$("text=Export CBT&A PDF")) !== null);
+  await new Promise((r) => setTimeout(r, 1000));
+  check("pdf glyph: switching learner downloads nothing", downloads === beforeSwitch, `${downloads - beforeSwitch}`);
+  // 3. Full-font download fails (404): the rare character is not silently boxed; the warning explains why.
+  await t.page.route("**/fonts/NotoSansSC-Regular.otf", (route) => route.fulfill({ status: 404, body: "not found" }));
+  const beforeFail = downloads;
+  await exportFor("QA Glyph Rare");
+  await t.page.waitForSelector("[data-testid=export-missing-warning]", { timeout: 60000 });
+  const failText = await t.page.textContent("[data-testid=export-missing-warning]");
+  check("pdf glyph: a failed full-font download shows a clear warning naming the character", failText.includes("龘") && failText.includes("could not be downloaded"), failText);
+  await new Promise((r) => setTimeout(r, 1000));
+  check("pdf glyph: a failed full-font download does not download the boxed PDF", downloads === beforeFail);
+  await shot(t.page, "11-pdf-font-failed-375");
+  await t.page.click(".export-adi-prompt .btn.primary");
+  check("pdf glyph: Cancel returns to the export button without downloading", (await t.page.$("text=Export CBT&A PDF")) !== null && downloads === beforeFail);
+  await t.page.unroute("**/fonts/NotoSansSC-Regular.otf");
+  check("pdf glyph: Tony: no page errors", t.errors.length === 0, t.errors.join("|"));
   await t.ctx.close();
 }
 
