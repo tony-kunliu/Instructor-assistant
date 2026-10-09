@@ -172,11 +172,14 @@ Cross-repo coordination record: `tony-kunliu/actgds.com` Issue #3.
   Cloudflare's public docs; if it stops working, Sign out still logs out but
   shows Cloudflare's generic page.
 
-- PDF export: a non-CJK symbol that the subset lacks but the full font has
-  (currently `☂`, U+2602) prints as an empty box, after the user confirms the
-  warning. Fix by adding that block to the subset or by allowing the full-font
-  fallback for symbols (costs the 16 MB download). Chinese characters outside
-  the subset use the full-font fallback, so they are not affected.
+- PDF export COVERAGE GAP (open decision for Tony): the compact font has
+  Basic/Latin-1/Latin Ext-A, punctuation, and 10,035 hanzi only. Characters
+  outside it that the old full-font export drew now print as empty boxes
+  after the user confirms the warning, e.g. Vietnamese (Latin Ext Additional),
+  Greek, Cyrillic, kana, Hangul, Latin Ext-B, box drawing, dingbats, ☂.
+  Only CJK ideographs/punctuation trigger the 16 MB full-font download.
+  Options: (a) gate the fallback on the full font's real coverage, and/or
+  (b) add those blocks to the subset (about 0.5 KB per glyph; Hangul has 11,172).
 
 ## Next
 
