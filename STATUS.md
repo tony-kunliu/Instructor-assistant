@@ -1,20 +1,13 @@
 # STATUS.md
 
-_Last updated: 2026-10-10_ (Production at migration `0008`; Staging D1 at `0008`; T1 and T2 rules reminders implemented on branches, not merged; T2 needs migration `0009`)
+_Last updated: 2026-10-10_ (Production at migration `0008`; Staging D1 at `0008`; T1 rules reminders merged to staging (PR #36); T2 on a branch, not merged, needs migration `0009`)
 
 This file describes **current state only**. History lives in git log and
 closed PRs; see `TASK.md` for what is in progress.
 
 ## In progress (branch, not merged)
 
-- `feature/rules-reminders-t1` (spec `docs/superpowers/specs/2026-10-10-rules-reminders-and-learner-phase2-design.md`,
-  T1): display-only reminders for R1 (36 h before Review 1-17 / 1-22), R3
-  (Competency 23 days and hours), R5 (learner licence) and an ADI Audit
-  booking link; `lib/rules.ts`, `lib/act-public-holidays.ts` (2026-2027, from
-  the Holidays Act 1958 and NI2026-154 / NI2026-387; yearly update is a
-  BACKLOG item), `achievedLessonIds` in progress. No migration, no ACTGDS
-  contract change, 0 extra D1 statements.
-- `feature/rules-reminders-t2` (on top of T1): migration `0009` (five nullable
+- `feature/rules-reminders-t2` (on top of staging with T1): migration `0009` (five nullable
   learner columns: licence issue date, first issue date, HPT date, logged
   hours + as-of date), validation D19, revision snapshots, a collapsed
   "Competency 23 eligibility" group in the New/Edit learner forms, and the R2
@@ -31,12 +24,12 @@ closed PRs; see `TASK.md` for what is in progress.
   `git fetch` for its head. Release B source
   `d47350bcb65fa46d3135d1dbeec52882f7012886`; rollback baseline before
   Release A `8bae4e4c211a78b2e682d8b04744f102fa1a4328`.
-- **staging:** carries the same code plus docs. Its HEAD moves; do not record
+- **staging:** carries the same code plus docs, and the T1 rules reminders (R1, R3, R5, booking link; PR #36). Its HEAD moves; do not record
   an exact SHA here.
 
 ## CI
 
-- Latest `staging` GitHub Actions run: **SUCCESS**. Tests: 485 on the T2 branch (465 on T1), 404 on staging (2 poppler
+- Latest `staging` GitHub Actions run: **SUCCESS**. Tests: 491 on the T2 branch, 465 on staging (2 poppler
   tests skip without `pdftotext`; they hard-fail only with `REQUIRE_POPPLER=1`,
   set in `ci.yml` only).
 - `npm test` needs `--experimental-strip-types` (already in `package.json`).
