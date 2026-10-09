@@ -72,7 +72,7 @@ test("compact font: a PDF is a small fraction of the old 10+ MB for every typica
   assert.ok(typical.bytes.length < 100_000, `one lesson: ${typical.bytes.length} bytes`);
 });
 
-test("compact font: pdftotext output and every word's position are identical to embedding the whole font (digit advances, '#2 (amended)', Chinese, prior lines, appendix)", async () => {
+test("compact font: pdftotext output and every word's position are identical to embedding the whole font (digit advances, '#2 (amended)', Chinese, prior lines, appendix)", async (t) => {
   for (const [name, shape] of Object.entries(SHAPES)) {
     const small = await buildCbtaChecklistPdf({ ...compact(), ...shape });
     const whole = await buildCbtaChecklistPdf({ templateBytes, fontBytes: fullFont, ...shape });
@@ -81,14 +81,13 @@ test("compact font: pdftotext output and every word's position are identical to 
     for (const args of [["-layout"], ["-bbox"]]) {
       const a = pdftotext(small.bytes, args);
       const b = pdftotext(whole.bytes, args);
-      if (a === null || b === null) return; // poppler not installed
+      if (a === null || b === null) return t.skip("pdftotext (poppler-utils) is not installed: text-equivalence check skipped");
       assert.equal(a, b, `${name} ${args[0]}`);
     }
   }
   const text = pdftotext((await buildCbtaChecklistPdf({ ...compact(), ...SHAPES.chinese })).bytes, ["-layout"]);
-  if (text !== null) {
-    for (const expected of ["张伟 李娜", "堪培拉市贝尔康嫩路12号", "贝尔康嫩 Belconnen", "#2 (amended)", "2026-01-01"]) assert.ok(text.includes(expected), expected);
-  }
+  if (text === null) return t.skip('+SK+');
+  for (const expected of ["张伟 李娜", "堪培拉市贝尔康嫩路12号", "贝尔康嫩 Belconnen", "#2 (amended)", "2026-01-01"]) assert.ok(text.includes(expected), expected);
 });
 
 test("compact font: the embedded font file is a valid CFF (header offSize 1-4; fontkit's subsetter writes garbage there, which FreeType/PDFium/MuPDF reject) with no subroutines", async () => {
@@ -115,14 +114,15 @@ test("static subset covers all fixed text the export draws plus Latin-1, punctua
   for (const ch of needed) assert.ok(f.hasGlyphForCodePoint(ch.codePointAt(0)!), `U+${ch.codePointAt(0)!.toString(16)} ${ch}`);
 });
 
-test("a character outside the compact font (but in the full font) switches to the full font: output identical to the old whole-font export, loader called once", async () => {
+test("a character outside the compact font (but in the full font) switches to the full font: output identical to the old whole-font export, loader called once", async (t) => {
   let loads = 0;
   const shape = { learner, lessons: [lesson(1, { comments: "umbrella ☂ end" })] };
   const viaFallback = await buildCbtaChecklistPdf({ ...compact({ fallbackFontBytes: async () => { loads++; return fullFont; } }), ...shape });
   assert.equal(loads, 1);
   assert.deepEqual(viaFallback.unsupportedChars, []);
   const text = pdftotext(viaFallback.bytes, ["-layout"]);
-  if (text !== null) assert.ok(text.includes("umbrella ☂ end"));
+  if (text === null) return t.skip('+SK+');
+  assert.ok(text.includes("umbrella ☂ end"));
   assert.ok(viaFallback.bytes.length > 5_000_000, "whole font embedded as before");
 });
 
@@ -132,7 +132,7 @@ test("the full font is not loaded when the compact font covers everything", asyn
   assert.equal(loads, 0);
 });
 
-test("a character no font has (emoji) does not crash the export, stays small, is reported, and the rest of the text is intact", async () => {
+test("a character no font has (emoji) does not crash the export, stays small, is reported, and the rest of the text is intact", async (t) => {
   let loads = 0;
   const shape = { learner, lessons: [lesson(1, { comments: "car 🚗 ok" }), lesson(2, { comments: "Plain after" })] };
   const result = await buildCbtaChecklistPdf({ ...compact({ fallbackFontBytes: async () => { loads++; return fullFont; } }), ...shape });
@@ -140,7 +140,8 @@ test("a character no font has (emoji) does not crash the export, stays small, is
   assert.deepEqual(result.unsupportedChars, ["🚗"]);
   assert.ok(result.bytes.length < 400_000, "no point embedding the 16 MB font when it lacks the glyph too");
   const text = pdftotext(result.bytes, ["-layout"]);
-  if (text !== null) { assert.ok(text.includes("car"), "text before"); assert.ok(text.includes("ok"), "text after"); assert.ok(text.includes("Plain after")); }
+  if (text === null) return t.skip('+SK+');
+  assert.ok(text.includes("car"), "text before"); assert.ok(text.includes("ok"), "text after"); assert.ok(text.includes("Plain after"));
 });
 
 test("if the fallback font cannot be loaded, the export still completes with the compact font and reports the unsupported characters", async () => {
