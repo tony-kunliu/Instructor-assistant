@@ -603,7 +603,7 @@ export default function DriverApp() {
   const optionLabel = (l: Learner) => (activeView === "mine" ? l.fullName : `${l.fullName} · ${l.instructorName}`);
   const panel = detail ? learnerPanel({ archivedAt: detail.learner.archivedAt, completed: detail.progress.completed }) : "active";
 
-  // Assessment-rule reminders (display only; lib/rules.ts, spec D1/D2). `clock` ticks each minute so the lines stay current.
+  // Assessment-rule reminders (display only; lib/rules.ts, spec D1/D2). `clock` ticks every 15 s, so the lines stay current.
   void clock;
   const rulesNow = new Date();
   const lessonRefs = detail?.lessons ?? [];
