@@ -35,11 +35,11 @@ function lesson(n: number, overrides: Partial<Lesson> = {}): Lesson {
 
 const compact = (extra: Partial<PdfExportInput> = {}): Pick<PdfExportInput, "templateBytes" | "fontBytes" | "fallbackFontBytes"> => ({ templateBytes, fontBytes: subsetFont, fallbackFontBytes: async () => fullFont, ...extra });
 
-/** Skip message for a missing poppler. In CI (CI env set) the test fails instead: the CI workflow installs poppler-utils, so a missing binary there is a broken pipeline, not a skip. */
-const PDFTOTEXT_MISSING = "pdftotext (poppler-utils) is not installed locally, so the poppler text/position equivalence check was skipped; install poppler-utils to run it";
+/** Skip message for a missing poppler. Fails instead only when REQUIRE_POPPLER=1, which is set ONLY in .github/workflows/ci.yml (it installs poppler-utils). The generic CI variable must not be used: the Cloudflare Workers Builds builder and Production Release have CI set and no poppler. */
+const PDFTOTEXT_MISSING = "pdftotext (poppler-utils) is not installed, so the poppler text/position equivalence check was skipped; install poppler-utils to run it (set REQUIRE_POPPLER=1 to make this a failure)";
 
 function noPoppler(t: TestContext): void {
-  if (process.env.CI) assert.fail(PDFTOTEXT_MISSING);
+  if (process.env.REQUIRE_POPPLER === "1") assert.fail(PDFTOTEXT_MISSING);
   t.skip(PDFTOTEXT_MISSING);
 }
 

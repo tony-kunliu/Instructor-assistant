@@ -22,3 +22,5 @@ check: migration `0008` on Staging and Production D1 (read-only `wrangler d1 mig
 confirmations (Issue #3). Nothing blocks this task (no contract change).
 
 **Tony Manual Action Required:** NONE.
+
+**CI note:** poppler tests are opt-in hard failures (`REQUIRE_POPPLER=1`, `ci.yml` only); Cloudflare Workers Builds skip them.

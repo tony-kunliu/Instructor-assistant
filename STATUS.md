@@ -19,7 +19,7 @@ git log and closed PRs, not here — see `TASK.md` for what's in progress.
 ## CI
 
 - Latest `staging` GitHub Actions run: **SUCCESS**.
-- Tests: 398/398 PASS on `feature/pdf-font-subset` (0 skipped; poppler-utils installed in CI); qa-browser 189/189 (QA_PORT 3351).
+- Tests: 399 (2 poppler tests skip without `pdftotext`; fail only if `REQUIRE_POPPLER=1`, set only in `ci.yml`, never from `CI`: Cloudflare builds and Production Release have no poppler).
 - PDF export (branch `feature/pdf-font-subset`, not merged): embeds only the glyphs used, from a 5.8 MB static subset. Typical export 29-180 KB (was 14 MB). A rare CJK character outside the subset downloads the 16 MB full font (export ~13.9 MB). Missing symbols trigger a warning before download. See `lib/pdf-export.ts` header.
 - Build: PASS.
 - `npm test` requires Node's `--experimental-strip-types` flag (already in
