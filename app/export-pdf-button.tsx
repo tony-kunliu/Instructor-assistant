@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import type { Learner, Lesson } from "@/lib/types.ts";
 
 type Phase = "idle" | "loading" | "needs-adi-number" | "building" | "confirm-missing" | "error";
@@ -52,6 +52,13 @@ export default function ExportPdfButton({ learnerId, lessonCount }: { learnerId:
   const [adiNumberDraft, setAdiNumberDraft] = useState("");
   const [pending, setPending] = useState<{ learner: Learner; lessons: Lesson[] } | null>(null);
   const [unconfirmed, setUnconfirmed] = useState<Unconfirmed | null>(null);
+  const titleId = useId();
+  const cancelRef = useRef<HTMLButtonElement>(null);
+
+  // Move focus into the confirm dialog so keyboard and screen-reader users land on the decision, safest action first.
+  useEffect(() => {
+    if (phase === "confirm-missing") cancelRef.current?.focus();
+  }, [phase]);
 
   const buildAndDownload = async (learner: Learner, lessons: Lesson[]) => {
     setPhase("building");
@@ -156,14 +163,17 @@ export default function ExportPdfButton({ learnerId, lessonCount }: { learnerId:
           </button>
         </div>
       ) : phase === "confirm-missing" && unconfirmed ? (
-        <div className="export-adi-prompt" role="alertdialog" aria-live="assertive">
-          <p className="status error" data-testid="export-missing-warning">{unconfirmed.warning}</p>
-          <p className="hint">Download the PDF anyway, or cancel and correct the text first.</p>
-          <button type="button" className="btn primary block" onClick={downloadAnyway}>
-            Download anyway
-          </button>
-          <button type="button" className="btn ghost block" onClick={() => { setUnconfirmed(null); setPhase("idle"); }}>
+        <div className="export-adi-prompt" role="alertdialog" aria-labelledby={titleId} aria-describedby={`${titleId}-msg`}>
+          <div className="status error export-missing" data-testid="export-missing-warning">
+            <p id={titleId}><strong>Some characters cannot be printed</strong></p>
+            <p id={`${titleId}-msg`}>{unconfirmed.warning}</p>
+          </div>
+          <p className="hint">Cancel and correct the text first, or download the PDF anyway.</p>
+          <button ref={cancelRef} type="button" className="btn primary block" onClick={() => { setUnconfirmed(null); setPhase("idle"); }}>
             Cancel
+          </button>
+          <button type="button" className="btn ghost block" onClick={downloadAnyway}>
+            Download anyway
           </button>
         </div>
       ) : (

@@ -811,7 +811,7 @@ const draw = async (page, index) => {
   await new Promise((r) => setTimeout(r, 1000));
   check("pdf glyph: a failed full-font download does not download the boxed PDF", downloads === beforeFail);
   await shot(t.page, "11-pdf-font-failed-375");
-  await t.page.click(".export-adi-prompt .btn.ghost");
+  await t.page.click(".export-adi-prompt .btn.primary");
   check("pdf glyph: Cancel returns to the export button without downloading", (await t.page.$("text=Export CBT&A PDF")) !== null && downloads === beforeFail);
   await t.page.unroute("**/fonts/NotoSansSC-Regular.otf");
   check("pdf glyph: Tony: no page errors", t.errors.length === 0, t.errors.join("|"));
