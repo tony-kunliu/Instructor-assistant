@@ -10,7 +10,7 @@ import os from "node:os";
 import path from "node:path";
 import { PDFDocument, PDFName, PDFRawStream, decodePDFRawStream } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
-import { buildCbtaChecklistPdf, fontHasSubroutines, type PdfExportInput } from "../lib/pdf-export.ts";
+import { buildCbtaChecklistPdf, fontHasSubroutines, patchCffHeader, type PdfExportInput } from "../lib/pdf-export.ts";
 import type { Learner, Lesson } from "../lib/types.ts";
 
 const templateBytes = readFileSync(new URL("../public/pdf-template/adi-cbta-checklist.pdf", import.meta.url));
@@ -152,4 +152,12 @@ test("if the fallback font cannot be loaded, the export still completes with the
 test("without a fallback loader a missing glyph is reported, never a crash", async () => {
   const result = await buildCbtaChecklistPdf({ templateBytes, fontBytes: subsetFont, learner, lessons: [lesson(1, { comments: "ꙮ" })] });
   assert.deepEqual(result.unsupportedChars, ["ꙮ"]);
+});
+
+test("patchCffHeader throws when pdf-lib no longer exposes serializeFont (never a silent skip), and repairs offSize otherwise", async () => {
+  assert.throws(() => patchCffHeader({}), /serializeFont is required/);
+  const fake = { embedder: { serializeFont: async () => new Uint8Array([1, 0, 4, 0x1b, 0, 0]) } };
+  patchCffHeader(fake);
+  const repaired = await fake.embedder.serializeFont();
+  assert.deepEqual([...repaired.slice(0, 4)], [1, 0, 4, 4]);
 });

@@ -105,10 +105,11 @@ export function fontHasSubroutines(font: FkFont): boolean {
 }
 
 /** fontkit writes a nonsense CFF header offSize byte; FreeType (poppler, MuPDF, PDFium) rejects the font program, so glyphs vanish. */
-function patchCffHeader(font: PDFFont) {
-  const embedder = (font as unknown as { embedder?: { serializeFont?: () => Promise<Uint8Array> } }).embedder;
+export function patchCffHeader(font: unknown) {
+  const embedder = (font as { embedder?: { serializeFont?: () => Promise<Uint8Array> } }).embedder;
   const original = embedder?.serializeFont?.bind(embedder);
-  if (!embedder || !original) return;
+  // Fail loudly if a pdf-lib upgrade removes this hook: a silent skip would ship a PDF with missing glyphs.
+  if (!embedder || !original) throw new Error("pdf-lib internals changed: PDFFont.embedder.serializeFont is required to repair the subset CFF header");
   embedder.serializeFont = async () => {
     const bytes = await original();
     if (bytes[0] === 1 && !(bytes[3] >= 1 && bytes[3] <= 4)) bytes[3] = 4;
