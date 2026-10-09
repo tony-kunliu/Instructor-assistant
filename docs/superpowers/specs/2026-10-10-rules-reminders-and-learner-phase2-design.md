@@ -1,7 +1,6 @@
 # Assessment-rules reminders + learner data Phase 2 — design
 
-_Date: 2026-10-10 · Status: **APPROVED by Tony (2026-10-10)**, with all defaults and D21 · No code,
-no migration yet · Based on `origin/staging` 7a4f7a0._
+_Date: 2026-10-10 · Status: **APPROVED by Tony (2026-10-10)**, with all defaults and D21 · T1 implemented on branch `feature/rules-reminders-t1` (not merged), T2 not started · Based on `origin/staging` 7a4f7a0._
 
 ## 中文摘要（给 Tony）
 

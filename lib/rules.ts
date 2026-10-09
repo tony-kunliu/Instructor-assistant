@@ -62,8 +62,8 @@ function parseIsoDate(date: string): { y: number; m: number; d: number } | null 
 /**
  * The instant for a Canberra wall time (`minutes` after midnight of `date`; 1440 = 24:00).
  * Real elapsed time across daylight saving: the repeated hour in April has two readings and
- * `prefer` picks one ("earlier"/"later" instant); a time skipped in October is read with the
- * offset in force just before the change. Returns null for an invalid date.
+ * `prefer` picks one ("earlier"/"later" instant); a time skipped in October (which does not exist) is read
+ * both ways, one hour apart, and `prefer` picks one. Returns null for an invalid date.
  */
 export function canberraInstant(date: string, minutes: number, prefer: "earlier" | "later"): number | null {
   const parsed = parseIsoDate(date);
@@ -71,7 +71,9 @@ export function canberraInstant(date: string, minutes: number, prefer: "earlier"
   const wall = Date.UTC(parsed.y, parsed.m - 1, parsed.d) + minutes * 60_000;
   const offsets = new Set([offsetAt(wall - DAY_MS), offsetAt(wall + DAY_MS)]);
   const candidates = [...offsets].map((offset) => wall - offset).filter((instant) => wallOf(instant) === wall);
-  if (candidates.length === 0) return wall - offsetAt(wall - DAY_MS);
+  // A wall time skipped at the October change does not exist: read it with either offset
+  // (the two readings are an hour apart) and let `prefer` take the less favourable one.
+  if (candidates.length === 0) candidates.push(wall - offsetAt(wall - DAY_MS), wall - offsetAt(wall + DAY_MS));
   return prefer === "earlier" ? Math.min(...candidates) : Math.max(...candidates);
 }
 
@@ -211,9 +213,13 @@ export function finalDrivePanelReminder(now: Date): Reminder {
   const weekday = weekdayOf(today) ?? 0;
   const problem = dayProblem(today);
   if (problem && problem.tone === "amber") return problem;
-  const hours = `Competency 23 hours today (${WEEKDAYS[weekday]}): ${windowText(weekday)}.`;
-  if (problem) return { id: "r3", tone: "grey", text: `${hours} ${problem.text}` };
-  return { id: "r3", tone: "plain", text: hours };
+  const hours = `Competency 23 hours today (${WEEKDAYS[weekday]}): ${windowText(weekday)}`;
+  if (problem) return { id: "r3", tone: "grey", text: `${hours}. ${problem.text}` };
+  // "plain" means the rule is met per the data: only while the Canberra clock is inside today's window
+  // (07:00 up to, not including, the closing time: a drive can no longer be completed at 19:00 sharp).
+  const nowMinutes = parseTime(localNow(now).time) ?? 0;
+  if (nowMinutes < WINDOW_START || nowMinutes >= (windowEnd(weekday) ?? 0)) return { id: "r3", tone: "amber", text: `${hours}; it is currently outside the window.` };
+  return { id: "r3", tone: "plain", text: `${hours}.` };
 }
 
 /** Lesson form, 23 Final Drive ticked as Assessed: checks the draft's date, start and finish time (Q7: both inside the window). */
@@ -226,16 +232,16 @@ export function finalDriveFormReminders(draft: { date: string; startTime: string
   if (problem?.tone === "amber") return out; // Sunday or holiday: the hours are moot.
   const start = parseTime(draft.startTime);
   const finish = parseTime(draft.finishTime);
-  if (start === null || finish === null) {
-    out.push({ id: "r3", tone: "grey", text: "Add start and finish time to check the Competency 23 hours." });
-    return out;
-  }
   const end = windowEnd(weekday) ?? 0;
-  const lessonText = `${draft.startTime}–${draft.finishTime}`;
-  if (start < WINDOW_START || finish > end || finish < start) {
-    out.push({ id: "r3", tone: "amber", text: `Competency 23 must run 07:00–19:00 Mon–Thu/Sat (Fri to 21:00). This lesson: ${lessonText}.` });
-  } else {
-    out.push({ id: "r3", tone: "plain", text: `Competency 23 hours met (${WEEKDAYS[weekday]}): this lesson ${lessonText} is inside ${windowText(weekday)}.` });
+  const lessonText = `${start === null ? "…" : draft.startTime}–${finish === null ? "…" : draft.finishTime}`;
+  // Anything already known to be outside the window is amber, even with the other time still missing.
+  const outside = (start !== null && (start < WINDOW_START || start >= end)) || (finish !== null && finish > end) || (start !== null && finish !== null && finish < start);
+  if (outside) out.push({ id: "r3", tone: "amber", text: `Competency 23 must run 07:00–19:00 Mon–Thu/Sat (Fri to 21:00). This lesson: ${lessonText}.` });
+  if (start === null || finish === null) {
+    out.push({ id: "r3-add", tone: "grey", text: "Add start and finish time to check the Competency 23 hours." });
+  } else if (!outside) {
+    // With the holiday table not loaded the day is unchecked, so a fitting time is never shown as a pass (grey).
+    out.push({ id: "r3", tone: problem ? "grey" : "plain", text: `Competency 23 hours met (${WEEKDAYS[weekday]}): this lesson ${lessonText} is inside ${windowText(weekday)}.` });
   }
   return out;
 }

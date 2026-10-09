@@ -1,6 +1,6 @@
 # STATUS.md
 
-_Last updated: 2026-10-10_ (Production at migration `0008`; Staging D1 at `0008`; T1 rules reminders implemented on a branch, not merged)
+_Last updated: 2026-10-10_ (Production at migration `0008`; Staging D1 at `0008`; T1 and T2 rules reminders implemented on branches, not merged; T2 needs migration `0009`)
 
 This file describes **current state only**. History lives in git log and
 closed PRs; see `TASK.md` for what is in progress.
@@ -13,7 +13,16 @@ closed PRs; see `TASK.md` for what is in progress.
   booking link; `lib/rules.ts`, `lib/act-public-holidays.ts` (2026-2027, from
   the Holidays Act 1958 and NI2026-154 / NI2026-387; yearly update is a
   BACKLOG item), `achievedLessonIds` in progress. No migration, no ACTGDS
-  contract change, 0 extra D1 statements. T2 (migration 0009, R2) not started.
+  contract change, 0 extra D1 statements.
+- `feature/rules-reminders-t2` (on top of T1): migration `0009` (five nullable
+  learner columns: licence issue date, first issue date, HPT date, logged
+  hours + as-of date), validation D19, revision snapshots, a collapsed
+  "Competency 23 eligibility" group in the New/Edit learner forms, and the R2
+  reminder (issue date estimated from the licence expiry when empty; "Borderline,
+  check the licence card" within 14 days of a threshold). ACTGDS contract
+  unchanged. Learner edit stays 5 D1 statements (UPDATE binds up to 16).
+  **Apply 0009 to Staging D1 (Staging D1 Migrate, ref = branch, confirm =
+  staging) BEFORE merging T2 to `staging`.**
 
 ## Repository
 
@@ -27,7 +36,7 @@ closed PRs; see `TASK.md` for what is in progress.
 
 ## CI
 
-- Latest `staging` GitHub Actions run: **SUCCESS**. Tests: 452 on the T1 branch, 404 on staging (2 poppler
+- Latest `staging` GitHub Actions run: **SUCCESS**. Tests: 485 on the T2 branch (465 on T1), 404 on staging (2 poppler
   tests skip without `pdftotext`; they hard-fail only with `REQUIRE_POPPLER=1`,
   set in `ci.yml` only).
 - `npm test` needs `--experimental-strip-types` (already in `package.json`).

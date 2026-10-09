@@ -935,6 +935,18 @@ const draw = async (page, index) => {
   check("booking link: opens in a new tab with rel noopener noreferrer", link.target === "_blank" && link.rel === "noopener noreferrer", `${link.target} ${link.rel}`);
   check("booking link: text and one-line note", link.text === "Book the Competency 23 drive with ADI Audit (ACT online form)" && (await s.page.textContent("[data-testid=adi-booking] small")) === "Book at least 1 clear business day before, in writing (CoP 9.2 n).");
   check("reminders: 23 Final Drive ready → Competency 23 day/hours line on the panel (after the R2 line)", (await s.page.$$eval("[data-testid=panel-reminders] .reminder", (els) => els.map((e) => e.dataset.rule))).join(",").startsWith("r2,r3"), await s.page.textContent("[data-testid=panel-reminders]"));
+  {
+    // The panel line's tone must follow the Canberra clock: plain only inside today's window.
+    const nowC = await s.page.evaluate(() => { const p = Object.fromEntries(new Intl.DateTimeFormat("en-AU", { timeZone: "Australia/Sydney", weekday: "short", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(new Date()).map((x) => [x.type, x.value])); return { wd: p.weekday, min: Number(p.hour) * 60 + Number(p.minute) }; });
+    const r3 = await s.page.$eval("[data-testid=panel-reminders] .reminder[data-rule=r3]", (e) => ({ tone: e.dataset.tone, text: e.textContent }));
+    if (/^Competency 23 hours today/.test(r3.text)) {
+      const end = nowC.wd === "Fri" ? 21 * 60 : 19 * 60;
+      const inside = nowC.min >= 7 * 60 && nowC.min < end;
+      check("reminders: Competency 23 panel line is plain inside today's window and amber ('currently outside the window') outside it", inside ? r3.tone === "plain" && !/outside/.test(r3.text) : r3.tone === "amber" && /it is currently outside the window\.$/.test(r3.text), `${nowC.wd} ${nowC.min} ${r3.tone} ${r3.text}`);
+    } else {
+      check("reminders: Competency 23 panel line on a Sunday/holiday/not-loaded day is amber or grey, never plain", r3.tone !== "plain", `${r3.tone} ${r3.text}`);
+    }
+  }
   check("reminders: no horizontal scroll at 375px (panel with booking link)", await noHScroll(s.page));
   await shot(s.page, "10-rules-fd-panel-375");
   await s.page.click("text=Start Lesson");
@@ -955,7 +967,7 @@ const draw = async (page, index) => {
   await s.page.fill("#lesson-field-date", "2026-10-05"); // Labour Day
   check("reminders: Competency 23 on an ACT public holiday → amber with its name", (await formText()) === "Competency 23 is not allowed on ACT public holidays (Labour Day).", await formText());
   await s.page.fill("#lesson-field-date", "2028-03-01");
-  check("reminders: a year outside the holiday table → grey 'not loaded; check manually', never a pass", (await formText()).includes("ACT public holidays for 2028 are not loaded; check manually.") && (await s.page.$("[data-testid=form-reminders] .reminder.grey[data-rule^=r3]")) !== null, await formText());
+  check("reminders: a year outside the holiday table → grey 'not loaded; check manually', never a pass", (await formText()).includes("ACT public holidays for 2028 are not loaded; check manually.") && (await s.page.$$("[data-testid=form-reminders] .reminder.grey[data-rule^=r3]")).length === 2 && (await s.page.$("[data-testid=form-reminders] .reminder.plain[data-rule^=r3]")) === null && (await s.page.$("[data-testid=form-reminders] .reminder.amber[data-rule^=r3]")) === null, await formText());
   await s.page.fill("#lesson-field-date", "2026-10-11");
   await s.page.fill('input[placeholder="Enter now"]', "1060");
   await s.page.click('.result-list li:has-text("23 Final Drive") >> text="Achieved"');

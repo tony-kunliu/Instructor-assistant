@@ -199,7 +199,10 @@ test("R3 form: Sunday, a listed holiday, and a year outside the table", () => {
   const sundayHoliday = finalDriveFormReminders({ date: "2026-04-05", startTime: "09:00", finishTime: "10:00" }); // Easter Sunday
   assert.equal(sundayHoliday[0].tone, "amber");
   const outside = finalDriveFormReminders({ date: "2028-03-01", startTime: "09:00", finishTime: "10:00" });
-  assert.deepEqual(outside.map((r) => [r.tone, r.text.startsWith("ACT public holidays for 2028 are not loaded; check manually.") || r.text.includes("inside")]), [["grey", true], ["plain", true]]);
+  // I2: the hours line is grey too (never green) while the holiday table cannot clear the day.
+  assert.deepEqual(outside.map((r) => [r.tone, r.text.startsWith("ACT public holidays for 2028 are not loaded; check manually.") || r.text.includes("inside")]), [["grey", true], ["grey", true]]);
+  const outsideBad = finalDriveFormReminders({ date: "2028-03-01", startTime: "05:00", finishTime: "06:00" });
+  assert.deepEqual(outsideBad.map((r) => r.tone), ["grey", "amber"]); // a time outside the window is still amber
   const outsideSunday = finalDriveFormReminders({ date: "2028-03-05", startTime: "09:00", finishTime: "10:00" }); // Sunday outside the table
   assert.equal(outsideSunday[0].text, "Competency 23 is not allowed on Sundays.");
   const noDate = finalDriveFormReminders({ date: "", startTime: "09:00", finishTime: "10:00" });
@@ -208,8 +211,8 @@ test("R3 form: Sunday, a listed holiday, and a year outside the table", () => {
 
 test("R3 panel: Friday 21:00 Canberra, Sunday, holiday, DST-edge dates, year outside the table", () => {
   // Fri 9 Oct 2026 21:00 AEST = 11:00Z.
-  assert.deepEqual(finalDrivePanelReminder(at("2026-10-09T11:00:00Z")), { id: "r3", tone: "plain", text: "Competency 23 hours today (Fri): 07:00–21:00." });
-  assert.equal(finalDrivePanelReminder(at("2026-10-08T14:30:00Z")).text, "Competency 23 hours today (Fri): 07:00–21:00."); // 00:30 Fri in Canberra but still Thu in UTC
+  assert.deepEqual(finalDrivePanelReminder(at("2026-10-09T11:00:00Z")), { id: "r3", tone: "amber", text: "Competency 23 hours today (Fri): 07:00–21:00; it is currently outside the window." }); // 21:00 Fri
+  assert.equal(finalDrivePanelReminder(at("2026-10-08T14:30:00Z")).tone, "amber"); // 00:30 Fri in Canberra but still Thu in UTC
   assert.equal(finalDrivePanelReminder(at("2026-10-10T02:00:00Z")).text, "Competency 23 hours today (Sat): 07:00–19:00.");
   assert.equal(finalDrivePanelReminder(at("2026-10-10T14:00:00Z")).text, "Competency 23 is not allowed on Sundays."); // 00:00 Sun in Canberra
   assert.equal(finalDrivePanelReminder(at("2026-10-03T15:00:00Z")).text, "Competency 23 is not allowed on Sundays."); // 01:00 Sun 4 Oct, just before the clocks go forward
@@ -305,4 +308,47 @@ test("ACTGDS payload never carries achievedLessonIds (contract unchanged)", () =
   });
   assert.equal(JSON.stringify(payload).includes("achievedLessonIds"), false);
   assert.equal(JSON.stringify(payload).includes("L1\"]"), false);
+});
+
+// ── I1: the panel line is plain only while the Canberra clock is inside today's window ──
+
+const PANEL_CLOCK: { name: string; now: string; tone: string; text: string }[] = [
+  // Tue 6 Oct 2026 (AEDT +11, not a holiday): UTC = Canberra - 11 h.
+  { name: "Tue 06:30", now: "2026-10-05T19:30:00Z", tone: "amber", text: "Competency 23 hours today (Tue): 07:00–19:00; it is currently outside the window." },
+  { name: "Tue 06:59", now: "2026-10-05T19:59:00Z", tone: "amber", text: "Competency 23 hours today (Tue): 07:00–19:00; it is currently outside the window." },
+  { name: "Tue 07:00", now: "2026-10-05T20:00:00Z", tone: "plain", text: "Competency 23 hours today (Tue): 07:00–19:00." },
+  { name: "Tue 18:59", now: "2026-10-06T07:59:00Z", tone: "plain", text: "Competency 23 hours today (Tue): 07:00–19:00." },
+  { name: "Tue 19:00", now: "2026-10-06T08:00:00Z", tone: "amber", text: "Competency 23 hours today (Tue): 07:00–19:00; it is currently outside the window." },
+  // Fri 9 Oct 2026: UTC = Canberra - 11 h.
+  { name: "Fri 19:30 (Friday is open to 21:00)", now: "2026-10-09T08:30:00Z", tone: "plain", text: "Competency 23 hours today (Fri): 07:00–21:00." },
+  { name: "Fri 20:59", now: "2026-10-09T09:59:00Z", tone: "plain", text: "Competency 23 hours today (Fri): 07:00–21:00." },
+  { name: "Fri 21:00", now: "2026-10-09T10:00:00Z", tone: "amber", text: "Competency 23 hours today (Fri): 07:00–21:00; it is currently outside the window." },
+  { name: "Sunday 12:00", now: "2026-10-11T01:00:00Z", tone: "amber", text: "Competency 23 is not allowed on Sundays." },
+  { name: "holiday 12:00 (Labour Day)", now: "2026-10-05T01:00:00Z", tone: "amber", text: "Competency 23 is not allowed on ACT public holidays (Labour Day)." },
+  { name: "2028 not loaded, inside hours", now: "2028-03-01T02:00:00Z", tone: "grey", text: "Competency 23 hours today (Wed): 07:00–19:00. ACT public holidays for 2028 are not loaded; check manually." },
+];
+for (const c of PANEL_CLOCK) {
+  test(`R3 panel clock, ${c.name}`, () => {
+    const r = finalDrivePanelReminder(at(c.now));
+    assert.deepEqual([r.tone, r.text], [c.tone, c.text]);
+  });
+}
+
+test("R3 form: a start already outside the window is amber even with no finish yet (keeps the add-finish note)", () => {
+  const early = finalDriveFormReminders({ date: "2026-10-06", startTime: "06:30", finishTime: "" });
+  assert.deepEqual(early.map((r) => r.tone), ["amber", "grey"]);
+  assert.match(early[0].text, /This lesson: 06:30–…\./);
+  assert.match(early[1].text, /Add start and finish time/);
+  assert.deepEqual(finalDriveFormReminders({ date: "2026-10-06", startTime: "19:00", finishTime: "" }).map((r) => r.tone), ["amber", "grey"]);
+  assert.deepEqual(finalDriveFormReminders({ date: "2026-10-06", startTime: "", finishTime: "19:30" }).map((r) => r.tone), ["amber", "grey"]);
+  assert.deepEqual(finalDriveFormReminders({ date: "2026-10-06", startTime: "09:00", finishTime: "" }).map((r) => r.tone), ["grey"]);
+});
+
+test("M1: a start time skipped at the October change does not exist; the review start is read an hour EARLIER (against a pass)", () => {
+  // 02:30 on Sun 4 Oct 2026 never happens (clocks jump 02:00 -> 03:00): readings are 15:30Z and 16:30Z.
+  assert.equal(new Date(canberraInstant("2026-10-04", 150, "earlier")!).toISOString(), "2026-10-03T15:30:00.000Z");
+  assert.equal(new Date(canberraInstant("2026-10-04", 150, "later")!).toISOString(), "2026-10-03T16:30:00.000Z");
+  const { progress, lessons } = ready117("2026-10-02", "14:00"); // 14:00 AEST = 04:00Z; allowed from 16:00Z on 3 Oct
+  const r = reviewGapReminder({ review: REVIEW_1_17, progress, lessons, moment: { kind: "draft", date: "2026-10-04", startTime: "02:30" }, where: "form" })!;
+  assert.equal(r.tone, "amber"); // the earlier reading (15:30Z) is before 16:00Z; the later one (16:30Z) would have passed
 });
