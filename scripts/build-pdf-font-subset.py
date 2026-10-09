@@ -25,12 +25,9 @@ root = pathlib.Path(__file__).resolve().parent.parent
 src = root / "public/fonts/NotoSansSC-Regular.otf"
 out = root / "public/fonts/NotoSansSC-Subset.otf"
 
-# The hanzi list is committed (scripts/pdf-font-hanzi.txt, 10,035 characters, one line of text).
-# Its provenance, so it can be regenerated: (1) the 8,105 most frequent simplified hanzi in the
-# jieba dictionary's word frequencies (dict.txt, jieba 0.42.1), restricted to glyphs the font has,
-# standing in for 通用规范汉字表 (the official table was not available offline when this was built);
-# (2) every GB2312 hanzi (6,763); (3) the 1,600 most common traditional variants of (1), via OpenCC
-# s2t, so traditional name characters such as 陳 and 鄭 are covered. Total 10,035 characters.
+# The hanzi list is committed (scripts/pdf-font-hanzi.txt, 10,035 characters, one line). It is
+# regenerated, byte for byte, by scripts/build-pdf-font-hanzi-list.py (needs the jieba word list and
+# OpenCC; see that script's header). The list stands in for 通用规范汉字表 and is NOT the official table.
 hanzi = open(root / "scripts/pdf-font-hanzi.txt", encoding="utf-8").read().strip()
 assert len(hanzi) >= 10000, len(hanzi)
 
