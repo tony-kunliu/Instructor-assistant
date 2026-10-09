@@ -1054,6 +1054,18 @@ const draw = async (page, index) => {
   const typed = await r2();
   check("C23 fields: a typed issue date overrides the estimate (exact, no 'estimated')", typed.tone === "plain" && typed.text === "Competency 23 eligibility met per entered data (new licence, under 25 at issue).", typed.text);
 
+  // I1: an expired learner licence is never a pass, even with a typed issue date.
+  await openEdit(); await expand();
+  check("C23 fields: the date inputs cannot be set after today (max=today)", (await s.page.getAttribute("[data-testid=c23-hpt]", "max")) === today && (await s.page.getAttribute("[data-testid=c23-issued]", "max")) === today);
+  await s.page.fill('label:has-text("Licence expiry") input', addDays(today, -30));
+  await save();
+  const expired = await r2();
+  check("C23 fields: expired learner licence → grey 'update the licence details', never a pass", expired.tone === "grey" && /^Learner licence expired .+: update the licence details to check Competency 23 eligibility\.$/.test(expired.text), expired.text);
+  await openEdit(); await expand();
+  await s.page.fill('label:has-text("Licence expiry") input', addYears(today, 2));
+  await save();
+  check("C23 fields: licence details updated → back to a pass", (await r2()).tone === "plain");
+
   // Server validation (D19) shows in the status line and changes nothing.
   await openEdit(); await expand();
   await s.page.fill("[data-testid=c23-hpt]", addDays(today, 1));
