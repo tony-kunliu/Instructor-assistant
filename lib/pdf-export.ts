@@ -61,6 +61,8 @@ import {
 } from "./pdf-layout.ts";
 import type { Learner, Lesson } from "./types.ts";
 
+export type FontTrigger = { char: string; codePoint: string; /** Up to 3 places the character appears, e.g. "lesson #3 comments". */ fields: string[] };
+
 export type PdfExportResult = {
   bytes: Uint8Array;
   pageCount: number;
@@ -74,6 +76,10 @@ export type PdfExportResult = {
    * "failed": a CJK character needed the full font and it could not be loaded (offline, 404, login page).
    */
   fullFontStatus: "not-needed" | "used" | "unhelpful" | "failed";
+  /** Which embedded font program the PDF uses: the compact `fontBytes`, or the full fallback font. Diagnostic only; does not affect the PDF bytes. */
+  embeddedFont: "compact" | "full";
+  /** The CJK characters missing from the compact font, i.e. why the full font was requested (empty when it was not), with where they occur. */
+  fontTriggers: FontTrigger[];
 };
 
 export type PdfExportInput = {
@@ -141,18 +147,30 @@ function missingChars(font: FkFont, text: string): string[] {
   return [...missing];
 }
 
-/** Every user-entered string that ends up in the PDF (signatures and ids excluded). */
-function exportedText(learner: Learner, lessons: Lesson[]): string {
-  const parts: string[] = [];
-  const collect = (row: object) => {
-    for (const [key, value] of Object.entries(row)) if (typeof value === "string" && key !== "adiSignature" && key !== "learnerSignature") parts.push(value);
+type TextPart = { field: string; text: string };
+
+/** Every user-entered string that ends up in the PDF (signatures and ids excluded), labelled by where it comes from. */
+function exportedTextParts(learner: Learner, lessons: Lesson[]): TextPart[] {
+  const parts: TextPart[] = [];
+  const collect = (row: object, label: (key: string) => string) => {
+    for (const [key, value] of Object.entries(row)) if (typeof value === "string" && key !== "adiSignature" && key !== "learnerSignature") parts.push({ field: label(key), text: value });
   };
-  collect(learner);
+  collect(learner, (key) => (key === "fullName" ? "learner name" : `learner ${key}`));
   for (const lesson of lessons) {
-    collect(lesson);
-    if (isPriorRecord(lesson)) parts.push(priorRecordLine(lesson));
+    const where = isPriorRecord(lesson) ? "prior record" : `lesson #${lesson.lessonNo}`;
+    collect(lesson, (key) => `${where} ${key}`);
+    if (isPriorRecord(lesson)) parts.push({ field: "prior record line", text: priorRecordLine(lesson) });
   }
-  return parts.join("\n");
+  return parts;
+}
+
+/** The CJK characters in `missing`, each with up to 3 fields it occurs in. */
+function fontTriggersFor(missing: string[], parts: TextPart[]): FontTrigger[] {
+  return missing.filter(isCjkChar).map((char) => ({
+    char,
+    codePoint: `U+${(char.codePointAt(0) as number).toString(16).toUpperCase().padStart(4, "0")}`,
+    fields: [...new Set(parts.filter((part) => part.text.includes(char)).map((part) => part.field))].slice(0, 3),
+  }));
 }
 
 export function createMeasurer(fontBytes: Uint8Array | ArrayBuffer): Measurer {
@@ -476,12 +494,14 @@ export async function buildCbtaChecklistPdf(input: PdfExportInput): Promise<PdfE
 
   // Pick the font: the compact one unless a rare CJK character needs the full font. Emoji and symbols
   // that neither font has are reported without downloading the full font.
-  const text = exportedText(learner, input.lessons);
+  const parts = exportedTextParts(learner, input.lessons);
+  const text = parts.map((part) => part.text).join("\n");
   let fontData = toUint8Array(fontBytes);
   let fkFont = loadFont(fontData);
   let unsupported = missingChars(fkFont, text);
   let fullFontStatus: PdfExportResult["fullFontStatus"] = "not-needed";
-  if (unsupported.some(isCjkChar)) {
+  const fontTriggers = fontTriggersFor(unsupported, parts);
+  if (fontTriggers.length > 0) {
     try {
       if (!input.fallbackFontBytes) throw new Error("no full font loader");
       const fullData = toUint8Array(await input.fallbackFontBytes());
@@ -583,7 +603,7 @@ export async function buildCbtaChecklistPdf(input: PdfExportInput): Promise<PdfE
   }
 
   const bytes = await outDoc.save();
-  return { bytes, pageCount: outDoc.getPageCount(), hadOverflow: dryRunNotes.length > 0, unsupportedChars: unsupported, fullFontStatus };
+  return { bytes, pageCount: outDoc.getPageCount(), hadOverflow: dryRunNotes.length > 0, unsupportedChars: unsupported, fullFontStatus, embeddedFont: fullFontStatus === "used" ? "full" : "compact", fontTriggers };
 }
 
 /** What the export UI must say before handing over a PDF; null when the PDF is complete. */
@@ -592,6 +612,16 @@ export function exportWarning(result: Pick<PdfExportResult, "unsupportedChars" |
   const list = result.unsupportedChars.map((c) => `"${c}"`).join(" ");
   const why = result.fullFontStatus === "failed" ? " The full font for some Chinese characters could not be downloaded, so those characters may be missing; try again when online." : "";
   return `The PDF cannot draw ${result.unsupportedChars.length === 1 ? "this character" : "these characters"}: ${list}. ${result.unsupportedChars.length === 1 ? "It" : "They"} will print as empty boxes.${why}`;
+}
+
+/** Short status line shown after an export: size, which font, and (when the full font was requested) which characters forced it. */
+export function exportStatusLine(result: Pick<PdfExportResult, "bytes" | "fullFontStatus" | "embeddedFont" | "fontTriggers">): string {
+  const size = result.bytes.length >= 100_000 ? `${(result.bytes.length / 1_000_000).toFixed(1)} MB` : `${Math.max(1, Math.round(result.bytes.length / 1000))} KB`;
+  if (result.embeddedFont === "compact" && result.fontTriggers.length === 0) return `PDF ready: ${size} (compact font)`;
+  const shown = result.fontTriggers.slice(0, 10).map((t) => `${t.char} ${t.codePoint}${t.fields.length ? ` in ${t.fields.join(", ")}` : ""}`);
+  const more = result.fontTriggers.length > 10 ? `, +${result.fontTriggers.length - 10} more` : "";
+  const what = result.fullFontStatus === "used" ? "full font used for" : result.fullFontStatus === "failed" ? "full font needed but could not be loaded, for" : "full font did not help for";
+  return `PDF ready: ${size} (${what}: ${shown.join("; ")}${more})`;
 }
 
 export function plannedPageCount(lessonCount: number): number {

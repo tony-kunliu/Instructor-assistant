@@ -10,7 +10,7 @@ import os from "node:os";
 import path from "node:path";
 import { PDFDocument, PDFName, PDFRawStream, decodePDFRawStream } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
-import { buildCbtaChecklistPdf, exportWarning, fontHasSubroutines, patchCffHeader, type PdfExportInput } from "../lib/pdf-export.ts";
+import { buildCbtaChecklistPdf, exportStatusLine, exportWarning, fontHasSubroutines, patchCffHeader, type PdfExportInput } from "../lib/pdf-export.ts";
 import type { Learner, Lesson } from "../lib/types.ts";
 
 const templateBytes = readFileSync(new URL("../public/pdf-template/adi-cbta-checklist.pdf", import.meta.url));
@@ -210,4 +210,47 @@ test("patchCffHeader throws when pdf-lib no longer exposes serializeFont (never 
   patchCffHeader(fake);
   const repaired = await fake.embedder.serializeFont();
   assert.deepEqual([...repaired.slice(0, 4)], [1, 0, 4, 4]);
+});
+
+test("diagnostic: an English-only export reports the compact font, no triggers, and a compact status line", async () => {
+  const result = await buildCbtaChecklistPdf({ ...compact(), ...SHAPES.latin });
+  assert.equal(result.embeddedFont, "compact");
+  assert.deepEqual(result.fontTriggers, []);
+  assert.match(exportStatusLine(result), /^PDF ready: \d+ KB \(compact font\)$/);
+});
+
+test("diagnostic: a rare hanzi names the character, its code point and the field(s) it came from; the full font is reported as used", async () => {
+  const shape = { learner: { ...learner, fullName: `Test ${RARE_HANZI}` }, lessons: [lesson(1), lesson(3, { comments: `a ${RARE_HANZI} b` })] };
+  const result = await buildCbtaChecklistPdf({ ...compact(), ...shape });
+  assert.equal(result.embeddedFont, "full");
+  assert.equal(result.fullFontStatus, "used");
+  assert.deepEqual(result.fontTriggers, [{ char: RARE_HANZI, codePoint: "U+9F98", fields: ["learner name", "lesson #3 comments"] }]);
+  const line = exportStatusLine(result);
+  assert.match(line, /^PDF ready: \d+\.\d MB \(full font used for: 龘 U\+9F98 in learner name, lesson #3 comments\)$/);
+});
+
+test("diagnostic: the status line lists at most 10 characters and counts the rest", () => {
+  const triggers = Array.from({ length: 12 }, (_, i) => ({ char: String.fromCodePoint(0x3400 + i), codePoint: `U+${(0x3400 + i).toString(16).toUpperCase()}`, fields: ["lesson #1 comments"] }));
+  const line = exportStatusLine({ bytes: new Uint8Array(13_900_000), fullFontStatus: "used", embeddedFont: "full", fontTriggers: triggers });
+  assert.match(line, /^PDF ready: 13\.9 MB \(full font used for: /);
+  assert.equal((line.match(/U\+34/g) ?? []).length, 10);
+  assert.match(line, /\+2 more\)$/);
+});
+
+test("diagnostic: failed and unhelpful full fonts are named honestly in the status line", async () => {
+  const failed = await buildCbtaChecklistPdf({ ...compact({ fallbackFontBytes: async () => { throw new Error("404"); } }), learner, lessons: [lesson(1, { comments: RARE_HANZI })] });
+  assert.equal(failed.embeddedFont, "compact");
+  assert.match(exportStatusLine(failed), /full font needed but could not be loaded, for: 龘/);
+  const unhelpful = await buildCbtaChecklistPdf({ ...compact({ fallbackFontBytes: async () => subsetFont }), learner, lessons: [lesson(1, { comments: RARE_HANZI })] });
+  assert.match(exportStatusLine(unhelpful), /full font did not help for: 龘/);
+});
+
+test("diagnostic: the gate's punctuation ranges are fully covered by the compact font, so only ideographs outside the subset can trigger the full font", () => {
+  const f = fontkit.create(subsetFont as unknown as Buffer);
+  const full = fontkit.create(fullFont as unknown as Buffer);
+  for (const [from, to] of [[0x3000, 0x303f], [0xff00, 0xffef]]) {
+    for (let cp = from; cp <= to; cp++) if (full.hasGlyphForCodePoint(cp)) assert.ok(f.hasGlyphForCodePoint(cp), `U+${cp.toString(16)} is in the full font and the gate but not the compact font`);
+  }
+  // Plausible pasted punctuation and spaces.
+  for (const ch of "，。：；！？（）、《》【】“”‘’…—·　￥℃№\u2002\u2003") assert.ok(f.hasGlyphForCodePoint(ch.codePointAt(0)!), `U+${ch.codePointAt(0)!.toString(16)}`);
 });
