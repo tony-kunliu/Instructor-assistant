@@ -18,6 +18,21 @@
 //    printable strip below the table, right of the cumulative footer, and
 //    every cumulative footer notes the prior hours/km it includes.
 //
+// Font embedding: the output PDF embeds only the glyphs it uses (a ~30-200 KB font program instead of
+// the 16 MB Noto Sans SC, which made every export 10+ MB). `fontBytes` is the static compact font
+// (public/fonts/NotoSansSC-Subset.otf, built by scripts/build-pdf-font-subset.py: Latin, punctuation and
+// all GB2312 hanzi, with subroutines removed). Two fontkit/pdf-lib CFF-subsetting defects are worked
+// around here, both found by rendering with poppler + MuPDF + PDFium and diffing against the whole-font
+// export (text extraction alone looked fine while glyphs were silently missing):
+//   1. fontkit's subsetter mangles local subroutines, so CJK glyphs of a font that still has subrs
+//      disappear. We therefore only subset fonts without subrs (`fontHasSubroutines`); any other font
+//      is embedded whole, exactly as before.
+//   2. fontkit writes an invalid CFF header (offSize byte), which FreeType-based renderers reject
+//      (`patchCffHeader`).
+// If a document uses a character the compact font lacks, the optional `fallbackFontBytes` loader supplies
+// the full font (embedded whole, as before), so no character is ever dropped that the full font has.
+// Characters neither font has are drawn as the font's .notdef glyph and listed in `unsupportedChars`.
+//
 // Text-width measurement uses a plain `fontkit` font object (`Measurer`)
 // that is never embedded into the output PDF, kept entirely separate from
 // the pdf-lib `PDFFont` used for actual drawing. Measuring glyphs through
@@ -46,11 +61,20 @@ import {
 } from "./pdf-layout.ts";
 import type { Learner, Lesson } from "./types.ts";
 
-export type PdfExportResult = { bytes: Uint8Array; pageCount: number; hadOverflow: boolean };
+export type PdfExportResult = {
+  bytes: Uint8Array;
+  pageCount: number;
+  hadOverflow: boolean;
+  /** Characters in the exported text that no available font has (drawn as .notdef boxes). Empty in normal use. */
+  unsupportedChars: string[];
+};
 
 export type PdfExportInput = {
   templateBytes: Uint8Array | ArrayBuffer;
+  /** The compact font (public/fonts/NotoSansSC-Subset.otf); embedded as a per-document subset. Any font works, but one with subroutines is embedded whole. */
   fontBytes: Uint8Array | ArrayBuffer;
+  /** Loads the full font (public/fonts/NotoSansSC-Regular.otf); called only if the text has characters `fontBytes` lacks. */
+  fallbackFontBytes?: () => Promise<Uint8Array | ArrayBuffer>;
   learner: Learner;
   lessons: Lesson[];
 };
@@ -64,8 +88,64 @@ function toUint8Array(bytes: Uint8Array | ArrayBuffer): Uint8Array {
   return bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
 }
 
+type FkFont = ReturnType<typeof fontkit.create>;
+
+function loadFont(fontBytes: Uint8Array | ArrayBuffer): FkFont {
+  return fontkit.create(toUint8Array(fontBytes) as unknown as Buffer);
+}
+
+/** True if a CFF font still has global or local subroutines (fontkit's subsetter corrupts those glyphs; see file header). */
+export function fontHasSubroutines(font: FkFont): boolean {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- fontkit's typings don't expose the CFF table internals.
+  const cff = (font as any)["CFF "];
+  if (!cff) return false;
+  if (cff.globalSubrIndex?.length > 0) return true;
+  const privates = [cff.topDict?.Private, ...(cff.topDict?.FDArray ?? []).map((fd: { Private?: unknown }) => fd.Private)];
+  return privates.some((p) => ((p as { Subrs?: { length: number } } | undefined)?.Subrs?.length ?? 0) > 0);
+}
+
+/** fontkit writes a nonsense CFF header offSize byte; FreeType (poppler, MuPDF, PDFium) rejects the font program, so glyphs vanish. */
+function patchCffHeader(font: PDFFont) {
+  const embedder = (font as unknown as { embedder?: { serializeFont?: () => Promise<Uint8Array> } }).embedder;
+  const original = embedder?.serializeFont?.bind(embedder);
+  if (!embedder || !original) return;
+  embedder.serializeFont = async () => {
+    const bytes = await original();
+    if (bytes[0] === 1 && !(bytes[3] >= 1 && bytes[3] <= 4)) bytes[3] = 4;
+    return bytes;
+  };
+}
+
+/** Distinct printable characters (code points) of `text` that `font` has no glyph for. */
+function missingChars(font: FkFont, text: string): string[] {
+  const missing = new Set<string>();
+  for (const ch of text) {
+    const cp = ch.codePointAt(0) as number;
+    if (cp < 0x20 || (cp >= 0x7f && cp < 0xa0)) continue; // control characters are never drawn
+    if (!font.hasGlyphForCodePoint(cp)) missing.add(ch);
+  }
+  return [...missing];
+}
+
+/** Every user-entered string that ends up in the PDF (signatures and ids excluded). */
+function exportedText(learner: Learner, lessons: Lesson[]): string {
+  const parts: string[] = [];
+  const collect = (row: object) => {
+    for (const [key, value] of Object.entries(row)) if (typeof value === "string" && key !== "adiSignature" && key !== "learnerSignature") parts.push(value);
+  };
+  collect(learner);
+  for (const lesson of lessons) {
+    collect(lesson);
+    if (isPriorRecord(lesson)) parts.push(priorRecordLine(lesson));
+  }
+  return parts.join("\n");
+}
+
 export function createMeasurer(fontBytes: Uint8Array | ArrayBuffer): Measurer {
-  const fkFont = fontkit.create(toUint8Array(fontBytes) as unknown as Buffer);
+  return measurerFor(loadFont(fontBytes));
+}
+
+function measurerFor(fkFont: FkFont): Measurer {
   return {
     widthOfTextAtSize(text: string, size: number): number {
       if (!text) return 0;
@@ -380,7 +460,27 @@ export async function buildCbtaChecklistPdf(input: PdfExportInput): Promise<PdfE
     rest = rest.slice(CONTINUATION_PAGE_ROWS);
   }
 
-  const measurer = createMeasurer(fontBytes);
+  // Pick the font: the compact one unless the text needs a character only the full font has.
+  const text = exportedText(learner, input.lessons);
+  let fontData = toUint8Array(fontBytes);
+  let fkFont = loadFont(fontData);
+  let unsupported = missingChars(fkFont, text);
+  if (unsupported.length > 0 && input.fallbackFontBytes) {
+    try {
+      const fullData = toUint8Array(await input.fallbackFontBytes());
+      const fullFont = loadFont(fullData);
+      const stillMissing = missingChars(fullFont, text);
+      if (stillMissing.length < unsupported.length) {
+        fontData = fullData;
+        fkFont = fullFont;
+        unsupported = stillMissing;
+      }
+    } catch {
+      // Full font unavailable (e.g. offline): keep the compact font; missing characters are reported, never a crash.
+    }
+  }
+  const measurer = measurerFor(fkFont);
+  const subsetFont = !fontHasSubroutines(fkFont);
 
   const templateDoc = await PDFDocument.load(templateBytes);
   const outDoc = await PDFDocument.create();
@@ -389,7 +489,8 @@ export async function buildCbtaChecklistPdf(input: PdfExportInput): Promise<PdfE
   // under it that pdf-lib's width table (built from each codepoint's *default* glyph) doesn't cover,
   // making every digit render with a wrong (too-wide) advance — found via this feature's own visual
   // QA, confirmed with two independent PDF renderers (poppler and Chromium's PDFium).
-  const font = await outDoc.embedFont(fontBytes, { subset: false, features: { locl: false } });
+  const font = await outDoc.embedFont(fontData, { subset: subsetFont, features: { locl: false } });
+  if (subsetFont) patchCffHeader(font);
 
   // Dry-run the wide-column wrapping first (pure text measurement, no page needed) so we know how
   // many appendix pages are needed *before* drawing page 1's "Page 1 of N" field.
@@ -460,7 +561,7 @@ export async function buildCbtaChecklistPdf(input: PdfExportInput): Promise<PdfE
   }
 
   const bytes = await outDoc.save();
-  return { bytes, pageCount: outDoc.getPageCount(), hadOverflow: dryRunNotes.length > 0 };
+  return { bytes, pageCount: outDoc.getPageCount(), hadOverflow: dryRunNotes.length > 0, unsupportedChars: unsupported };
 }
 
 export function plannedPageCount(lessonCount: number): number {

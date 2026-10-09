@@ -15,7 +15,7 @@ async function api<T>(url: string, init?: RequestInit): Promise<T> {
 /**
  * Exports the official ADI CBT&A Checklist PDF for a learner, entirely in
  * the browser: fetches only this learner's already-saved lessons (never a
- * draft) plus the template PDF and font as static assets, fills it with
+ * draft) plus the template PDF and a compact font as static assets, fills it with
  * pdf-lib, and triggers a download. Nothing is sent to a third party — the
  * export endpoint sits behind the same site-wide access protection as the
  * rest of the app (see middleware.ts).
@@ -31,10 +31,17 @@ export default function ExportPdfButton({ learnerId, lessonCount }: { learnerId:
     try {
       const [templateBytes, fontBytes, { buildCbtaChecklistPdf }] = await Promise.all([
         fetch("/pdf-template/adi-cbta-checklist.pdf").then((r) => r.arrayBuffer()),
-        fetch("/fonts/NotoSansSC-Regular.otf").then((r) => r.arrayBuffer()),
+        fetch("/fonts/NotoSansSC-Subset.otf").then((r) => r.arrayBuffer()),
         import("@/lib/pdf-export.ts"),
       ]);
-      const result = await buildCbtaChecklistPdf({ templateBytes, fontBytes, learner, lessons });
+      const result = await buildCbtaChecklistPdf({
+        templateBytes,
+        fontBytes,
+        // The 16 MB full font is fetched only if the text has a character outside the compact font (rare hanzi, symbols).
+        fallbackFontBytes: () => fetch("/fonts/NotoSansSC-Regular.otf").then((r) => r.arrayBuffer()),
+        learner,
+        lessons,
+      });
       const blob = new Blob([result.bytes as BlobPart], { type: "application/pdf" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
