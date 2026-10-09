@@ -791,6 +791,16 @@ const draw = async (page, index) => {
   await t.page.click("text=Download anyway");
   await dl;
   check("pdf glyph: 'Download anyway' downloads after confirmation", downloads === before + 1);
+  // Learner switch: a warning open for learner A must not survive into learner B (the button is keyed by learner id).
+  const beforeSwitch = downloads;
+  await exportFor("QA Glyph Emoji");
+  await t.page.waitForSelector("[data-testid=export-missing-warning]", { timeout: 60000 });
+  await pick(t.page, "QA Glyph Rare");
+  await t.page.waitForSelector("[data-testid=history-row]");
+  check("pdf glyph: switching learner removes the open warning dialog", (await t.page.$("[data-testid=export-missing-warning]")) === null && (await t.page.$("text=Download anyway")) === null);
+  check("pdf glyph: switching learner shows the export button again", (await t.page.$("text=Export CBT&A PDF")) !== null);
+  await new Promise((r) => setTimeout(r, 1000));
+  check("pdf glyph: switching learner downloads nothing", downloads === beforeSwitch, `${downloads - beforeSwitch}`);
   // 3. Full-font download fails (404): the rare character is not silently boxed; the warning explains why.
   await t.page.route("**/fonts/NotoSansSC-Regular.otf", (route) => route.fulfill({ status: 404, body: "not found" }));
   const beforeFail = downloads;
