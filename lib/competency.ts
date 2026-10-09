@@ -38,6 +38,12 @@ export type CompetencyStatus = {
   firstAssessedAt: string | null;
   achieved: boolean;
   achievedAt: string | null;
+  /**
+   * Every lesson holding an Assessed + Achieved event for this id, in event order, no duplicates.
+   * Lets the client date "1-17 completed" from the lessons' own date and finish time (lib/rules.ts),
+   * never from the event's server insert time. Not part of the ACTGDS payload (mapped field by field).
+   */
+  achievedLessonIds: string[];
 };
 
 export type ReviewState = "locked" | "ready" | "achieved";
@@ -52,7 +58,7 @@ export type LearnerProgress = {
 };
 
 function emptyStatus(id: string): CompetencyStatus {
-  return { id, taughtCount: 0, firstTaughtAt: null, lastTaughtAt: null, firstAssessedAt: null, achieved: false, achievedAt: null };
+  return { id, taughtCount: 0, firstTaughtAt: null, lastTaughtAt: null, firstAssessedAt: null, achieved: false, achievedAt: null, achievedLessonIds: [] };
 }
 
 /** Rebuild a learner's full CBT&A progress from their complete competency event history. */
@@ -69,9 +75,12 @@ export function computeProgress(events: readonly CompetencyEvent[]): LearnerProg
       status.lastTaughtAt = event.createdAt;
     } else {
       status.firstAssessedAt ??= event.createdAt;
-      if (event.result === "achieved" && !status.achieved) {
-        status.achieved = true;
-        status.achievedAt = event.createdAt;
+      if (event.result === "achieved") {
+        if (!status.achievedLessonIds.includes(event.lessonId)) status.achievedLessonIds.push(event.lessonId);
+        if (!status.achieved) {
+          status.achieved = true;
+          status.achievedAt = event.createdAt;
+        }
       }
     }
   }
