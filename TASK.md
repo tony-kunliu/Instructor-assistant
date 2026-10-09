@@ -5,20 +5,18 @@ _Last updated: 2026-10-08_
 This file describes **current task only**. Completed work's detail
 lives in git log and closed PRs, not here.
 
-**Current Task:** PDF export size (embed font subset, 14 MB -> ~35 KB typical) — **Completed** on
-`feature/pdf-font-subset` (not merged; no migration, no contract change). Earlier: Learner management Phase 1 (edit learner details) —
-**Completed** on `feature/learner-edit` (not merged). Plan:
-`docs/superpowers/specs/2026-10-08-learner-management-plan.md` (L1-L6).
-Typecheck, 384 tests, `cf:build`, qa-browser 178/178 and the local `0008` rehearsal
-pass. Lesson ownership + revisions (`0007`) is on `staging`; re-check
-Production's migration level before release.
+**Current Task:** PDF export font subset — **Completed** on `feature/pdf-font-subset`
+(not merged). The export embeds only the glyphs used (typical 29-180 KB, was 14 MB);
+rare CJK characters fall back to the 16 MB full font (export ~13.9 MB, as before).
+Missing non-CJK characters trigger a confirmation before the PDF downloads. Typecheck,
+398 tests, `cf:build`, Memory Guard, qa-browser 189/189 pass. No migration, no contract change.
 
-**Next Recommended Task:** independent code review of `feature/learner-edit`,
-then apply migration `0008` (additive) to Staging D1 FIRST with the
-`Staging D1 Migrate` workflow (`ref` = `feature/learner-edit`, `confirm` =
-`staging`), then merge to `staging` (AGENTS.md §14), verify on Staging, and
-`staging` -> `main` -> Production Release. First use: rename the learner
-imported on 2026-10-08.
+**Next Recommended Task:** independent code review of `feature/pdf-font-subset`, then
+merge to `staging` per AGENTS.md §14 and verify the PDF on Staging. Before this
+merge, decide on the `☂`-style symbol gap in STATUS.md Known Issues.
+
+**Learner edit (`feature/learner-edit`):** merged to `staging` and `main`. Still to
+check: migration `0008` on Staging and Production D1 (read-only `wrangler d1 migrations list`).
 
 **Waiting on Other Repo:** ACTGDS display fixes and first-event
 confirmations (Issue #3). Nothing blocks this task (no contract change).
