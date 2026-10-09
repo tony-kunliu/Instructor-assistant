@@ -12,6 +12,10 @@ lib/pdf-export.ts refuses to subset any font that still has subroutines, and rep
 
 Coverage: Basic Latin, Latin-1, Latin Extended-A, general punctuation, CJK symbols/punctuation,
 fullwidth forms, a few arrows/shapes/ticks, and every hanzi of GB2312 (6763 simplified characters).
+Licence: the subset is a Modified Version of Noto Sans SC (Adobe/Google, SIL Open Font License 1.1),
+so it is distributed under the same OFL; the name table (copyright, licence, licence URL) is kept with
+--name-IDs='*'. See public/fonts/NotoSansSC-LICENSE.txt.
+
 Characters outside this set make lib/pdf-export.ts fall back to the full font
 (public/fonts/NotoSansSC-Regular.otf, embedded whole as before), so nothing is ever dropped.
 """
@@ -42,6 +46,7 @@ subprocess.run([
     f"--unicodes={unicodes}", f"--text-file={text_file}",
     "--layout-features=*",       # keep kern/locl/etc: layout (and thus advance widths) must match the full font
     "--glyph-names", "--notdef-outline",
+    "--name-IDs=*",              # keep copyright, licence and licence-URL name records (OFL)
     "--desubroutinize",          # required: see module docstring
     f"--output-file={out}",
 ], check=True)

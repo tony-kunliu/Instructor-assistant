@@ -90,3 +90,13 @@ INCLUDING ANY GENERAL, SPECIAL, INDIRECT, INCIDENTAL, OR CONSEQUENTIAL
 DAMAGES, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
 FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM
 OTHER DEALINGS IN THE FONT SOFTWARE.
+
+----------------------------------------------------------------------
+Note on the bundled subset (public/fonts/NotoSansSC-Subset.otf)
+----------------------------------------------------------------------
+NotoSansSC-Subset.otf is a Modified Version of Noto Sans SC (Noto Sans CJK
+SC Regular). It was produced from NotoSansSC-Regular.otf by
+scripts/build-pdf-font-subset.py (fontTools subsetting, subroutines removed,
+name table kept). It is distributed under the same SIL Open Font License 1.1
+above, and it may not be sold by itself. The Reserved Font Name rules of the
+OFL apply to this Modified Version as they do to the original.
