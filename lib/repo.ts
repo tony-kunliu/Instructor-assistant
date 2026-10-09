@@ -234,17 +234,75 @@ export async function getLearner(db: D1Database, id: string): Promise<Learner> {
   return toLearner(row);
 }
 
+export type LearnerEditInput = LearnerInput & {
+  licenceStage?: unknown;
+  /** Set by the route from the verified Access identity (never from the client body when signed in). */
+  actingInstructorId?: unknown;
+};
+type LearnerFields = {
+  fullName: string | null;
+  address: string | null;
+  phone: string | null;
+  dob: string | null;
+  licenceNumber: string | null;
+  licenceExpiry: string | null;
+  eligibility: string | null;
+  transmission: Learner["transmission"];
+  schoolWork: string | null;
+  licenceStage: Learner["licenceStage"];
+};
+const LEARNER_EDIT_KEYS = ["fullName", "address", "phone", "dob", "licenceNumber", "licenceExpiry", "eligibility", "transmission", "schoolWork", "licenceStage"] as const satisfies readonly (keyof LearnerFields)[];
+const LICENCE_STAGES = ["learner", "p1", "p2", "full"] as const;
+const LEARNER_COLUMN: Record<(typeof LEARNER_EDIT_KEYS)[number], string> = {
+  fullName: "full_name", address: "address", phone: "phone", dob: "dob", licenceNumber: "licence_number", licenceExpiry: "licence_expiry",
+  eligibility: "eligibility", transmission: "transmission", schoolWork: "school_work", licenceStage: "licence_stage",
+};
+
+/**
+ * The ONE place learner field rules live (create and edit share it): trim, "" -> null, per-field max length,
+ * ISO dates, transmission manual|auto. Only keys present on `input` are returned (create fills the rest with
+ * null; edit leaves them unchanged). `strict` (edit only) refuses an unparseable date / transmission / stage
+ * instead of silently turning it into null, so a typo can never wipe stored data; create keeps its lenient
+ * historical behaviour.
+ */
+function parseLearnerFields(input: LearnerEditInput, strict: boolean): Partial<LearnerFields> {
+  const has = (key: keyof LearnerEditInput) => input[key] !== undefined;
+  const out: Partial<LearnerFields> = {};
+  if (has("fullName")) {
+    out.fullName = text(input.fullName, 120);
+    if (!out.fullName) throw new ValidationError("Student name is required.");
+  }
+  if (has("address")) out.address = text(input.address, 300);
+  if (has("phone")) out.phone = text(input.phone, 40);
+  if (has("licenceNumber")) out.licenceNumber = text(input.licenceNumber, 40);
+  if (has("eligibility")) out.eligibility = text(input.eligibility, 120);
+  if (has("schoolWork")) out.schoolWork = text(input.schoolWork, 160);
+  for (const [key, label] of [["dob", "Date of birth"], ["licenceExpiry", "Licence expiry"]] as const) {
+    if (!has(key)) continue;
+    out[key] = isoDate(input[key]);
+    if (strict && out[key] === null && String(input[key] ?? "").trim()) throw new ValidationError(`${label} must be a valid date (YYYY-MM-DD).`);
+  }
+  if (has("transmission")) {
+    const raw = String(input.transmission ?? "").trim().toLowerCase();
+    out.transmission = raw === "manual" || raw === "auto" ? raw : null;
+    if (strict && out.transmission === null && raw) throw new ValidationError('Transmission must be "manual" or "auto".');
+  }
+  if (strict && has("licenceStage")) {
+    const raw = String(input.licenceStage ?? "").trim().toLowerCase();
+    if (!(LICENCE_STAGES as readonly string[]).includes(raw)) throw new ValidationError("Licence stage must be learner, p1, p2 or full.");
+    out.licenceStage = raw as Learner["licenceStage"];
+  }
+  return out;
+}
+
 export async function createLearner(db: D1Database, input: LearnerInput): Promise<Learner> {
-  const fullName = text(input.fullName, 120);
-  if (!fullName) throw new ValidationError("Student name is required.");
+  const fields = parseLearnerFields({ ...input, fullName: input.fullName ?? "" }, false);
   // Instructor must already exist and be active — no free-text name, no
   // auto-creation. Reuses the same existing-and-active check as lesson
   // attribution, just made required here (an omitted/unknown/inactive id
   // throws ValidationError -> 400, never silently creates an instructor row).
   const instructorId = await resolveActingInstructorId(db, input.instructorId);
   if (!instructorId) throw new ValidationError("Instructor is required.");
-  const transmissionRaw = String(input.transmission ?? "").trim().toLowerCase();
-  const transmission = transmissionRaw === "manual" || transmissionRaw === "auto" ? transmissionRaw : null;
 
   const id = crypto.randomUUID();
   await db
@@ -255,18 +313,64 @@ export async function createLearner(db: D1Database, input: LearnerInput): Promis
     .bind(
       id,
       instructorId,
-      fullName,
-      text(input.address, 300),
-      text(input.phone, 40),
-      isoDate(input.dob),
-      text(input.licenceNumber, 40),
-      isoDate(input.licenceExpiry),
-      text(input.eligibility, 120),
-      transmission,
-      text(input.schoolWork, 160),
+      fields.fullName,
+      fields.address ?? null,
+      fields.phone ?? null,
+      fields.dob ?? null,
+      fields.licenceNumber ?? null,
+      fields.licenceExpiry ?? null,
+      fields.eligibility ?? null,
+      fields.transmission ?? null,
+      fields.schoolWork ?? null,
     )
     .run();
   return getLearner(db, id);
+}
+
+export type UpdateLearnerResult = { learner: Learner; changed: boolean; changedFields: string[] };
+
+/**
+ * Previous values of every editable learner field as ONE INSERT ... SELECT that reads the learner's current
+ * row inside the same atomic batch (must be the batch's first statement, before the UPDATE). 4 bound parameters.
+ */
+function learnerRevisionInsertStatement(db: D1Database, learnerId: string, editedByInstructorId: string | null): D1PreparedStatement {
+  return db
+    .prepare(
+      `INSERT INTO learner_revisions (id, learner_id, revision_no, edited_at, edited_by_instructor_id, snapshot_json)
+       SELECT ?, learners.id, (SELECT COALESCE(MAX(r.revision_no), 0) + 1 FROM learner_revisions r WHERE r.learner_id = learners.id), ?, ?,
+         json_object(${LEARNER_EDIT_KEYS.map((key) => `'${key}', learners.${LEARNER_COLUMN[key]}`).join(", ")})
+       FROM learners WHERE learners.id = ?`,
+    )
+    .bind(crypto.randomUUID(), new Date().toISOString(), editedByInstructorId, learnerId);
+}
+
+/**
+ * Edit a learner's details (learner management Phase 1). Only keys present in `input` change; "" clears to null.
+ * Only the learner's own instructor may edit when a verified actor is supplied (no actor = local dev/tests: as
+ * before). `instructorId` is never editable. A real change writes the previous values to learner_revisions and
+ * updates the learner in ONE db.batch(); a no-op writes nothing. Archived learners may be edited. No ACTGDS
+ * event: the contract carries only learner_id. D1 cost: 5 statements (learner, actor, batch of 2, re-read).
+ */
+export async function updateLearner(db: D1Database, id: string, input: LearnerEditInput): Promise<UpdateLearnerResult> {
+  const existing = await getLearner(db, id);
+  const actingInstructorId = await resolveActingInstructorId(db, input.actingInstructorId);
+  if (actingInstructorId !== null && actingInstructorId !== existing.instructorId) {
+    throw new ValidationError(`This learner belongs to ${existing.instructorName || "another instructor"}; only they can edit their details.`);
+  }
+  if (input.instructorId !== undefined) throw new ValidationError("A learner's instructor cannot be changed here.");
+  const fields = parseLearnerFields(input, true);
+  const keys = LEARNER_EDIT_KEYS.filter((key) => fields[key] !== undefined);
+  if (!keys.length) throw new ValidationError("Nothing to change: send at least one learner field.");
+  const changedFields = keys.filter((key) => fields[key] !== existing[key]);
+  if (!changedFields.length) return { learner: existing, changed: false, changedFields: [] };
+
+  await db.batch([
+    learnerRevisionInsertStatement(db, id, actingInstructorId),
+    db
+      .prepare(`UPDATE learners SET ${changedFields.map((key) => `${LEARNER_COLUMN[key]} = ?`).join(", ")}, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?`)
+      .bind(...changedFields.map((key) => fields[key] ?? null), id),
+  ]);
+  return { learner: await getLearner(db, id), changed: true, changedFields: [...changedFields] };
 }
 
 // ── Lessons ──────────────────────────────────────────────────────────────

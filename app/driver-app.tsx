@@ -53,6 +53,8 @@ type LearnerDraft = {
   eligibility: string;
   transmission: string;
   schoolWork: string;
+  /** Edit form only (createLearner ignores it). */
+  licenceStage: string;
   /** Must be an existing, active instructor's id — selected from a dropdown, never free-typed (see lib/repo.ts#createLearner). */
   instructorId: string;
 };
@@ -71,6 +73,7 @@ const emptyLearner: LearnerDraft = {
   eligibility: "",
   transmission: "",
   schoolWork: "",
+  licenceStage: "learner",
   instructorId: "",
 };
 
@@ -159,6 +162,8 @@ export default function DriverApp() {
   const [detail, setDetail] = useState<Detail | null>(null);
   const [draft, setDraft] = useState<LessonDraft | null>(null);
   const [addingLearner, setAddingLearner] = useState(false);
+  // True while the learner form edits the selected learner (instead of creating one).
+  const [editingLearner, setEditingLearner] = useState(false);
   const [learnerDraft, setLearnerDraft] = useState<LearnerDraft>(emptyLearner);
   const [status, setStatus] = useState<{ kind: "info" | "error" | "ok"; text: string } | null>(null);
   const [saving, setSaving] = useState(false);
@@ -300,6 +305,50 @@ export default function DriverApp() {
       setLearnerDraft(emptyLearner);
       await loadLearner(learner.id);
       setStatus({ kind: "ok", text: `${learner.fullName} added. Ready for Lesson #1.` });
+    } catch (error) {
+      setStatus({ kind: "error", text: (error as Error).message });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const openEditLearner = () => {
+    if (!detail) return;
+    const l = detail.learner;
+    setLearnerDraft({
+      fullName: l.fullName, address: l.address ?? "", phone: l.phone ?? "", dob: l.dob ?? "", licenceNumber: l.licenceNumber ?? "",
+      licenceExpiry: l.licenceExpiry ?? "", eligibility: l.eligibility ?? "", transmission: l.transmission ?? "", schoolWork: l.schoolWork ?? "",
+      licenceStage: l.licenceStage, instructorId: l.instructorId,
+    });
+    setEditingLearner(true);
+    setAddingLearner(true);
+    setStatus(null);
+  };
+
+  const closeLearnerForm = () => {
+    setAddingLearner(false);
+    setEditingLearner(false);
+  };
+
+  const saveLearnerEdit = async () => {
+    if (!detail) return;
+    setSaving(true);
+    setStatus(null);
+    try {
+      const { instructorId: _owner, ...fields } = learnerDraft;
+      void _owner;
+      const result = await api<{ learner: Learner; changed: boolean; message?: string }>(`/api/learners/${encodeURIComponent(detail.learner.id)}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(fields),
+      });
+      const { learner } = result;
+      const swap = (list: Learner[]) => list.map((l) => (l.id === learner.id ? learner : l)).sort(byName);
+      setLearners(swap);
+      setArchivedLearners((current) => (current ? swap(current) : current));
+      setDetail((current) => (current && current.learner.id === learner.id ? { ...current, learner } : current));
+      closeLearnerForm();
+      setStatus({ kind: "ok", text: result.changed ? `${learner.fullName} updated.` : "No changes: the details are already up to date." });
     } catch (error) {
       setStatus({ kind: "error", text: (error as Error).message });
     } finally {
@@ -519,6 +568,7 @@ export default function DriverApp() {
     // then the first active instructor — always still changeable via the dropdown.
     const defaultInstructorId = signedInInstructorId ?? storage.get(LAST_INSTRUCTOR_KEY) ?? instructors[0]?.id ?? "";
     setLearnerDraft({ ...emptyLearner, instructorId: instructors.some((i) => i.id === defaultInstructorId) ? defaultInstructorId : "" });
+    setEditingLearner(false);
     setAddingLearner(true);
     setStatus(null);
   };
@@ -614,7 +664,7 @@ export default function DriverApp() {
               {selectOptions.map((learner) => <option key={learner.id} value={learner.id}>{optionLabel(learner)}</option>)}
             </select>
           </label>
-          <button type="button" className="btn ghost" onClick={() => (addingLearner ? setAddingLearner(false) : openAddLearner())}>
+          <button type="button" className="btn ghost" onClick={() => (addingLearner ? closeLearnerForm() : openAddLearner())}>
             {addingLearner ? "Cancel" : "+ New"}
           </button>
         </div>
@@ -626,7 +676,7 @@ export default function DriverApp() {
 
       {addingLearner ? (
         <section className="card">
-          <h2>New learner</h2>
+          <h2>{editingLearner ? "Edit learner" : "New learner"}</h2>
           <div className="grid">
             <label className="field full"><span>Student name *</span><input value={learnerDraft.fullName} onChange={(e) => learnerField("fullName", e.target.value)} autoComplete="off" /></label>
             <label className="field full"><span>Address</span><input value={learnerDraft.address} onChange={(e) => learnerField("address", e.target.value)} /></label>
@@ -643,16 +693,30 @@ export default function DriverApp() {
               </select>
             </label>
             <label className="field full"><span>School / Work</span><input value={learnerDraft.schoolWork} onChange={(e) => learnerField("schoolWork", e.target.value)} /></label>
-            <label className="field full"><span>Instructor *</span>
-              <select value={learnerDraft.instructorId} onChange={(e) => learnerField("instructorId", e.target.value)}>
-                <option value="">Select instructor…</option>
-                {instructors.map((i) => <option key={i.id} value={i.id}>{i.fullName}</option>)}
-              </select>
-            </label>
+            {editingLearner ? (
+              <label className="field full"><span>Licence stage</span>
+                <select value={learnerDraft.licenceStage} onChange={(e) => learnerField("licenceStage", e.target.value)} data-testid="edit-licence-stage">
+                  <option value="learner">Learner</option>
+                  <option value="p1">P1</option>
+                  <option value="p2">P2</option>
+                  <option value="full">Full</option>
+                </select>
+              </label>
+            ) : (
+              <label className="field full"><span>Instructor *</span>
+                <select value={learnerDraft.instructorId} onChange={(e) => learnerField("instructorId", e.target.value)}>
+                  <option value="">Select instructor…</option>
+                  {instructors.map((i) => <option key={i.id} value={i.id}>{i.fullName}</option>)}
+                </select>
+              </label>
+            )}
           </div>
-          <button type="button" className="btn primary block" disabled={saving} onClick={() => void addLearner()}>
-            {saving ? "Saving…" : "Save learner"}
-          </button>
+          <div className="form-actions">
+            <button type="button" className="btn primary block" disabled={saving} onClick={() => void (editingLearner ? saveLearnerEdit() : addLearner())} data-testid="save-learner">
+              {saving ? "Saving…" : editingLearner ? "Save changes" : "Save learner"}
+            </button>
+            {editingLearner ? <button type="button" className="btn ghost block" disabled={saving} onClick={closeLearnerForm} data-testid="cancel-edit-learner">Cancel</button> : null}
+          </div>
         </section>
       ) : null}
 
@@ -678,6 +742,9 @@ export default function DriverApp() {
               <button type="button" className="link" onClick={() => void copyIntegrationId(detail.learner.id)}>Copy ID</button>
             </p>
             <ExportPdfButton learnerId={detail.learner.id} lessonCount={history.lessons.length} />
+            {!signedInInstructorId || signedInInstructorId === detail.learner.instructorId ? (
+              <button type="button" className="btn ghost block edit-learner-btn" disabled={saving} onClick={openEditLearner} data-testid="edit-learner">Edit learner</button>
+            ) : null}
             {panel === "archived" ? (
               <div className="lifecycle archived" data-testid="archived-banner">
                 <p><b>Archived</b> {detail.learner.archivedAt?.slice(0, 10)} — hidden from the daily learner list. Lessons, signatures, progress and PDF are kept.</p>
@@ -784,6 +851,7 @@ export default function DriverApp() {
 
           <section className="card history">
             <h2>History</h2>
+            <p className="meta" data-testid="history-learner">{detail.learner.fullName}</p>
             {!history.lessons.length ? <p className="empty">No lessons yet.</p> : (
               <ol>
                 {history.lessons.map((lesson) =>

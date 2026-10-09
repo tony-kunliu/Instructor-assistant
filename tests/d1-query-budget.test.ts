@@ -17,6 +17,7 @@ import {
   getLearnerProgress,
   getLessonCompetencySelections,
   importPaperLessons,
+  updateLearner,
   updateLesson,
 } from "../lib/repo.ts";
 import { PAPER_CSV_COLUMNS } from "../lib/paper-import.ts";
@@ -434,6 +435,30 @@ test("budget: an edit's revision is ONE INSERT...SELECT (+1 statement; signed in
   assert.ok(withActor <= 25, `updateLesson issued ${withActor} statements (budget 25)`);
   assert.ok(signedIn.maxBinds() <= 100, `max bound parameters ${signedIn.maxBinds()} (D1 limit 100)`);
   assert.equal(Number((await raw.prepare("SELECT COUNT(*) AS n FROM lesson_revisions WHERE lesson_id = ?").bind(lesson1.id).first<{ n: number }>())?.n), 2);
+});
+
+// ── Learner edit (migration 0008, learner management Phase 1 / L6) ──
+
+test("budget: a learner edit is 5 statements (learner, actor, batch of revision + update, re-read), a no-op 2, binds <= 100", async (t) => {
+  const { db: raw, learner, tony } = await setup();
+  const all = {
+    fullName: "QA Budget Renamed", address: "1 QA St", phone: "0400 000 000", dob: "2008-01-02", licenceNumber: "QA1", licenceExpiry: "2027-01-02",
+    eligibility: "Eligible", transmission: "auto", schoolWork: "QA", licenceStage: "p1", actingInstructorId: tony.id,
+  };
+  const edit = countingD1(raw);
+  await updateLearner(edit.db, learner.id, all);
+  const editStatements = edit.count();
+  const noop = countingD1(raw);
+  const result = await updateLearner(noop.db, learner.id, all);
+  assert.equal(result.changed, false);
+  const noopStatements = noop.count();
+  const invocationTotal = editStatements + MIDDLEWARE_AND_ROUTE_QUERIES;
+  t.diagnostic(`updateLearner (all 10 fields): ${editStatements} statements, no-op: ${noopStatements}, + middleware lookup = ${invocationTotal}, max bound params ${edit.maxBinds()}`);
+  assert.equal(editStatements, 5);
+  assert.equal(noopStatements, 2);
+  assert.ok(invocationTotal <= FREE_PLAN_INVOCATION_LIMIT, `learner edit invocation total ${invocationTotal} (Free plan limit ${FREE_PLAN_INVOCATION_LIMIT})`);
+  assert.ok(edit.maxBinds() <= 100, `max bound parameters ${edit.maxBinds()} (D1 limit 100)`);
+  assert.equal(Number((await raw.prepare("SELECT COUNT(*) AS n FROM learner_revisions").first<{ n: number }>())?.n), 1);
 });
 
 // ── createLesson assessing 22 competencies ──────────────────────────────

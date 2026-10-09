@@ -7,7 +7,7 @@
 //                               accounts reference these ids.
 // None of those features exist yet.
 
-export const SCHEMA_VERSION = 7;
+export const SCHEMA_VERSION = 8;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS instructors (
@@ -169,4 +169,15 @@ CREATE TABLE IF NOT EXISTS lesson_revisions (
   UNIQUE (lesson_id, revision_no)
 );
 CREATE INDEX IF NOT EXISTS lesson_revisions_lesson_idx ON lesson_revisions (lesson_id, revision_no);
+
+CREATE TABLE IF NOT EXISTS learner_revisions (
+  id                       TEXT PRIMARY KEY,
+  learner_id               TEXT NOT NULL REFERENCES learners (id),
+  revision_no              INTEGER NOT NULL,
+  edited_at                TEXT NOT NULL,
+  edited_by_instructor_id  TEXT REFERENCES instructors (id),
+  snapshot_json            TEXT NOT NULL,
+  UNIQUE (learner_id, revision_no)
+);
+CREATE INDEX IF NOT EXISTS learner_revisions_learner_idx ON learner_revisions (learner_id, revision_no);
 `;
