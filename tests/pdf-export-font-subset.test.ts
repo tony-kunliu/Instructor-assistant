@@ -2,7 +2,7 @@
 // Noto Sans SC (10+ MB per export). It now embeds only the glyphs a document uses, taken from a
 // static GB2312 subset (public/fonts/NotoSansSC-Subset.otf), and falls back to the full font when a
 // character is outside that subset. See scripts/build-pdf-font-subset.py for why the subset is static.
-import { test } from "node:test";
+import { test, type TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
@@ -34,6 +34,14 @@ function lesson(n: number, overrides: Partial<Lesson> = {}): Lesson {
 }
 
 const compact = (extra: Partial<PdfExportInput> = {}): Pick<PdfExportInput, "templateBytes" | "fontBytes" | "fallbackFontBytes"> => ({ templateBytes, fontBytes: subsetFont, fallbackFontBytes: async () => fullFont, ...extra });
+
+/** Skip message for a missing poppler. In CI (CI env set) the test fails instead: the CI workflow installs poppler-utils, so a missing binary there is a broken pipeline, not a skip. */
+const PDFTOTEXT_MISSING = "pdftotext (poppler-utils) is not installed locally, so the poppler text/position equivalence check was skipped; install poppler-utils to run it";
+
+function noPoppler(t: TestContext): void {
+  if (process.env.CI) assert.fail(PDFTOTEXT_MISSING);
+  t.skip(PDFTOTEXT_MISSING);
+}
 
 function pdftotext(bytes: Uint8Array, args: string[]): string | null {
   const file = path.join(mkdtempSync(path.join(os.tmpdir(), "font-subset-")), "out.pdf");
@@ -81,12 +89,12 @@ test("compact font: pdftotext output and every word's position are identical to 
     for (const args of [["-layout"], ["-bbox"]]) {
       const a = pdftotext(small.bytes, args);
       const b = pdftotext(whole.bytes, args);
-      if (a === null || b === null) return t.skip("pdftotext (poppler-utils) is not installed: text-equivalence check skipped");
+      if (a === null || b === null) return noPoppler(t);
       assert.equal(a, b, `${name} ${args[0]}`);
     }
   }
   const text = pdftotext((await buildCbtaChecklistPdf({ ...compact(), ...SHAPES.chinese })).bytes, ["-layout"]);
-  if (text === null) return t.skip('+SK+');
+  if (text === null) return noPoppler(t);
   for (const expected of ["张伟 李娜", "堪培拉市贝尔康嫩路12号", "贝尔康嫩 Belconnen", "#2 (amended)", "2026-01-01"]) assert.ok(text.includes(expected), expected);
 });
 
@@ -128,7 +136,7 @@ test("a rare CJK character outside the compact font loads the full font once and
   const whole = await buildCbtaChecklistPdf({ templateBytes, fontBytes: fullFont, ...shape });
   const a = pdftotext(viaFallback.bytes, ["-layout"]);
   const b = pdftotext(whole.bytes, ["-layout"]);
-  if (a === null || b === null) return t.skip("pdftotext (poppler-utils) is not installed: text-equivalence check skipped");
+  if (a === null || b === null) return noPoppler(t);
   assert.equal(a, b);
   assert.ok(a.includes(`rare ${RARE_HANZI} end`));
 });
