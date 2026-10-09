@@ -9,8 +9,8 @@ direction is in `docs/ECOSYSTEM_ROADMAP.md` (P1–P6)._
 | Item | Where designed | Status |
 |---|---|---|
 | Learner edit, Phase 1 (name, address, phone, licence, ...) | `docs/superpowers/specs/2026-10-08-learner-management-plan.md` | **DONE** (in Production, migration 0008). |
-| Learner data for assessment rules, Phase 2 (licence issue date, old/new licence, HPT, logged hours) | same plan | Paused by Tony until a real learner approaches Review 1-17 / Competency 23. Until then the instructor checks `docs/ACT_ASSESSMENT_STANDARDS.md` manually. |
-| Assessment-rules reminders (never blockers): 36 h gates (R1), Competency 23 eligibility (R2) and hours window (R3), ADI Audit booking text (R4), learner licence validity (R5) | `docs/ACT_ASSESSMENT_STANDARDS.md` | Paused with Phase 2, same trigger. |
+| Learner data for assessment rules, Phase 2 (licence issue date, HPT, logged hours) | same plan; design: `docs/superpowers/specs/2026-10-10-rules-reminders-and-learner-phase2-design.md` | Paused by Tony until a real learner approaches Review 1-17 / Competency 23. Until then the instructor checks `docs/ACT_ASSESSMENT_STANDARDS.md` manually. |
+| Assessment-rules reminders (never blockers): 36 h gates (R1), Competency 23 eligibility (R2) and hours window (R3), ADI Audit online booking link (R4), learner licence validity (R5) | `docs/superpowers/specs/2026-10-10-rules-reminders-and-learner-phase2-design.md` | Design waiting for Tony's approval. |
 | Learner management, Phase 3 (missing-details marker, duplicate licence warning, transfer a learner to another instructor, archive reason) | learner management plan | Undecided; decide per item. |
 
 ## Minor follow-ups (bundle into the next feature)
