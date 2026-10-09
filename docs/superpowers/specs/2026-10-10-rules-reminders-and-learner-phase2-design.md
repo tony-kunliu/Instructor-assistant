@@ -1,22 +1,25 @@
 # Assessment-rules reminders + learner data Phase 2 — design
 
-_Date: 2026-10-10 · Status: DESIGN, waiting for Tony's approval in chat · No code,
+_Date: 2026-10-10 · Status: **APPROVED by Tony (2026-10-10)**, with all defaults and D21 · No code,
 no migration yet · Based on `origin/staging` 7a4f7a0._
 
 ## 中文摘要（给 Tony）
+
+**已批准（2026-10-10）**：全部默认值；Q6 改为新决定 D21。
 
 1. 只做**提醒**，永远不阻止保存课程（你的规则）。数据缺失时只显示中性提示“补充 X 才能检查”，绝不显示假的“通过”。
 2. R1 36 小时：按课程的日期+结束时间（堪培拉时间）计算“1-17/1-22 完成”的时刻，不用数据库写入时间（History Edit 会改写它）。今天就能算，不需要新字段。
 3. R3 Competency 23 时间窗：周一到周四、周六 07:00-19:00，周五 07:00-21:00，周日和 ACT 公众假日不行。假日用仓库里的一张小表（2026-2027），超出范围时提示“请手动核对”。
 4. R5 学习驾照有效：用已有的 licence expiry，今天就能算。
-5. R2 Competency 23 资格：**今天无法计算**，需要新字段：学习驾照签发日期、（可选）首次签发日期、HPT 通过日期、学员日志小时数及其日期。
+5. R2 Competency 23 资格：**今天无法计算**，需要新字段：学习驾照签发日期（可选）、（可选）首次签发日期、HPT 通过日期、学员日志小时数及其日期。
+   D21：签发日期留空时，用驾照到期日减 5 年**估算**，结果一律标注“estimated from the licence expiry”；阈值在估算日期前后 14 天内会翻转时显示“borderline, check the licence card”，绝不显示通过。手填日期优先。
 6. R4 已改：ADI Audit 预约现在在网上做，App 只显示一个链接“Book the Competency 23 drive with ADI Audit (ACT online form)”，旁边一行提示“至少提前 1 个完整工作日、书面”。不生成文本、不存任何预约信息。
 7. 提醒出现在：Start Lesson 面板（下一步相关的最多 3 行）、课程表单（选了 Review / 23 作为 Assessed 时，保存前）、学员摘要（R5）。
 8. Migration 0009 只加可为空的列；学员编辑表单增加一个可折叠的“Competency 23 eligibility”区；修订快照包含新字段。
 9. ACTGDS 合同不变（hash 不变），新数据不发给 ACTGDS，不存邮箱。
 10. 分两个小任务：T1 = R1/R3/R5 + 预约链接（无 migration）；T2 = migration 0009 + 新字段 + R2。
-11. 每个决定都编号 D1-D20，有推荐默认值，你可以回复“全部默认”一次批准。
-12. 末尾有开放问题（Q1-Q9），法律条文有歧义的地方我没有替你解释，都选了“只会更保守”的默认值。
+11. 每个决定都编号 D1-D21，已按推荐默认值批准。
+12. 开放问题 Q1-Q9 已回答：Q1-Q5、Q7-Q9 用默认值（Q9：先重试抓取假日，仍被拦再由你粘贴）；Q6 → D21。
 
 ## 1. Verification note
 
@@ -64,7 +67,7 @@ implementer re-checks the text against the instrument (the instruments win).
 | D12 | Month and age arithmetic | Calendar months, clamped **forward** (31 Aug + 6 months = 1 Mar). 5½ months = 5 months + 16 days (Q5). Birthdays on 29 Feb count from 1 Mar in non-leap years. 16 years 350 days = 17th birthday − 15 days (the instrument's own gloss). All conservative. |
 | D13 | R2 evaluation date | Start Lesson panel: today. Lesson form: the draft lesson date. |
 | D14 | R5 "current" | Current when `licenceExpiry` ≥ lesson date (expiry day counts as valid). Amber within 30 days before expiry. Only for `licenceStage = learner`. Missing expiry = "Add licence expiry to check the learner licence is current." |
-| D15 | R2 licence type | Derived from the **current** licence issue date: before 2020-01-01 = old, otherwise new (this is the instrument's definition). No separate type column. |
+| D15 | R2 licence type | Derived from the **current** licence issue date, or the D21 estimate when it is empty: before 2020-01-01 = old, otherwise new (this is the instrument's definition). With an estimate, D21's borderline rule applies to this cut-off too. No separate type column. |
 | D16 | ACT public holidays | Committed table `lib/act-public-holidays.ts`: `{ date, name }[]` plus `coveredYears` (2026 and 2027), the source URL and retrieval date in a header comment. Source: the ACT Government public-holidays page and any holiday declared on legislation.act.gov.au. No runtime fetch. A date outside `coveredYears` gives "ACT public holidays for 2028 are not loaded; check manually." (never a pass). Update: a BACKLOG item each October adds the next year; a test checks table shape, sort order, no duplicates and that every listed date is inside `coveredYears`. No clock-dependent CI test (no time bomb). |
 
 ### Data model (T2 only)
@@ -72,31 +75,35 @@ implementer re-checks the text against the instrument (the instruments win).
 | # | Decision | Recommended default |
 |---|---|---|
 | D17 | Migration 0009 | `ALTER TABLE learners ADD COLUMN` × 5, all nullable TEXT/INTEGER, no defaults, no rebuild, no backfill. Same SQL appended to `lib/schema.ts` (`SCHEMA_VERSION = 9`). |
-| D18 | Fields | See the table below. |
-| D19 | Validation (shared `parseLearnerFields`) | New dates must be real calendar dates (not just the YYYY-MM-DD shape; the old `isoDate` gap stays for old fields: no scope creep). `learnerLicenceIssuedOn` ≤ today and ≥ `dob` when both set; `learnerLicenceFirstIssuedOn` ≤ `learnerLicenceIssuedOn`; `hptPassedOn` ≤ today; `loggedHours` integer 0–999; `loggedHoursOn` ≤ today; `loggedHours` without `loggedHoursOn` is rejected (the form fills `loggedHoursOn` with today when hours are typed, visible and editable). Edit stays strict; "" clears to null. |
+| D18 | Fields | See the table below. `learnerLicenceIssuedOn` stays optional (D21 estimates it when empty). |
+| D19 | Validation (shared `parseLearnerFields`) | New dates must be real calendar dates (not just the YYYY-MM-DD shape; the old `isoDate` gap stays for old fields: no scope creep). `learnerLicenceIssuedOn` ≤ today and ≥ `dob` when both set; `learnerLicenceFirstIssuedOn` ≤ `learnerLicenceIssuedOn`; `hptPassedOn` ≤ today; `loggedHours` integer 0–999; `loggedHoursOn` ≤ today; `loggedHours` without `loggedHoursOn` is rejected (the form fills `loggedHoursOn` with today when hours are typed, visible and editable). Edit stays strict; "" clears to null. Unchanged by D21 (the issue date stays optional). |
 | D20 | Revisions and form | `LEARNER_EDIT_KEYS` gains the 5 keys, so the `learner_revisions` snapshot includes them (`json_object` in the same INSERT … SELECT; bound parameters stay 4). Old snapshots lack the keys; readers treat missing as null. The learner form (New and Edit) gets a collapsed "Competency 23 eligibility" group with the 5 fields. |
+| D21 | Issue date unknown (Tony's answer to Q6, approved 2026-10-10) | When `learnerLicenceIssuedOn` is empty and `licenceExpiry` is set, R2 **estimates** the issue date as `licenceExpiry` minus 5 years, same calendar day (29 Feb → 1 Mar, as in D12), because an ACT learner licence expires 5 years after issue. Every result that uses it says "estimated from the licence expiry", never shown as exact. A typed issue date overrides the estimate. **Borderline:** evaluate the rule with the estimate moved 14 days earlier and 14 days later; if any outcome differs (old/new cut-off 1 Jan 2020, under/over 25 at issue, 5½ / 12 / 6 months held), show "Borderline, check the licence card" and never a pass. Both issue date and expiry empty: the neutral "add X" note. No new column; `licenceExpiry` already exists. Only T2 (R2) uses this; T1 needs no migration for it. Tests: estimate arithmetic (incl. 29 Feb), each threshold at ±14 / ±15 days, typed date overrides, both empty. |
 
 | Field (camelCase / column) | Type | Needed for | Notes |
 |---|---|---|---|
-| `learnerLicenceIssuedOn` / `learner_licence_issued_on` | date | R2 (type, months held, age at issue) | Issue date of the **current** learner licence. Minimal field for R2. |
+| `learnerLicenceIssuedOn` / `learner_licence_issued_on` | date, optional | R2 (type, months held, age at issue) | Issue date of the **current** learner licence. Empty = estimated from `licenceExpiry` (D21). |
 | `learnerLicenceFirstIssuedOn` / `learner_licence_first_issued_on` | date, optional | R2 (age band if renewed, Q3) | Blank = not renewed (same as current). |
 | `hptPassedOn` / `hpt_passed_on` | date | R2 (new licence) | Null = not recorded, never "not passed". |
 | `loggedHours` / `logged_hours` | integer | R2 (new licence) | The learner's logbook total as the instructor reads it. Never computed from this app's lessons (Q4). |
 | `loggedHoursOn` / `logged_hours_on` | date | R2 | "As of" date shown with the hours. |
 | existing `dob` | date | R2 age | Already stored. |
-| existing `licenceExpiry` | date | R5 | Already stored. |
+| existing `licenceExpiry` | date | R5; R2 via the D21 estimate | Already stored. |
 
 Not added: licence type (derived, D15), licence number/address for booking
 text (R4 dropped), email (never stored here).
 
 **Computable today:** R1 (with D8 for lessons without times), R3 (once the
 holiday table exists), R5. **Not computable today:** R2 — it needs at minimum
-`learnerLicenceIssuedOn`, `hptPassedOn`, `loggedHours` (+ `loggedHoursOn`).
+`hptPassedOn`, `loggedHours` (+ `loggedHoursOn`), plus `learnerLicenceIssuedOn`
+or, failing that, `licenceExpiry` for the D21 estimate.
 Until then the Start Lesson panel says "Add licence issue date, HPT and logged
 hours to check Competency 23 eligibility."
 
 R2 result logic (`checkFinalDriveEligibility(learner, onDate)`): any input
-missing → grey "add X" listing exactly the missing fields; type old → age ≥
+missing (issue date counts as present when D21 can estimate it) → grey "add X"
+listing exactly the missing fields; with an estimated issue date, D21's label and
+borderline rule apply to every condition below; type old → age ≥
 16y350d and held ≥ 5½ months (from first issue if given, else current);
 type new → age band from age at issue: if first-issued and current-issued give
 **different** bands, grey "Age band unclear for a renewed licence: check the
@@ -177,6 +184,11 @@ step: none beyond the phone check, unless Q9 needs him to paste holiday dates.
 
 ## 9. Open questions for Tony (defaults already chosen to be conservative)
 
+**Answered 2026-10-10:** Q1–Q5 and Q7–Q9 accepted with the defaults below
+(Q9: the builder retries fetching the ACT holiday dates; if still blocked, Tony
+pastes the list). Q6: the issue date is on neither the card nor the logbook →
+D21.
+
 | # | Question | Default until answered |
 |---|---|---|
 | Q1 | Is "36 hours" elapsed clock time (not hours of tuition)? The text says "not less than 36 hours after … completed". | Elapsed clock time. |
@@ -184,7 +196,7 @@ step: none beyond the phone check, unless Q9 needs him to paste holiday dates.
 | Q3 | Renewed new licence: do the 12 / 6 months run from the renewal or the first learner licence? Is "aged under 25 when issued" the first or the renewed licence? | Months from the current licence (later date); differing age bands = "unclear", no pass. |
 | Q4 | "Required driving hours": does Tony enter the logbook total exactly as the logbook states (including any credit for ADI lessons or night hours)? The instrument does not define them; the app does not compute them. | Instructor enters the logbook figure. |
 | Q5 | "Five and a half months": 5 months + 15 or 16 days? (Practically moot: an old licence not renewed since 2019 has most likely expired.) | 5 months + 16 days. |
-| Q6 | Does the ACT learner licence card (or the logbook) show the issue date, so Tony can fill `learnerLicenceIssuedOn`? | Field stays optional; R2 shows "add X". |
+| Q6 | Does the ACT learner licence card (or the logbook) show the issue date, so Tony can fill `learnerLicenceIssuedOn`? | **Answered: no → D21** (estimate from expiry). |
 | Q7 | R3 "conducted and completed between": both start and finish inside the window? | Yes, both. |
 | Q8 | "One clear business day": the CoP does not define it here, so the app only shows the note and computes nothing. OK? | Note only. |
 | Q9 | ACT holiday dates for 2026–2027 could not be fetched from this environment (HTTP 403). The T1 implementer retries; if still blocked, may Tony paste the official list or link once? | Retry first; ask only if blocked. |
