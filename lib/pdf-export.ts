@@ -65,8 +65,10 @@ export type PdfExportResult = {
   bytes: Uint8Array;
   pageCount: number;
   hadOverflow: boolean;
-  /** Characters in the exported text that no available font has (drawn as .notdef boxes). Empty in normal use. */
+  /** Characters in the exported text that no available font has (they are drawn as empty boxes). Empty in normal use. */
   unsupportedChars: string[];
+  /** "used": the full font was loaded and embedded; "failed": a rare CJK character needed it but it could not be loaded; "not-needed": the compact font sufficed. */
+  fullFontStatus: "not-needed" | "used" | "failed";
 };
 
 export type PdfExportInput = {
@@ -115,6 +117,12 @@ export function patchCffHeader(font: unknown) {
     if (bytes[0] === 1 && !(bytes[3] >= 1 && bytes[3] <= 4)) bytes[3] = 4;
     return bytes;
   };
+}
+
+/** CJK ideographs and CJK/fullwidth punctuation: the only characters worth downloading the 16 MB full font for (emoji and symbols are not in it either). */
+export function isCjkChar(ch: string): boolean {
+  const cp = ch.codePointAt(0) as number;
+  return (cp >= 0x3000 && cp <= 0x303f) || (cp >= 0x3400 && cp <= 0x4dbf) || (cp >= 0x4e00 && cp <= 0x9fff) || (cp >= 0xf900 && cp <= 0xfaff) || (cp >= 0xff00 && cp <= 0xffef) || (cp >= 0x20000 && cp <= 0x2ebef);
 }
 
 /** Distinct printable characters (code points) of `text` that `font` has no glyph for. */
@@ -461,13 +469,16 @@ export async function buildCbtaChecklistPdf(input: PdfExportInput): Promise<PdfE
     rest = rest.slice(CONTINUATION_PAGE_ROWS);
   }
 
-  // Pick the font: the compact one unless the text needs a character only the full font has.
+  // Pick the font: the compact one unless a rare CJK character needs the full font. Emoji and symbols
+  // that neither font has are reported without downloading the full font.
   const text = exportedText(learner, input.lessons);
   let fontData = toUint8Array(fontBytes);
   let fkFont = loadFont(fontData);
   let unsupported = missingChars(fkFont, text);
-  if (unsupported.length > 0 && input.fallbackFontBytes) {
+  let fullFontStatus: PdfExportResult["fullFontStatus"] = "not-needed";
+  if (unsupported.some(isCjkChar)) {
     try {
+      if (!input.fallbackFontBytes) throw new Error("no full font loader");
       const fullData = toUint8Array(await input.fallbackFontBytes());
       const fullFont = loadFont(fullData);
       const stillMissing = missingChars(fullFont, text);
@@ -475,9 +486,12 @@ export async function buildCbtaChecklistPdf(input: PdfExportInput): Promise<PdfE
         fontData = fullData;
         fkFont = fullFont;
         unsupported = stillMissing;
+        fullFontStatus = "used";
       }
     } catch {
-      // Full font unavailable (e.g. offline): keep the compact font; missing characters are reported, never a crash.
+      // Full font unavailable (offline, 404, login page): keep the compact font. The caller sees
+      // fullFontStatus "failed" and unsupportedChars, and must warn before anything is downloaded.
+      fullFontStatus = "failed";
     }
   }
   const measurer = measurerFor(fkFont);
@@ -562,7 +576,15 @@ export async function buildCbtaChecklistPdf(input: PdfExportInput): Promise<PdfE
   }
 
   const bytes = await outDoc.save();
-  return { bytes, pageCount: outDoc.getPageCount(), hadOverflow: dryRunNotes.length > 0, unsupportedChars: unsupported };
+  return { bytes, pageCount: outDoc.getPageCount(), hadOverflow: dryRunNotes.length > 0, unsupportedChars: unsupported, fullFontStatus };
+}
+
+/** What the export UI must say before handing over a PDF; null when the PDF is complete. */
+export function exportWarning(result: Pick<PdfExportResult, "unsupportedChars" | "fullFontStatus">): string | null {
+  if (result.unsupportedChars.length === 0) return null;
+  const list = result.unsupportedChars.map((c) => `"${c}"`).join(" ");
+  const why = result.fullFontStatus === "failed" ? " The full font for some Chinese characters could not be downloaded, so those characters may be missing; try again when online." : "";
+  return `The PDF cannot draw ${result.unsupportedChars.length === 1 ? "this character" : "these characters"}: ${list}. ${result.unsupportedChars.length === 1 ? "It" : "They"} will print as empty boxes.${why}`;
 }
 
 export function plannedPageCount(lessonCount: number): number {

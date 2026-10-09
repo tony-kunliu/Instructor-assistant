@@ -10,7 +10,7 @@ import os from "node:os";
 import path from "node:path";
 import { PDFDocument, PDFName, PDFRawStream, decodePDFRawStream } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
-import { buildCbtaChecklistPdf, fontHasSubroutines, patchCffHeader, type PdfExportInput } from "../lib/pdf-export.ts";
+import { buildCbtaChecklistPdf, exportWarning, fontHasSubroutines, patchCffHeader, type PdfExportInput } from "../lib/pdf-export.ts";
 import type { Learner, Lesson } from "../lib/types.ts";
 
 const templateBytes = readFileSync(new URL("../public/pdf-template/adi-cbta-checklist.pdf", import.meta.url));
@@ -114,45 +114,79 @@ test("static subset covers all fixed text the export draws plus Latin-1, punctua
   for (const ch of needed) assert.ok(f.hasGlyphForCodePoint(ch.codePointAt(0)!), `U+${ch.codePointAt(0)!.toString(16)} ${ch}`);
 });
 
-test("a character outside the compact font (but in the full font) switches to the full font: output identical to the old whole-font export, loader called once", async (t) => {
+const RARE_HANZI = "龘"; // U+9F98: not in GB2312 nor the common subset, but in the full font
+const SYMBOL = "☂"; // in the full font, not CJK: must NOT trigger the full-font download
+
+test("a rare CJK character outside the compact font loads the full font once and is drawn (output matches the whole-font export)", async (t) => {
   let loads = 0;
-  const shape = { learner, lessons: [lesson(1, { comments: "umbrella ☂ end" })] };
+  const shape = { learner, lessons: [lesson(1, { comments: `rare ${RARE_HANZI} end` })] };
   const viaFallback = await buildCbtaChecklistPdf({ ...compact({ fallbackFontBytes: async () => { loads++; return fullFont; } }), ...shape });
   assert.equal(loads, 1);
+  assert.equal(viaFallback.fullFontStatus, "used");
   assert.deepEqual(viaFallback.unsupportedChars, []);
-  const text = pdftotext(viaFallback.bytes, ["-layout"]);
-  if (text === null) return t.skip('+SK+');
-  assert.ok(text.includes("umbrella ☂ end"));
-  assert.ok(viaFallback.bytes.length > 5_000_000, "whole font embedded as before");
+  assert.equal(exportWarning(viaFallback), null);
+  const whole = await buildCbtaChecklistPdf({ templateBytes, fontBytes: fullFont, ...shape });
+  const a = pdftotext(viaFallback.bytes, ["-layout"]);
+  const b = pdftotext(whole.bytes, ["-layout"]);
+  if (a === null || b === null) return t.skip("pdftotext (poppler-utils) is not installed: text-equivalence check skipped");
+  assert.equal(a, b);
+  assert.ok(a.includes(`rare ${RARE_HANZI} end`));
 });
 
-test("the full font is not loaded when the compact font covers everything", async () => {
+test("a non-CJK symbol the full font has (☂) does NOT download the full font: it is reported instead", async () => {
   let loads = 0;
-  await buildCbtaChecklistPdf({ ...compact({ fallbackFontBytes: async () => { loads++; return fullFont; } }), ...SHAPES.chinese });
+  const result = await buildCbtaChecklistPdf({ ...compact({ fallbackFontBytes: async () => { loads++; return fullFont; } }), learner, lessons: [lesson(1, { comments: `umbrella ${SYMBOL} end` })] });
   assert.equal(loads, 0);
+  assert.equal(result.fullFontStatus, "not-needed");
+  assert.deepEqual(result.unsupportedChars, [SYMBOL]);
 });
 
-test("a character no font has (emoji) does not crash the export, stays small, is reported, and the rest of the text is intact", async (t) => {
+test("the full font is not loaded when the compact font covers everything (Chinese names, common hanzi)", async () => {
+  let loads = 0;
+  const result = await buildCbtaChecklistPdf({ ...compact({ fallbackFontBytes: async () => { loads++; return fullFont; } }), ...SHAPES.chinese });
+  assert.equal(loads, 0);
+  assert.equal(result.fullFontStatus, "not-needed");
+  assert.deepEqual(result.unsupportedChars, []);
+});
+
+test("traditional name characters (陳 鄭 張 李) are in the compact font: no full-font download", async () => {
+  let loads = 0;
+  const result = await buildCbtaChecklistPdf({ ...compact({ fallbackFontBytes: async () => { loads++; return fullFont; } }), learner: { ...learner, fullName: "陳鄭張李" }, lessons: [lesson(1)] });
+  assert.equal(loads, 0);
+  assert.deepEqual(result.unsupportedChars, []);
+});
+
+test("emoji no font has: no full-font download, reported, export completes and stays small", async () => {
   let loads = 0;
   const shape = { learner, lessons: [lesson(1, { comments: "car 🚗 ok" }), lesson(2, { comments: "Plain after" })] };
   const result = await buildCbtaChecklistPdf({ ...compact({ fallbackFontBytes: async () => { loads++; return fullFont; } }), ...shape });
-  assert.equal(loads, 1, "fallback consulted once");
+  assert.equal(loads, 0);
   assert.deepEqual(result.unsupportedChars, ["🚗"]);
+  assert.equal(result.fullFontStatus, "not-needed");
   assert.ok(result.bytes.length < 400_000, "no point embedding the 16 MB font when it lacks the glyph too");
-  const text = pdftotext(result.bytes, ["-layout"]);
-  if (text === null) return t.skip('+SK+');
-  assert.ok(text.includes("car"), "text before"); assert.ok(text.includes("ok"), "text after"); assert.ok(text.includes("Plain after"));
+  assert.match(exportWarning(result) ?? "", /🚗/);
 });
 
-test("if the fallback font cannot be loaded, the export still completes with the compact font and reports the unsupported characters", async () => {
-  const result = await buildCbtaChecklistPdf({ ...compact({ fallbackFontBytes: async () => { throw new Error("offline"); } }), learner, lessons: [lesson(1, { comments: "umbrella ☂ end" })] });
-  assert.deepEqual(result.unsupportedChars, ["☂"]);
+test("if the full-font download fails (404 / login page / offline), the export is not a crash: status 'failed', CJK characters reported, warning names them", async () => {
+  const result = await buildCbtaChecklistPdf({ ...compact({ fallbackFontBytes: async () => { throw new Error("HTTP 404"); } }), learner, lessons: [lesson(1, { comments: `x ${RARE_HANZI} y` })] });
+  assert.equal(result.fullFontStatus, "failed");
+  assert.deepEqual(result.unsupportedChars, [RARE_HANZI]);
   assert.equal(result.pageCount, 1);
+  const warning = exportWarning(result) ?? "";
+  assert.match(warning, new RegExp(RARE_HANZI));
+  assert.match(warning, /could not be downloaded/);
 });
 
-test("without a fallback loader a missing glyph is reported, never a crash", async () => {
-  const result = await buildCbtaChecklistPdf({ templateBytes, fontBytes: subsetFont, learner, lessons: [lesson(1, { comments: "ꙮ" })] });
-  assert.deepEqual(result.unsupportedChars, ["ꙮ"]);
+test("without a fallback loader a rare CJK character is reported as failed, never a crash", async () => {
+  const result = await buildCbtaChecklistPdf({ templateBytes, fontBytes: subsetFont, learner, lessons: [lesson(1, { comments: `ꙮ ${RARE_HANZI}` })] });
+  assert.equal(result.fullFontStatus, "failed");
+  assert.deepEqual(result.unsupportedChars, ["ꙮ", RARE_HANZI]);
+});
+
+test("exportWarning: null for a complete PDF; names every missing character (singular/plural wording)", () => {
+  assert.equal(exportWarning({ unsupportedChars: [], fullFontStatus: "not-needed" }), null);
+  assert.match(exportWarning({ unsupportedChars: ["🚗"], fullFontStatus: "not-needed" }) ?? "", /this character.*"🚗".*empty boxes/);
+  assert.match(exportWarning({ unsupportedChars: ["🚗", "☂"], fullFontStatus: "not-needed" }) ?? "", /these characters.*"🚗" "☂"/);
 });
 
 test("patchCffHeader throws when pdf-lib no longer exposes serializeFont (never a silent skip), and repairs offSize otherwise", async () => {
