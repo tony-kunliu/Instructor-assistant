@@ -11,7 +11,7 @@ here is DESUBROUTINIZED (no subrs), which is what makes fontkit's per-document s
 lib/pdf-export.ts refuses to subset any font that still has subroutines, and repairs the CFF header.
 
 Coverage: Basic Latin, Latin-1, Latin Extended-A, general punctuation, CJK symbols/punctuation,
-fullwidth forms, a few arrows/shapes/ticks, and 10,035 hanzi (simplified common + GB2312 + common traditional).
+fullwidth forms, en/em spaces (pasted text), ℃ and №, a few arrows/shapes/ticks, and 10,035 hanzi (simplified common + GB2312 + common traditional).
 Licence: the subset is a Modified Version of Noto Sans SC (Adobe/Google, SIL Open Font License 1.1),
 so it is distributed under the same OFL; the name table (copyright, licence, licence URL) is kept with
 --name-IDs='*'. See public/fonts/NotoSansSC-LICENSE.txt.
@@ -32,7 +32,7 @@ hanzi = open(root / "scripts/pdf-font-hanzi.txt", encoding="utf-8").read().strip
 assert len(hanzi) >= 10000, len(hanzi)
 
 unicodes = ("U+0020-007E,U+00A0-00FF,U+0100-017F,U+2010-2027,U+2030-203A,U+20AC,U+2190-2193,"
-            "U+2212,U+2022,U+3000-303F,U+FF00-FFEF,U+2460-2473,U+25A0-25CF,U+2713,U+2714")
+            "U+2212,U+2022,U+3000-303F,U+FF00-FFEF,U+2460-2473,U+25A0-25CF,U+2713,U+2714,U+2000-200A,U+2103,U+2116")
 
 with tempfile.NamedTemporaryFile("w", suffix=".txt", encoding="utf-8", delete=False) as f:
     f.write(hanzi)

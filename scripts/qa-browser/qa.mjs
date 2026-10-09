@@ -499,6 +499,8 @@ const draw = async (page, index) => {
   const pdfPath = `${OUT}/qa-export.pdf`;
   await download.saveAs(pdfPath);
   check("regression: PDF export downloads a real PDF", readFileSync(pdfPath).subarray(0, 5).toString() === "%PDF-", download.suggestedFilename());
+  await s.page.waitForSelector("[data-testid=export-status-line]", { timeout: 15000 }).catch(() => {});
+  check("pdf status line: an English export says compact font", /^PDF ready: \d+ KB \(compact font\)$/.test((await s.page.textContent("[data-testid=export-status-line]").catch(() => "")) ?? ""), await s.page.textContent("[data-testid=export-status-line]").catch(() => "none"));
   check("pdf size: the export embeds only the glyphs it uses (was 10+ MB with the whole font)", readFileSync(pdfPath).length < 1_000_000, `${readFileSync(pdfPath).length} bytes`);
   check("no horizontal scroll (lesson + history)", await noHScroll(s.page));
   await shot(s.page, "06-regression-lesson");
@@ -777,6 +779,9 @@ const draw = async (page, index) => {
   const d1 = t.page.waitForEvent("download", { timeout: 60000 }).catch(() => null);
   if (await t.page.$(".export-adi-prompt .btn.primary")) await t.page.click(".export-adi-prompt .btn.primary");
   check("pdf glyph: a rare Chinese character downloads the PDF with no warning", (await d1) !== null && (await t.page.$("[data-testid=export-missing-warning]")) === null);
+  await t.page.waitForSelector("[data-testid=export-status-line]");
+  const rareLine = await t.page.textContent("[data-testid=export-status-line]");
+  check("pdf status line: names the character, code point and field that forced the full font", /full font used for: 龘 U\+9F98 in lesson #1 comments/.test(rareLine) && /\d+\.\d MB/.test(rareLine), rareLine);
   // 2. Emoji no font has: warning names it, nothing downloads until confirmed; fits 375px.
   const before = downloads;
   await exportFor("QA Glyph Emoji");

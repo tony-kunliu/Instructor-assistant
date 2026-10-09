@@ -6,7 +6,7 @@ import type { Learner, Lesson } from "@/lib/types.ts";
 type Phase = "idle" | "loading" | "needs-adi-number" | "building" | "confirm-missing" | "error";
 
 /** A finished PDF that the user must confirm before download, because some characters would print as empty boxes. */
-type Unconfirmed = { bytes: Uint8Array; filename: string; warning: string };
+type Unconfirmed = { bytes: Uint8Array; filename: string; warning: string; statusLine: string };
 
 async function api<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, init);
@@ -52,6 +52,7 @@ export default function ExportPdfButton({ learnerId, lessonCount }: { learnerId:
   const [adiNumberDraft, setAdiNumberDraft] = useState("");
   const [pending, setPending] = useState<{ learner: Learner; lessons: Lesson[] } | null>(null);
   const [unconfirmed, setUnconfirmed] = useState<Unconfirmed | null>(null);
+  const [statusLine, setStatusLine] = useState<string | null>(null);
   const titleId = useId();
   const cancelRef = useRef<HTMLButtonElement>(null);
 
@@ -62,9 +63,10 @@ export default function ExportPdfButton({ learnerId, lessonCount }: { learnerId:
 
   const buildAndDownload = async (learner: Learner, lessons: Lesson[]) => {
     setPhase("building");
+    setStatusLine(null);
     setProgress("Loading the PDF font…");
     try {
-      const [templateBytes, fontBytes, { buildCbtaChecklistPdf, exportWarning }] = await Promise.all([
+      const [templateBytes, fontBytes, { buildCbtaChecklistPdf, exportWarning, exportStatusLine }] = await Promise.all([
         fetchAsset("/pdf-template/adi-cbta-checklist.pdf", "the checklist template"),
         fetchAsset("/fonts/NotoSansSC-Subset.otf", "the PDF font"),
         import("@/lib/pdf-export.ts"),
@@ -81,14 +83,16 @@ export default function ExportPdfButton({ learnerId, lessonCount }: { learnerId:
       });
       const filename = `CBTA-Checklist-${learner.fullName.replace(/[^a-z0-9]+/gi, "-") || "learner"}.pdf`;
       const warning = exportWarning(result);
+      const line = exportStatusLine(result);
       setPending(null);
       if (warning) {
         // Never hand over a PDF with empty boxes silently: the user confirms first.
-        setUnconfirmed({ bytes: result.bytes, filename, warning });
+        setUnconfirmed({ bytes: result.bytes, filename, warning, statusLine: line });
         setPhase("confirm-missing");
         return;
       }
       downloadPdf(result.bytes, filename);
+      setStatusLine(line);
       setPhase("idle");
     } catch (err) {
       setError((err as Error).message);
@@ -141,6 +145,7 @@ export default function ExportPdfButton({ learnerId, lessonCount }: { learnerId:
   const downloadAnyway = () => {
     if (!unconfirmed) return;
     downloadPdf(unconfirmed.bytes, unconfirmed.filename);
+    setStatusLine(unconfirmed.statusLine);
     setUnconfirmed(null);
     setPhase("idle");
   };
@@ -181,6 +186,7 @@ export default function ExportPdfButton({ learnerId, lessonCount }: { learnerId:
           {phase === "loading" ? "Preparing…" : phase === "building" ? (progress ?? "Building PDF…") : "Export CBT&A PDF"}
         </button>
       )}
+      {statusLine && phase === "idle" ? <p className="hint" data-testid="export-status-line">{statusLine}</p> : null}
       {error ? <p className="status error">{error}</p> : null}
     </div>
   );

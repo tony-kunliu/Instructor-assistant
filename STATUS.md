@@ -19,8 +19,8 @@ git log and closed PRs, not here — see `TASK.md` for what's in progress.
 ## CI
 
 - Latest `staging` GitHub Actions run: **SUCCESS**.
-- Tests: 398/398 PASS on `feature/pdf-font-subset` (0 skipped; poppler-utils installed in CI); qa-browser 189/189 (QA_PORT 3351).
-- PDF export (branch `feature/pdf-font-subset`, not merged): embeds only the glyphs used, from a 5.8 MB static subset. Typical export 29-180 KB (was 14 MB). A rare CJK character outside the subset downloads the 16 MB full font (export ~13.9 MB). Missing symbols trigger a warning before download. See `lib/pdf-export.ts` header.
+- Tests: 399 (2 poppler tests skip without `pdftotext`; hard-fail only with `REQUIRE_POPPLER=1`, set in `ci.yml` only; Cloudflare/Production Release lack poppler).
+- PDF export (PR #31): only used glyphs, from a 5.8 MB static subset; typical 29-180 KB (was 14 MB). A CJK ideograph outside the subset downloads the 16 MB full font (~13.9 MB). The button then shows "PDF ready: <size> (full font used for: <char> U+XXXX in <field>)" (`feature/pdf-font-diagnostic`).
 - Build: PASS.
 - `npm test` requires Node's `--experimental-strip-types` flag (already in
   `package.json`'s `test` script) — CI pins Node 22.13, which needs this
@@ -178,8 +178,8 @@ Cross-repo coordination record: `tony-kunliu/actgds.com` Issue #3.
   after the user confirms the warning, e.g. Vietnamese (Latin Ext Additional),
   Greek, Cyrillic, kana, Hangul, Latin Ext-B, box drawing, dingbats, ☂.
   Only CJK ideographs/punctuation trigger the 16 MB full-font download.
-  Options: (a) gate the fallback on the full font's real coverage, and/or
-  (b) add those blocks to the subset (about 0.5 KB per glyph; Hangul has 11,172).
+  Options: (a) gate the fallback on the full font's real coverage and/or
+  (b) add those blocks to the subset (~0.5 KB/glyph; Hangul has 11,172).
 
 ## Next
 
