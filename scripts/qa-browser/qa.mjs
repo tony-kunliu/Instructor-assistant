@@ -337,10 +337,11 @@ const inViewport = (page, selector) =>
 // Waits for smooth scrolling to finish, then records whether the element is fully on screen.
 async function expectVisible(page, selector, name) {
   try {
-    await page.waitForFunction((sel) => { const r = document.querySelector(sel)?.getBoundingClientRect(); return Boolean(r) && r.top >= 0 && r.bottom <= window.innerHeight; }, selector, { timeout: 8000 });
+    await page.waitForFunction((sel) => { const r = document.querySelector(sel)?.getBoundingClientRect(); return Boolean(r) && r.top >= -1 && r.bottom <= window.innerHeight + 1; }, selector, { timeout: 8000 }); // 1px tolerance: layouts with fractional line heights put an element at top -0.4
     check(name, true);
   } catch {
-    check(name, false, "not fully on screen after 8s");
+    const rect = await page.evaluate((sel) => { const r = document.querySelector(sel)?.getBoundingClientRect(); return r ? `top ${Math.round(r.top)}, bottom ${Math.round(r.bottom)}, viewport ${window.innerHeight}, scrollY ${Math.round(window.scrollY)}` : "element missing"; }, selector);
+    check(name, false, `not fully on screen after 8s (${rect})`);
   }
 }
 async function expectIssueCount(page, prefix, n, name) {
@@ -878,6 +879,92 @@ const draw = async (page, index) => {
   check("learner edit: no horizontal scroll (Anna, 375px)", await noHScroll(a.page));
   check("learner edit: Anna: no page errors", a.errors.length === 0, a.errors.join("|"));
   await a.ctx.close();
+}
+
+// ═══ 10. Assessment-rules reminders (T1): display only, never block ═══════
+{
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Australia/Sydney" }).format(new Date()); // YYYY-MM-DD in Canberra
+  const post = async (path, body) => { const r = await fetch(B + path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }); const d = await r.json(); if (!r.ok) throw new Error(`${path} ${JSON.stringify(d)}`); return d; };
+  const rng = (a, b) => Array.from({ length: b - a + 1 }, (_, i) => String(a + i));
+  const doneBy = (ids) => ({ assessedIds: ids, achievedResults: Object.fromEntries(ids.map((id) => [id, "achieved"])) });
+  const mkLessons = async (learnerId, steps) => {
+    let odo = 1000;
+    for (const step of steps) { const start = odo; odo += 12; await post(`/api/learners/${learnerId}/lessons`, { lessonDate: "2026-09-20", startTime: "09:00", finishTime: "10:00", startOdometer: String(start), finishOdometer: String(odo), adiSignature: SIG, learnerSignature: SIG, ...step }); }
+  };
+  const wait = (await post("/api/learners", { fullName: "QA Tony Rules Wait", instructorId: WHO.tony[0] })).learner;
+  await mkLessons(wait.id, [{ ...doneBy(rng(1, 17)), lessonDate: today, startTime: "00:00", finishTime: "00:30" }]);
+  const fd = (await post("/api/learners", { fullName: "QA Tony Rules FD", instructorId: WHO.tony[0] })).learner;
+  await mkLessons(fd.id, [doneBy(rng(1, 17)), doneBy(["review-1-17"]), doneBy(rng(18, 22)), doneBy(["review-1-22"])]);
+
+  const s = await session("tony");
+  await ready(s.page);
+  await s.page.setViewportSize({ width: 375, height: 812 });
+  await pick(s.page, "QA Tony Rules Wait");
+  await s.page.waitForSelector("[data-testid=panel-reminders]");
+  const panelRem = await s.page.$eval("[data-testid=panel-reminders] .reminder", (e) => ({ tone: e.dataset.tone, text: e.textContent }));
+  check("reminders: Start Lesson panel shows the Review 1-17 36 h line (amber, lesson finished today)", panelRem.tone === "amber" && /^Review 1-17 allowed from .+ \(36 h after Lesson #1\)\.$/.test(panelRem.text), `${panelRem.tone} ${panelRem.text}`);
+  check("reminders: panel has at most 3 lines and no booking link yet", (await s.page.$$("[data-testid=start-reminders] .reminder")).length <= 3 && (await s.page.$("[data-testid=adi-booking]")) === null);
+  check("reminders: learner summary shows the neutral 'add licence expiry' note (R5), not a pass", (await s.page.textContent("[data-testid=licence-reminder]")).includes("Add licence expiry to check the learner licence is current."));
+  check("reminders: no horizontal scroll at 375px (panel)", await noHScroll(s.page) && (await s.page.evaluate(() => window.innerWidth)) === 375);
+  await shot(s.page, "10-rules-panel-375");
+  await s.page.click("text=Start Lesson");
+  await s.page.click("text=End Lesson");
+  check("reminders: no reminder in the lesson form before Review 1-17 is ticked", (await s.page.$("[data-testid=form-reminders]")) === null);
+  await s.page.click(".chip-row.special >> text=/Review 1-17/");
+  await s.page.waitForSelector("[data-testid=form-reminders]");
+  const formRem = await s.page.$eval("[data-testid=form-reminders] .reminder", (e) => ({ tone: e.dataset.tone, text: e.textContent }));
+  check("reminders: lesson form shows the amber 36 h warning once Review 1-17 is ticked, and says it can still be saved", formRem.tone === "amber" && /^This Review 1-17 starts within 36 h of Lesson #1 \(allowed from .+\)\. You can still save\.$/.test(formRem.text), formRem.text);
+  check("reminders: no horizontal scroll at 375px (form)", await noHScroll(s.page));
+  await shot(s.page, "10-rules-form-375");
+  await s.page.fill('input[placeholder="Enter now"]', "1030");
+  await s.page.click('.result-list li:has-text("Review 1-17") >> text="Achieved"');
+  await s.page.click(".edit-times summary");
+  await s.page.fill('.edit-times input[type="time"] >> nth=0', "09:00");
+  await s.page.fill('.edit-times input[type="time"] >> nth=1', "09:45");
+  await signBoth(s.page);
+  check("reminders: the warning is still showing and Save is enabled", (await s.page.$("[data-testid=form-reminders] .reminder.amber")) !== null && !(await s.page.isDisabled(".btn.save")));
+  await s.page.click(".btn.save");
+  await s.page.waitForSelector(".status.ok, .status.error");
+  check("reminders: the lesson saves despite the amber warning (reminders never block)", (await s.page.textContent(".status")).includes("Lesson #2 saved"), await s.page.textContent(".status"));
+  check("reminders: nothing on the Completed card / History (History has no reminder lines)", (await s.page.$("[data-testid=history-row] .reminder")) === null);
+
+  await pick(s.page, "QA Tony Rules FD");
+  await s.page.waitForSelector("[data-testid=adi-booking]");
+  const link = await s.page.$eval("[data-testid=adi-booking-link]", (a) => ({ href: a.getAttribute("href"), target: a.getAttribute("target"), rel: a.getAttribute("rel"), text: a.textContent }));
+  check("booking link: official ADI Audit online form URL", link.href === "https://forms.act.gov.au/smartforms/servlet/SmartForm.html?formCode=1503", link.href);
+  check("booking link: opens in a new tab with rel noopener noreferrer", link.target === "_blank" && link.rel === "noopener noreferrer", `${link.target} ${link.rel}`);
+  check("booking link: text and one-line note", link.text === "Book the Competency 23 drive with ADI Audit (ACT online form)" && (await s.page.textContent("[data-testid=adi-booking] small")) === "Book at least 1 clear business day before, in writing (CoP 9.2 n).");
+  check("reminders: 23 Final Drive ready → Competency 23 day/hours line on the panel", /Competency 23/.test(await s.page.textContent("[data-testid=panel-reminders]")), await s.page.textContent("[data-testid=panel-reminders]"));
+  check("reminders: no horizontal scroll at 375px (panel with booking link)", await noHScroll(s.page));
+  await shot(s.page, "10-rules-fd-panel-375");
+  await s.page.click("text=Start Lesson");
+  await s.page.click("text=End Lesson");
+  await s.page.click(".chip-row.special >> text=/23 Final Drive/");
+  await s.page.waitForSelector("[data-testid=form-reminders]");
+  await s.page.click(".edit-times summary");
+  const formText = async () => (await s.page.textContent("[data-testid=form-reminders]")).trim();
+  await s.page.fill("#lesson-field-date", "2026-10-06"); // a Tuesday, not a holiday
+  await s.page.fill('.edit-times input[type="time"] >> nth=0', "06:00");
+  await s.page.fill('.edit-times input[type="time"] >> nth=1', "07:00");
+  check("reminders: Competency 23 outside 07:00-19:00 → amber with this lesson's times", (await formText()) === "Competency 23 must run 07:00–19:00 Mon–Thu/Sat (Fri to 21:00). This lesson: 06:00–07:00.", await formText());
+  await s.page.fill('.edit-times input[type="time"] >> nth=0', "09:00");
+  await s.page.fill('.edit-times input[type="time"] >> nth=1', "10:00");
+  check("reminders: Competency 23 inside the hours → plain line", (await s.page.$("[data-testid=form-reminders] .reminder.plain")) !== null, await formText());
+  await s.page.fill("#lesson-field-date", "2026-10-11"); // a Sunday
+  check("reminders: Competency 23 on a Sunday → amber 'not allowed on Sundays'", (await formText()) === "Competency 23 is not allowed on Sundays.", await formText());
+  await s.page.fill("#lesson-field-date", "2026-10-05"); // Labour Day
+  check("reminders: Competency 23 on an ACT public holiday → amber with its name", (await formText()) === "Competency 23 is not allowed on ACT public holidays (Labour Day).", await formText());
+  await s.page.fill("#lesson-field-date", "2028-03-01");
+  check("reminders: a year outside the holiday table → grey 'not loaded; check manually', never a pass", (await formText()).includes("ACT public holidays for 2028 are not loaded; check manually.") && (await s.page.$("[data-testid=form-reminders] .reminder.grey")) !== null, await formText());
+  await s.page.fill("#lesson-field-date", "2026-10-11");
+  await s.page.fill('input[placeholder="Enter now"]', "1060");
+  await s.page.click('.result-list li:has-text("23 Final Drive") >> text="Achieved"');
+  await signBoth(s.page);
+  await s.page.click(".btn.save");
+  await s.page.waitForSelector(".status.ok, .status.error");
+  check("reminders: a Sunday Competency 23 lesson still saves (reminders never block)", (await s.page.textContent(".status")).includes("saved"), await s.page.textContent(".status"));
+  check("reminders: Tony: no page errors", s.errors.length === 0, s.errors.join("|"));
+  await s.ctx.close();
 }
 
 } catch (error) {

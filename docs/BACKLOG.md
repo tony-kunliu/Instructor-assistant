@@ -42,6 +42,12 @@ direction is in `docs/ECOSYSTEM_ROADMAP.md` (P1–P6)._
 - A read-only check on Production for lessons recorded before Access identity
   existed (their owner falls back to the learner's instructor). Tony believes
   there are none.
+- Every October: add the next year's ACT public holidays to
+  `lib/act-public-holidays.ts` (procedure in its header) and append the year to
+  `COVERED_YEARS`; until then dates outside 2026-2027 show "not loaded; check
+  manually". Cross-check the 2026-2027 table against the ACT Government
+  public-holidays page, which returned HTTP 403 to the build environment.
+- History markers for past reviews done inside 36 h (rules-reminders spec, later).
 
 ## Ecosystem phases (see the roadmap)
 

@@ -1,9 +1,19 @@
 # STATUS.md
 
-_Last updated: 2026-10-10_ (Production at migration `0008`; Staging D1 at `0008`; no code task open)
+_Last updated: 2026-10-10_ (Production at migration `0008`; Staging D1 at `0008`; T1 rules reminders implemented on a branch, not merged)
 
 This file describes **current state only**. History lives in git log and
 closed PRs; see `TASK.md` for what is in progress.
+
+## In progress (branch, not merged)
+
+- `feature/rules-reminders-t1` (spec `docs/superpowers/specs/2026-10-10-rules-reminders-and-learner-phase2-design.md`,
+  T1): display-only reminders for R1 (36 h before Review 1-17 / 1-22), R3
+  (Competency 23 days and hours), R5 (learner licence) and an ADI Audit
+  booking link; `lib/rules.ts`, `lib/act-public-holidays.ts` (2026-2027, from
+  the Holidays Act 1958 and NI2026-154 / NI2026-387; yearly update is a
+  BACKLOG item), `achievedLessonIds` in progress. No migration, no ACTGDS
+  contract change, 0 extra D1 statements. T2 (migration 0009, R2) not started.
 
 ## Repository
 
@@ -17,7 +27,7 @@ closed PRs; see `TASK.md` for what is in progress.
 
 ## CI
 
-- Latest `staging` GitHub Actions run: **SUCCESS**. Tests: 404 (2 poppler
+- Latest `staging` GitHub Actions run: **SUCCESS**. Tests: 404 on staging (2 poppler
   tests skip without `pdftotext`; they hard-fail only with `REQUIRE_POPPLER=1`,
   set in `ci.yml` only).
 - `npm test` needs `--experimental-strip-types` (already in `package.json`).
