@@ -1,6 +1,6 @@
 # STATUS.md
 
-_Last updated: 2026-10-08_ (P1b in Production; lesson ownership + learner edit implemented on branches)
+_Last updated: 2026-10-09_ (P1b in Production; learner edit merged to `staging` and `main`; PDF font subset on `feature/pdf-font-subset`, not merged)
 
 This file describes **current state only**. Development history lives in
 git log and closed PRs, not here — see `TASK.md` for what's in progress.
@@ -19,7 +19,8 @@ git log and closed PRs, not here — see `TASK.md` for what's in progress.
 ## CI
 
 - Latest `staging` GitHub Actions run: **SUCCESS**.
-- Tests: 384/384 PASS on `feature/learner-edit` (`staging`: 364), 0 skipped.
+- Tests: 398/398 PASS on `feature/pdf-font-subset` (0 skipped; poppler-utils installed in CI); qa-browser 189/189 (QA_PORT 3351).
+- PDF export (branch `feature/pdf-font-subset`, not merged): embeds only the glyphs used, from a 5.8 MB static subset. Typical export 29-180 KB (was 14 MB). A rare CJK character outside the subset downloads the 16 MB full font (export ~13.9 MB). Missing symbols trigger a warning before download. See `lib/pdf-export.ts` header.
 - Build: PASS.
 - `npm test` requires Node's `--experimental-strip-types` flag (already in
   `package.json`'s `test` script) — CI pins Node 22.13, which needs this
@@ -145,26 +146,18 @@ Cross-repo coordination record: `tony-kunliu/actgds.com` Issue #3.
 
 ## Learner edit (learner management Phase 1)
 
-- Implemented on `feature/learner-edit` (not merged; plan
-  `docs/superpowers/specs/2026-10-08-learner-management-plan.md`).
-  Migration **`0008` (`learner_revisions`, additive) must be applied to
-  Staging D1 BEFORE the merge to `staging`** (Staging D1 Migrate workflow,
-  `ref` = `feature/learner-edit`, `confirm` = `staging`).
-- `PATCH /api/learners/[id]` with learner fields (`fullName`, `address`,
-  `phone`, `dob`, `licenceNumber`, `licenceExpiry`, `eligibility`,
-  `transmission`, `schoolWork`, `licenceStage`); `{archived}` unchanged.
-  Same field rules as create (shared `parseLearnerFields`); edit also
-  rejects unparseable dates/enums instead of clearing them. `instructorId`
-  is not editable. Only the learner's own instructor (verified
-  `x-instructor-id`); a non-owner gets a 400 and nothing is written. Each
-  real change stores the previous values in `learner_revisions` in the same
-  `db.batch` as the UPDATE; a no-op writes nothing. Archived learners may be
-  edited. 5 D1 statements per edit (2 for a no-op). No ACTGDS contract
-  change, no outbox event (schema hash unchanged).
-- UI: "Edit learner" on the selected learner (owner only), reuses the form.
-  Revisions are recorded only; no display yet.
-- Verified: typecheck, 384 tests, `cf:build`, qa-browser 178/178 (QA_PORT 3341,
-  375px), local `scripts/rehearse-0008-local.sh`.
+- Merged to `staging` (PR #29) and `main` (via PR #30). Plan:
+  `docs/superpowers/specs/2026-10-08-learner-management-plan.md`.
+  Migration **`0008` (`learner_revisions`, additive)**: this status was not
+  checked against Staging or Production D1. Run `wrangler d1 migrations list`
+  (read-only) before relying on the feature there.
+- `PATCH /api/learners/[id]` (learner fields only; `instructorId` not
+  editable). Only the owning instructor may edit (others get 400, no write).
+  Each real change stores the previous values in `learner_revisions`. No
+  ACTGDS contract change, no outbox event.
+- UI: "Edit learner" (owner only). Revisions are recorded; not displayed.
+- Verified on its branch: typecheck, 384 tests, `cf:build`, qa-browser 178/178
+  (QA_PORT 3341, 375px), local `scripts/rehearse-0008-local.sh`.
 
 ## Known Issues
 
@@ -178,6 +171,15 @@ Cross-repo coordination record: `tony-kunliu/actgds.com` Issue #3.
   behaviour (same-origin absolute URL → 302, anything else → 400), not in
   Cloudflare's public docs; if it stops working, Sign out still logs out but
   shows Cloudflare's generic page.
+
+- PDF export COVERAGE GAP (open decision for Tony): the compact font has
+  Basic/Latin-1/Latin Ext-A, punctuation, and 10,035 hanzi only. Characters
+  outside it that the old full-font export drew now print as empty boxes
+  after the user confirms the warning, e.g. Vietnamese (Latin Ext Additional),
+  Greek, Cyrillic, kana, Hangul, Latin Ext-B, box drawing, dingbats, ☂.
+  Only CJK ideographs/punctuation trigger the 16 MB full-font download.
+  Options: (a) gate the fallback on the full font's real coverage, and/or
+  (b) add those blocks to the subset (about 0.5 KB per glyph; Hangul has 11,172).
 
 ## Next
 

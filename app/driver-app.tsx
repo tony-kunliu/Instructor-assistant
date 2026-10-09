@@ -741,7 +741,7 @@ export default function DriverApp() {
               Integration ID: <code>{detail.learner.id}</code>
               <button type="button" className="link" onClick={() => void copyIntegrationId(detail.learner.id)}>Copy ID</button>
             </p>
-            <ExportPdfButton learnerId={detail.learner.id} lessonCount={history.lessons.length} />
+            <ExportPdfButton key={detail.learner.id} learnerId={detail.learner.id} lessonCount={history.lessons.length} />
             {!signedInInstructorId || signedInInstructorId === detail.learner.instructorId ? (
               <button type="button" className="btn ghost block edit-learner-btn" disabled={saving} onClick={openEditLearner} data-testid="edit-learner">Edit learner</button>
             ) : null}
