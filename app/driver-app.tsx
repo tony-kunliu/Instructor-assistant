@@ -750,20 +750,20 @@ export default function DriverApp() {
               <p className="hint-note">Optional. Only used for the Competency 23 reminder; nothing here blocks a save or goes to the website.</p>
               <div className="grid">
                 <label className="field full"><span>Learner licence issue date</span>
-                  <input type="date" value={learnerDraft.learnerLicenceIssuedOn} onChange={(e) => learnerField("learnerLicenceIssuedOn", e.target.value)} data-testid="c23-issued" />
+                  <input type="date" value={learnerDraft.learnerLicenceIssuedOn} onChange={(e) => learnerField("learnerLicenceIssuedOn", e.target.value)} max={localNow().date} data-testid="c23-issued" />
                   <small>Leave empty to estimate it from the licence expiry (shown as estimated).</small>
                 </label>
                 <label className="field full"><span>First issue date (only if renewed)</span>
-                  <input type="date" value={learnerDraft.learnerLicenceFirstIssuedOn} onChange={(e) => learnerField("learnerLicenceFirstIssuedOn", e.target.value)} data-testid="c23-first-issued" />
+                  <input type="date" value={learnerDraft.learnerLicenceFirstIssuedOn} onChange={(e) => learnerField("learnerLicenceFirstIssuedOn", e.target.value)} max={localNow().date} data-testid="c23-first-issued" />
                 </label>
                 <label className="field full"><span>HPT passed on</span>
-                  <input type="date" value={learnerDraft.hptPassedOn} onChange={(e) => learnerField("hptPassedOn", e.target.value)} data-testid="c23-hpt" />
+                  <input type="date" value={learnerDraft.hptPassedOn} onChange={(e) => learnerField("hptPassedOn", e.target.value)} max={localNow().date} data-testid="c23-hpt" />
                 </label>
                 <label className="field"><span>Logged hours (logbook)</span>
                   <input type="text" inputMode="numeric" pattern="[0-9]*" value={learnerDraft.loggedHours} onChange={(e) => loggedHoursField(e.target.value)} placeholder="e.g. 82" data-testid="c23-hours" />
                 </label>
                 <label className="field"><span>Hours as of</span>
-                  <input type="date" value={learnerDraft.loggedHoursOn} onChange={(e) => { setHoursOnTouched(true); learnerField("loggedHoursOn", e.target.value); }} data-testid="c23-hours-on" />
+                  <input type="date" value={learnerDraft.loggedHoursOn} onChange={(e) => { setHoursOnTouched(true); learnerField("loggedHoursOn", e.target.value); }} max={localNow().date} data-testid="c23-hours-on" />
                 </label>
               </div>
             </details>
