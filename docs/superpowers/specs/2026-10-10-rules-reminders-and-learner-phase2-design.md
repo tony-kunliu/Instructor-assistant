@@ -171,7 +171,7 @@ budget test gets assertions for create/edit with all new fields set.
 | Task | Content | Migration |
 |---|---|---|
 | T1 | `lib/rules.ts` (R1, R3, R5), holiday table, `achievedLessonIds`, booking-link constant, UI lines (D2), tests, qa-browser | none. **Implemented on branch `feature/rules-reminders-t1` (2026-10-10), not merged.** Holiday table derived from the Holidays Act 1958 s 3 + NI2026-154 + NI2026-387 (the ACT Government page stayed HTTP 403); cross-check it against that page at the next yearly update. |
-| T2 | Migration 0009, 5 learner fields, validation, form group, revision snapshot, R2 in `lib/rules.ts` + UI, tests | 0009 |
+| T2 | Migration 0009, 5 learner fields, validation, form group, revision snapshot, R2 in `lib/rules.ts` + UI, tests | 0009. **Implemented on branch `feature/rules-reminders-t2` (2026-10-10), not merged; apply 0009 to Staging D1 first.** |
 | (later) | History markers for past reviews inside 36 h; yearly holiday update | — |
 
 Each task: feature branch → typecheck, `npm test`, build, qa-browser, Memory

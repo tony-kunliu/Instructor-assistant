@@ -6,7 +6,7 @@ export function RulesReminders({ reminders, testId }: { reminders: readonly Remi
   return (
     <div className="reminders" data-testid={testId}>
       {reminders.map((reminder) => (
-        <p key={reminder.id} className={`reminder ${reminder.tone}`} data-tone={reminder.tone}>{reminder.text}</p>
+        <p key={reminder.id} className={`reminder ${reminder.tone}`} data-tone={reminder.tone} data-rule={reminder.id}>{reminder.text}</p>
       ))}
     </div>
   );

@@ -37,7 +37,7 @@ The instruments win over this summary. If they disagree, fix this file.
 | # | Rule | Source | App today | Status |
 |---|---|---|---|---|
 | R1 | Review 1 **≥ 36 hours** after 1–17 completed; Review 2 **≥ 36 hours** after 1–22 completed. | NI2020-703 Review 1 / Review 2 | Not enforced | Planned (assessment-rules batch) |
-| R2 | Competency 23 eligibility (see the breakdown below). | NI2020-703 Competency 23; CoP 9.2 k–l | Not enforced; licence issue date, HPT and hours not stored | Planned (warning) |
+| R2 | Competency 23 eligibility (see the breakdown below). | NI2020-703 Competency 23; CoP 9.2 k–l | Reminder only; licence issue date, HPT date and logged hours stored on the learner (migration 0009) | **Implemented on branch** `feature/rules-reminders-t2` (reminder, never blocks; issue date estimated from licence expiry when empty, borderline = "check the licence card") |
 | R3 | Competency 23 only Mon–Thu & Sat 07:00–19:00 and Fri 07:00–21:00; never on Sundays or ACT public holidays. | NI2020-703 Competency 23 | Not checked | Planned (warning) |
 | R4 | Competency 23 booking (see the breakdown below). | CoP 9.2 m–p | — | Planned: **link only, booking is online** (ADI Audit online form; Tony 2026-10-10) |
 | R5 | Student must hold a **current ACT learner licence** before CBT&A training/assessment. | NI2020-703 note; CoP 9 a, c | Expiry stored, not checked | Planned (warning) |
