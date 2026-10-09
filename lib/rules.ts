@@ -358,7 +358,10 @@ function evaluateEligibility(learner: EligibilityLearner, issue: string, onDate:
   const needMonths = under25 ? 12 : 6;
   const hours = learner.loggedHours as number;
   const hoursOn = learner.loggedHoursOn as string;
-  if (hoursOn > onDate) {
+  if (hoursOn > onDate && hours < needHours) {
+    // Recorded after the checked date and already short: the count on that earlier date was no higher, so definitely unmet.
+    conditions.push({ key: "hours", met: false, text: `${hours} of ${needHours} logged hours (as of ${formatDate(hoursOn)}, after this date)` });
+  } else if (hoursOn > onDate) {
     conditions.push({ key: "hours", met: "unknown", text: `logged hours were recorded on ${formatDate(hoursOn)}, after this date, so ${needHours} hours cannot be checked for it` });
   } else {
     conditions.push({ key: "hours", met: hours >= needHours, text: `${hours} of ${needHours} logged hours (as of ${formatDate(hoursOn)})` });
@@ -394,7 +397,18 @@ export function finalDriveEligibilityReminder(learner: EligibilityLearner, onDat
   const typedIssue = learner.learnerLicenceIssuedOn && parseIsoDate(learner.learnerLicenceIssuedOn) ? learner.learnerLicenceIssuedOn : null;
   const estimate = !typedIssue && learner.licenceExpiry ? estimateIssueFromExpiry(learner.licenceExpiry) : null;
   const issue = typedIssue ?? estimate;
-  const addNote = (missing: string[]): Reminder => ({ id, tone: "grey", text: `Add ${listOf(missing)} to check Competency 23 eligibility.` });
+  const estimatedNote = estimate ? ` (licence issue date ${ESTIMATE_LABEL})` : "";
+  const addNote = (missing: string[]): Reminder => ({ id, tone: "grey", text: `Add ${listOf(missing)} to check Competency 23 eligibility.${estimatedNote}` });
+  const firstIssued = learner.learnerLicenceFirstIssuedOn && parseIsoDate(learner.learnerLicenceFirstIssuedOn) ? learner.learnerLicenceFirstIssuedOn : null;
+  if (issue && firstIssued && firstIssued > issue) {
+    return {
+      id,
+      tone: "grey",
+      text: estimate
+        ? "Licence dates look inconsistent (estimated issue date is before the first issue date): check the licence card."
+        : "Licence dates look inconsistent (the issue date is before the first issue date): check the licence card.",
+    };
+  }
 
   if (!issue) {
     const missing = ["licence issue date"];
@@ -413,9 +427,12 @@ export function finalDriveEligibilityReminder(learner: EligibilityLearner, onDat
   const main = readings[estimate ? 1 : 0];
   const estimateText = `licence issue date ${ESTIMATE_LABEL} (${formatDate(issue)})`;
   if (estimate && new Set(readings.map(signatureOf)).size > 1) {
-    return { id, tone: "amber", text: `Borderline, check the licence card: the ${estimateText} could be a few days out, which changes the Competency 23 result.` };
+    // A condition that is unmet under every reading stays visible: borderline must not hide a definite "not yet".
+    const definite = main.conditions.filter((c) => c.met === false && readings.every((reading) => reading.conditions.some((o) => o.key === c.key && o.met === false)));
+    const also = definite.length ? ` Also not yet: ${definite.map((c) => c.text).join("; ")}.` : "";
+    return { id, tone: "amber", text: `Borderline, check the licence card: the ${estimateText} could be a few days out, which changes the Competency 23 result.${also}` };
   }
-  if (main.unclear) return { id, tone: "grey", text: "Age band unclear for a renewed licence: check the instrument (the first and current issue dates are in different age bands)." };
+  if (main.unclear) return { id, tone: "grey", text: `Age band unclear for a renewed licence: check the instrument (the first and current issue dates are in different age bands).${estimatedNote}` };
 
   const unmet = main.conditions.filter((condition) => condition.met === false);
   const unknown = main.conditions.filter((condition) => condition.met === "unknown");

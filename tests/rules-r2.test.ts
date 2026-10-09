@@ -158,7 +158,7 @@ test("D21: no typed issue date -> estimated from the licence expiry minus 5 year
   // Both issue date and expiry empty: neutral note.
   assert.equal(finalDriveEligibilityReminder(newOk({ learnerLicenceIssuedOn: null }), TODAY).text, "Add licence issue date to check Competency 23 eligibility.");
   // Estimate but HPT/hours missing: add-X, not borderline.
-  assert.equal(est("2030-01-15", { hptPassedOn: null }).text, "Add HPT pass date to check Competency 23 eligibility.");
+  assert.equal(est("2030-01-15", { hptPassedOn: null }).text, "Add HPT pass date to check Competency 23 eligibility. (licence issue date estimated from the licence expiry)");
 });
 
 test("D21 borderline: 12 months held threshold at +/-14 and +/-15 days", () => {
@@ -228,4 +228,33 @@ test("I1: an expired learner licence is never a pass (grey), for estimates and t
   assert.equal(finalDriveEligibilityReminder(newOk({ learnerLicenceIssuedOn: "2025-09-01", licenceExpiry: TODAY }), TODAY).tone, "plain", "expiry on the checking date is still current");
   assert.equal(finalDriveEligibilityReminder(newOk({ licenceExpiry: "2026-10-10" }), TODAY).tone, "plain", "expiry tomorrow");
   assert.equal(finalDriveEligibilityReminder(newOk({ licenceExpiry: "2026-10-08" }), TODAY).tone, "grey", "expired yesterday");
+});
+
+test("I2: an estimated (or typed) issue date earlier than the first issue date is inconsistent -> grey, never a pass", () => {
+  const est = finalDriveEligibilityReminder(newOk({ learnerLicenceIssuedOn: null, licenceExpiry: "2030-09-01", learnerLicenceFirstIssuedOn: "2025-10-01" }), "2026-09-20");
+  assert.deepEqual([est.tone, est.text], ["grey", "Licence dates look inconsistent (estimated issue date is before the first issue date): check the licence card."]);
+  const typed = finalDriveEligibilityReminder(newOk({ learnerLicenceIssuedOn: "2025-09-01", learnerLicenceFirstIssuedOn: "2025-10-01" }), "2026-09-20");
+  assert.equal(typed.tone, "grey");
+  assert.match(typed.text, /^Licence dates look inconsistent/);
+  assert.equal(finalDriveEligibilityReminder(newOk({ learnerLicenceIssuedOn: null, licenceExpiry: "2030-11-01", learnerLicenceFirstIssuedOn: "2025-10-01" }), "2026-09-20").text.includes("inconsistent"), false, "estimate after the first issue date is fine");
+});
+
+test("M1: the estimate label is on the add-X note and the age-band-unclear line when an estimate is used", () => {
+  const unclear = finalDriveEligibilityReminder(L({ dob: "2000-10-09", licenceExpiry: "2031-01-01", learnerLicenceFirstIssuedOn: "2025-01-01", hptPassedOn: "2026-01-01", loggedHours: 200, loggedHoursOn: "2026-10-01" }), TODAY);
+  assert.equal(unclear.tone, "grey");
+  assert.match(unclear.text, /^Age band unclear for a renewed licence.*\(licence issue date estimated from the licence expiry\)$/);
+  assert.equal(finalDriveEligibilityReminder(L({ learnerLicenceIssuedOn: "2025-01-01" }), TODAY).text.includes("estimated"), false, "typed date: no label");
+});
+
+test("M2: a borderline result still lists a definitely-unmet condition, and is never plain", () => {
+  const r = finalDriveEligibilityReminder(newOk({ learnerLicenceIssuedOn: null, licenceExpiry: "2030-09-26", loggedHours: 10 }), TODAY);
+  assert.equal(r.tone, "amber");
+  assert.match(r.text, /^Borderline, check the licence card:.*Also not yet: 10 of 100 logged hours \(as of 1 Oct 2026\)\.$/);
+  assert.equal(finalDriveEligibilityReminder(newOk({ learnerLicenceIssuedOn: null, licenceExpiry: "2030-09-26" }), TODAY).text.includes("Also not yet"), false);
+});
+
+test("M3: hours recorded after the checked date and already short are amber; at or above the need stay grey", () => {
+  const short = finalDriveEligibilityReminder(newOk({ loggedHours: 10, loggedHoursOn: "2026-10-10" }), TODAY);
+  assert.deepEqual([short.tone, short.text], ["amber", "Competency 23 not yet: 10 of 100 logged hours (as of 10 Oct 2026, after this date)."]);
+  assert.equal(finalDriveEligibilityReminder(newOk({ loggedHours: 100, loggedHoursOn: "2026-10-10" }), TODAY).tone, "grey");
 });
