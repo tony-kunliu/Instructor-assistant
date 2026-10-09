@@ -27,6 +27,17 @@ export type Learner = {
   transmission: Transmission | null;
   schoolWork: string | null;
   licenceStage: LicenceStage;
+  /** Competency 23 eligibility inputs (R2, migration 0009). All optional; null = not recorded. Used only by lib/rules.ts reminders; never sent to ACTGDS. */
+  /** Issue date of the CURRENT learner licence. Empty = R2 estimates it from licenceExpiry minus 5 years (D21). */
+  learnerLicenceIssuedOn: string | null;
+  /** First-ever issue date, only if the licence was renewed. */
+  learnerLicenceFirstIssuedOn: string | null;
+  /** Hazard perception test pass date. Null = not recorded (never "not passed"). */
+  hptPassedOn: string | null;
+  /** Logbook total in whole hours as the instructor reads it; never computed from this app's lessons. */
+  loggedHours: number | null;
+  /** The "as of" date for loggedHours. */
+  loggedHoursOn: string | null;
   /** Lifecycle state only (reversible, never a delete): set = hidden from the daily picker. Independent of Final Drive 23 completion. */
   archivedAt: string | null;
 };
@@ -121,6 +132,11 @@ export type LearnerInput = {
   eligibility?: unknown;
   transmission?: unknown;
   schoolWork?: unknown;
+  learnerLicenceIssuedOn?: unknown;
+  learnerLicenceFirstIssuedOn?: unknown;
+  hptPassedOn?: unknown;
+  loggedHours?: unknown;
+  loggedHoursOn?: unknown;
   /** Must be an existing, active instructor id — free-text instructor names/auto-creation are no longer accepted (see lib/repo.ts#createLearner). */
   instructorId?: unknown;
 };

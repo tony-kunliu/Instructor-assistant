@@ -466,6 +466,31 @@ test("budget: a learner edit is 5 statements (learner, actor, batch of revision 
   assert.equal(Number((await raw.prepare("SELECT COUNT(*) AS n FROM learner_revisions").first<{ n: number }>())?.n), 1);
 });
 
+test("budget (migration 0009): a learner edit and a create with all 15 fields, incl. the 5 Competency 23 fields, keep 5 / 2 / 3 statements (edit / no-op / create), bind <= 100, enqueue nothing for ACTGDS", async (t) => {
+  const { db: raw, learner, tony } = await setup();
+  const outboxBefore = Number((await raw.prepare("SELECT COUNT(*) AS n FROM integration_outbox").first<{ n: number }>())?.n);
+  const all = {
+    fullName: "QA Budget Renamed 2", address: "1 QA St", phone: "0400 000 000", dob: "2008-01-02", licenceNumber: "QA1", licenceExpiry: "2027-01-02",
+    eligibility: "Eligible", transmission: "auto", schoolWork: "QA", licenceStage: "p1",
+    learnerLicenceIssuedOn: "2025-11-15", learnerLicenceFirstIssuedOn: "2024-05-01", hptPassedOn: "2026-05-05", loggedHours: 82, loggedHoursOn: "2026-10-03",
+    actingInstructorId: tony.id,
+  };
+  const edit = countingD1(raw);
+  const result = await updateLearner(edit.db, learner.id, all, new Date("2026-10-09T02:00:00Z"));
+  assert.equal(result.changedFields.length, 15);
+  const noop = countingD1(raw);
+  assert.equal((await updateLearner(noop.db, learner.id, all, new Date("2026-10-09T02:00:00Z"))).changed, false);
+  const create = countingD1(raw);
+  await createLearner(create.db, { ...all, fullName: "QA Budget Created", instructorId: tony.id }, new Date("2026-10-09T02:00:00Z"));
+  t.diagnostic(`updateLearner (all 15 fields): ${edit.count()} statements, max bound params ${edit.maxBinds()}; no-op: ${noop.count()}; createLearner (all fields): ${create.count()} statements incl. instructor check, max bound params ${create.maxBinds()}`);
+  assert.equal(edit.count(), 5);
+  assert.equal(noop.count(), 2);
+  assert.ok(edit.maxBinds() <= 100 && create.maxBinds() <= 100, `max bound parameters edit ${edit.maxBinds()}, create ${create.maxBinds()} (D1 limit 100)`);
+  assert.equal(edit.maxBinds(), 16, "the UPDATE binds 15 columns + the id");
+  assert.equal(create.maxBinds(), 16, "the INSERT binds 16 values");
+  assert.equal(Number((await raw.prepare("SELECT COUNT(*) AS n FROM integration_outbox").first<{ n: number }>())?.n), outboxBefore, "a learner edit/create enqueues no ACTGDS event");
+});
+
 // ── createLesson assessing 22 competencies ──────────────────────────────
 
 test("budget: createLesson assessing 22 competencies stays within 20 statements, and stores the same rows", async (t) => {

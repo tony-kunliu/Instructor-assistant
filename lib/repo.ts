@@ -1,4 +1,4 @@
-import { distanceKm, durationMinutes, EMPTY_TOTALS, parseOdometer, type Totals } from "./calc.ts";
+import { distanceKm, durationMinutes, EMPTY_TOTALS, localNow, parseOdometer, type Totals } from "./calc.ts";
 import {
   ALL_ASSESSABLE_IDS,
   CORE_COMPETENCY_IDS,
@@ -67,6 +67,11 @@ function toLearner(row: Row): Learner {
     transmission: (row.transmission as Learner["transmission"]) ?? null,
     schoolWork: (row.school_work as string) ?? null,
     licenceStage: (row.licence_stage as Learner["licenceStage"]) ?? "learner",
+    learnerLicenceIssuedOn: (row.learner_licence_issued_on as string) ?? null,
+    learnerLicenceFirstIssuedOn: (row.learner_licence_first_issued_on as string) ?? null,
+    hptPassedOn: (row.hpt_passed_on as string) ?? null,
+    loggedHours: nullableNumber(row.logged_hours),
+    loggedHoursOn: (row.logged_hours_on as string) ?? null,
     archivedAt: (row.archived_at as string) ?? null,
   };
 }
@@ -250,13 +255,68 @@ type LearnerFields = {
   transmission: Learner["transmission"];
   schoolWork: string | null;
   licenceStage: Learner["licenceStage"];
+  learnerLicenceIssuedOn: string | null;
+  learnerLicenceFirstIssuedOn: string | null;
+  hptPassedOn: string | null;
+  loggedHours: number | null;
+  loggedHoursOn: string | null;
 };
-const LEARNER_EDIT_KEYS = ["fullName", "address", "phone", "dob", "licenceNumber", "licenceExpiry", "eligibility", "transmission", "schoolWork", "licenceStage"] as const satisfies readonly (keyof LearnerFields)[];
+const LEARNER_EDIT_KEYS = [
+  "fullName", "address", "phone", "dob", "licenceNumber", "licenceExpiry", "eligibility", "transmission", "schoolWork", "licenceStage",
+  "learnerLicenceIssuedOn", "learnerLicenceFirstIssuedOn", "hptPassedOn", "loggedHours", "loggedHoursOn",
+] as const satisfies readonly (keyof LearnerFields)[];
 const LICENCE_STAGES = ["learner", "p1", "p2", "full"] as const;
 const LEARNER_COLUMN: Record<(typeof LEARNER_EDIT_KEYS)[number], string> = {
   fullName: "full_name", address: "address", phone: "phone", dob: "dob", licenceNumber: "licence_number", licenceExpiry: "licence_expiry",
   eligibility: "eligibility", transmission: "transmission", schoolWork: "school_work", licenceStage: "licence_stage",
+  learnerLicenceIssuedOn: "learner_licence_issued_on", learnerLicenceFirstIssuedOn: "learner_licence_first_issued_on", hptPassedOn: "hpt_passed_on",
+  loggedHours: "logged_hours", loggedHoursOn: "logged_hours_on",
 };
+
+/** A real calendar date (rejects 2026-02-30, which the shape-only `isoDate` accepts). Used for the Competency 23 fields only. */
+function realDate(value: unknown, label: string): string | null {
+  const trimmed = String(value ?? "").trim();
+  if (!trimmed) return null;
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(trimmed);
+  const check = match ? new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]))) : null;
+  if (!match || !check || check.getUTCFullYear() !== Number(match[1]) || check.getUTCMonth() !== Number(match[2]) - 1 || check.getUTCDate() !== Number(match[3])) {
+    throw new ValidationError(`${label} must be a real date (YYYY-MM-DD).`);
+  }
+  return trimmed;
+}
+
+/** Whole hours 0-999 (a number or a numeric string); "" / null clear it. */
+function wholeHours(value: unknown): number | null {
+  if (value === null || value === undefined) return null;
+  const raw = String(value).trim();
+  if (!raw) return null;
+  if (!/^\d{1,3}$/.test(raw)) throw new ValidationError("Logged hours must be a whole number from 0 to 999.");
+  return Number(raw);
+}
+
+const RULES_DATE_LABELS = [
+  ["learnerLicenceIssuedOn", "Learner licence issue date"],
+  ["learnerLicenceFirstIssuedOn", "First learner licence issue date"],
+  ["hptPassedOn", "HPT pass date"],
+  ["loggedHoursOn", "Logged hours as-of date"],
+] as const;
+
+/**
+ * Cross-field rules for the Competency 23 fields (D19), checked on the merged values (the stored learner plus the
+ * keys being changed) and only when a key involved in a rule is being changed, so an unrelated edit is never
+ * blocked by older data. `today` is the Canberra date.
+ */
+function checkRulesFields(merged: Pick<Learner, "dob" | "learnerLicenceIssuedOn" | "learnerLicenceFirstIssuedOn" | "hptPassedOn" | "loggedHours" | "loggedHoursOn">, touched: ReadonlySet<string>, today: string) {
+  const touches = (...keys: string[]) => keys.some((key) => touched.has(key));
+  const { dob, learnerLicenceIssuedOn: issued, learnerLicenceFirstIssuedOn: first, hptPassedOn: hpt, loggedHours: hours, loggedHoursOn: hoursOn } = merged;
+  if (issued && touches("learnerLicenceIssuedOn") && issued > today) throw new ValidationError("Learner licence issue date cannot be in the future.");
+  if (issued && dob && touches("learnerLicenceIssuedOn", "dob") && issued < dob) throw new ValidationError("Learner licence issue date cannot be before the date of birth.");
+  if (first && issued && touches("learnerLicenceFirstIssuedOn", "learnerLicenceIssuedOn") && first > issued) throw new ValidationError("First issue date cannot be after the current learner licence issue date.");
+  if (first && touches("learnerLicenceFirstIssuedOn") && first > today) throw new ValidationError("First learner licence issue date cannot be in the future.");
+  if (hpt && touches("hptPassedOn") && hpt > today) throw new ValidationError("HPT pass date cannot be in the future.");
+  if (hoursOn && touches("loggedHoursOn") && hoursOn > today) throw new ValidationError("Logged hours as-of date cannot be in the future.");
+  if (hours !== null && !hoursOn && touches("loggedHours", "loggedHoursOn")) throw new ValidationError("Logged hours need an as-of date.");
+}
 
 /**
  * The ONE place learner field rules live (create and edit share it): trim, "" -> null, per-field max length,
@@ -282,6 +342,8 @@ function parseLearnerFields(input: LearnerEditInput, strict: boolean): Partial<L
     out[key] = isoDate(input[key]);
     if (strict && out[key] === null && String(input[key] ?? "").trim()) throw new ValidationError(`${label} must be a valid date (YYYY-MM-DD).`);
   }
+  for (const [key, label] of RULES_DATE_LABELS) if (has(key)) out[key] = realDate(input[key], label);
+  if (has("loggedHours")) out.loggedHours = wholeHours(input.loggedHours);
   if (has("transmission")) {
     const raw = String(input.transmission ?? "").trim().toLowerCase();
     out.transmission = raw === "manual" || raw === "auto" ? raw : null;
@@ -295,8 +357,13 @@ function parseLearnerFields(input: LearnerEditInput, strict: boolean): Partial<L
   return out;
 }
 
-export async function createLearner(db: D1Database, input: LearnerInput): Promise<Learner> {
+export async function createLearner(db: D1Database, input: LearnerInput, now: Date = new Date()): Promise<Learner> {
   const fields = parseLearnerFields({ ...input, fullName: input.fullName ?? "" }, false);
+  checkRulesFields(
+    { dob: fields.dob ?? null, learnerLicenceIssuedOn: fields.learnerLicenceIssuedOn ?? null, learnerLicenceFirstIssuedOn: fields.learnerLicenceFirstIssuedOn ?? null, hptPassedOn: fields.hptPassedOn ?? null, loggedHours: fields.loggedHours ?? null, loggedHoursOn: fields.loggedHoursOn ?? null },
+    new Set(Object.keys(fields)),
+    localNow(now).date,
+  );
   // Instructor must already exist and be active — no free-text name, no
   // auto-creation. Reuses the same existing-and-active check as lesson
   // attribution, just made required here (an omitted/unknown/inactive id
@@ -307,8 +374,9 @@ export async function createLearner(db: D1Database, input: LearnerInput): Promis
   const id = crypto.randomUUID();
   await db
     .prepare(
-      `INSERT INTO learners (id, instructor_id, full_name, address, phone, dob, licence_number, licence_expiry, eligibility, transmission, school_work)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO learners (id, instructor_id, full_name, address, phone, dob, licence_number, licence_expiry, eligibility, transmission, school_work,
+         learner_licence_issued_on, learner_licence_first_issued_on, hpt_passed_on, logged_hours, logged_hours_on)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .bind(
       id,
@@ -322,6 +390,11 @@ export async function createLearner(db: D1Database, input: LearnerInput): Promis
       fields.eligibility ?? null,
       fields.transmission ?? null,
       fields.schoolWork ?? null,
+      fields.learnerLicenceIssuedOn ?? null,
+      fields.learnerLicenceFirstIssuedOn ?? null,
+      fields.hptPassedOn ?? null,
+      fields.loggedHours ?? null,
+      fields.loggedHoursOn ?? null,
     )
     .run();
   return getLearner(db, id);
@@ -351,7 +424,7 @@ function learnerRevisionInsertStatement(db: D1Database, learnerId: string, edite
  * updates the learner in ONE db.batch(); a no-op writes nothing. Archived learners may be edited. No ACTGDS
  * event: the contract carries only learner_id. D1 cost: 5 statements (learner, actor, batch of 2, re-read).
  */
-export async function updateLearner(db: D1Database, id: string, input: LearnerEditInput): Promise<UpdateLearnerResult> {
+export async function updateLearner(db: D1Database, id: string, input: LearnerEditInput, now: Date = new Date()): Promise<UpdateLearnerResult> {
   const existing = await getLearner(db, id);
   const actingInstructorId = await resolveActingInstructorId(db, input.actingInstructorId);
   if (actingInstructorId !== null && actingInstructorId !== existing.instructorId) {
@@ -361,6 +434,7 @@ export async function updateLearner(db: D1Database, id: string, input: LearnerEd
   const fields = parseLearnerFields(input, true);
   const keys = LEARNER_EDIT_KEYS.filter((key) => fields[key] !== undefined);
   if (!keys.length) throw new ValidationError("Nothing to change: send at least one learner field.");
+  checkRulesFields({ ...existing, ...fields } as Learner, new Set(keys), localNow(now).date);
   const changedFields = keys.filter((key) => fields[key] !== existing[key]);
   if (!changedFields.length) return { learner: existing, changed: false, changedFields: [] };
 
