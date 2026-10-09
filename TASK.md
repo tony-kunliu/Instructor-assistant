@@ -5,7 +5,8 @@ _Last updated: 2026-10-08_
 This file describes **current task only**. Completed work's detail
 lives in git log and closed PRs, not here.
 
-**Current Task:** Learner management Phase 1 (edit learner details) —
+**Current Task:** PDF export size (embed font subset, 14 MB -> ~35 KB typical) — **Completed** on
+`feature/pdf-font-subset` (not merged; no migration, no contract change). Earlier: Learner management Phase 1 (edit learner details) —
 **Completed** on `feature/learner-edit` (not merged). Plan:
 `docs/superpowers/specs/2026-10-08-learner-management-plan.md` (L1-L6).
 Typecheck, 384 tests, `cf:build`, qa-browser 178/178 and the local `0008` rehearsal

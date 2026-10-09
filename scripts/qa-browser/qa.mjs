@@ -499,6 +499,7 @@ const draw = async (page, index) => {
   const pdfPath = `${OUT}/qa-export.pdf`;
   await download.saveAs(pdfPath);
   check("regression: PDF export downloads a real PDF", readFileSync(pdfPath).subarray(0, 5).toString() === "%PDF-", download.suggestedFilename());
+  check("pdf size: the export embeds only the glyphs it uses (was 10+ MB with the whole font)", readFileSync(pdfPath).length < 1_000_000, `${readFileSync(pdfPath).length} bytes`);
   check("no horizontal scroll (lesson + history)", await noHScroll(s.page));
   await shot(s.page, "06-regression-lesson");
   check("Tony: no page errors (regression)", s.errors.length === 0, s.errors.join("|"));

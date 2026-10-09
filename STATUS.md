@@ -19,7 +19,8 @@ git log and closed PRs, not here — see `TASK.md` for what's in progress.
 ## CI
 
 - Latest `staging` GitHub Actions run: **SUCCESS**.
-- Tests: 384/384 PASS on `feature/learner-edit` (`staging`: 364), 0 skipped.
+- Tests: 394/394 PASS on `feature/pdf-font-subset` (`staging`: 364), 0 skipped; qa-browser 179/179.
+- PDF export: embeds a per-document font subset (~35 KB-1.5 MB, was 14 MB); see `lib/pdf-export.ts` header and `scripts/build-pdf-font-subset.py`. Branch `feature/pdf-font-subset`, not merged.
 - Build: PASS.
 - `npm test` requires Node's `--experimental-strip-types` flag (already in
   `package.json`'s `test` script) — CI pins Node 22.13, which needs this
