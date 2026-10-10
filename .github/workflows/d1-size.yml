@@ -61,9 +61,9 @@ jobs:
             echo '```'
             q "SELECT (SELECT COUNT(*) FROM learners) AS learners, (SELECT COUNT(*) FROM lessons) AS lessons, (SELECT COUNT(*) FROM lesson_revisions) AS lesson_revisions, (SELECT COUNT(*) FROM learner_revisions) AS learner_revisions, (SELECT COUNT(*) FROM integration_outbox) AS outbox"
             echo '```'
-            echo "### Signature bytes (lessons / lesson_revisions)"
+            echo "### Signature bytes (lessons) and revision snapshot bytes"
             echo '```'
             q "SELECT COUNT(*) AS lessons_with_signatures, COALESCE(SUM(LENGTH(adi_signature)+LENGTH(learner_signature)),0) AS signature_bytes, COALESCE(AVG(LENGTH(adi_signature)+LENGTH(learner_signature)),0) AS avg_bytes_per_lesson, COALESCE(MAX(LENGTH(adi_signature)),0) AS max_one_signature FROM lessons WHERE adi_signature IS NOT NULL"
-            q "SELECT COUNT(*) AS revisions, COALESCE(SUM(LENGTH(adi_signature)+LENGTH(learner_signature)),0) AS signature_bytes FROM lesson_revisions"
+            q "SELECT COUNT(*) AS revisions, COALESCE(SUM(LENGTH(snapshot_json)),0) AS snapshot_bytes FROM lesson_revisions"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
