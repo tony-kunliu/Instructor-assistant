@@ -1,0 +1,69 @@
+name: D1 Size Report
+
+# Manual, READ-ONLY: reports the size of a D1 database and how much of it the
+# signature images take. Aggregate counts and byte sizes only: no learner
+# names or other personal data are queried or printed. Never writes, migrates
+# or deploys. Uses the repo secret CLOUDFLARE_API_TOKEN.
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 'Which database to measure: production or staging'
+        required: true
+        default: production
+        type: choice
+        options: [production, staging]
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  CLOUDFLARE_ACCOUNT_ID: ff281f1a6f1aa8241b1d9bd1a22d485a
+
+jobs:
+  size:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.13"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Measure
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          TARGET: ${{ inputs.target }}
+        run: |
+          if [ "$TARGET" = "production" ]; then DB=instructor-assistant-db-production; else DB=instructor-assistant-db; fi
+          {
+            echo "## D1 size: $TARGET ($DB)"
+            echo '```'
+            npx wrangler d1 info "$DB" || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          q() { npx wrangler d1 execute "$DB" --remote --json --command "$1" | jq -c '.[0].results'; }
+          {
+            echo "### Row counts"
+            echo '```'
+            q "SELECT (SELECT COUNT(*) FROM learners) AS learners, (SELECT COUNT(*) FROM lessons) AS lessons, (SELECT COUNT(*) FROM lesson_revisions) AS lesson_revisions, (SELECT COUNT(*) FROM learner_revisions) AS learner_revisions, (SELECT COUNT(*) FROM integration_outbox) AS outbox"
+            echo '```'
+            echo "### Signature bytes (lessons / lesson_revisions)"
+            echo '```'
+            q "SELECT COUNT(*) AS lessons_with_signatures, COALESCE(SUM(LENGTH(adi_signature)+LENGTH(learner_signature)),0) AS signature_bytes, COALESCE(AVG(LENGTH(adi_signature)+LENGTH(learner_signature)),0) AS avg_bytes_per_lesson, COALESCE(MAX(LENGTH(adi_signature)),0) AS max_one_signature FROM lessons WHERE adi_signature IS NOT NULL"
+            q "SELECT COUNT(*) AS revisions, COALESCE(SUM(LENGTH(adi_signature)+LENGTH(learner_signature)),0) AS signature_bytes FROM lesson_revisions"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
