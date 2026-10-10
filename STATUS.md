@@ -7,15 +7,15 @@ closed PRs; see `TASK.md` for what is in progress.
 
 ## In progress (branch, not merged)
 
-- `feature/rules-reminders-t2` (on top of staging with T1): migration `0009` (five nullable
-  learner columns: licence issue date, first issue date, HPT date, logged
-  hours + as-of date), validation D19, revision snapshots, a collapsed
-  "Competency 23 eligibility" group in the New/Edit learner forms, and the R2
-  reminder (issue date estimated from the licence expiry when empty; "Borderline,
-  check the licence card" within 14 days of a threshold). ACTGDS contract
-  unchanged. Learner edit stays 5 D1 statements (UPDATE binds up to 16).
-  **Apply 0009 to Staging D1 (Staging D1 Migrate, ref = branch, confirm =
-  staging) BEFORE merging T2 to `staging`.**
+- `feature/learner-phase3a` (learner management Phase 3a, client-side only; no
+  migration, no new D1 query or API, ACTGDS contract unchanged): amber
+  "Missing for the PDF: ..." line in the learner panel and an amber duplicate
+  licence number warning (panel and New/Edit form; Save stays enabled), both
+  from `lib/learner-checks.ts`. Archived learners count only once the Archived
+  list has been opened (the form shows a grey "not checked" line until then).
+- Note: rules-reminders T2 was merged to `staging` (PR #37); `docs/BACKLOG.md`
+  records it in Production with migration `0009`. The D1 levels below were not
+  re-verified in this task.
 
 ## Repository
 
@@ -29,7 +29,7 @@ closed PRs; see `TASK.md` for what is in progress.
 
 ## CI
 
-- Latest `staging` GitHub Actions run: **SUCCESS**. Tests: 491 on the T2 branch, 465 on staging (2 poppler
+- Latest `staging` GitHub Actions run: **SUCCESS**. Tests: 505 on `feature/learner-phase3a` (2 poppler
   tests skip without `pdftotext`; they hard-fail only with `REQUIRE_POPPLER=1`,
   set in `ci.yml` only).
 - `npm test` needs `--experimental-strip-types` (already in `package.json`).
@@ -133,6 +133,9 @@ record: `tony-kunliu/actgds.com` Issue #3.
   Vietnamese, Greek, Cyrillic, kana, Hangul, Latin Ext-B, box drawing and some
   symbols print as boxes after the user confirms the warning.
 - Minor learner-edit review follow-ups are in `docs/BACKLOG.md`.
+- qa-browser check "learner edit: clearing the selection closes the open edit
+  form" fails deterministically on `staging` (3f4bde8, 245/246) and on
+  `feature/learner-phase3a`; not investigated (out of scope).
 
 ## Next
 

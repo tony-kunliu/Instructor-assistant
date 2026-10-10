@@ -16,6 +16,7 @@ import {
 import { FINAL_DRIVE_23, REVIEW_1_17, REVIEW_1_22, type AssessmentResult, type LearnerProgress, type MilestoneInvalidation } from "@/lib/competency.ts";
 import { accessLogoutUrl } from "@/lib/access-logout.ts";
 import { filterLearners } from "@/lib/learner-filter.ts";
+import { archivedNotCheckedReminder, duplicateLicenceReminder, missingPdfReminder, sameLicenceLearners } from "@/lib/learner-checks.ts";
 import { currentIssues, issueFromServerMessage, validateLessonDraftFields, type IssueState } from "@/lib/lesson-form-errors.ts";
 import { availableViews, initialSelection, learnerPanel, selectionAfterViewChange, viewLearners, type PickerView } from "@/lib/learner-picker.ts";
 import { priorRecordLine, splitPriorRecords } from "@/lib/prior-record.ts";
@@ -656,6 +657,22 @@ export default function DriverApp() {
       showBookingLink = true;
     }
   }
+  // Learner management Phase 3a (lib/learner-checks.ts): display only, from the lists already loaded; never blocks a save.
+  const canEditLearner = Boolean(detail) && (!signedInInstructorId || signedInInstructorId === detail?.learner.instructorId);
+  const knownLearners = [...learners, ...(archivedLearners ?? [])];
+  const learnerChecks: Reminder[] = [];
+  if (detail) {
+    const missing = missingPdfReminder(detail.learner, canEditLearner);
+    if (missing) learnerChecks.push(missing);
+    const duplicate = duplicateLicenceReminder(sameLicenceLearners(detail.learner.licenceNumber, detail.learner.id, knownLearners), detail.learner.instructorId, "panel");
+    if (duplicate) learnerChecks.push(duplicate);
+  }
+  const formOwnerId = editingLearner ? (detail?.learner.instructorId ?? null) : learnerDraft.instructorId || null;
+  const formLicenceCheck: Reminder | null = addingLearner
+    ? duplicateLicenceReminder(sameLicenceLearners(learnerDraft.licenceNumber, editingLearner ? editLearnerId : null, knownLearners), formOwnerId, "form") ??
+      archivedNotCheckedReminder(learnerDraft.licenceNumber, archivedLearners !== null)
+    : null;
+
   const formReminders: Reminder[] = [];
   if (detail && draft && phase !== "ready") {
     for (const review of [REVIEW_1_17, REVIEW_1_22] as const) {
@@ -749,6 +766,7 @@ export default function DriverApp() {
             <label className="field"><span>DOB</span><input type="date" value={learnerDraft.dob} onChange={(e) => learnerField("dob", e.target.value)} /></label>
             <label className="field"><span>Licence number</span><input value={learnerDraft.licenceNumber} onChange={(e) => learnerField("licenceNumber", e.target.value)} autoCapitalize="characters" /></label>
             <label className="field"><span>Licence expiry</span><input type="date" value={learnerDraft.licenceExpiry} onChange={(e) => learnerField("licenceExpiry", e.target.value)} /></label>
+            {formLicenceCheck ? <div className="full"><RulesReminders reminders={[formLicenceCheck]} testId="licence-duplicate" /></div> : null}
             <label className="field"><span>Eligibility</span><input value={learnerDraft.eligibility} onChange={(e) => learnerField("eligibility", e.target.value)} /></label>
             <label className="field"><span>Manual / Auto</span>
               <select value={learnerDraft.transmission} onChange={(e) => learnerField("transmission", e.target.value)}>
@@ -825,12 +843,13 @@ export default function DriverApp() {
                 `ADI ${detail.learner.instructorName}`].filter(Boolean).join(" · ")}
             </p>
             {licenceReminder ? <RulesReminders reminders={[licenceReminder]} testId="licence-reminder" /> : null}
+            <RulesReminders reminders={learnerChecks} testId="learner-checks" />
             <p className="meta integration-id">
               Integration ID: <code>{detail.learner.id}</code>
               <button type="button" className="link" onClick={() => void copyIntegrationId(detail.learner.id)}>Copy ID</button>
             </p>
             <ExportPdfButton key={detail.learner.id} learnerId={detail.learner.id} lessonCount={history.lessons.length} />
-            {!signedInInstructorId || signedInInstructorId === detail.learner.instructorId ? (
+            {canEditLearner ? (
               <button type="button" className="btn ghost block edit-learner-btn" disabled={saving} onClick={openEditLearner} data-testid="edit-learner">Edit learner</button>
             ) : null}
             {panel === "archived" ? (
