@@ -147,6 +147,8 @@ test("validation errors write nothing", async () => {
     [{ fullName: "" }, /Student name is required/],
     [{ dob: "06/05/2008" }, /Date of birth must be a valid date/],
     [{ licenceExpiry: "not a date" }, /Licence expiry must be a valid date/],
+    [{ dob: "2008-13-45" }, /Date of birth must be a valid date/],
+    [{ licenceExpiry: "2026-02-30" }, /Licence expiry must be a valid date/],
     [{ transmission: "cvt" }, /Transmission must be/],
     [{ licenceStage: "pro" }, /Licence stage must be/],
     [{ instructorId: "someone-else" }, /instructor cannot be changed/i],

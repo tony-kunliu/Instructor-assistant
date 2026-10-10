@@ -42,7 +42,11 @@ function text(value: unknown, max: number): string | null {
 
 function isoDate(value: unknown): string | null {
   const trimmed = String(value ?? "").trim();
-  return /^\d{4}-\d{2}-\d{2}$/.test(trimmed) ? trimmed : null;
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(trimmed);
+  if (!match) return null;
+  const check = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
+  // A real calendar date only: 2008-13-45 and 2026-02-30 are rejected.
+  return check.getUTCFullYear() === Number(match[1]) && check.getUTCMonth() === Number(match[2]) - 1 && check.getUTCDate() === Number(match[3]) ? trimmed : null;
 }
 
 function signature(value: unknown): string | null {
@@ -273,7 +277,7 @@ const LEARNER_COLUMN: Record<(typeof LEARNER_EDIT_KEYS)[number], string> = {
   loggedHours: "logged_hours", loggedHoursOn: "logged_hours_on",
 };
 
-/** A real calendar date (rejects 2026-02-30, which the shape-only `isoDate` accepts). Used for the Competency 23 fields only. */
+/** A real calendar date that throws a labelled error (the Competency 23 fields); `isoDate` is the non-throwing twin. */
 function realDate(value: unknown, label: string): string | null {
   const trimmed = String(value ?? "").trim();
   if (!trimmed) return null;
