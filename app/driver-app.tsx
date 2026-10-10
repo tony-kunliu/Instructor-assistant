@@ -177,6 +177,8 @@ export default function DriverApp() {
   const [addingLearner, setAddingLearner] = useState(false);
   // True while the learner form edits the selected learner (instead of creating one).
   const [editingLearner, setEditingLearner] = useState(false);
+  // The learner the open edit form belongs to; the save targets this id, never whoever is selected at save time.
+  const [editLearnerId, setEditLearnerId] = useState<string | null>(null);
   const [learnerDraft, setLearnerDraft] = useState<LearnerDraft>(emptyLearner);
   const [status, setStatus] = useState<{ kind: "info" | "error" | "ok"; text: string } | null>(null);
   const [saving, setSaving] = useState(false);
@@ -336,6 +338,7 @@ export default function DriverApp() {
       licenceStage: l.licenceStage, instructorId: l.instructorId,
     });
     setHoursOnTouched(false);
+    setEditLearnerId(l.id);
     setEditingLearner(true);
     setAddingLearner(true);
     setStatus(null);
@@ -344,16 +347,26 @@ export default function DriverApp() {
   const closeLearnerForm = () => {
     setAddingLearner(false);
     setEditingLearner(false);
+    setEditLearnerId(null);
   };
 
+  // Switching to another learner (or none) while the edit form is open discards the form: it belongs to the learner it was opened for.
+  useEffect(() => {
+    if (editingLearner && editLearnerId !== null && detail?.learner.id !== editLearnerId) {
+      setAddingLearner(false);
+      setEditingLearner(false);
+      setEditLearnerId(null);
+    }
+  }, [detail?.learner.id, editingLearner, editLearnerId]);
+
   const saveLearnerEdit = async () => {
-    if (!detail) return;
+    if (!detail || !editLearnerId || detail.learner.id !== editLearnerId) return;
     setSaving(true);
     setStatus(null);
     try {
       const { instructorId: _owner, ...fields } = learnerDraft;
       void _owner;
-      const result = await api<{ learner: Learner; changed: boolean; message?: string }>(`/api/learners/${encodeURIComponent(detail.learner.id)}`, {
+      const result = await api<{ learner: Learner; changed: boolean; message?: string }>(`/api/learners/${encodeURIComponent(editLearnerId)}`, {
         method: "PATCH",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(fields),
