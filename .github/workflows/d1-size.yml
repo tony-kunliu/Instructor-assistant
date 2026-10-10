@@ -54,7 +54,7 @@ jobs:
             echo '```'
             npx wrangler d1 info "$DB" || true
             echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
           q() { local out; out=$(npx wrangler d1 execute "$DB" --remote --json --command "$1" 2>&1) || { echo "$out" | head -c 1500 >&2; return 1; }; echo "$out" | jq -c 'if type=="array" then .[0].results else empty end'; }
           {
             echo "### Row counts"
@@ -66,4 +66,4 @@ jobs:
             q "SELECT COUNT(*) AS lessons_with_signatures, COALESCE(SUM(LENGTH(adi_signature)+LENGTH(learner_signature)),0) AS signature_bytes, COALESCE(AVG(LENGTH(adi_signature)+LENGTH(learner_signature)),0) AS avg_bytes_per_lesson, COALESCE(MAX(LENGTH(adi_signature)),0) AS max_one_signature FROM lessons WHERE adi_signature IS NOT NULL"
             q "SELECT COUNT(*) AS revisions, COALESCE(SUM(LENGTH(snapshot_json)),0) AS snapshot_bytes FROM lesson_revisions"
             echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
