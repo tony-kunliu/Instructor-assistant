@@ -665,7 +665,9 @@ export default function DriverApp() {
     const missing = missingPdfReminder(detail.learner, canEditLearner);
     if (missing) learnerChecks.push(missing);
     const duplicate = duplicateLicenceReminder(sameLicenceLearners(detail.learner.licenceNumber, detail.learner.id, knownLearners), detail.learner.instructorId, "panel");
+    const archivedNote = duplicate ? null : archivedNotCheckedReminder(detail.learner.licenceNumber, archivedLearners !== null);
     if (duplicate) learnerChecks.push(duplicate);
+    else if (archivedNote) learnerChecks.push(archivedNote);
   }
   const formOwnerId = editingLearner ? (detail?.learner.instructorId ?? null) : learnerDraft.instructorId || null;
   const formLicenceCheck: Reminder | null = addingLearner

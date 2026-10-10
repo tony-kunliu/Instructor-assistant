@@ -853,7 +853,9 @@ const draw = async (page, index) => {
   await t.page.waitForSelector("[data-testid=save-learner]");
   await tab(t.page, "Archived");
   await t.page.waitForFunction(() => document.querySelector(".view-tab.active")?.textContent.startsWith("Archived"));
-  check("learner edit: clearing the selection closes the open edit form", (await t.page.$("[data-testid=save-learner]")) === null);
+  // The form is discarded by an effect one render after the tab changes, so wait for it instead of reading the DOM immediately.
+  const formGone = await t.page.waitForSelector("[data-testid=save-learner]", { state: "detached", timeout: 3000 }).then(() => true, () => false);
+  check("learner edit: clearing the selection closes the open edit form", formGone);
   await t.page.click("text=+ New");
   check("learner edit: '+ New' after that opens an empty New learner form, not Edit", (await t.page.textContent("h2:has-text('learner')")).includes("New learner"));
   await t.page.click("text=Cancel");
@@ -1163,7 +1165,7 @@ const draw = async (page, index) => {
   check("learner checks: New form: no licence line before a number is typed", (await s.page.$("[data-testid=licence-duplicate]")) === null);
   await s.page.fill('label:has-text("Licence number") input', "QA 00 999");
   const grey = await line(s.page, "dup-licence-archived", "[data-testid=licence-duplicate]");
-  check("learner checks: New form: unique number while archived learners are not loaded → grey 'not checked', never a pass", grey?.tone === "grey" && /^Archived learners not checked/.test(grey.text), JSON.stringify(grey));
+  check("learner checks: New form: unique number while archived learners are not loaded → grey 'not checked', never a pass", grey?.tone === "grey" && /^Archived learners are not checked/.test(grey.text), JSON.stringify(grey));
   await s.page.fill('label:has-text("Licence number") input', "qa77 001");
   const formDup = await line(s.page, "dup-licence", "[data-testid=licence-duplicate]");
   check("learner checks: New form: typing a matching number → amber warning naming both learners, 'You can still save.'", formDup?.tone === "amber" && formDup.text === "Same licence number as QA Anna Dup Three (Anna's learner) and QA Tony Dup One. Check this is not the same learner entered twice. You can still save.", JSON.stringify(formDup));

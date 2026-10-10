@@ -75,5 +75,5 @@ export function duplicateLicenceReminder(matches: readonly Learner[], ownerInstr
 /** Grey: archived learners are loaded only when the Archived list is opened, so until then they were not checked. */
 export function archivedNotCheckedReminder(licenceNumber: string | null | undefined, archivedLoaded: boolean): Reminder | null {
   if (archivedLoaded || !licenceKey(licenceNumber)) return null;
-  return { id: "dup-licence-archived", tone: "grey", text: "Archived learners not checked for this licence number (open Archived once to include them)." };
+  return { id: "dup-licence-archived", tone: "grey", text: "Archived learners are not checked for this licence number until the Archived list has been opened." };
 }
