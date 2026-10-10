@@ -840,6 +840,14 @@ const draw = async (page, index) => {
   await shot(t.page, "10-learner-edit-375");
   await t.page.click("[data-testid=cancel-edit-learner]");
   check("learner edit: Cancel closes the form and keeps the name", (await t.page.$("[data-testid=save-learner]")) === null && (await t.page.textContent(".summary-main small")) === "QA Tony Bravo");
+  // Switching learner while the edit form is open discards the form (it must never save onto the newly selected learner).
+  await t.page.click("[data-testid=edit-learner]");
+  await t.page.waitForSelector("[data-testid=save-learner]");
+  await pick(t.page, "QA Glyph Rare");
+  await t.page.waitForSelector("[data-testid=history-row]");
+  check("learner edit: switching learner closes the open edit form", (await t.page.$("[data-testid=save-learner]")) === null);
+  await pick(t.page, "QA Tony Bravo");
+  await t.page.waitForSelector(".summary");
   await t.page.click("[data-testid=edit-learner]");
   await t.page.fill("label:has-text('Student name') input", "QA Tony Bravo Renamed");
   await t.page.fill("label:has-text('Phone') input", "0400 000 123");
@@ -938,7 +946,7 @@ const draw = async (page, index) => {
   {
     // The panel line's tone must follow the Canberra clock: plain only inside today's window.
     const nowC = await s.page.evaluate(() => { const p = Object.fromEntries(new Intl.DateTimeFormat("en-AU", { timeZone: "Australia/Sydney", weekday: "short", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(new Date()).map((x) => [x.type, x.value])); return { wd: p.weekday, min: Number(p.hour) * 60 + Number(p.minute) }; });
-    const r3 = await s.page.$eval("[data-testid=panel-reminders] .reminder[data-rule=r3]", (e) => ({ tone: e.dataset.tone, text: e.textContent }));
+    const r3 = await s.page.$eval("[data-testid=panel-reminders] .reminder[data-rule^=r3]", (e) => ({ tone: e.dataset.tone, text: e.textContent }));
     if (/^Competency 23 hours today/.test(r3.text)) {
       const end = nowC.wd === "Fri" ? 21 * 60 : 19 * 60;
       const inside = nowC.min >= 7 * 60 && nowC.min < end;

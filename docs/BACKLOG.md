@@ -15,8 +15,6 @@ direction is in `docs/ECOSYSTEM_ROADMAP.md` (P1–P6)._
 
 ## Minor follow-ups (bundle into the next feature)
 
-- Learner edit form saves to the learner id at save time; capture the id when
-  the form opens.
 - No message when a learner is archived while the edit form is open.
 - The unmounted-key QA check for the PDF button is weak.
 
