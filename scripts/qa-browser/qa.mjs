@@ -848,6 +848,18 @@ const draw = async (page, index) => {
   check("learner edit: switching learner closes the open edit form", (await t.page.$("[data-testid=save-learner]")) === null);
   await pick(t.page, "QA Tony Bravo");
   await t.page.waitForSelector(".summary");
+  // Clearing the selection (another view) while the form is open must not leave an Edit form behind.
+  await t.page.click("[data-testid=edit-learner]");
+  await t.page.waitForSelector("[data-testid=save-learner]");
+  await tab(t.page, "Archived");
+  await t.page.waitForFunction(() => document.querySelector(".view-tab.active")?.textContent.startsWith("Archived"));
+  check("learner edit: clearing the selection closes the open edit form", (await t.page.$("[data-testid=save-learner]")) === null);
+  await t.page.click("text=+ New");
+  check("learner edit: '+ New' after that opens an empty New learner form, not Edit", (await t.page.textContent("h2:has-text('learner')")).includes("New learner"));
+  await t.page.click("text=Cancel");
+  await tab(t.page, "My");
+  await pick(t.page, "QA Tony Bravo");
+  await t.page.waitForSelector(".summary");
   await t.page.click("[data-testid=edit-learner]");
   await t.page.fill("label:has-text('Student name') input", "QA Tony Bravo Renamed");
   await t.page.fill("label:has-text('Phone') input", "0400 000 123");

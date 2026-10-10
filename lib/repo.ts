@@ -329,7 +329,7 @@ function checkRulesFields(merged: Pick<Learner, "dob" | "learnerLicenceIssuedOn"
  * instead of silently turning it into null, so a typo can never wipe stored data; create keeps its lenient
  * historical behaviour.
  */
-function parseLearnerFields(input: LearnerEditInput, strict: boolean): Partial<LearnerFields> {
+function parseLearnerFields(input: LearnerEditInput, strict: boolean, existing?: Learner): Partial<LearnerFields> {
   const has = (key: keyof LearnerEditInput) => input[key] !== undefined;
   const out: Partial<LearnerFields> = {};
   if (has("fullName")) {
@@ -344,7 +344,10 @@ function parseLearnerFields(input: LearnerEditInput, strict: boolean): Partial<L
   for (const [key, label] of [["dob", "Date of birth"], ["licenceExpiry", "Licence expiry"]] as const) {
     if (!has(key)) continue;
     out[key] = isoDate(input[key]);
-    if (strict && out[key] === null && String(input[key] ?? "").trim()) throw new ValidationError(`${label} must be a valid date (YYYY-MM-DD).`);
+    const raw = String(input[key] ?? "").trim();
+    // Older data may hold an impossible date (stored before the calendar check): re-sending it unchanged must not block an unrelated edit.
+    if (out[key] === null && raw && existing && existing[key] === raw) out[key] = raw;
+    if (strict && out[key] === null && raw) throw new ValidationError(`${label} must be a valid date (YYYY-MM-DD).`);
   }
   for (const [key, label] of RULES_DATE_LABELS) if (has(key)) out[key] = realDate(input[key], label);
   if (has("loggedHours")) out.loggedHours = wholeHours(input.loggedHours);
@@ -435,7 +438,7 @@ export async function updateLearner(db: D1Database, id: string, input: LearnerEd
     throw new ValidationError(`This learner belongs to ${existing.instructorName || "another instructor"}; only they can edit their details.`);
   }
   if (input.instructorId !== undefined) throw new ValidationError("A learner's instructor cannot be changed here.");
-  const fields = parseLearnerFields(input, true);
+  const fields = parseLearnerFields(input, true, existing);
   const keys = LEARNER_EDIT_KEYS.filter((key) => fields[key] !== undefined);
   if (!keys.length) throw new ValidationError("Nothing to change: send at least one learner field.");
   const changedFields = keys.filter((key) => fields[key] !== existing[key]);
@@ -604,7 +607,7 @@ export async function createLesson(db: D1Database, learnerId: string, input: Les
   const learner = await getLearner(db, learnerId);
 
   const lessonDate = isoDate(input.lessonDate);
-  if (!lessonDate) throw new ValidationError("Lesson date is required.");
+  if (!lessonDate) throw new ValidationError(String(input.lessonDate ?? "").trim() ? "Lesson date must be a valid date (YYYY-MM-DD)." : "Lesson date is required.");
   const startTime = String(input.startTime ?? "").trim();
   const finishTime = String(input.finishTime ?? "").trim();
   const duration = durationMinutes(startTime, finishTime);
@@ -922,7 +925,7 @@ export async function updateLesson(db: D1Database, learnerId: string, lessonId: 
   const reason = reasonRaw || null;
 
   const lessonDate = isoDate(input.lessonDate);
-  if (!lessonDate) throw new ValidationError("Lesson date is required.");
+  if (!lessonDate) throw new ValidationError(String(input.lessonDate ?? "").trim() ? "Lesson date must be a valid date (YYYY-MM-DD)." : "Lesson date is required.");
   // Paper-imported lessons (record_source = 'paper_import') may legitimately
   // lack times / odometer readings and carry no digital signatures; app
   // lessons keep every original requirement unchanged.

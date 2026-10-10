@@ -234,3 +234,13 @@ test("PATCH no-op reports changed:false with a message; archived + fields togeth
   await assert.rejects(() => patchLearner(db, learner.id, patchRequest({ fullName: "QA X", instructorId: "other" })), /instructor cannot be changed/i);
   assert.equal(await count(db, "learner_revisions"), 0);
 });
+
+test("a legacy impossible date already stored does not block an unrelated edit, but cannot be newly entered", async () => {
+  const { db, tony, learner } = await setup();
+  await db.prepare("UPDATE learners SET dob = ? WHERE id = ?").bind("2008-02-30", learner.id).run();
+  const result = await updateLearner(db, learner.id, { phone: "0400 111 222", dob: "2008-02-30", actingInstructorId: tony.id });
+  assert.equal(result.changed, true);
+  assert.deepEqual(result.changedFields, ["phone"]);
+  assert.equal((await getLearner(db, learner.id)).dob, "2008-02-30");
+  await assert.rejects(updateLearner(db, learner.id, { dob: "2008-02-31", actingInstructorId: tony.id }), /Date of birth must be a valid date/);
+});
