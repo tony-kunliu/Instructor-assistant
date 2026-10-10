@@ -4,6 +4,35 @@ _Last updated: 2026-10-10. Not an authorization: every item still needs Tony's
 go-ahead and ends with a stop (AGENTS.md §11). The longer-term two-repo
 direction is in `docs/ECOSYSTEM_ROADMAP.md` (P1–P6)._
 
+## Planned order (agreed with Tony 2026-10-10)
+
+Direction, not an authorization: each item still needs Tony's go-ahead and
+ends with a stop (AGENTS.md §11).
+
+Near term (Instructor Assistant only, low risk):
+1. Learner management 3a: missing-PDF-details marker + duplicate licence
+   warning (built; review, then Staging, then Production).
+2. 3b: archive reason and restore history (small migration).
+3. 3c: transfer a learner to another instructor. Design first, no code before
+   Tony reads it (touches lesson ownership, prior-instructor records and the
+   ACTGDS link).
+
+Medium term (new features; confirm rules with Tony before building):
+4. Competency 23 route suggestions and route check (R10). Recommended next
+   after 3a-3c.
+5. Remove-the-"A"-condition reminder after 12 months (R8, CoP 9.4).
+6. Certificate number records (R9, CoP 9.3, 10 f).
+
+Long term (ecosystem, coordinated with Work on actgds.com Issue #3):
+7. P2 lesson notification emails: ACTGDS source is complete; activation is
+   blocked on a secure unattended 5-minute schedule and the quiet-window
+   check. No Instructor Assistant change needed.
+8. P3 bookings into Today's Lessons (Cal.com).
+9. P4 GPS tracking, then P5 drive intelligence. New storage = new
+   infrastructure: needs Tony's separate approval; design first. Revisit when
+   Tony is back in Australia with real learner data.
+10. P6 driving journey across licence stages and both systems.
+
 ## Designed, waiting for a go
 
 | Item | Where designed | Status |
@@ -11,7 +40,9 @@ direction is in `docs/ECOSYSTEM_ROADMAP.md` (P1–P6)._
 | Learner edit, Phase 1 (name, address, phone, licence, ...) | `docs/superpowers/specs/2026-10-08-learner-management-plan.md` | **DONE** (in Production, migration 0008). |
 | Learner data for assessment rules, Phase 2 (licence issue date, HPT, logged hours) | same plan; design: `docs/superpowers/specs/2026-10-10-rules-reminders-and-learner-phase2-design.md` | **DONE** (in Production, migration 0009). |
 | Assessment-rules reminders (never blockers): 36 h gates (R1), Competency 23 eligibility (R2) and hours window (R3), ADI Audit online booking link (R4), learner licence validity (R5) | `docs/superpowers/specs/2026-10-10-rules-reminders-and-learner-phase2-design.md` | **DONE** (in Production 2026-10-10, run 38044255328): R1, R2, R3, R5 and the booking link. |
-| Learner management, Phase 3 (missing-details marker, duplicate licence warning, transfer a learner to another instructor, archive reason) | learner management plan | Undecided; decide per item. |
+| Learner management, Phase 3a: missing-details marker, duplicate licence warning (reminders only, client-side) | learner management plan | **DONE** on `feature/learner-phase3a` (not merged). |
+| Learner management, Phase 3: archive reason and restore history | learner management plan | Open; decide when wanted. |
+| Learner management, Phase 3: transfer a learner to another instructor | learner management plan | Open; needs its own design (lesson ownership, prior-instructor records, ACTGDS link). |
 
 ## Minor follow-ups (bundle into the next feature)
 

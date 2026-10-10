@@ -853,7 +853,9 @@ const draw = async (page, index) => {
   await t.page.waitForSelector("[data-testid=save-learner]");
   await tab(t.page, "Archived");
   await t.page.waitForFunction(() => document.querySelector(".view-tab.active")?.textContent.startsWith("Archived"));
-  check("learner edit: clearing the selection closes the open edit form", (await t.page.$("[data-testid=save-learner]")) === null);
+  // The form is discarded by an effect one render after the tab changes, so wait for it instead of reading the DOM immediately.
+  const formGone = await t.page.waitForSelector("[data-testid=save-learner]", { state: "detached", timeout: 3000 }).then(() => true, () => false);
+  check("learner edit: clearing the selection closes the open edit form", formGone);
   await t.page.click("text=+ New");
   check("learner edit: '+ New' after that opens an empty New learner form, not Edit", (await t.page.textContent("h2:has-text('learner')")).includes("New learner"));
   await t.page.click("text=Cancel");
@@ -1122,6 +1124,91 @@ const draw = async (page, index) => {
   check("C23 fields: New learner saves the five fields", created && created.loggedHours === 5 && created.loggedHoursOn === today && created.hptPassedOn === addDays(today, -30) && created.learnerLicenceIssuedOn === null, JSON.stringify(created));
   check("C23 fields: Tony: no page errors", s.errors.length === 0, s.errors.join("|"));
   await s.ctx.close();
+}
+
+// ═══ 12. Learner checks (Phase 3a): missing PDF details, duplicate licence — reminders only ═══
+{
+  const post = async (path, body, who = "tony") => { const r = await fetch(B + path, { method: "POST", headers: { "content-type": "application/json", "x-instructor-id": WHO[who][0] }, body: JSON.stringify(body) }); const d = await r.json(); if (!r.ok) throw new Error(`${path} ${JSON.stringify(d)}`); return d.learner; };
+  const full = { address: "1 QA Street", phone: "0400 000 001", dob: "2008-01-01", licenceExpiry: "2030-01-01", eligibility: "QA eligible", transmission: "auto", schoolWork: "QA School" };
+  await post("/api/learners", { fullName: "QA Tony Missing", instructorId: WHO.tony[0], phone: "0400 000 002" });
+  await post("/api/learners", { fullName: "QA Tony Dup One", instructorId: WHO.tony[0], licenceNumber: "QA77001", ...full });
+  await post("/api/learners", { fullName: "QA Anna Dup Three", instructorId: WHO.anna[0], licenceNumber: " qa 77 001 " }, "anna");
+  const two = await post("/api/learners", { fullName: "QA Anna Dup Two", instructorId: WHO.anna[0], licenceNumber: "qa77001" }, "anna");
+  await fetch(`${B}/api/learners/${two.id}`, { method: "PATCH", headers: { "content-type": "application/json", "x-instructor-id": WHO.anna[0] }, body: JSON.stringify({ archived: true }) });
+  const line = (page, rule, scope = "[data-testid=learner-checks]") => page.$eval(`${scope} .reminder[data-rule=${rule}]`, (e) => ({ tone: e.dataset.tone, text: e.textContent })).catch(() => null);
+
+  const s = await session("tony");
+  await ready(s.page);
+  await s.page.setViewportSize({ width: 375, height: 812 });
+  check("learner checks: viewport is 375px", (await s.page.evaluate(() => window.innerWidth)) === 375);
+  await pick(s.page, "QA Tony Missing");
+  await s.page.waitForSelector("[data-testid=learner-checks]");
+  const miss = await line(s.page, "pdf-missing");
+  check("learner checks: missing details → one amber line with the form labels and the Edit learner hint", miss?.tone === "amber" && miss.text === "Missing for the PDF: Address, DOB, Licence number, Licence expiry, Eligibility, School / Work, Manual / Auto. Add them with Edit learner.", JSON.stringify(miss));
+  check("learner checks: no extra button for the hint (still exactly one Edit learner button)", (await s.page.$$("[data-testid=learner-checks] button, [data-testid=learner-checks] a")).length === 0 && (await s.page.$$("[data-testid=edit-learner]")).length === 1);
+  check("learner checks: no duplicate line for a learner with no licence number", (await line(s.page, "dup-licence")) === null);
+  check("learner checks: no horizontal scroll at 375px (missing details)", await noHScroll(s.page));
+  await shot(s.page, "12-missing-details-375");
+
+  await pick(s.page, "QA Tony Dup One");
+  await s.page.waitForSelector("[data-testid=learner-checks] .reminder[data-rule=dup-licence]");
+  check("learner checks: complete details → no missing line", (await line(s.page, "pdf-missing")) === null);
+  const dup1 = await line(s.page, "dup-licence");
+  check("learner checks: duplicate licence (case/space variant, another instructor's learner) → amber line naming them", dup1?.tone === "amber" && dup1.text === "Same licence number as QA Anna Dup Three (Anna's learner). Check this is not the same learner entered twice.", JSON.stringify(dup1));
+  check("learner checks: no horizontal scroll at 375px (duplicate)", await noHScroll(s.page));
+  await shot(s.page, "12-duplicate-panel-375");
+
+  // New learner form: warning while typing, Save stays enabled and works.
+  await s.page.click("text=+ New");
+  await s.page.waitForSelector("[data-testid=save-learner]");
+  await s.page.fill('label:has-text("Student name") input', "QA Tony Dup New");
+  check("learner checks: New form: no licence line before a number is typed", (await s.page.$("[data-testid=licence-duplicate]")) === null);
+  await s.page.fill('label:has-text("Licence number") input', "QA 00 999");
+  const grey = await line(s.page, "dup-licence-archived", "[data-testid=licence-duplicate]");
+  check("learner checks: New form: unique number while archived learners are not loaded → grey 'not checked', never a pass", grey?.tone === "grey" && /^Archived learners are not checked/.test(grey.text), JSON.stringify(grey));
+  await s.page.fill('label:has-text("Licence number") input', "qa77 001");
+  const formDup = await line(s.page, "dup-licence", "[data-testid=licence-duplicate]");
+  check("learner checks: New form: typing a matching number → amber warning naming both learners, 'You can still save.'", formDup?.tone === "amber" && formDup.text === "Same licence number as QA Anna Dup Three (Anna's learner) and QA Tony Dup One. Check this is not the same learner entered twice. You can still save.", JSON.stringify(formDup));
+  check("learner checks: New form: Save is not disabled by the duplicate warning", !(await s.page.isDisabled("[data-testid=save-learner]")));
+  check("learner checks: no horizontal scroll at 375px (New form with warning)", await noHScroll(s.page));
+  await shot(s.page, "12-duplicate-form-375");
+  await s.page.click("[data-testid=save-learner]");
+  await s.page.waitForSelector(".status.ok, .status.error");
+  check("learner checks: New form: the learner saves despite the warning", (await s.page.textContent(".status")).includes("QA Tony Dup New added"), await s.page.textContent(".status"));
+  check("learner checks: the saved licence number is stored", (await learnersApi()).some((l) => l.fullName === "QA Tony Dup New" && l.licenceNumber), "");
+
+  // Once Archived has been opened, archived learners are included and marked.
+  await tab(s.page, "Archived");
+  await s.page.waitForFunction(() => /\(\d+\)/.test(document.querySelector(".view-tab.active")?.textContent ?? ""));
+  await tab(s.page, "My");
+  await pick(s.page, "QA Tony Dup One");
+  await s.page.waitForSelector("[data-testid=learner-checks] .reminder[data-rule=dup-licence]");
+  const dupAll = await line(s.page, "dup-licence");
+  check("learner checks: multiple matches incl. an archived one, self not counted", dupAll?.text === "Same licence number as QA Anna Dup Three (Anna's learner), QA Anna Dup Two (archived, Anna's learner) and QA Tony Dup New. Check this is not the same learner entered twice.", JSON.stringify(dupAll));
+
+  // Edit form: the learner itself is never a match; a changed unique number clears the warning.
+  await s.page.click("[data-testid=edit-learner]");
+  await s.page.waitForSelector("[data-testid=licence-duplicate]");
+  const editDup = await line(s.page, "dup-licence", "[data-testid=licence-duplicate]");
+  check("learner checks: Edit form: warning shown, never naming the learner being edited", editDup?.tone === "amber" && !editDup.text.includes("QA Tony Dup One") && !(await s.page.isDisabled("[data-testid=save-learner]")), JSON.stringify(editDup));
+  await s.page.fill('label:has-text("Licence number") input', "QA 55 555");
+  check("learner checks: Edit form: a unique number (archived loaded) → no licence line", (await s.page.$("[data-testid=licence-duplicate]")) === null);
+  check("learner checks: no horizontal scroll at 375px (Edit form)", await noHScroll(s.page));
+  await s.page.click("[data-testid=cancel-edit-learner]");
+  check("learner checks: Tony: no page errors", s.errors.length === 0, s.errors.join("|"));
+  await s.ctx.close();
+
+  // Someone who cannot edit gets the missing line without the Edit learner hint.
+  const a = await session("anna");
+  await ready(a.page);
+  await a.page.setViewportSize({ width: 375, height: 812 });
+  await tab(a.page, "All");
+  await pick(a.page, "QA Tony Missing · Tony");
+  await a.page.waitForSelector("[data-testid=learner-checks]");
+  const annaMiss = await line(a.page, "pdf-missing");
+  check("learner checks: non-owner sees the missing line without the Edit learner hint", annaMiss?.tone === "amber" && annaMiss.text.startsWith("Missing for the PDF: Address") && !annaMiss.text.includes("Edit learner"), JSON.stringify(annaMiss));
+  check("learner checks: Anna: no horizontal scroll, no page errors", (await noHScroll(a.page)) && a.errors.length === 0, a.errors.join("|"));
+  await a.ctx.close();
 }
 
 } catch (error) {
