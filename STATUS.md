@@ -5,14 +5,14 @@ _Last updated: 2026-10-10_ (Production and Staging D1 at migration `0009`; rules
 This file describes **current state only**. History lives in git log and
 closed PRs; see `TASK.md` for what is in progress.
 
-## In progress (branch, not merged)
+## In progress
 
-- `feature/learner-phase3a` (learner management Phase 3a, client-side only; no
-  migration, no new D1 query or API, ACTGDS contract unchanged): amber
-  "Missing for the PDF: ..." line in the learner panel and an amber duplicate
-  licence number warning (panel and New/Edit form; Save stays enabled), both
-  from `lib/learner-checks.ts`. Archived learners count only once the Archived
-  list has been opened (the form shows a grey "not checked" line until then).
+- Learner management Phase 3a (missing-PDF-details line, duplicate licence
+  warning; client-side only, no migration, ACTGDS contract unchanged) is
+  released with archived-list preload: archived learners load in the
+  background after start (one extra read of the existing endpoint) so the
+  duplicate check includes them; if that load fails the form shows a grey "not
+  checked" line.
 
 ## Repository
 

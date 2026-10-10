@@ -72,8 +72,8 @@ export function duplicateLicenceReminder(matches: readonly Learner[], ownerInstr
   return { id: "dup-licence", tone: "amber", text: `Same licence number as ${joinNames(names)}. ${tail}` };
 }
 
-/** Grey: archived learners are loaded only when the Archived list is opened, so until then they were not checked. */
+/** Grey: archived learners normally preload in the background; if that has not loaded (still loading or failed) they were not checked. */
 export function archivedNotCheckedReminder(licenceNumber: string | null | undefined, archivedLoaded: boolean): Reminder | null {
   if (archivedLoaded || !licenceKey(licenceNumber)) return null;
-  return { id: "dup-licence-archived", tone: "grey", text: "Archived learners are not checked for this licence number until the Archived list has been opened." };
+  return { id: "dup-licence-archived", tone: "grey", text: "Archived learners are not checked for this licence number because the archived list has not loaded." };
 }
