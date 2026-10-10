@@ -5,18 +5,16 @@ _Last updated: 2026-10-10_
 This file describes **current task only**. Completed work's detail
 lives in git log and closed PRs, not here.
 
-**Current Task:** Assessment-rules reminders T2 (`feature/rules-reminders-t2`,
-migration 0009, five learner fields, R2) — **Completed on the branch**
-(T1 is already on staging, PR #36); typecheck, tests, qa-browser and the Workers Builds
-simulation pass. Not merged; needs independent review.
-Production and Staging D1 are both at `0008`.
+**Current Task:** Learner management Phase 3a (`feature/learner-phase3a`: missing
+PDF details marker, duplicate licence warning) - built, needs independent review,
+then Staging. Rules reminders T1+T2 and migration 0009 are live in Production
+(run 38044255328); Staging and Production D1 are at `0009`.
 
-**Next Recommended Task:** Independent review of T2, then apply 0009 to Staging
-D1 (Staging D1 Migrate, ref = the branch, confirm = staging), merge T2
-to `staging` and Tony's phone check. The yearly ACT holiday update is in `docs/BACKLOG.md`.
+**Next Recommended Task:** Phase 3b (archive reason; small migration), then a
+design for 3c (transfer a learner) before any code. See `docs/BACKLOG.md`.
 
-**Waiting on Other Repo:** ACTGDS: My Driving Production release (Website
-Work) and Tony's display polish list for Work. Nothing blocks this repo.
+**Waiting on Other Repo:** ACTGDS: Work's display polish (list sent) and lesson
+notification activation decisions. My Driving is live. Nothing blocks this repo.
 
 **Tony Manual Action Required:** NONE (optional: export one Production PDF
 and confirm the size is small, about 0.2 MB).

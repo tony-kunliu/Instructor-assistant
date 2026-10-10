@@ -1,35 +1,32 @@
 # STATUS.md
 
-_Last updated: 2026-10-10_ (Production at migration `0008`; Staging D1 at `0008`; T1 rules reminders merged to staging (PR #36); T2 on a branch, not merged, needs migration `0009`)
+_Last updated: 2026-10-10_ (Production and Staging D1 at migration `0009`; rules reminders T1+T2 live in Production)
 
 This file describes **current state only**. History lives in git log and
 closed PRs; see `TASK.md` for what is in progress.
 
-## In progress (branch, not merged)
+## In progress
 
-- `feature/rules-reminders-t2` (on top of staging with T1): migration `0009` (five nullable
-  learner columns: licence issue date, first issue date, HPT date, logged
-  hours + as-of date), validation D19, revision snapshots, a collapsed
-  "Competency 23 eligibility" group in the New/Edit learner forms, and the R2
-  reminder (issue date estimated from the licence expiry when empty; "Borderline,
-  check the licence card" within 14 days of a threshold). ACTGDS contract
-  unchanged. Learner edit stays 5 D1 statements (UPDATE binds up to 16).
-  **Apply 0009 to Staging D1 (Staging D1 Migrate, ref = branch, confirm =
-  staging) BEFORE merging T2 to `staging`.**
+- Learner management Phase 3a (missing-PDF-details line, duplicate licence
+  warning; client-side only, no migration, ACTGDS contract unchanged) is
+  released with archived-list preload: archived learners load in the
+  background after start (one extra read of the existing endpoint) so the
+  duplicate check includes them; if that load fails the form shows a grey "not
+  checked" line.
 
 ## Repository
 
 - **main:** has everything released to Production (Release B, P1b, lesson
-  ownership + revisions, learner edit Phase 1, compact PDF font, CI fix);
+  ownership + revisions, learner edit Phase 1, compact PDF font, CI fix, rules reminders T1+T2);
   `git fetch` for its head. Release B source
   `d47350bcb65fa46d3135d1dbeec52882f7012886`; rollback baseline before
   Release A `8bae4e4c211a78b2e682d8b04744f102fa1a4328`.
-- **staging:** carries the same code plus docs, and the T1 rules reminders (R1, R3, R5, booking link; PR #36). Its HEAD moves; do not record
+- **staging:** carries the same code as `main` plus date-validation and edit-form fixes (PR #39). Its HEAD moves; do not record
   an exact SHA here.
 
 ## CI
 
-- Latest `staging` GitHub Actions run: **SUCCESS**. Tests: 491 on the T2 branch, 465 on staging (2 poppler
+- Latest `staging` GitHub Actions run: **SUCCESS**. Tests: 505 on `feature/learner-phase3a` (2 poppler
   tests skip without `pdftotext`; they hard-fail only with `REQUIRE_POPPLER=1`,
   set in `ci.yml` only).
 - `npm test` needs `--experimental-strip-types` (already in `package.json`).
@@ -45,7 +42,7 @@ closed PRs; see `TASK.md` for what is in progress.
 - Workers Builds deploys every `staging` push to Worker
   `instructor-assistant`. The agent's token can read deployment metadata, not
   the commit mapping, so the live commit is inferred from push time.
-- D1 migration level: `0008`. Apply a migration to Staging D1 BEFORE merging
+- D1 migration level: `0009`. Apply a migration to Staging D1 BEFORE merging
   code that needs it to `staging`, with the manual workflow `Staging D1
   Migrate` (`staging-migrate.yml`, on `main`; inputs `ref` = a branch,
   `confirm` = `staging`).
@@ -61,9 +58,9 @@ closed PRs; see `TASK.md` for what is in progress.
   prior-instructor records, `0006` (run 37796457888, Worker
   `96228a32-5f32-42b5-8f0d-7985e59c5d82`); lesson edit ownership + revisions,
   `0007` (run 37806351565); learner edit Phase 1, `0008` (run 37891106278);
-  compact PDF font + CI fix (run 37907021677). Run 37668118567 was Release B
+  compact PDF font + CI fix (run 37907021677); rules reminders T1+T2, `0009` (run 38044255328, Worker `edde393c-40be-4974-8b3f-2d6df901361f`, PR #38). Run 37668118567 was Release B
   (rollback target `08ca0c75-cd97-44fa-87ec-ed0f7e6efbae`).
-- D1 migration level: `0008`. Cloudflare Access: enabled (Tony + Anna only).
+- D1 migration level: `0009`. Cloudflare Access: enabled (Tony + Anna only).
 - Integration enabled: **YES**, `ACTGDS_INTEGRATION_ENV=production`, Receiver
   `https://actgds.com/api/integrations/instructor-assistant/events`,
   `ACTGDS_WEBHOOK_SECRET` set by Tony. Outbox Cron `*/5`. No backfill.
@@ -109,9 +106,7 @@ closed PRs; see `TASK.md` for what is in progress.
   applied on Staging and Production.
 - **Production rollout is NOT authorized for any contract change** without
   Tony's separate explicit authorization; the V1 rollout itself is done.
-- ACTGDS side (not this repo): My Driving Phase 2 (student page) passed
-  non-Production acceptance; its Production release awaits Tony's separate
-  authorization (Website Work). Tony's display polish list (readable competency
+- ACTGDS side (not this repo): My Driving (student page) is live in Production (released by Work). Tony's display polish list (readable competency
   names, separate "achieved this lesson" vs overall progress, show "not
   achieved", lesson number and cumulative totals in the Admin Instructor
   Assistant card, clearer manual lesson-note block, less double entry,
