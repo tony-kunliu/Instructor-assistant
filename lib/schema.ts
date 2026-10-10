@@ -7,7 +7,7 @@
 //                               accounts reference these ids.
 // None of those features exist yet.
 
-export const SCHEMA_VERSION = 8;
+export const SCHEMA_VERSION = 9;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS instructors (
@@ -180,4 +180,10 @@ CREATE TABLE IF NOT EXISTS learner_revisions (
   UNIQUE (learner_id, revision_no)
 );
 CREATE INDEX IF NOT EXISTS learner_revisions_learner_idx ON learner_revisions (learner_id, revision_no);
+
+ALTER TABLE learners ADD COLUMN learner_licence_issued_on TEXT;
+ALTER TABLE learners ADD COLUMN learner_licence_first_issued_on TEXT;
+ALTER TABLE learners ADD COLUMN hpt_passed_on TEXT;
+ALTER TABLE learners ADD COLUMN logged_hours INTEGER;
+ALTER TABLE learners ADD COLUMN logged_hours_on TEXT;
 `;

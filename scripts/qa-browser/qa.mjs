@@ -337,10 +337,11 @@ const inViewport = (page, selector) =>
 // Waits for smooth scrolling to finish, then records whether the element is fully on screen.
 async function expectVisible(page, selector, name) {
   try {
-    await page.waitForFunction((sel) => { const r = document.querySelector(sel)?.getBoundingClientRect(); return Boolean(r) && r.top >= 0 && r.bottom <= window.innerHeight; }, selector, { timeout: 8000 });
+    await page.waitForFunction((sel) => { const r = document.querySelector(sel)?.getBoundingClientRect(); return Boolean(r) && r.top >= -1 && r.bottom <= window.innerHeight + 1; }, selector, { timeout: 8000 }); // 1px tolerance: layouts with fractional line heights put an element at top -0.4
     check(name, true);
   } catch {
-    check(name, false, "not fully on screen after 8s");
+    const rect = await page.evaluate((sel) => { const r = document.querySelector(sel)?.getBoundingClientRect(); return r ? `top ${Math.round(r.top)}, bottom ${Math.round(r.bottom)}, viewport ${window.innerHeight}, scrollY ${Math.round(window.scrollY)}` : "element missing"; }, selector);
+    check(name, false, `not fully on screen after 8s (${rect})`);
   }
 }
 async function expectIssueCount(page, prefix, n, name) {
@@ -878,6 +879,229 @@ const draw = async (page, index) => {
   check("learner edit: no horizontal scroll (Anna, 375px)", await noHScroll(a.page));
   check("learner edit: Anna: no page errors", a.errors.length === 0, a.errors.join("|"));
   await a.ctx.close();
+}
+
+// ═══ 10. Assessment-rules reminders (T1): display only, never block ═══════
+{
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Australia/Sydney" }).format(new Date()); // YYYY-MM-DD in Canberra
+  const post = async (path, body) => { const r = await fetch(B + path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }); const d = await r.json(); if (!r.ok) throw new Error(`${path} ${JSON.stringify(d)}`); return d; };
+  const rng = (a, b) => Array.from({ length: b - a + 1 }, (_, i) => String(a + i));
+  const doneBy = (ids) => ({ assessedIds: ids, achievedResults: Object.fromEntries(ids.map((id) => [id, "achieved"])) });
+  const mkLessons = async (learnerId, steps) => {
+    let odo = 1000;
+    for (const step of steps) { const start = odo; odo += 12; await post(`/api/learners/${learnerId}/lessons`, { lessonDate: "2026-09-20", startTime: "09:00", finishTime: "10:00", startOdometer: String(start), finishOdometer: String(odo), adiSignature: SIG, learnerSignature: SIG, ...step }); }
+  };
+  const wait = (await post("/api/learners", { fullName: "QA Tony Rules Wait", instructorId: WHO.tony[0] })).learner;
+  await mkLessons(wait.id, [{ ...doneBy(rng(1, 17)), lessonDate: today, startTime: "00:00", finishTime: "00:30" }]);
+  const fd = (await post("/api/learners", { fullName: "QA Tony Rules FD", instructorId: WHO.tony[0] })).learner;
+  await mkLessons(fd.id, [doneBy(rng(1, 17)), doneBy(["review-1-17"]), doneBy(rng(18, 22)), doneBy(["review-1-22"])]);
+
+  const s = await session("tony");
+  await ready(s.page);
+  await s.page.setViewportSize({ width: 375, height: 812 });
+  await pick(s.page, "QA Tony Rules Wait");
+  await s.page.waitForSelector("[data-testid=panel-reminders]");
+  const panelRem = await s.page.$eval("[data-testid=panel-reminders] .reminder", (e) => ({ tone: e.dataset.tone, text: e.textContent }));
+  check("reminders: Start Lesson panel shows the Review 1-17 36 h line (amber, lesson finished today)", panelRem.tone === "amber" && /^Review 1-17 allowed from .+ \(36 h after Lesson #1\)\.$/.test(panelRem.text), `${panelRem.tone} ${panelRem.text}`);
+  check("reminders: panel has at most 3 lines and no booking link yet", (await s.page.$$("[data-testid=start-reminders] .reminder")).length <= 3 && (await s.page.$("[data-testid=adi-booking]")) === null);
+  check("reminders: learner summary shows the neutral 'add licence expiry' note (R5), not a pass", (await s.page.textContent("[data-testid=licence-reminder]")).includes("Add licence expiry to check the learner licence is current."));
+  check("reminders: no horizontal scroll at 375px (panel)", await noHScroll(s.page) && (await s.page.evaluate(() => window.innerWidth)) === 375);
+  await shot(s.page, "10-rules-panel-375");
+  await s.page.click("text=Start Lesson");
+  await s.page.click("text=End Lesson");
+  check("reminders: no reminder in the lesson form before Review 1-17 is ticked", (await s.page.$("[data-testid=form-reminders]")) === null);
+  await s.page.click(".chip-row.special >> text=/Review 1-17/");
+  await s.page.waitForSelector("[data-testid=form-reminders]");
+  const formRem = await s.page.$eval("[data-testid=form-reminders] .reminder", (e) => ({ tone: e.dataset.tone, text: e.textContent }));
+  check("reminders: lesson form shows the amber 36 h warning once Review 1-17 is ticked, and says it can still be saved", formRem.tone === "amber" && /^This Review 1-17 starts within 36 h of Lesson #1 \(allowed from .+\)\. You can still save\.$/.test(formRem.text), formRem.text);
+  check("reminders: no horizontal scroll at 375px (form)", await noHScroll(s.page));
+  await shot(s.page, "10-rules-form-375");
+  await s.page.fill('input[placeholder="Enter now"]', "1030");
+  await s.page.click('.result-list li:has-text("Review 1-17") >> text="Achieved"');
+  await s.page.click(".edit-times summary");
+  await s.page.fill('.edit-times input[type="time"] >> nth=0', "09:00");
+  await s.page.fill('.edit-times input[type="time"] >> nth=1', "09:45");
+  await signBoth(s.page);
+  check("reminders: the warning is still showing and Save is enabled", (await s.page.$("[data-testid=form-reminders] .reminder.amber")) !== null && !(await s.page.isDisabled(".btn.save")));
+  await s.page.click(".btn.save");
+  await s.page.waitForSelector(".status.ok, .status.error");
+  check("reminders: the lesson saves despite the amber warning (reminders never block)", (await s.page.textContent(".status")).includes("Lesson #2 saved"), await s.page.textContent(".status"));
+  check("reminders: nothing on the Completed card / History (History has no reminder lines)", (await s.page.$("[data-testid=history-row] .reminder")) === null);
+
+  await pick(s.page, "QA Tony Rules FD");
+  await s.page.waitForSelector("[data-testid=adi-booking]");
+  const link = await s.page.$eval("[data-testid=adi-booking-link]", (a) => ({ href: a.getAttribute("href"), target: a.getAttribute("target"), rel: a.getAttribute("rel"), text: a.textContent }));
+  check("booking link: official ADI Audit online form URL", link.href === "https://forms.act.gov.au/smartforms/servlet/SmartForm.html?formCode=1503", link.href);
+  check("booking link: opens in a new tab with rel noopener noreferrer", link.target === "_blank" && link.rel === "noopener noreferrer", `${link.target} ${link.rel}`);
+  check("booking link: text and one-line note", link.text === "Book the Competency 23 drive with ADI Audit (ACT online form)" && (await s.page.textContent("[data-testid=adi-booking] small")) === "Book at least 1 clear business day before, in writing (CoP 9.2 n).");
+  check("reminders: 23 Final Drive ready → Competency 23 day/hours line on the panel (after the R2 line)", (await s.page.$$eval("[data-testid=panel-reminders] .reminder", (els) => els.map((e) => e.dataset.rule))).join(",").startsWith("r2,r3"), await s.page.textContent("[data-testid=panel-reminders]"));
+  {
+    // The panel line's tone must follow the Canberra clock: plain only inside today's window.
+    const nowC = await s.page.evaluate(() => { const p = Object.fromEntries(new Intl.DateTimeFormat("en-AU", { timeZone: "Australia/Sydney", weekday: "short", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(new Date()).map((x) => [x.type, x.value])); return { wd: p.weekday, min: Number(p.hour) * 60 + Number(p.minute) }; });
+    const r3 = await s.page.$eval("[data-testid=panel-reminders] .reminder[data-rule=r3]", (e) => ({ tone: e.dataset.tone, text: e.textContent }));
+    if (/^Competency 23 hours today/.test(r3.text)) {
+      const end = nowC.wd === "Fri" ? 21 * 60 : 19 * 60;
+      const inside = nowC.min >= 7 * 60 && nowC.min < end;
+      check("reminders: Competency 23 panel line is plain inside today's window and amber ('currently outside the window') outside it", inside ? r3.tone === "plain" && !/outside/.test(r3.text) : r3.tone === "amber" && /it is currently outside the window\.$/.test(r3.text), `${nowC.wd} ${nowC.min} ${r3.tone} ${r3.text}`);
+    } else {
+      check("reminders: Competency 23 panel line on a Sunday/holiday/not-loaded day is amber or grey, never plain", r3.tone !== "plain", `${r3.tone} ${r3.text}`);
+    }
+  }
+  check("reminders: no horizontal scroll at 375px (panel with booking link)", await noHScroll(s.page));
+  await shot(s.page, "10-rules-fd-panel-375");
+  await s.page.click("text=Start Lesson");
+  await s.page.click("text=End Lesson");
+  await s.page.click(".chip-row.special >> text=/23 Final Drive/");
+  await s.page.waitForSelector("[data-testid=form-reminders]");
+  await s.page.click(".edit-times summary");
+  const formText = async () => (await s.page.$$eval("[data-testid=form-reminders] .reminder[data-rule^=r3]", (els) => els.map((e) => e.textContent.trim()).join(" ")));
+  await s.page.fill("#lesson-field-date", "2026-10-06"); // a Tuesday, not a holiday
+  await s.page.fill('.edit-times input[type="time"] >> nth=0', "06:00");
+  await s.page.fill('.edit-times input[type="time"] >> nth=1', "07:00");
+  check("reminders: Competency 23 outside 07:00-19:00 → amber with this lesson's times", (await formText()) === "Competency 23 must run 07:00–19:00 Mon–Thu/Sat (Fri to 21:00). This lesson: 06:00–07:00.", await formText());
+  await s.page.fill('.edit-times input[type="time"] >> nth=0', "09:00");
+  await s.page.fill('.edit-times input[type="time"] >> nth=1', "10:00");
+  check("reminders: Competency 23 inside the hours → plain line", (await s.page.$("[data-testid=form-reminders] .reminder.plain[data-rule^=r3]")) !== null, await formText());
+  await s.page.fill("#lesson-field-date", "2026-10-11"); // a Sunday
+  check("reminders: Competency 23 on a Sunday → amber 'not allowed on Sundays'", (await formText()) === "Competency 23 is not allowed on Sundays.", await formText());
+  await s.page.fill("#lesson-field-date", "2026-10-05"); // Labour Day
+  check("reminders: Competency 23 on an ACT public holiday → amber with its name", (await formText()) === "Competency 23 is not allowed on ACT public holidays (Labour Day).", await formText());
+  await s.page.fill("#lesson-field-date", "2028-03-01");
+  check("reminders: a year outside the holiday table → grey 'not loaded; check manually', never a pass", (await formText()).includes("ACT public holidays for 2028 are not loaded; check manually.") && (await s.page.$$("[data-testid=form-reminders] .reminder.grey[data-rule^=r3]")).length === 2 && (await s.page.$("[data-testid=form-reminders] .reminder.plain[data-rule^=r3]")) === null && (await s.page.$("[data-testid=form-reminders] .reminder.amber[data-rule^=r3]")) === null, await formText());
+  await s.page.fill("#lesson-field-date", "2026-10-11");
+  await s.page.fill('input[placeholder="Enter now"]', "1060");
+  await s.page.click('.result-list li:has-text("23 Final Drive") >> text="Achieved"');
+  await signBoth(s.page);
+  await s.page.click(".btn.save");
+  await s.page.waitForSelector(".status.ok, .status.error");
+  check("reminders: a Sunday Competency 23 lesson still saves (reminders never block)", (await s.page.textContent(".status")).includes("saved"), await s.page.textContent(".status"));
+  check("reminders: Tony: no page errors", s.errors.length === 0, s.errors.join("|"));
+  await s.ctx.close();
+}
+
+// ═══ 11. Competency 23 eligibility fields + R2 reminder (T2, migration 0009) ═══
+{
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Australia/Sydney" }).format(new Date());
+  const addDays = (d, n) => new Date(Date.parse(`${d}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
+  const addYears = (d, n) => { const t = new Date(`${d}T00:00:00Z`); t.setUTCFullYear(t.getUTCFullYear() + n); return t.toISOString().slice(0, 10); };
+  const post = async (path, body) => { const r = await fetch(B + path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }); const d = await r.json(); if (!r.ok) throw new Error(`${path} ${JSON.stringify(d)}`); return d; };
+  const rng = (a, b) => Array.from({ length: b - a + 1 }, (_, i) => String(a + i));
+  const doneBy = (ids) => ({ assessedIds: ids, achievedResults: Object.fromEntries(ids.map((id) => [id, "achieved"])) });
+  const c23 = (await post("/api/learners", { fullName: "QA Tony C23 Fields", instructorId: WHO.tony[0] })).learner;
+  let odo = 3000;
+  for (const step of [doneBy(rng(1, 17)), doneBy(["review-1-17"]), doneBy(rng(18, 22)), doneBy(["review-1-22"])]) {
+    const start = odo; odo += 12;
+    await post(`/api/learners/${c23.id}/lessons`, { lessonDate: "2026-09-20", startTime: "09:00", finishTime: "10:00", startOdometer: String(start), finishOdometer: String(odo), adiSignature: SIG, learnerSignature: SIG, ...step });
+  }
+  const api = async () => (await learnersApi()).find((l) => l.id === c23.id);
+  const s = await session("tony");
+  await ready(s.page);
+  await s.page.setViewportSize({ width: 375, height: 812 });
+  await pick(s.page, "QA Tony C23 Fields");
+  const r2 = async () => s.page.$eval("[data-testid=panel-reminders] .reminder[data-rule=r2]", (e) => ({ tone: e.dataset.tone, text: e.textContent }));
+  await s.page.waitForSelector("[data-testid=panel-reminders] .reminder[data-rule=r2]");
+  const missing = await r2();
+  check("C23 fields: nothing entered → neutral grey 'add X' on the panel, never a pass", missing.tone === "grey" && missing.text === "Add licence issue date, date of birth, HPT pass date and logged hours to check Competency 23 eligibility.", missing.text);
+
+  const openEdit = async () => { await s.page.click("[data-testid=edit-learner]"); await s.page.waitForSelector("[data-testid=c23-group]"); };
+  const expand = async () => { if (!(await s.page.$eval("[data-testid=c23-group]", (e) => e.open))) await s.page.click("[data-testid=c23-group] summary"); };
+  const save = async () => { await s.page.click("[data-testid=save-learner]"); await s.page.waitForSelector(".status.ok, .status.error"); return s.page.textContent(".status"); };
+  await openEdit();
+  check("C23 fields: the Edit learner group is collapsed by default", (await s.page.$eval("[data-testid=c23-group]", (e) => e.open)) === false && !(await s.page.isVisible("[data-testid=c23-hours]")));
+  await expand();
+  check("C23 fields: the group shows the five fields once opened", (await Promise.all(["c23-issued", "c23-first-issued", "c23-hpt", "c23-hours", "c23-hours-on"].map((id) => s.page.isVisible(`[data-testid=${id}]`)))).every(Boolean));
+  const E = addDays(today, -400);
+  await s.page.fill('label:has-text("DOB") input', addDays(addYears(today, -18), -100));
+  await s.page.fill('label:has-text("Licence expiry") input', addYears(E, 5));
+  await s.page.fill("[data-testid=c23-hpt]", addDays(today, -200));
+  await s.page.fill("[data-testid=c23-hours]", "100");
+  check("C23 fields: typing hours fills the 'as of' date with today (editable)", (await s.page.inputValue("[data-testid=c23-hours-on]")) === today, await s.page.inputValue("[data-testid=c23-hours-on]"));
+  check("C23 fields: no horizontal scroll at 375px (Edit form, group open)", await noHScroll(s.page));
+  await shot(s.page, "11-c23-edit-375");
+  const saved1 = await save();
+  check("C23 fields: saved from the Edit form", /updated/.test(saved1), saved1);
+  const a1 = await api();
+  check("C23 fields: stored and returned by the API", a1.hptPassedOn === addDays(today, -200) && a1.loggedHours === 100 && a1.loggedHoursOn === today && a1.learnerLicenceIssuedOn === null, JSON.stringify(a1));
+  const est = await r2();
+  check("C23 fields: estimate from the licence expiry → plain pass, labelled 'estimated from the licence expiry'", est.tone === "plain" && /^Competency 23 eligibility met per entered data \(new licence, under 25 at issue; licence issue date estimated from the licence expiry \(.+\)\)\.$/.test(est.text), est.text);
+  check("C23 fields: no horizontal scroll at 375px (panel with R2, R3 and booking link)", await noHScroll(s.page));
+  await shot(s.page, "11-c23-panel-375");
+
+  await openEdit();
+  check("C23 fields: reopening the Edit form shows the group collapsed again", (await s.page.$eval("[data-testid=c23-group]", (e) => e.open)) === false);
+  await expand();
+  check("C23 fields: the stored values are prefilled", (await s.page.inputValue("[data-testid=c23-hours]")) === "100" && (await s.page.inputValue("[data-testid=c23-hpt]")) === addDays(today, -200));
+  await s.page.fill("[data-testid=c23-hours]", "82");
+  check("C23 fields: changing the hours refreshes the as-of date to today", (await s.page.inputValue("[data-testid=c23-hours-on]")) === today);
+  await save();
+  const notYet = await r2();
+  check("C23 fields: 82 of 100 hours → amber 'not yet' with the as-of date and the estimate label", notYet.tone === "amber" && /^Competency 23 not yet: 82 of 100 logged hours \(as of .+\)\. \(licence issue date estimated from the licence expiry/.test(notYet.text), notYet.text);
+
+  // Borderline: the 12-month date (estimate + 12 months) is 13 days before today, so moving the estimate 14 days later flips the result.
+  const held12 = addDays(today, -13);
+  await openEdit(); await expand();
+  await s.page.fill('label:has-text("Licence expiry") input', addYears(addYears(held12, -1), 5));
+  await s.page.fill("[data-testid=c23-hours]", "100");
+  await save();
+  const border = await r2();
+  check("C23 fields: borderline estimate → 'Borderline, check the licence card', amber, never a pass", border.tone === "amber" && /^Borderline, check the licence card/.test(border.text) && /estimated from the licence expiry/.test(border.text), border.text);
+  await shot(s.page, "11-c23-borderline-375");
+
+  // A typed issue date overrides the estimate and the label disappears.
+  await openEdit(); await expand();
+  await s.page.fill("[data-testid=c23-issued]", E);
+  await save();
+  const typed = await r2();
+  check("C23 fields: a typed issue date overrides the estimate (exact, no 'estimated')", typed.tone === "plain" && typed.text === "Competency 23 eligibility met per entered data (new licence, under 25 at issue).", typed.text);
+
+  // I1: an expired learner licence is never a pass, even with a typed issue date.
+  await openEdit(); await expand();
+  check("C23 fields: the date inputs cannot be set after today (max=today)", (await s.page.getAttribute("[data-testid=c23-hpt]", "max")) === today && (await s.page.getAttribute("[data-testid=c23-issued]", "max")) === today);
+  await s.page.fill('label:has-text("Licence expiry") input', addDays(today, -30));
+  await save();
+  const expired = await r2();
+  check("C23 fields: expired learner licence → grey 'update the licence details', never a pass", expired.tone === "grey" && /^Learner licence expired .+: update the licence details to check Competency 23 eligibility\.$/.test(expired.text), expired.text);
+  await openEdit(); await expand();
+  await s.page.fill('label:has-text("Licence expiry") input', addYears(today, 2));
+  await save();
+  check("C23 fields: licence details updated → back to a pass", (await r2()).tone === "plain");
+
+  // Server validation (D19) shows in the status line and changes nothing.
+  await openEdit(); await expand();
+  await s.page.fill("[data-testid=c23-hpt]", addDays(today, 1));
+  const rejected = await save();
+  check("C23 fields: a future HPT date is rejected with a clear message and nothing is saved", /HPT pass date cannot be in the future/.test(rejected) && (await api()).hptPassedOn === addDays(today, -200), rejected);
+  await s.page.click("[data-testid=cancel-edit-learner]");
+
+  // Lesson form: R2 line when 23 is ticked as Assessed (before save), alongside R3.
+  await s.page.click("text=Start Lesson");
+  await s.page.click("text=End Lesson");
+  await s.page.click(".chip-row.special >> text=/23 Final Drive/");
+  await s.page.waitForSelector("[data-testid=form-reminders] .reminder[data-rule=r2]");
+  const formR2 = await s.page.$eval("[data-testid=form-reminders] .reminder[data-rule=r2]", (e) => ({ tone: e.dataset.tone, text: e.textContent }));
+  check("C23 fields: lesson form shows the R2 line when 23 is ticked as Assessed", formR2.tone === "plain" && /^Competency 23 eligibility met per entered data/.test(formR2.text), formR2.text);
+  check("C23 fields: no horizontal scroll at 375px (lesson form with R2)", await noHScroll(s.page));
+  await s.page.click(".edit-times summary");
+  await s.page.fill("#lesson-field-date", addDays(today, -300));
+  const early = await s.page.$eval("[data-testid=form-reminders] .reminder[data-rule=r2]", (e) => ({ tone: e.dataset.tone, text: e.textContent }));
+  check("C23 fields: the lesson form checks the draft lesson date (D13), still saveable", early.tone === "amber" && !(await s.page.isDisabled(".btn.save")), early.text);
+
+  // New learner form: collapsed by default, hours fill the as-of date, values are stored.
+  await s.page.click("text=+ New");
+  await s.page.waitForSelector("[data-testid=c23-group]");
+  check("C23 fields: the New learner group is collapsed by default", (await s.page.$eval("[data-testid=c23-group]", (e) => e.open)) === false && !(await s.page.isVisible("[data-testid=c23-hours]")));
+  await s.page.fill('label:has-text("Student name") input', "QA Tony C23 New");
+  await expand();
+  await s.page.fill("[data-testid=c23-hours]", "5");
+  await s.page.fill("[data-testid=c23-hpt]", addDays(today, -30));
+  check("C23 fields: New learner form: no horizontal scroll at 375px (group open)", await noHScroll(s.page));
+  await shot(s.page, "11-c23-new-375");
+  await s.page.click("[data-testid=save-learner]");
+  await s.page.waitForSelector(".status.ok, .status.error");
+  const created = (await learnersApi()).find((l) => l.fullName === "QA Tony C23 New");
+  check("C23 fields: New learner saves the five fields", created && created.loggedHours === 5 && created.loggedHoursOn === today && created.hptPassedOn === addDays(today, -30) && created.learnerLicenceIssuedOn === null, JSON.stringify(created));
+  check("C23 fields: Tony: no page errors", s.errors.length === 0, s.errors.join("|"));
+  await s.ctx.close();
 }
 
 } catch (error) {

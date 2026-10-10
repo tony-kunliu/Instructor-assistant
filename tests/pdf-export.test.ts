@@ -30,6 +30,7 @@ const learner: Learner = {
   transmission: "manual",
   schoolWork: null,
   licenceStage: "learner",
+  learnerLicenceIssuedOn: null, learnerLicenceFirstIssuedOn: null, hptPassedOn: null, loggedHours: null, loggedHoursOn: null,
   archivedAt: null,
 };
 

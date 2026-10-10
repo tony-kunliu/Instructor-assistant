@@ -13,7 +13,7 @@ import {
   parseTime,
   type Totals,
 } from "@/lib/calc.ts";
-import type { AssessmentResult, LearnerProgress, MilestoneInvalidation } from "@/lib/competency.ts";
+import { FINAL_DRIVE_23, REVIEW_1_17, REVIEW_1_22, type AssessmentResult, type LearnerProgress, type MilestoneInvalidation } from "@/lib/competency.ts";
 import { accessLogoutUrl } from "@/lib/access-logout.ts";
 import { filterLearners } from "@/lib/learner-filter.ts";
 import { currentIssues, issueFromServerMessage, validateLessonDraftFields, type IssueState } from "@/lib/lesson-form-errors.ts";
@@ -27,6 +27,8 @@ import ExportPdfButton from "./export-pdf-button.tsx";
 import SaveErrorSummary from "./save-error-summary.tsx";
 import PaperImportPanel from "./paper-import-panel.tsx";
 import SignaturePad from "./signature-pad.tsx";
+import { BookingLink, RulesReminders } from "./rules-reminders.tsx";
+import { finalDriveEligibilityReminder, finalDriveFormReminders, finalDrivePanelReminder, learnerLicenceReminder, reviewGapReminder, type Reminder } from "@/lib/rules.ts";
 
 type LessonDraft = {
   lessonDate: string;
@@ -50,6 +52,12 @@ type LearnerDraft = {
   dob: string;
   licenceNumber: string;
   licenceExpiry: string;
+  /** Competency 23 eligibility group (migration 0009); all optional. Hours are digits only. */
+  learnerLicenceIssuedOn: string;
+  learnerLicenceFirstIssuedOn: string;
+  hptPassedOn: string;
+  loggedHours: string;
+  loggedHoursOn: string;
   eligibility: string;
   transmission: string;
   schoolWork: string;
@@ -70,6 +78,11 @@ const emptyLearner: LearnerDraft = {
   dob: "",
   licenceNumber: "",
   licenceExpiry: "",
+  learnerLicenceIssuedOn: "",
+  learnerLicenceFirstIssuedOn: "",
+  hptPassedOn: "",
+  loggedHours: "",
+  loggedHoursOn: "",
   eligibility: "",
   transmission: "",
   schoolWork: "",
@@ -318,8 +331,11 @@ export default function DriverApp() {
     setLearnerDraft({
       fullName: l.fullName, address: l.address ?? "", phone: l.phone ?? "", dob: l.dob ?? "", licenceNumber: l.licenceNumber ?? "",
       licenceExpiry: l.licenceExpiry ?? "", eligibility: l.eligibility ?? "", transmission: l.transmission ?? "", schoolWork: l.schoolWork ?? "",
+      learnerLicenceIssuedOn: l.learnerLicenceIssuedOn ?? "", learnerLicenceFirstIssuedOn: l.learnerLicenceFirstIssuedOn ?? "", hptPassedOn: l.hptPassedOn ?? "",
+      loggedHours: l.loggedHours === null ? "" : String(l.loggedHours), loggedHoursOn: l.loggedHoursOn ?? "",
       licenceStage: l.licenceStage, instructorId: l.instructorId,
     });
+    setHoursOnTouched(false);
     setEditingLearner(true);
     setAddingLearner(true);
     setStatus(null);
@@ -570,6 +586,7 @@ export default function DriverApp() {
     setLearnerDraft({ ...emptyLearner, instructorId: instructors.some((i) => i.id === defaultInstructorId) ? defaultInstructorId : "" });
     setEditingLearner(false);
     setAddingLearner(true);
+    setHoursOnTouched(false);
     setStatus(null);
   };
 
@@ -587,6 +604,14 @@ export default function DriverApp() {
   const shownEditIssues = editDraft ? currentIssues(editIssues, editDraft, editPaperSignature ? "paper" : "edit") : [];
 
   const learnerField = (key: keyof LearnerDraft, value: string) => setLearnerDraft((current) => ({ ...current, [key]: value }));
+  // Logged hours always come with an "as of" date (server rule D19): typing hours fills it with today (editable) unless the instructor set it by hand; clearing the hours clears it.
+  const [hoursOnTouched, setHoursOnTouched] = useState(false);
+  const loggedHoursField = (raw: string) =>
+    setLearnerDraft((current) => {
+      const digits = raw.replace(/\D/g, "").slice(0, 3);
+      if (!digits) return { ...current, loggedHours: "", loggedHoursOn: "" };
+      return { ...current, loggedHours: digits, loggedHoursOn: hoursOnTouched && current.loggedHoursOn ? current.loggedHoursOn : localNow().date };
+    });
 
   // No Access identity (local dev) means "My learners" has no meaning.
   const views = availableViews(signedInInstructorId);
@@ -600,6 +625,33 @@ export default function DriverApp() {
     v === "mine" ? `My learners (${mineCount})` : v === "all" ? `All (${learners.length})` : `Archived${archivedLearners ? ` (${archivedLearners.length})` : ""}`;
   const optionLabel = (l: Learner) => (activeView === "mine" ? l.fullName : `${l.fullName} · ${l.instructorName}`);
   const panel = detail ? learnerPanel({ archivedAt: detail.learner.archivedAt, completed: detail.progress.completed }) : "active";
+
+  // Assessment-rule reminders (display only; lib/rules.ts, spec D1/D2). `clock` ticks every 15 s, so the lines stay current.
+  void clock;
+  const rulesNow = new Date();
+  const lessonRefs = detail?.lessons ?? [];
+  const licenceReminder: Reminder | null = detail ? learnerLicenceReminder(detail.learner, localNow(rulesNow).date) : null;
+  const panelReminders: Reminder[] = [];
+  let showBookingLink = false;
+  if (detail && phase === "ready" && panel === "active") {
+    const gap = (review: typeof REVIEW_1_17 | typeof REVIEW_1_22) => reviewGapReminder({ review, progress: detail.progress, lessons: lessonRefs, moment: { kind: "now", now: rulesNow }, where: "panel" });
+    const next = detail.progress.review1_17.status === "ready" ? gap(REVIEW_1_17) : detail.progress.review1_22.status === "ready" ? gap(REVIEW_1_22) : null;
+    if (next) panelReminders.push(next);
+    if (detail.progress.finalDrive23.status === "ready") {
+      panelReminders.push(finalDriveEligibilityReminder(detail.learner, localNow(rulesNow).date));
+      panelReminders.push(finalDrivePanelReminder(rulesNow));
+      showBookingLink = true;
+    }
+  }
+  const formReminders: Reminder[] = [];
+  if (detail && draft && phase !== "ready") {
+    for (const review of [REVIEW_1_17, REVIEW_1_22] as const) {
+      if (!draft.assessedIds.includes(review)) continue;
+      const r = reviewGapReminder({ review, progress: detail.progress, lessons: lessonRefs, moment: { kind: "draft", date: draft.lessonDate, startTime: draft.startTime }, where: "form" });
+      if (r) formReminders.push(r);
+    }
+    if (draft.assessedIds.includes(FINAL_DRIVE_23)) formReminders.push(finalDriveEligibilityReminder(detail.learner, draft.lessonDate), ...finalDriveFormReminders({ date: draft.lessonDate, startTime: draft.startTime, finishTime: draft.finishTime }));
+  }
 
   return (
     <main className="app">
@@ -693,6 +745,28 @@ export default function DriverApp() {
               </select>
             </label>
             <label className="field full"><span>School / Work</span><input value={learnerDraft.schoolWork} onChange={(e) => learnerField("schoolWork", e.target.value)} /></label>
+            <details className="full rules-group" key={editingLearner ? "edit" : "new"} data-testid="c23-group">
+              <summary>Competency 23 eligibility</summary>
+              <p className="hint-note">Optional. Only used for the Competency 23 reminder; nothing here blocks a save or goes to the website.</p>
+              <div className="grid">
+                <label className="field full"><span>Learner licence issue date</span>
+                  <input type="date" value={learnerDraft.learnerLicenceIssuedOn} onChange={(e) => learnerField("learnerLicenceIssuedOn", e.target.value)} max={localNow().date} data-testid="c23-issued" />
+                  <small>Leave empty to estimate it from the licence expiry (shown as estimated).</small>
+                </label>
+                <label className="field full"><span>First issue date (only if renewed)</span>
+                  <input type="date" value={learnerDraft.learnerLicenceFirstIssuedOn} onChange={(e) => learnerField("learnerLicenceFirstIssuedOn", e.target.value)} max={localNow().date} data-testid="c23-first-issued" />
+                </label>
+                <label className="field full"><span>HPT passed on</span>
+                  <input type="date" value={learnerDraft.hptPassedOn} onChange={(e) => learnerField("hptPassedOn", e.target.value)} max={localNow().date} data-testid="c23-hpt" />
+                </label>
+                <label className="field"><span>Logged hours (logbook)</span>
+                  <input type="text" inputMode="numeric" pattern="[0-9]*" value={learnerDraft.loggedHours} onChange={(e) => loggedHoursField(e.target.value)} placeholder="e.g. 82" data-testid="c23-hours" />
+                </label>
+                <label className="field"><span>Hours as of</span>
+                  <input type="date" value={learnerDraft.loggedHoursOn} onChange={(e) => { setHoursOnTouched(true); learnerField("loggedHoursOn", e.target.value); }} max={localNow().date} data-testid="c23-hours-on" />
+                </label>
+              </div>
+            </details>
             {editingLearner ? (
               <label className="field full"><span>Licence stage</span>
                 <select value={learnerDraft.licenceStage} onChange={(e) => learnerField("licenceStage", e.target.value)} data-testid="edit-licence-stage">
@@ -737,6 +811,7 @@ export default function DriverApp() {
                 detail.learner.licenceExpiry ? `exp ${detail.learner.licenceExpiry}` : null,
                 `ADI ${detail.learner.instructorName}`].filter(Boolean).join(" · ")}
             </p>
+            {licenceReminder ? <RulesReminders reminders={[licenceReminder]} testId="licence-reminder" /> : null}
             <p className="meta integration-id">
               Integration ID: <code>{detail.learner.id}</code>
               <button type="button" className="link" onClick={() => void copyIntegrationId(detail.learner.id)}>Copy ID</button>
@@ -779,7 +854,15 @@ export default function DriverApp() {
           {panel !== "active" ? null : (
           <section className="card lesson">
             {phase === "ready" ? (
-              <button type="button" className="btn huge go" onClick={startLesson}>Start Lesson</button>
+              <>
+                {panelReminders.length || showBookingLink ? (
+                  <div className="start-reminders" data-testid="start-reminders">
+                    <RulesReminders reminders={panelReminders} testId="panel-reminders" />
+                    {showBookingLink ? <BookingLink /> : null}
+                  </div>
+                ) : null}
+                <button type="button" className="btn huge go" onClick={startLesson}>Start Lesson</button>
+              </>
             ) : (
               <div className="timebar">
                 <div><small>Started</small><strong>{draft.startTime}</strong></div>
@@ -821,6 +904,7 @@ export default function DriverApp() {
                   onChangeAchieved={(results) => setDraft((current) => (current ? { ...current, achievedResults: results } : current))}
                 />
                 </div>
+                <RulesReminders reminders={formReminders} testId="form-reminders" />
 
                 <div className="grid">
                   <label className="field full"><span>Location</span><input value={draft.location} onChange={(e) => setField("location", e.target.value)} placeholder="Belconnen, Gungahlin…" /></label>

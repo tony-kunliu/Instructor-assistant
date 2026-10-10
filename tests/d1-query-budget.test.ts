@@ -14,7 +14,11 @@ import {
   createLearner,
   createLesson,
   findInstructorByEmail,
+  getCompletionSummary,
+  getLearner,
   getLearnerProgress,
+  getTotals,
+  listLessons,
   getLessonCompetencySelections,
   importPaperLessons,
   updateLearner,
@@ -22,7 +26,8 @@ import {
 } from "../lib/repo.ts";
 import { PAPER_CSV_COLUMNS } from "../lib/paper-import.ts";
 import { jsonInsertStatement } from "../lib/d1-json-insert.ts";
-import { CORE_COMPETENCY_IDS } from "../lib/competency.ts";
+import { CORE_COMPETENCY_IDS, REVIEW_1_17, REVIEW_1_22 } from "../lib/competency.ts";
+import { finalDriveFormReminders, finalDrivePanelReminder, learnerLicenceReminder, reviewGapReminder } from "../lib/rules.ts";
 import { resolveIntegrationConfig } from "../lib/integration/config.ts";
 import { CRON_SWEEP_LIMIT, IMMEDIATE_DELIVERY_LIMIT, processDueOutbox } from "../lib/integration/sender.ts";
 import { readFileSync } from "node:fs";
@@ -461,6 +466,31 @@ test("budget: a learner edit is 5 statements (learner, actor, batch of revision 
   assert.equal(Number((await raw.prepare("SELECT COUNT(*) AS n FROM learner_revisions").first<{ n: number }>())?.n), 1);
 });
 
+test("budget (migration 0009): a learner edit and a create with all 15 fields, incl. the 5 Competency 23 fields, keep 5 / 2 / 3 statements (edit / no-op / create), bind <= 100, enqueue nothing for ACTGDS", async (t) => {
+  const { db: raw, learner, tony } = await setup();
+  const outboxBefore = Number((await raw.prepare("SELECT COUNT(*) AS n FROM integration_outbox").first<{ n: number }>())?.n);
+  const all = {
+    fullName: "QA Budget Renamed 2", address: "1 QA St", phone: "0400 000 000", dob: "2008-01-02", licenceNumber: "QA1", licenceExpiry: "2027-01-02",
+    eligibility: "Eligible", transmission: "auto", schoolWork: "QA", licenceStage: "p1",
+    learnerLicenceIssuedOn: "2025-11-15", learnerLicenceFirstIssuedOn: "2024-05-01", hptPassedOn: "2026-05-05", loggedHours: 82, loggedHoursOn: "2026-10-03",
+    actingInstructorId: tony.id,
+  };
+  const edit = countingD1(raw);
+  const result = await updateLearner(edit.db, learner.id, all, new Date("2026-10-09T02:00:00Z"));
+  assert.equal(result.changedFields.length, 15);
+  const noop = countingD1(raw);
+  assert.equal((await updateLearner(noop.db, learner.id, all, new Date("2026-10-09T02:00:00Z"))).changed, false);
+  const create = countingD1(raw);
+  await createLearner(create.db, { ...all, fullName: "QA Budget Created", instructorId: tony.id }, new Date("2026-10-09T02:00:00Z"));
+  t.diagnostic(`updateLearner (all 15 fields): ${edit.count()} statements, max bound params ${edit.maxBinds()}; no-op: ${noop.count()}; createLearner (all fields): ${create.count()} statements incl. instructor check, max bound params ${create.maxBinds()}`);
+  assert.equal(edit.count(), 5);
+  assert.equal(noop.count(), 2);
+  assert.ok(edit.maxBinds() <= 100 && create.maxBinds() <= 100, `max bound parameters edit ${edit.maxBinds()}, create ${create.maxBinds()} (D1 limit 100)`);
+  assert.equal(edit.maxBinds(), 16, "the UPDATE binds 15 columns + the id");
+  assert.equal(create.maxBinds(), 16, "the INSERT binds 16 values");
+  assert.equal(Number((await raw.prepare("SELECT COUNT(*) AS n FROM integration_outbox").first<{ n: number }>())?.n), outboxBefore, "a learner edit/create enqueues no ACTGDS event");
+});
+
 // ── createLesson assessing 22 competencies ──────────────────────────────
 
 test("budget: createLesson assessing 22 competencies stays within 20 statements, and stores the same rows", async (t) => {
@@ -496,6 +526,27 @@ test("budget: createLesson assessing 22 competencies stays within 20 statements,
 
   t.diagnostic(`createLesson: ${statements} statements`);
   assert.ok(statements <= 20, `createLesson issued ${statements} statements (budget 20)`);
+});
+
+// ── Assessment-rules reminders (T1): pure client computation, zero D1 statements ──
+
+test("budget: the rules reminders add 0 D1 statements (the learner GET reads are the same 5, reminders run on their result)", async (t) => {
+  const { db: raw, learner } = await setup();
+  const base = { startTime: "09:00", finishTime: "10:00", adiSignature: SIG1, learnerSignature: SIG1 };
+  const core17 = CORE_COMPETENCY_IDS.slice(0, 17);
+  await createLesson(raw, learner.id, { ...base, lessonDate: "2026-03-01", startOdometer: "0", finishOdometer: "10", assessedIds: core17, achievedResults: Object.fromEntries(core17.map((id) => [id, "achieved"])) });
+  const { db, count } = countingD1(raw);
+  const [detailLearner, , lessons, progress] = await Promise.all([getLearner(db, learner.id), getTotals(db, learner.id), listLessons(db, learner.id), getLearnerProgress(db, learner.id), getCompletionSummary(db, learner.id)]);
+  const reads = count();
+  const now = new Date("2026-10-09T01:00:00Z");
+  reviewGapReminder({ review: REVIEW_1_17, progress, lessons, moment: { kind: "now", now }, where: "panel" });
+  reviewGapReminder({ review: REVIEW_1_22, progress, lessons, moment: { kind: "draft", date: "2026-10-09", startTime: "09:00" }, where: "form" });
+  finalDrivePanelReminder(now);
+  finalDriveFormReminders({ date: "2026-10-09", startTime: "09:00", finishTime: "10:00" });
+  learnerLicenceReminder(detailLearner!, "2026-10-09");
+  t.diagnostic(`learner GET reads: ${reads} statements; after computing every reminder: ${count()}`);
+  assert.equal(reads, 5);
+  assert.equal(count(), reads, "the reminders must not touch D1");
 });
 
 // ── jsonInsertStatement: types and guards ────────────────────────────────
