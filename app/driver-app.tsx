@@ -263,6 +263,10 @@ export default function DriverApp() {
         const start = initialSelection({ signedInInstructorId: meData.instructor?.id ?? null, activeLearners: learnerData.learners, lastLearnerId: storage.get(LAST_LEARNER_KEY) });
         setView(start.view);
         setReady(true);
+        // Archived learners load in the background too, so the duplicate-licence check covers them; a failure just leaves the "not checked" note.
+        void api<{ learners: Learner[] }>("/api/learners?status=archived")
+          .then((data) => setArchivedLearners((current) => current ?? data.learners))
+          .catch(() => undefined);
         if (start.learnerId) await loadLearner(start.learnerId);
         else if (!learnerData.learners.length) setAddingLearner(true);
       } catch (error) {

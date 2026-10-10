@@ -1138,6 +1138,8 @@ const draw = async (page, index) => {
   const line = (page, rule, scope = "[data-testid=learner-checks]") => page.$eval(`${scope} .reminder[data-rule=${rule}]`, (e) => ({ tone: e.dataset.tone, text: e.textContent })).catch(() => null);
 
   const s = await session("tony");
+  // The archived list normally loads in the background; fail it first so the "not checked" grey note path is exercised.
+  await s.page.route("**/api/learners?status=archived", (route) => route.abort());
   await ready(s.page);
   await s.page.setViewportSize({ width: 375, height: 812 });
   check("learner checks: viewport is 375px", (await s.page.evaluate(() => window.innerWidth)) === 375);
@@ -1177,7 +1179,19 @@ const draw = async (page, index) => {
   check("learner checks: New form: the learner saves despite the warning", (await s.page.textContent(".status")).includes("QA Tony Dup New added"), await s.page.textContent(".status"));
   check("learner checks: the saved licence number is stored", (await learnersApi()).some((l) => l.fullName === "QA Tony Dup New" && l.licenceNumber), "");
 
-  // Once Archived has been opened, archived learners are included and marked.
+  // Normal case: the archived list loads in the background, so the panel already includes archived duplicates without opening Archived.
+  await s.page.unroute("**/api/learners?status=archived");
+  await s.page.reload();
+  await ready(s.page);
+  await pick(s.page, "QA Tony Dup One");
+  const archivedSeen = await s.page.waitForFunction(() => /QA Anna Dup Two \(archived/.test(document.querySelector("[data-testid=learner-checks]")?.textContent ?? ""), null, { timeout: 5000 }).then(() => true, () => false);
+  check("learner checks: archived duplicates are included without opening Archived (background load)", archivedSeen, await s.page.textContent("[data-testid=learner-checks]"));
+  await s.page.click("text=+ New");
+  await s.page.fill('label:has-text("Licence number") input', "QA 00 998");
+  check("learner checks: New form: unique number with archived loaded → no licence line (no grey note)", (await s.page.$("[data-testid=licence-duplicate]")) === null);
+  await s.page.click("text=Cancel");
+
+  // Opening Archived still works.
   await tab(s.page, "Archived");
   await s.page.waitForFunction(() => /\(\d+\)/.test(document.querySelector(".view-tab.active")?.textContent ?? ""));
   await tab(s.page, "My");
