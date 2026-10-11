@@ -149,7 +149,8 @@ test("R1: a History-edited lesson date moves the moment (uses lesson date + fini
 test("R1: only for a ready review; Review 1-22 works the same on 1-22", () => {
   const locked = computeProgress(range(1, 16).map((id) => ev(id, "L1")));
   assert.equal(reviewGapReminder({ review: REVIEW_1_17, progress: locked, lessons: [lesson("L1", 1, "2026-09-30", "15:00")], moment: { kind: "now", now: at("2026-10-09T00:00:00Z") }, where: "panel" }), null);
-  const events = [...range(1, 22).map((id) => ev(id, "L1")), ev(REVIEW_1_17, "L1")];
+  // Review 1-17 counts only from a later lesson than 1-17 (lesson order, lib/competency.ts#milestoneAssessmentCounts).
+  const events = [...range(1, 22).map((id) => ({ ...ev(id, "L1"), lessonNo: 1 })), { ...ev(REVIEW_1_17, "L2"), lessonNo: 2 }];
   const progress = computeProgress(events);
   assert.equal(progress.review1_22.status, "ready");
   const lessons = [lesson("L1", 1, "2026-09-30", "15:00")];

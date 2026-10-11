@@ -52,6 +52,13 @@ Long term (ecosystem, coordinated with Work on actgds.com Issue #3):
 
 ## Minor follow-ups (bundle into the next feature)
 
+- After a milestone has become invalid, every later edit of that lesson (even comment-only) repeats the 'No longer valid' message; report only when the status changed (lib/repo.ts recordedHere).
+
+- Progress-invalidation fix (`fix/progress-invalidation`): before release,
+  run `scripts/audit-progress.mjs` on a read-only Production export to list
+  learners whose milestones change under the lesson-order rule. Reply to
+  Work on Issue #3 once merged.
+
 - Archiving an already-archived learner with a reason (two devices) returns 200 and drops the reason silently; consider a message.
 
 - No message when a learner is archived while the edit form is open.

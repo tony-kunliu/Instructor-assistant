@@ -5,10 +5,11 @@ _Last updated: 2026-10-11_
 This file describes **current task only**. Completed work's detail
 lives in git log and closed PRs, not here.
 
-**Current Task:** Completed (docs only): designs for 3c, transfer a learner
-(`docs/superpowers/specs/2026-10-11-learner-transfer-design.md`), and R10,
-Competency 23 route (`docs/superpowers/specs/2026-10-11-competency-23-route-design.md`),
-on branch `docs/designs-3c-route` (not pushed). Staging and Production D1 are at `0010`.
+**Current Task:** `fix/progress-invalidation` (PR #54): History Edit milestone invalidation +
+Completed banner consistency (actgds.com Issue #3, comment 6104913100) and the
+Competency 23 route note in `docs/ACT_ASSESSMENT_STANDARDS.md` (R10). Reviewed twice;
+next: staging merge, then Production release (no migration). Staging and Production D1 are at `0010`.
+Designs for 3c (learner transfer) and R10 (route) are merged (docs).
 
 **Next Recommended Task:** Tony decided both designs' questions on
 2026-10-11 (all defaults; route Q1 changed to "familiar = home district").

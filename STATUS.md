@@ -7,11 +7,17 @@ closed PRs; see `TASK.md` for what is in progress.
 
 ## In progress
 
-- No code in flight. Learner management 3a/3b (migration `0010`) and the
-  Canberra-time convention (AGENTS.md §15) are released. Designs for 3c
-  (learner transfer) and R10 (Competency 23 route) are written on branch
-  `docs/designs-3c-route` (local commits, not pushed); Tony decided their
-  questions 2026-10-11 (route: familiar = home district). Waiting for the go to build.
+- `fix/progress-invalidation` (PR #54, to staging, then Production; no migration): the two
+  CBT&A progress bugs Work reported on actgds.com Issue #3 (comment
+  6104913100). A Review / Final Drive counts only if its prerequisites were
+  achieved in strictly earlier lessons (no timestamps; derived, reported,
+  events kept, never blocks an edit); the Completed banner/summary follows
+  derived completion. Read-only `scripts/audit-progress.mjs` compares old vs
+  new rule (Production audit: 0 differences).
+- Learner 3a/3b (migration `0010`) and the Canberra-time convention (AGENTS.md §15)
+  are released. Designs for 3c (learner transfer), R10 (Competency 23 route) and
+  learner intake are written and decided by Tony 2026-10-11 (route: familiar =
+  home district); waiting for the go to build.
 
 ## Repository
 
@@ -85,8 +91,9 @@ closed PRs; see `TASK.md` for what is in progress.
 - Paper Records Import (P1b) and PDF cumulative line per page (P1a); paper and
   prior-instructor rows never emit Integration events.
 - CBT&A chronology: a lesson may Assess a gated item only if its prerequisites
-  were Achieved in EARLIER lessons; enforced server-side, legacy violations
-  tolerated. Save errors show jump links.
+  were Achieved in EARLIER lessons; enforced server-side, legacy data never
+  rewritten (Review / Final Drive validity derived by lesson order). Save
+  errors show jump links.
 - CBT&A Checklist PDF export with an embedded compact font subset (about 0.2
   MB typical, was ~14 MB); Export shows "PDF ready: <size> (compact font)".
   Full 16 MB font only for rare CJK characters. Access-gated sign-in; "Copy
