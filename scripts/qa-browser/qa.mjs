@@ -1306,6 +1306,54 @@ const draw = async (page, index) => {
   await s.ctx.close();
 }
 
+// ═══ 14. Derived milestone validity after History Edit + Completed banner (progress-invalidation fix) ═══
+{
+  const post = async (path, body, method = "POST") => { const r = await fetch(B + path, { method, headers: { "content-type": "application/json" }, body: JSON.stringify(body) }); const d = await r.json(); if (!r.ok) throw new Error(`${path} ${JSON.stringify(d)}`); return d; };
+  const rng = (a, b) => Array.from({ length: b - a + 1 }, (_, i) => String(a + i));
+  const doneBy = (ids) => ({ assessedIds: ids, achievedResults: Object.fromEntries(ids.map((id) => [id, "achieved"])) });
+  const mkLessons = async (learnerId, steps) => {
+    let odo = 1000;
+    for (const step of steps) { const start = odo; odo += 12; await post(`/api/learners/${learnerId}/lessons`, { lessonDate: "2026-09-20", startTime: "09:00", finishTime: "10:00", startOdometer: String(start), finishOdometer: String(odo), adiSignature: SIG, learnerSignature: SIG, ...step }); }
+  };
+  // Bug 1: Lesson 1 achieves 1-17, Lesson 2 Review 1-17, Lesson 3 achieves 17 again; the UI edit removes 17 from Lesson 1.
+  const r17 = (await post("/api/learners", { fullName: "QA Tony Invalid R17", instructorId: WHO.tony[0] })).learner;
+  await mkLessons(r17.id, [doneBy(rng(1, 17)), doneBy(["review-1-17"]), doneBy(["17"])]);
+  // Bug 2: a full valid chain, then Lesson 3 edited (API) so 22 is Not achieved.
+  const revoked = (await post("/api/learners", { fullName: "QA Tony Completion Revoked", instructorId: WHO.tony[0] })).learner;
+  await mkLessons(revoked.id, [doneBy(rng(1, 17)), doneBy(["review-1-17"]), doneBy(rng(18, 22)), doneBy(["review-1-22"]), doneBy(["final-drive-23"])]);
+  const revokedDetail = await (await fetch(`${B}/api/learners/${revoked.id}`)).json();
+  check("completed chain: API completion summary present while completed", revokedDetail.progress.completed === true && revokedDetail.completion?.completingLessonNo === 5);
+  const l3 = revokedDetail.lessons.find((l) => l.lessonNo === 3);
+  await post(`/api/learners/${revoked.id}/lessons/${l3.id}`, { lessonDate: l3.lessonDate, startTime: l3.startTime, finishTime: l3.finishTime, startOdometer: String(l3.startOdometer), finishOdometer: String(l3.finishOdometer),
+    assessedIds: rng(18, 22), achievedResults: { ...Object.fromEntries(rng(18, 21).map((id) => [id, "achieved"])), "22": "not_achieved" },
+    adiSignature: SIG.replace("AAAAC0lEQVR42", "AAAAC0lEQVR45"), learnerSignature: SIG.replace("AAAAC0lEQVR42", "AAAAC0lEQVR46") }, "PATCH");
+  const afterRevoke = await (await fetch(`${B}/api/learners/${revoked.id}`)).json();
+  check("revoked completion: API progress.completed false and completion null (raw Final Drive event kept)", afterRevoke.progress.completed === false && afterRevoke.completion === null && afterRevoke.progress.competencies["final-drive-23"].achieved === true, JSON.stringify(afterRevoke.completion));
+
+  const s = await session("tony");
+  await ready(s.page);
+  await s.page.setViewportSize({ width: 375, height: 812 });
+  await pick(s.page, "QA Tony Completion Revoked");
+  await s.page.waitForSelector("text=Start Lesson");
+  check("revoked completion: no 'CBT&A Completed' banner, no completed card, Start Lesson available", (await s.page.$("[data-testid=cbta-completed-banner]")) === null && (await s.page.$("[data-testid=cbta-completed-card]")) === null);
+  await pick(s.page, "QA Tony Invalid R17");
+  await s.page.waitForSelector("[data-testid=history-row]");
+  await s.page.click("[data-testid=history-row] .h-edit >> nth=-1");
+  await s.page.waitForSelector("text=/Editing Lesson #1/");
+  await s.page.locator(".h-editing .comp-section:has(.comp-label:text-is('Assessed')) .chip-row >> nth=0 >> button:text-is(\"17\")").click();
+  await signBoth(s.page);
+  await s.page.click(".h-editing .btn.save");
+  await s.page.waitForSelector(".status:has-text('Lesson updated'), .h-editing .status.error");
+  const statusText = (await s.page.textContent(".status")) ?? "";
+  check("History Edit removing 17 from Lesson #1 (17 only re-achieved in Lesson #3): saved with a short amber warning naming Review 1-17", statusText === "Lesson updated. No longer valid: Review 1-17 (prerequisites must be achieved in earlier lessons)." && (await s.page.$(".status.warn")) !== null, statusText);
+  const r17After = await (await fetch(`${B}/api/learners/${r17.id}`)).json();
+  check("…and the derived progress persists: Review 1-17 ready (not achieved), original Review 1-17 event kept", r17After.progress.review1_17.status === "ready" && r17After.progress.competencies["review-1-17"].achieved === true, r17After.progress.review1_17.status);
+  check("progress-invalidation: no horizontal scroll at 375px", await noHScroll(s.page));
+  await shot(s.page, "14-milestone-invalidated-375");
+  check("progress-invalidation: Tony: no page errors", s.errors.length === 0, s.errors.join("|"));
+  await s.ctx.close();
+}
+
 } catch (error) {
   check(`script aborted: ${String(error.message).split("\n")[0]}`, false, String(error.message).split("\n").slice(1,4).join(" ").trim());
 }

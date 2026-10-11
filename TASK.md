@@ -5,22 +5,12 @@ _Last updated: 2026-10-11_
 This file describes **current task only**. Completed work's detail
 lives in git log and closed PRs, not here.
 
-**Current Task:** Completed (docs only): designs for 3c, transfer a learner
-(`docs/superpowers/specs/2026-10-11-learner-transfer-design.md`), and R10,
-Competency 23 route (`docs/superpowers/specs/2026-10-11-competency-23-route-design.md`),
-on branch `docs/designs-3c-route` (not pushed); and learner intake (Tony's four
-requests: address suggestions, overseas/interstate licence, Competency 23
-"eligible from", licence scan) in
-`docs/superpowers/specs/2026-10-11-learner-intake-design.md` on branch
-`docs/learner-intake-design` (not pushed). Staging and Production D1 are at `0010`.
+**Current Task:** Build the decided designs on Staging: learner intake P1, 3c transfer T1,
+then R10a (see `docs/BACKLOG.md` "Planned order"). Production is at D1 `0010`; the CBT&A progress
+fix is released.
 
-**Next Recommended Task:** Tony decided both designs' questions on
-2026-10-11 (all defaults; route Q1 changed to "familiar = home district").
-On Tony's go: 3c T1 (migration 0011), then R10a (no migration); all route
-questions are decided (Weston Creek / Molonglo: no neighbouring centre). Learner
-intake questions are decided (2026-10-11); P1 ("Competency 23 eligible from"
-+ Eligibility auto-fill, no migration) is the smallest safe slice. See
-`docs/BACKLOG.md` "Planned order".
+**Next Recommended Task:** After Staging QA: release P1; apply 0011 to Staging D1 before merging T1.
+iPad layout waits for Tony's real-iPad check.
 
 **Waiting on Other Repo:** ACTGDS: Work's display polish (list sent) and lesson
 notification activation decisions. My Driving is live. Nothing blocks this repo.

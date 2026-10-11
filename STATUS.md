@@ -7,16 +7,13 @@ closed PRs; see `TASK.md` for what is in progress.
 
 ## In progress
 
-- No code in flight. Learner management 3a/3b (migration `0010`) and the
-  Canberra-time convention (AGENTS.md §15) are released. Designs for 3c
-  (learner transfer) and R10 (Competency 23 route) are written on branch
-  `docs/designs-3c-route` (local commits, not pushed); Tony decided their
-  questions 2026-10-11 (route: familiar = home district). Waiting for the go to build.
-- Design for learner intake (address suggestions, overseas/interstate licence,
-  Competency 23 "eligible from", licence scan) written on branch
-  `docs/learner-intake-design` (not pushed):
-  `docs/superpowers/specs/2026-10-11-learner-intake-design.md`; questions decided
-  by Tony 2026-10-11 (free options only). Waiting for the go to build P1.
+- Released to Production 2026-10-11: CBT&A progress validity fix + Completed banner
+  (Worker `908b2c9c-9228-4608-b86b-76c9e2c14e44`, run 38153327724, no migration;
+  Production audit: 0 differences), learner 3a/3b (migration `0010`), Canberra time.
+- Designs decided by Tony 2026-10-11 and being built (Staging first): learner intake
+  P1 (C23 "eligible from" date + PDF auto-fill), 3c transfer T1 (migration 0011), R10a
+  route reminders (`docs/superpowers/specs/2026-10-11-*.md`). iPad layout is on
+  `feature/ipad-layout` in review (signature-size fix round); needs Tony's real-iPad check.
 
 ## Repository
 
@@ -90,8 +87,9 @@ closed PRs; see `TASK.md` for what is in progress.
 - Paper Records Import (P1b) and PDF cumulative line per page (P1a); paper and
   prior-instructor rows never emit Integration events.
 - CBT&A chronology: a lesson may Assess a gated item only if its prerequisites
-  were Achieved in EARLIER lessons; enforced server-side, legacy violations
-  tolerated. Save errors show jump links.
+  were Achieved in EARLIER lessons; enforced server-side, legacy data never
+  rewritten (Review / Final Drive validity derived by lesson order). Save
+  errors show jump links.
 - CBT&A Checklist PDF export with an embedded compact font subset (about 0.2
   MB typical, was ~14 MB); Export shows "PDF ready: <size> (compact font)".
   Full 16 MB font only for rare CJK characters. Access-gated sign-in; "Copy

@@ -567,13 +567,16 @@ test("budget: createLesson assessing 22 competencies stays within 20 statements,
 
 // ── Assessment-rules reminders (T1): pure client computation, zero D1 statements ──
 
-test("budget: the rules reminders add 0 D1 statements (the learner GET reads are the same 5, reminders run on their result)", async (t) => {
+test("budget: the rules reminders add 0 D1 statements (the learner GET reads are the same 4 (5 once completed), reminders run on their result)", async (t) => {
   const { db: raw, learner } = await setup();
   const base = { startTime: "09:00", finishTime: "10:00", adiSignature: SIG1, learnerSignature: SIG1 };
   const core17 = CORE_COMPETENCY_IDS.slice(0, 17);
   await createLesson(raw, learner.id, { ...base, lessonDate: "2026-03-01", startOdometer: "0", finishOdometer: "10", assessedIds: core17, achievedResults: Object.fromEntries(core17.map((id) => [id, "achieved"])) });
   const { db, count } = countingD1(raw);
-  const [detailLearner, , lessons, progress] = await Promise.all([getLearner(db, learner.id), getTotals(db, learner.id), listLessons(db, learner.id), getLearnerProgress(db, learner.id), getCompletionSummary(db, learner.id)]);
+  // Mirrors GET /api/learners/[id]: the completion summary comes from the same derived progress, and
+  // costs no statement while the learner is not completed (1 when completed): 4 reads here, at most 5.
+  const [detailLearner, , lessons, progress] = await Promise.all([getLearner(db, learner.id), getTotals(db, learner.id), listLessons(db, learner.id), getLearnerProgress(db, learner.id)]);
+  await getCompletionSummary(db, learner.id, progress);
   const reads = count();
   const now = new Date("2026-10-09T01:00:00Z");
   reviewGapReminder({ review: REVIEW_1_17, progress, lessons, moment: { kind: "now", now }, where: "panel" });
@@ -582,7 +585,7 @@ test("budget: the rules reminders add 0 D1 statements (the learner GET reads are
   finalDriveFormReminders({ date: "2026-10-09", startTime: "09:00", finishTime: "10:00" });
   learnerLicenceReminder(detailLearner!, "2026-10-09");
   t.diagnostic(`learner GET reads: ${reads} statements; after computing every reminder: ${count()}`);
-  assert.equal(reads, 5);
+  assert.equal(reads, 4);
   assert.equal(count(), reads, "the reminders must not touch D1");
 });
 
@@ -645,4 +648,43 @@ test("the Cron sweep processes at most 24 due rows per invocation (1 SELECT + 24
   fetches = 0;
   await processDueOutbox(raw, hooks.config, fetchImpl, new Date(Date.now() + 60_000));
   assert.equal(fetches, 6);
+});
+
+// ── Derived milestone validity + completion summary (progress-invalidation fix): no new D1 statement ──
+
+test("budget: an edit that invalidates Review 1-22 / Final Drive / Completed stays within 25 statements, and the learner GET of a completed learner is 5 reads (4 once completion is invalid)", async (t) => {
+  const { db: raw, learner } = await setup();
+  const { hooks } = deferredHooks();
+  const range = (a: number, b: number) => CORE_COMPETENCY_IDS.slice(a - 1, b);
+  const steps = [range(1, 17), [REVIEW_1_17], range(18, 22), [REVIEW_1_22], ["final-drive-23"]];
+  for (const [i, ids] of steps.entries()) {
+    await createLesson(raw, learner.id, {
+      lessonDate: "2026-03-01", startTime: "09:00", finishTime: "10:00", startOdometer: String(i * 10), finishOdometer: String(i * 10 + 5),
+      assessedIds: ids, achievedResults: Object.fromEntries(ids.map((id) => [id, "achieved"])), adiSignature: SIG1, learnerSignature: SIG1,
+    }, hooks);
+  }
+  const getReads = async () => {
+    const { db, count } = countingD1(raw);
+    const [, , , progress] = await Promise.all([getLearner(db, learner.id), getTotals(db, learner.id), listLessons(db, learner.id), getLearnerProgress(db, learner.id)]);
+    const completion = await getCompletionSummary(db, learner.id, progress);
+    return { reads: count(), completion };
+  };
+  const completedGet = await getReads();
+  assert.equal(completedGet.reads, 5);
+  assert.equal(completedGet.completion?.completingLessonNo, 5);
+
+  const lesson3 = (await lessonRows(raw, learner.id))[2];
+  const { db, count } = countingD1(raw);
+  const result = await updateLesson(db, learner.id, String(lesson3.id), {
+    lessonDate: "2026-03-01", startTime: "09:00", finishTime: "10:00", startOdometer: "20", finishOdometer: "25",
+    assessedIds: range(18, 22), achievedResults: { ...Object.fromEntries(range(18, 21).map((id) => [id, "achieved"])), "22": "not_achieved" }, adiSignature: SIG2, learnerSignature: SIG2,
+  }, hooks);
+  const editStatements = count();
+  assert.equal(result.invalidated.completed, true);
+  assert.equal(result.completion, null);
+  const invalidGet = await getReads();
+  t.diagnostic(`invalidating edit: ${editStatements} statements; learner GET: ${completedGet.reads} reads while completed, ${invalidGet.reads} after`);
+  assert.ok(editStatements <= 25, `updateLesson issued ${editStatements} statements (budget 25)`);
+  assert.equal(invalidGet.reads, 4);
+  assert.equal(invalidGet.completion, null);
 });
