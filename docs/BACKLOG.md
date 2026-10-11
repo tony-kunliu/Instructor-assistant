@@ -27,6 +27,14 @@ Medium term (new features; confirm rules with Tony before building):
    migration; reminders only; nothing to ACTGDS; one small open question).
 5. Remove-the-"A"-condition reminder after 12 months (R8, CoP 9.4).
 6. Certificate number records (R9, CoP 9.3, 10 f).
+6a. Learner intake (Tony's 4 requests, 2026-10-11): address suggestions
+   from a bundled G-NAF street index, overseas/interstate licence fields,
+   "Competency 23 eligible from" date, licence scan (iOS Scan Text first;
+   Claude API scan only after Tony approves the service and sets the secret).
+   **Designed; waiting for Tony's answers (Q1-Q11) and go for P1**:
+   `docs/superpowers/specs/2026-10-11-learner-intake-design.md` (P1 no
+   migration; P2/P3 additive columns; nothing to ACTGDS). Tony's overseas
+   rule is not in NI2020-703 / CoP: confirm with Access Canberra (Q1).
 
 Long term (ecosystem, coordinated with Work on actgds.com Issue #3):
 7. P2 lesson notification emails: ACTGDS source is complete; activation is
@@ -49,6 +57,7 @@ Long term (ecosystem, coordinated with Work on actgds.com Issue #3):
 | Learner management, Phase 3b: archive reason and restore history | learner management plan (Phase 3) | **DONE** on `feature/archive-reason` (not merged): migration 0010 (`learner_archive_events`, additive), optional preset reason + note, History in the archived banner. Needs 0010 on Staging D1 before merging. |
 | Learner management, Phase 3c: transfer a learner to another instructor (incl. the CoP 9.1 h / 9.2 e previous-records reminder, R12) | `docs/superpowers/specs/2026-10-11-learner-transfer-design.md` | Designed; Q1-Q6 decided (defaults, Tony 2026-10-11). Waiting for the go to build T1. |
 | Competency 23 route suggestions and route check (R10) | `docs/superpowers/specs/2026-10-11-competency-23-route-design.md` | Designed; Q1-Q6 decided 2026-10-11 (Q1 changed: home district). Waiting for the go to build R10a. |
+| Learner intake: address suggestions, overseas/interstate licence, Competency 23 "eligible from", licence scan | `docs/superpowers/specs/2026-10-11-learner-intake-design.md` | Designed 2026-10-11; Q1-Q11 open (defaults given). Waiting for answers and the go for P1. P5 (Claude API) also needs Tony's new-service approval and secret. |
 
 ## Minor follow-ups (bundle into the next feature)
 
@@ -83,6 +92,8 @@ Long term (ecosystem, coordinated with Work on actgds.com Issue #3):
   manually". Cross-check the 2026-2027 table against the ACT Government
   public-holidays page, which returned HTTP 403 to the build environment.
 - History markers for past reviews done inside 36 h (rules-reminders spec, later).
+- Once learner intake P2 ships: rebuild the G-NAF street index yearly (new
+  streets in new suburbs) with `scripts/build-street-index.mjs`.
 
 ## Ecosystem phases (see the roadmap)
 

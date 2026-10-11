@@ -12,6 +12,10 @@ closed PRs; see `TASK.md` for what is in progress.
   (learner transfer) and R10 (Competency 23 route) are written on branch
   `docs/designs-3c-route` (local commits, not pushed); Tony decided their
   questions 2026-10-11 (route: familiar = home district). Waiting for the go to build.
+- Design for learner intake (address suggestions, overseas/interstate licence,
+  Competency 23 "eligible from", licence scan) written on branch
+  `docs/learner-intake-design` (not pushed):
+  `docs/superpowers/specs/2026-10-11-learner-intake-design.md`; Q1-Q11 open.
 
 ## Repository
 
