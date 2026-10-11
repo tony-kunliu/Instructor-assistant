@@ -24,9 +24,20 @@ Medium term (new features; confirm rules with Tony before building):
    questions decided 2026-10-11 (familiar = the learner's home district, from
    the address); build R10a on Tony's go**:
    `docs/superpowers/specs/2026-10-11-competency-23-route-design.md` (no
-   migration; reminders only; nothing to ACTGDS; one small open question).
+   migration; reminders only; nothing to ACTGDS; all questions decided,
+   incl. Weston Creek / Molonglo: no neighbouring centre counts as home).
 5. Remove-the-"A"-condition reminder after 12 months (R8, CoP 9.4).
 6. Certificate number records (R9, CoP 9.3, 10 f).
+6a. Learner intake (Tony's 4 requests, 2026-10-11): address suggestions
+   from a bundled G-NAF street index, overseas/interstate licence fields
+   (school rule confirmed by Tony: interstate learner time counts; interstate
+   or overseas FULL licence held 12 months removes the wait; overseas learner
+   does not count), "Competency 23 eligible from" with the PDF Eligibility box
+   auto-filled (never overwriting Tony's text), iOS Scan Text + local parser.
+   **Designed; questions decided 2026-10-11; build P1 on Tony's go**:
+   `docs/superpowers/specs/2026-10-11-learner-intake-design.md` (P1 no
+   migration; P2/P3 additive columns; free options only, AI scan not
+   planned; nothing to ACTGDS).
 
 Long term (ecosystem, coordinated with Work on actgds.com Issue #3):
 7. P2 lesson notification emails: ACTGDS source is complete; activation is
@@ -48,7 +59,8 @@ Long term (ecosystem, coordinated with Work on actgds.com Issue #3):
 | Learner management, Phase 3a: missing-details marker, duplicate licence warning (reminders only, client-side) | learner management plan | **DONE** on `feature/learner-phase3a` (not merged). |
 | Learner management, Phase 3b: archive reason and restore history | learner management plan (Phase 3) | **DONE** on `feature/archive-reason` (not merged): migration 0010 (`learner_archive_events`, additive), optional preset reason + note, History in the archived banner. Needs 0010 on Staging D1 before merging. |
 | Learner management, Phase 3c: transfer a learner to another instructor (incl. the CoP 9.1 h / 9.2 e previous-records reminder, R12) | `docs/superpowers/specs/2026-10-11-learner-transfer-design.md` | Designed; Q1-Q6 decided (defaults, Tony 2026-10-11). Waiting for the go to build T1. |
-| Competency 23 route suggestions and route check (R10) | `docs/superpowers/specs/2026-10-11-competency-23-route-design.md` | Designed; Q1-Q6 decided 2026-10-11 (Q1 changed: home district). Waiting for the go to build R10a. |
+| Competency 23 route suggestions and route check (R10) | `docs/superpowers/specs/2026-10-11-competency-23-route-design.md` | Designed; all questions decided 2026-10-11 (Q1 changed: home district; Weston Creek / Molonglo: no neighbour). Waiting for the go to build R10a. |
+| Learner intake: address suggestions, overseas/interstate licence, Competency 23 "eligible from", licence scan | `docs/superpowers/specs/2026-10-11-learner-intake-design.md` | Designed; Q1-Q11 decided by Tony 2026-10-11 (free options only; AI scan not planned). Waiting for the go to build P1. |
 
 ## Minor follow-ups (bundle into the next feature)
 
@@ -90,6 +102,8 @@ Long term (ecosystem, coordinated with Work on actgds.com Issue #3):
   manually". Cross-check the 2026-2027 table against the ACT Government
   public-holidays page, which returned HTTP 403 to the build environment.
 - History markers for past reviews done inside 36 h (rules-reminders spec, later).
+- Once learner intake P2 ships: rebuild the G-NAF street index yearly (new
+  streets in new suburbs) with `scripts/build-street-index.mjs`.
 
 ## Ecosystem phases (see the roadmap)
 
