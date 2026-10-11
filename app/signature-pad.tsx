@@ -16,14 +16,35 @@ export default function SignaturePad({ label, value, onChange }: Props) {
   const dirty = useRef(false);
   const last = useRef<{ x: number; y: number } | null>(null);
 
-  // Size the backing store to the rendered size so strokes stay sharp.
+  const valueRef = useRef(value);
+  valueRef.current = value;
+
+  // Size the backing store to the rendered size so strokes stay sharp, and
+  // re-fit it when the rendered size changes (iPad rotation, phone ↔ tablet
+  // layout): resizing clears a canvas, so the current signature is redrawn.
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const rect = canvas.getBoundingClientRect();
-    const ratio = Math.min(window.devicePixelRatio || 1, 2);
-    canvas.width = Math.max(1, Math.round(rect.width * ratio));
-    canvas.height = Math.max(1, Math.round(rect.height * ratio));
+    const fit = () => {
+      const rect = canvas.getBoundingClientRect();
+      if (!rect.width || !rect.height) return;
+      const ratio = Math.min(window.devicePixelRatio || 1, 2);
+      const width = Math.max(1, Math.round(rect.width * ratio));
+      const height = Math.max(1, Math.round(rect.height * ratio));
+      if (canvas.width === width && canvas.height === height) return;
+      canvas.width = width;
+      canvas.height = height;
+      const saved = valueRef.current;
+      if (!saved) return;
+      const image = new Image();
+      image.onload = () => canvas.getContext("2d")?.drawImage(image, 0, 0, canvas.width, canvas.height);
+      image.src = saved;
+    };
+    fit();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(fit);
+    observer.observe(canvas);
+    return () => observer.disconnect();
   }, []);
 
   // Clear when the value is reset; redraw a restored signature (e.g. saved draft).

@@ -8,6 +8,8 @@ lives in git log and closed PRs, not here.
 **Current Task:** None in flight. Learner 3a/3b and the Canberra-time convention are
 live in Production (migration `0010`, run 38106838536); Staging and Production D1
 are both at `0010`.
+Branch `feature/ipad-layout` (iPad layout) is committed locally, awaiting
+review and Tony's real-iPad check; not pushed or merged.
 
 **Next Recommended Task:** a design for 3c (transfer a learner to another
 instructor) before any code; then Competency 23 route suggestions. See

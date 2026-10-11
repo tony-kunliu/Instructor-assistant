@@ -281,3 +281,86 @@ html, body {
 .rules-group summary { font-size: 14px; font-weight: 600; color: var(--muted); padding: 8px 0; cursor: pointer; }
 .rules-group .hint-note { margin: 0 0 8px; font-size: 13px; color: var(--muted); }
 .rules-group .field small { font-size: 12px; color: var(--muted); }
+
+/* ── Tablet / iPad (mobile-first: everything above is the phone layout). ──
+   ≥700px: one wider centred column, bigger touch targets and type.
+   ≥1000px (iPad landscape, iPad Pro 12.9" portrait): two columns via CSS grid
+   placement only — the DOM order (what phones and screen readers use) is
+   unchanged. Learner info on the left, today's lesson (or the learner form /
+   completed card) on the right. */
+@media (min-width: 700px) {
+  .app {
+    max-width: 880px;
+    padding: calc(env(safe-area-inset-top) + 16px) max(24px, env(safe-area-inset-right)) calc(env(safe-area-inset-bottom) + 32px) max(24px, env(safe-area-inset-left));
+  }
+  .topbar { padding: 4px 4px 16px; gap: 12px; }
+  .topbar img { width: 40px; height: 40px; }
+  .topbar strong { font-size: 20px; }
+  .topbar small { font-size: 13px; }
+  .signed-in-as span { font-size: 14px; }
+  .signout-link { font-size: 14px; display: inline-flex; align-items: center; min-height: 44px; padding: 0 2px; }
+
+  .card { padding: 20px 22px; margin-bottom: 16px; }
+  .card h2 { font-size: 20px; }
+  .picker { gap: 12px; }
+  .view-tab { min-height: 44px; font-size: 15px; }
+  .learner-results button { min-height: 48px; }
+
+  .field span { font-size: 14px; }
+  .grid { gap: 14px; }
+  .btn { min-height: 52px; font-size: 17px; }
+  .btn.small { min-height: 44px; padding: 8px 14px; font-size: 15px; }
+  .btn.huge { min-height: 72px; font-size: 22px; }
+  .link { font-size: 15px; min-height: 44px; padding: 10px 0; }
+  .sig-head .link, .h-edit, .integration-id .link { min-height: 44px; padding: 10px 4px; }
+  .archive-link { font-size: 15px; min-height: 44px; }
+
+  .status { font-size: 16px; }
+  .meta, .derived, .reminder, .history li, .comp-summary { font-size: 15px; }
+  .summary-main small { font-size: 15px; }
+  .summary-main strong { font-size: 34px; }
+  .totals dt { font-size: 13px; }
+  .totals dd { font-size: 22px; }
+  .timebar strong { font-size: 24px; }
+
+  .chip-row { gap: 8px; }
+  .chip { min-width: 48px; min-height: 48px; font-size: 17px; }
+  .chip.wide { min-height: 48px; font-size: 15px; padding: 8px 14px; }
+  .progress-chip { min-width: 36px; padding: 6px 8px; font-size: 15px; }
+  .review-status, .comp-legend { font-size: 15px; }
+  .comp-legend summary, .rules-group summary, .archive-history summary, .edit-times summary { padding: 11px 0; font-size: 15px; }
+  .integration-id .link { font-size: 14px; }
+  .rules-group .field small, .rules-group .hint-note, .reminder.booking small { font-size: 14px; }
+
+  /* Wider pad for finger or Apple Pencil; signature-pad.tsx re-fits its canvas on resize. */
+  .sig canvas { height: 200px; }
+
+  .archive-panel { padding: 16px; }
+  .save-errors-go { min-height: 44px; }
+  .paper-import input[type="file"] { font-size: 16px; min-height: 44px; }
+  .paper-import input[type="file"]::file-selector-button { min-height: 44px; padding: 0 14px; margin-right: 10px; font: inherit; font-weight: 600; border: 1px solid var(--line); border-radius: 10px; background: #efece6; color: var(--ink); }
+}
+
+@media (min-width: 1000px) {
+  .app { max-width: 1320px; }
+  /* Two columns only when there is a right-hand card to show (:has() needs
+     Safari 15.4+; older browsers simply keep the single wide column). */
+  .app:has(> .lesson, > .lesson-completed, > .learner-form) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
+    /* Rows 2-8 hold the left-column cards; row 9 (1fr) absorbs any extra
+       height of the right card so the left cards never get gaps between them. */
+    grid-template-rows: auto repeat(7, auto) 1fr;
+    column-gap: 20px;
+    align-items: start;
+  }
+  .app:has(> .lesson, > .lesson-completed, > .learner-form) > * { grid-column: 1; }
+  .app:has(> .lesson, > .lesson-completed, > .learner-form) > .topbar,
+  .app:has(> .lesson, > .lesson-completed, > .learner-form) > .foot { grid-column: 1 / -1; }
+  .app:has(> .lesson, > .lesson-completed, > .learner-form) > :is(.lesson, .lesson-completed, .learner-form) { grid-column: 2; grid-row: 2 / 10; }
+  /* Before Start Lesson the lesson card is short: keep it (and Start Lesson) in view
+     while scrolling the learner's progress and History on the left. */
+  .app > .lesson:not(:has(.timebar)), .app > .lesson-completed { position: sticky; top: calc(env(safe-area-inset-top) + 16px); }
+  /* Without a right-hand card (no learner picked, archived learner) keep one comfortable column. */
+  .app:not(:has(> .lesson, > .lesson-completed, > .learner-form)) { max-width: 900px; }
+}

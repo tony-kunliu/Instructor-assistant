@@ -17,6 +17,10 @@ Near term (Instructor Assistant only, low risk):
 3. 3c: transfer a learner to another instructor. Design first, no code before
    Tony reads it (touches lesson ownership, prior-instructor records and the
    ACTGDS link).
+- iPad layout (branch `feature/ipad-layout`, not merged): responsive CSS only
+  (≥700px wider column and 44px+ targets, ≥1000px two columns via grid
+  placement, DOM order unchanged), signature pad re-fits on rotation,
+  qa-browser section 14. Waiting for review/merge; Tony checks on a real iPad.
 
 Medium term (new features; confirm rules with Tony before building):
 4. Competency 23 route suggestions and route check (R10). Recommended next

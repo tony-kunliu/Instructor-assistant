@@ -10,6 +10,8 @@ closed PRs; see `TASK.md` for what is in progress.
 - Nothing in flight. Learner management 3a (checks) and 3b (archive reason +
   history, migration `0010`) and the Canberra-time display convention
   (AGENTS.md §15) are released. Next: design for 3c (transfer a learner).
+- `feature/ipad-layout` (not merged, not pushed): iPad layout, CSS only plus
+  a signature-pad re-fit on resize; qa-browser section 14 covers 768-1366px.
 
 ## Repository
 
