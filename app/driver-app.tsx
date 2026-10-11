@@ -943,7 +943,7 @@ export default function DriverApp() {
       {status ? <p className={`status ${status.kind}`} role="status">{status.text}</p> : null}
 
       {addingLearner ? (
-        <section className="card">
+        <section className="card learner-form">
           <h2>{editingLearner ? "Edit learner" : "New learner"}</h2>
           <div className="grid">
             <label className="field full"><span>Student name *</span><input value={learnerDraft.fullName} onChange={(e) => learnerField("fullName", e.target.value)} autoComplete="off" /></label>

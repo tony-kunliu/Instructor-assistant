@@ -18,6 +18,9 @@ closed PRs; see `TASK.md` for what is in progress.
   Staging D1 (apply BEFORE merging to `staging`). Then R10a route reminders. iPad layout is on
   `feature/ipad-layout` in review (signature-size fix round); needs Tony's real-iPad check.
 - Designs: `docs/superpowers/specs/2026-10-11-*.md` (transfer, route, intake), decided by Tony 2026-10-11.
+- `feature/ipad-layout` detail: CSS-only layout plus a fixed 640×320 signature canvas
+  (pen 5 canvas px); server signature limit 700k chars with its own "too large"
+  error (no silent fallback in History edit); qa-browser section 16.
 
 ## Repository
 

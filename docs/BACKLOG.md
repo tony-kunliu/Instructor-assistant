@@ -20,6 +20,12 @@ Near term (Instructor Assistant only, low risk):
    list, Issue #3 info post) next on Tony's go:
    `docs/superpowers/specs/2026-10-11-learner-transfer-design.md` (migration
    0011, additive; no ACTGDS event).
+- iPad layout (branch `feature/ipad-layout`, not merged): responsive CSS only
+  (≥700px wider column and 44px+ targets, ≥1000px two columns via grid
+  placement, DOM order unchanged; phones in landscape keep the phone layout),
+  signature pads use a fixed 640×320 PNG (2:1, scaled by CSS; server limit
+  700k chars with a distinct 'too large' error),
+  qa-browser section 16. Waiting for review/merge; Tony checks on a real iPad.
 
 Medium term (new features; confirm rules with Tony before building):
 4. Competency 23 route suggestions and route check (R10). **Designed;

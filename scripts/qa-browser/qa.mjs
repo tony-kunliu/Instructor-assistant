@@ -1,4 +1,4 @@
-// Real-browser business regression at iPhone 13 width (390px). See run.sh.
+// Real-browser business regression at iPhone 13 width (390px), plus iPad viewports (section 17). See run.sh.
 import { createRequire } from "node:module";
 import { readFileSync, writeFileSync } from "node:fs";
 
@@ -1535,6 +1535,250 @@ const draw = async (page, index) => {
   check("transfer: a later 'Checked' call by Tony never changes who checked", (await learnersApi()).find((l) => l.id === moving.id).transfers[0].recordsCheckedBy === WHO.anna[0], JSON.stringify(tonyCheck));
   check("transfer: Anna: no page errors", a.errors.length === 0, a.errors.join("|"));
   await a.ctx.close();
+}
+
+// ═══ 17. iPad layout: wider column (≥700px), two columns (≥1000px), touch targets, signature pads ═══
+{
+  const headers = { "content-type": "application/json", "x-instructor-id": WHO.tony[0], "x-instructor-name": WHO.tony[1] };
+  const mk = async (fullName) => { const r = await fetch(B + "/api/learners", { method: "POST", headers, body: JSON.stringify({ fullName, instructorId: WHO.tony[0] }) }); const d = await r.json(); if (!r.ok) throw new Error(JSON.stringify(d)); return d.learner; };
+  const ipad = await mk("QA Tony iPad");
+  for (const [i, taught] of [["1", "2"], ["3", "4"]].entries()) {
+    const r = await fetch(`${B}/api/learners/${ipad.id}/lessons`, { method: "POST", headers, body: JSON.stringify({ lessonDate: "2026-09-21", startTime: "09:00", finishTime: "10:00", startOdometer: String(5000 + i * 15), finishOdometer: String(5015 + i * 15), taughtIds: taught, adiSignature: SIG, learnerSignature: SIG }) });
+    if (!r.ok) throw new Error(`iPad seed lesson: ${r.status}`);
+  }
+  await mk("QA Tony iPad Empty");
+  const box = (page, sel) => page.$eval(sel, (e) => { const r = e.getBoundingClientRect(); return { x: r.left, y: r.top + scrollY, w: r.width, h: r.height, right: r.right }; });
+  const tall = async (page, sel) => { const el = page.locator(sel).first(); await el.scrollIntoViewIfNeeded(); return (await el.isVisible()) && (await el.boundingBox()).height >= 44; };
+  const contentWidth = (page) => page.$eval(".app", (e) => { const s = getComputedStyle(e); return e.clientWidth - parseFloat(s.paddingLeft) - parseFloat(s.paddingRight); });
+  // Fixed 640×320 backing store on every device; CSS only scales it at the same 2:1 shape (never distorted).
+  const canvasFixed = (page) => page.$$eval(".sig canvas", (cs) => cs.length > 0 && cs.every((c) => { const r = c.getBoundingClientRect(); return c.width === 640 && c.height === 320 && Math.abs(parseFloat(getComputedStyle(c).width) / parseFloat(getComputedStyle(c).height) - 2) < 0.002; }));
+  const pngInfo = (dataUrl) => { const b = Buffer.from(dataUrl.slice("data:image/png;base64,".length), "base64"); return { w: b.readUInt32BE(16), h: b.readUInt32BE(20), length: dataUrl.length }; };
+  // "dense": a long signature written three times over (≈450 points); "stress": 400 pseudo-random strokes across the whole pad;
+  // "walk": a 10 000-segment handwriting-like random walk (small steps, slowly turning) — the worst realistic case.
+  async function scribble(page, canvasIndex, mode) {
+    const canvas = (await page.$$(".sig canvas"))[canvasIndex];
+    await canvas.scrollIntoViewIfNeeded();
+    const b = await canvas.boundingBox();
+    const at = (fx, fy) => [b.x + 5 + fx * (b.width - 10), b.y + 5 + fy * (b.height - 10)];
+    await page.mouse.move(...at(0, 0.5));
+    await page.mouse.down();
+    let seed = 12345; const rnd = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648; // deterministic, so the measure is repeatable
+    if (mode === "stress") for (let i = 0; i < 400; i++) await page.mouse.move(...at(rnd(), rnd()));
+    else if (mode === "walk") {
+      let x = 0.05, y = 0.5, angle = 0;
+      for (let i = 0; i < 10_000; i++) {
+        angle += (rnd() - 0.5) * 1.2;
+        x += Math.cos(angle) * 4 / b.width; y += Math.sin(angle) * 4 / b.height;
+        if (x < 0 || x > 1) { angle = Math.PI - angle; x = Math.min(1, Math.max(0, x)); }
+        if (y < 0 || y > 1) { angle = -angle; y = Math.min(1, Math.max(0, y)); }
+        await page.mouse.move(...at(x, y));
+      }
+    }
+    else for (let pass = 0; pass < 3; pass++) for (let i = 0; i <= 150; i++) { const t = i / 150; await page.mouse.move(...at(t, 0.5 + 0.4 * Math.sin(t * 40 + pass) * Math.cos(t * 7))); }
+    await page.mouse.up();
+  }
+  for (const [w, h] of [[768, 1024], [820, 1180], [1024, 768], [1180, 820], [1366, 1024]]) {
+    const tag = `${w}x${h}`;
+    const twoCol = w >= 1000;
+    const ctx = await browser.newContext({ viewport: { width: w, height: h }, deviceScaleFactor: 2, hasTouch: true, extraHTTPHeaders: { "x-instructor-id": WHO.tony[0], "x-instructor-name": WHO.tony[1] } });
+    const page = await ctx.newPage();
+    const errors = [];
+    page.on("pageerror", (e) => errors.push(e.message));
+    page.on("dialog", (d) => d.accept());
+    await page.goto(B);
+    await ready(page);
+    check(`iPad ${tag}: picker, no horizontal scroll`, await noHScroll(page));
+    check(`iPad ${tag}: container wider than the 560px phone column`, (await contentWidth(page)) > 560, String(await contentWidth(page)));
+    check(`iPad ${tag}: view tabs are ≥44px tall`, (await page.$$eval(".view-tab", (ts) => ts.every((t) => t.getBoundingClientRect().height >= 44))));
+
+    await pick(page, "QA Tony iPad");
+    await page.waitForSelector(".summary");
+    await page.waitForSelector(".card.lesson");
+    await settle();
+    check(`iPad ${tag}: learner panel, no horizontal scroll`, await noHScroll(page));
+    check(`iPad ${tag}: Start Lesson ≥44px and visible`, await tall(page, ".btn.go"));
+    check(`iPad ${tag}: Edit learner ≥44px and visible`, await tall(page, "[data-testid=edit-learner]"));
+    const picker = await box(page, ".card.picker"), lesson = await box(page, ".card.lesson"), hist = await box(page, ".card.history"), progress = await box(page, ".card.progress");
+    if (twoCol) {
+      check(`iPad ${tag}: two columns — lesson card right of the picker, both at the top`, lesson.x >= picker.right && Math.abs(lesson.y - picker.y) < 4, JSON.stringify({ picker, lesson }));
+      check(`iPad ${tag}: History stays in the left column under Progress`, Math.abs(hist.x - picker.x) < 2 && hist.y > progress.y);
+    } else {
+      check(`iPad ${tag}: one column — cards share the same left edge, lesson below progress`, Math.abs(lesson.x - picker.x) < 2 && lesson.y > progress.y && hist.y > lesson.y);
+    }
+    check(`iPad ${tag}: DOM order unchanged (picker, summary, progress, lesson, history)`, await page.evaluate(() => {
+      const order = [".card.picker", ".summary", ".card.progress", ".card.lesson", ".card.history"].map((s) => document.querySelector(s));
+      return order.every((el, i) => i === 0 || (order[i - 1].compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING));
+    }));
+    await shot(page, `17-ipad-${tag}-learner`);
+
+    await page.click(".btn.go");
+    await page.click("text=End Lesson");
+    await page.waitForSelector(".sig canvas");
+    await settle();
+    check(`iPad ${tag}: lesson form, no horizontal scroll`, await noHScroll(page));
+    const sizes = await page.$$eval(".sig canvas", (cs) => cs.map((c) => c.getBoundingClientRect()).map((r) => [Math.round(r.width), Math.round(r.height)]));
+    check(`iPad ${tag}: both signature pads ≥300×180 on a tablet`, sizes.length === 2 && sizes.every(([cw, ch]) => cw >= 300 && ch >= 180), JSON.stringify(sizes));
+    check(`iPad ${tag}: signature canvas is the fixed 640×320 backing store, shown undistorted (2:1)`, await canvasFixed(page));
+    check(`iPad ${tag}: competency chips ≥44px`, await page.$$eval(".chip", (cs) => cs.length > 0 && cs.every((c) => c.getBoundingClientRect().height >= 44)));
+    await page.fill("#lesson-field-finish-odometer", "5045");
+    await signBoth(page);
+    check(`iPad ${tag}: drawing on both pads registers`, (await page.$$(".sig-ok")).length === 2);
+    check(`iPad ${tag}: Save Lesson ≥44px and visible`, await tall(page, ".btn.save"));
+    await shot(page, `17-ipad-${tag}-lesson-form`);
+    if (w === 1366) {
+      // A dense scribble on both pads, then Save: the posted PNGs are 640×320 and far below the client guard (380 000) and MAX_SIGNATURE_LENGTH (700 000).
+      await page.click('.comp-section:has(.comp-label:text-is("Taught")) .chip-row >> text="5"');
+      await page.click(".edit-times summary");
+      await page.fill('.edit-times input[type="time"] >> nth=0', "11:00");
+      await page.fill('.edit-times input[type="time"] >> nth=1', "11:50");
+      await scribble(page, 0, "dense");
+      await scribble(page, 1, "dense");
+      let posted = null;
+      page.on("request", (r) => { if (r.method() === "POST" && /\/lessons$/.test(r.url())) posted = JSON.parse(r.postData()); });
+      await page.click(".btn.save");
+      await page.waitForSelector(".status.ok, .save-errors, .status.error");
+      check("iPad 1366: lesson with dense signatures saves", ((await page.textContent(".status").catch(() => "")) || "").includes("saved"), await page.textContent(".save-errors, .status").catch(() => ""));
+      const adi = posted ? pngInfo(posted.adiSignature) : null, learner = posted ? pngInfo(posted.learnerSignature) : null;
+      check("iPad 1366: dense signatures save as 640×320 PNGs well under the 380 000-char client guard", Boolean(adi && learner) && [adi, learner].every((i) => i.w === 640 && i.h === 320 && i.length < 200_000), JSON.stringify({ adi, learner }));
+      console.log(`signature PNG (dense signature): ADI ${JSON.stringify(adi)}, learner ${JSON.stringify(learner)}`);
+      await page.waitForSelector(".btn.go");
+      await page.click(".btn.go");
+      await page.click("text=End Lesson");
+      await page.waitForSelector(".sig canvas");
+      await settle(); // End Lesson focuses the finish odometer after 50ms (may scroll); draw after that
+      await signBoth(page);
+    }
+    if (w === 820) {
+      // Rotate to landscape mid-lesson: the drawing is never resized or resampled (pixel-identical).
+      const pixels = () => page.$$eval(".sig canvas", (cs) => cs.map((c) => c.toDataURL("image/png")));
+      const before = await pixels();
+      await page.setViewportSize({ width: h, height: w });
+      await settle(600);
+      check("iPad 820 → 1180 rotation: signatures kept pixel-identical, canvas still 640×320, no horizontal scroll", (await canvasFixed(page)) && (await page.$$(".sig-ok")).length === 2 && JSON.stringify(await pixels()) === JSON.stringify(before) && (await noHScroll(page)));
+      // One more stroke after the rotation lands on the same fixed canvas (no squashed composite).
+      await signBoth(page);
+      check("iPad after rotation + extra stroke: saved PNGs are still 640×320", (await pixels()).every((d) => { const i = pngInfo(d); return i.w === 640 && i.h === 320; }));
+      await shot(page, "17-ipad-rotated-1180-lesson-form");
+      await page.setViewportSize({ width: w, height: h });
+      await settle(400);
+    }
+    if (w === 820 || w === 1366) {
+      // Worst cases on the widest single-column pad (820) and the two-column one (1366): the pen is 5 canvas px
+      // on a fixed 640×320 canvas, so the PNG size does not depend on how wide the pad is on screen. The slow
+      // 10k-segment walk runs once (1366); the 400-stroke scribble at both widths.
+      const measure = async (mode) => {
+        await page.locator(".sig").first().locator(".sig-head .link").click();
+        await scribble(page, 0, mode);
+        return { ...pngInfo(await page.$eval(".sig canvas", (c) => c.toDataURL("image/png"))), signed: (await page.locator(".sig").first().locator(".sig-ok").count()) === 1 };
+      };
+      const stress = await measure("stress");
+      const walk = w === 1366 ? await measure("walk") : null;
+      console.log(`signature PNG at ${tag}: random stress ${JSON.stringify(stress)}${walk ? `, 10k walk ${JSON.stringify(walk)}` : ""}`);
+      check(`iPad ${tag}: worst-case signature${walk ? "s (random scribble, 10k-segment walk)" : " (random scribble)"} really drew, stay signed and under the 380 000-char client guard (server 700 000)`, [stress, walk].filter(Boolean).every((i) => i.signed && i.w === 640 && i.h === 320 && i.length > 100_000 && i.length < 360_000), JSON.stringify({ stress, walk }));
+    }
+    await page.click("text=Discard this lesson");
+    await page.waitForSelector(".btn.go");
+
+    await page.locator(".history .h-edit").first().click();
+    await page.waitForSelector(".h-editing .sig canvas");
+    await settle();
+    check(`iPad ${tag}: History edit form, no horizontal scroll, pads 640×320 undistorted`, (await noHScroll(page)) && (await canvasFixed(page)));
+    await shot(page, `17-ipad-${tag}-history-edit`);
+    await page.click(".h-editing >> text=Cancel");
+
+    await page.click(".archive-link");
+    await page.waitForSelector("[data-testid=archive-panel]");
+    check(`iPad ${tag}: archive panel, no horizontal scroll, buttons ≥44px`, (await noHScroll(page)) && (await tall(page, "[data-testid=archive-confirm]")) && (await tall(page, "[data-testid=archive-cancel]")));
+    await shot(page, `17-ipad-${tag}-archive-panel`);
+    await page.click("[data-testid=archive-cancel]");
+
+    await page.click("[data-testid=transfer-open]");
+    await page.waitForSelector("[data-testid=transfer-panel]");
+    check(`iPad ${tag}: transfer panel, no horizontal scroll, choice + Cancel/Transfer ≥44px`, (await noHScroll(page)) && (await tall(page, "[data-testid=transfer-choice] >> xpath=ancestor::label")) && (await tall(page, "[data-testid=transfer-cancel]")) && (await tall(page, "[data-testid=transfer-confirm]")));
+    if (w === 820 || w === 1180) await shot(page, `17-ipad-${tag}-transfer-panel`);
+    await page.click("[data-testid=transfer-cancel]");
+
+    await page.click("text=+ New");
+    await page.waitForSelector("[data-testid=save-learner]");
+    await page.click("[data-testid=c23-group] summary");
+    check(`iPad ${tag}: New learner form, no horizontal scroll, Save ≥44px`, (await noHScroll(page)) && (await tall(page, "[data-testid=save-learner]")));
+    if (twoCol) check(`iPad ${tag}: New learner form sits in the right column`, (await box(page, ".learner-form")).x >= (await box(page, ".card.picker")).right);
+    await shot(page, `17-ipad-${tag}-new-learner`);
+    await page.click(".picker-row .btn");
+
+    await pick(page, "QA Tony iPad Empty");
+    await page.waitForSelector("[data-testid=paper-import-open]");
+    await page.click("[data-testid=paper-import-open]");
+    await page.waitForSelector("[data-testid=paper-import-panel]");
+    check(`iPad ${tag}: paper import panel, no horizontal scroll`, await noHScroll(page));
+    if (w === 820 || w === 1180) await shot(page, `17-ipad-${tag}-paper-import`);
+    check(`iPad ${tag}: no page errors`, errors.length === 0, errors.join("|"));
+    await ctx.close();
+  }
+
+  // Receiving instructor (Anna) on a tablet and a phone in landscape: amber 'Checked' reminder and the History transfer divider.
+  {
+    const learner = await mk("QA Tony iPad Transferred");
+    await fetch(`${B}/api/learners/${learner.id}/lessons`, { method: "POST", headers, body: JSON.stringify({ lessonDate: "2026-09-21", startTime: "09:00", finishTime: "10:00", startOdometer: "7000", finishOdometer: "7012", taughtIds: ["1"], adiSignature: SIG, learnerSignature: SIG }) });
+    const moved = await fetch(`${B}/api/learners/${learner.id}/transfer`, { method: "POST", headers, body: JSON.stringify({ toInstructorId: WHO.anna[0] }) });
+    if (!moved.ok) throw new Error(`iPad transfer seed: ${moved.status}`);
+    for (const [w, h] of [[820, 1180], [1180, 820], [844, 390]]) {
+      const tag = `${w}x${h}`;
+      const ctx = await browser.newContext({ viewport: { width: w, height: h }, deviceScaleFactor: 2, hasTouch: true, isMobile: h < 600, extraHTTPHeaders: { "x-instructor-id": WHO.anna[0], "x-instructor-name": WHO.anna[1] } });
+      const page = await ctx.newPage();
+      await page.goto(B);
+      await ready(page);
+      await pick(page, "QA Tony iPad Transferred");
+      await page.waitForSelector("[data-testid=transfer-check]");
+      await page.waitForSelector("[data-testid=history-transfer]");
+      check(`transfer receiver ${tag}: reminder + History divider, no horizontal scroll, 'Checked' ≥44px on tablets`, (await noHScroll(page)) && (h < 600 || (await tall(page, "[data-testid=transfer-checked]"))) && (await page.isVisible("[data-testid=history-transfer]")));
+      await shot(page, `17-transfer-receiver-${tag}`);
+      await ctx.close();
+    }
+  }
+
+  // Phone widths keep the phone layout: one column, 560px cap, no horizontal scroll; pads keep the 2:1 shape.
+  for (const w of [320, 375, 390]) {
+    const s = await session("tony");
+    await ready(s.page);
+    await s.page.setViewportSize({ width: w, height: 812 });
+    await pick(s.page, "QA Tony iPad");
+    await s.page.waitForSelector(".card.lesson");
+    await s.page.click(".btn.go");
+    await s.page.click("text=End Lesson");
+    await s.page.waitForSelector(".sig canvas");
+    await settle();
+    const lesson = await box(s.page, ".card.lesson"), picker = await box(s.page, ".card.picker");
+    const sigH = await s.page.$eval(".sig canvas", (c) => Math.round(c.getBoundingClientRect().height));
+    check(`phone ${w}px: one column, 2:1 pads ≥130px tall, no horizontal scroll (iPad CSS not applied)`, Math.abs(lesson.x - picker.x) < 2 && sigH >= 130 && (await canvasFixed(s.page)) && (await noHScroll(s.page)), `sig ${sigH}`);
+    if (w === 390) await shot(s.page, "17-phone-390-lesson-form");
+    await s.page.click("text=Discard this lesson");
+    await s.ctx.close();
+  }
+
+  // iPhone in landscape (wide but short) keeps the phone layout, not the tablet one.
+  for (const [w, h] of [[844, 390], [932, 430]]) {
+    const s = await session("tony");
+    await ready(s.page);
+    await s.page.setViewportSize({ width: w, height: h });
+    await pick(s.page, "QA Tony iPad");
+    await s.page.waitForSelector(".card.lesson");
+    await settle();
+    const lesson = await box(s.page, ".card.lesson"), picker = await box(s.page, ".card.picker");
+    const appW = await s.page.$eval(".app", (e) => e.getBoundingClientRect().width);
+    const btnH = await s.page.$eval(".btn.go", (e) => e.getBoundingClientRect().height);
+    check(`phone landscape ${w}x${h}: phone layout (560px column, one column, phone-size Start Lesson), no horizontal scroll`, appW <= 560 && Math.abs(lesson.x - picker.x) < 2 && lesson.y > picker.y && btnH < 70 && (await noHScroll(s.page)), JSON.stringify({ appW, btnH }));
+    await s.page.click(".btn.go");
+    await s.page.click("text=End Lesson");
+    await s.page.waitForSelector(".sig canvas");
+    const padH = await s.page.$eval(".sig canvas", (c) => parseFloat(getComputedStyle(c).height)); // drawing area (content box; the 1.5px border is outside the cap)
+    check(`phone landscape ${w}x${h}: lesson form, no horizontal scroll, pads 640×320 undistorted and ≤60% of the screen height`, (await noHScroll(s.page)) && (await canvasFixed(s.page)) && padH <= h * 0.6 + 1, `pad ${Math.round(padH)}px`);
+    await signBoth(s.page);
+    check(`phone landscape ${w}x${h}: drawing on the capped pads registers`, (await s.page.$$(".sig-ok")).length === 2);
+    if (w === 844) await shot(s.page, "17-phone-landscape-844x390-lesson-form");
+    await s.page.click("text=Discard this lesson");
+    await s.ctx.close();
+  }
 }
 
 } catch (error) {
