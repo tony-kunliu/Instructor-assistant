@@ -70,8 +70,9 @@ export default function CompetencyProgressCard({ progress, completion, invalidat
           ))}
         </ul>
       </details>
-      {completion ? (
-        <p className="status ok">
+      {/* Only while the derived progress is completed: a raw Final Drive event alone never shows the banner. */}
+      {progress.completed && completion ? (
+        <p className="status ok" data-testid="cbta-completed-banner">
           CBT&amp;A Completed — Lesson #{completion.completingLessonNo} · {completion.instructorName} · {completion.totalLessons} lessons ·{" "}
           {completion.cumulativeHours} h · {completion.cumulativeKm} km
         </p>

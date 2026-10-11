@@ -14,7 +14,7 @@ import {
   parseTime,
   type Totals,
 } from "@/lib/calc.ts";
-import { FINAL_DRIVE_23, REVIEW_1_17, REVIEW_1_22, type AssessmentResult, type LearnerProgress, type MilestoneInvalidation } from "@/lib/competency.ts";
+import { FINAL_DRIVE_23, REVIEW_1_17, REVIEW_1_22, invalidationNotice, type AssessmentResult, type LearnerProgress, type MilestoneInvalidation } from "@/lib/competency.ts";
 import { accessLogoutUrl } from "@/lib/access-logout.ts";
 import { ARCHIVE_REASONS, archiveReasonText, MAX_ARCHIVE_NOTE_LENGTH } from "@/lib/archive-reasons.ts";
 import { filterLearners } from "@/lib/learner-filter.ts";
@@ -522,7 +522,8 @@ export default function DriverApp() {
       await loadLearner(detail.learner.id);
       setInvalidation(result.invalidated);
       cancelEditLesson();
-      setStatus({ kind: "ok", text: "Lesson updated." });
+      const notice = invalidationNotice(result.invalidated);
+      setStatus({ kind: "ok", text: notice ? `Lesson updated. ${notice}` : "Lesson updated." });
     } catch (error) {
       setEditIssues({ source: "server", issues: [issueFromServerMessage((error as Error).message)], snapshot: editDraft });
       setEditAttempt((n) => n + 1);

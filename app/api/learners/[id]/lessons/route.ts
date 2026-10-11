@@ -11,7 +11,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const db = getD1();
     const lesson = await createLesson(db, id, await readJsonWithActor(request), integrationHooksFromRequestContext());
     const { adiSignature: _adi, learnerSignature: _learner, ...summary } = lesson;
-    const [totals, progress, completion] = await Promise.all([getTotals(db, id), getLearnerProgress(db, id), getCompletionSummary(db, id)]);
+    const [totals, progress] = await Promise.all([getTotals(db, id), getLearnerProgress(db, id)]);
+    const completion = await getCompletionSummary(db, id, progress);
     return { lesson: summary, totals, progress, completion };
   }, 201);
 }

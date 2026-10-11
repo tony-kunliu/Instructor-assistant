@@ -47,6 +47,11 @@ Long term (ecosystem, coordinated with Work on actgds.com Issue #3):
 
 ## Minor follow-ups (bundle into the next feature)
 
+- Progress-invalidation fix (`fix/progress-invalidation`): a History Edit is
+  rejected (not derived) in one residual legacy case, when the milestone's
+  lesson was re-recorded by an edit made before this fix after the later
+  prerequisite. Reply to Work on Issue #3 once merged.
+
 - Archiving an already-archived learner with a reason (two devices) returns 200 and drops the reason silently; consider a message.
 
 - No message when a learner is archived while the edit form is open.

@@ -28,6 +28,12 @@ export type CompetencyEvent = {
   result: AssessmentResult | null;
   lessonId: string;
   createdAt: string;
+  /**
+   * The lesson's number (creation order, never editable; prior-instructor records are negative).
+   * Optional: without it a Review / Final Drive assessment is judged by the whole history only
+   * (the pre-chronology rule) — every DB-backed caller supplies it.
+   */
+  lessonNo?: number;
 };
 
 export type CompetencyStatus = {
@@ -55,6 +61,8 @@ export type LearnerProgress = {
   review1_22: { status: ReviewState; remaining: number; review1_17Achieved: boolean };
   finalDrive23: { status: ReviewState; remaining: number; review1_17Achieved: boolean; review1_22Achieved: boolean };
   completed: boolean;
+  /** The lesson holding the 23 Final Drive assessment that makes `completed` true; null when not completed. */
+  completedLessonId: string | null;
 };
 
 function emptyStatus(id: string): CompetencyStatus {
@@ -98,19 +106,21 @@ export function computeProgress(events: readonly CompetencyEvent[]): LearnerProg
   // currently allows (locked/ready), not stay stuck as "achieved" on stale
   // data. This is what lets an edit automatically roll back an invalidated
   // Review 1-17 / Review 1-22 / 23 Final Drive / CBT&A Completed milestone.
-  const review1_17EverAchieved = byId[REVIEW_1_17].achieved;
+  //
+  // It must ALSO have held when that assessment was made: a prerequisite
+  // achieved only afterwards never retroactively validates it (see
+  // validMilestoneAssessment). Each milestone's validity feeds the next gate.
   const review1_17GateOpen = first17Remaining === 0;
-  const review1_17Valid = review1_17EverAchieved && review1_17GateOpen;
+  const review1_17Valid = review1_17GateOpen && validMilestoneAssessment(events, REVIEW_1_17) !== null;
   const review1_17Status: ReviewState = review1_17Valid ? "achieved" : review1_17GateOpen ? "ready" : "locked";
 
-  const review1_22EverAchieved = byId[REVIEW_1_22].achieved;
   const review1_22GateOpen = allRemaining === 0 && review1_17Valid;
-  const review1_22Valid = review1_22EverAchieved && review1_22GateOpen;
+  const review1_22Valid = review1_22GateOpen && validMilestoneAssessment(events, REVIEW_1_22) !== null;
   const review1_22Status: ReviewState = review1_22Valid ? "achieved" : review1_22GateOpen ? "ready" : "locked";
 
-  const finalDrive23EverAchieved = byId[FINAL_DRIVE_23].achieved;
   const finalDrive23GateOpen = allRemaining === 0 && review1_17Valid && review1_22Valid;
-  const finalDrive23Valid = finalDrive23EverAchieved && finalDrive23GateOpen;
+  const completingFinalDrive = finalDrive23GateOpen ? validMilestoneAssessment(events, FINAL_DRIVE_23) : null;
+  const finalDrive23Valid = completingFinalDrive !== null;
   const finalDrive23Status: ReviewState = finalDrive23Valid ? "achieved" : finalDrive23GateOpen ? "ready" : "locked";
 
   return {
@@ -120,7 +130,33 @@ export function computeProgress(events: readonly CompetencyEvent[]): LearnerProg
     review1_22: { status: review1_22Status, remaining: allRemaining, review1_17Achieved: review1_17Valid },
     finalDrive23: { status: finalDrive23Status, remaining: allRemaining, review1_17Achieved: review1_17Valid, review1_22Achieved: review1_22Valid },
     completed: finalDrive23Valid,
+    completedLessonId: completingFinalDrive?.lessonId ?? null,
   };
+}
+
+/**
+ * Whether one Review / Final Drive Assessed+Achieved event counts: its gate must have been open
+ * using only what was achieved BEFORE it — in an earlier lesson (lesson number order), or recorded
+ * earlier (legacy tolerance: an assessment that an old, pre-chronology History Edit placed into an
+ * earlier lesson after its prerequisites already existed keeps counting, exactly as before). A
+ * prerequisite that exists only in the same or a later lesson AND was recorded later never makes it
+ * valid. A prior-instructor record (negative lesson number) is one stamped summary, so its own
+ * entries count for each other. Events without a lessonNo keep the whole-history rule.
+ */
+export function milestoneAssessmentCounts(events: readonly CompetencyEvent[], event: CompetencyEvent): boolean {
+  const lessonNo = event.lessonNo;
+  if (lessonNo === undefined) return true;
+  const before = events.filter(
+    (other) =>
+      other !== event &&
+      ((other.lessonNo !== undefined && other.lessonNo < lessonNo) || other.createdAt < event.createdAt || (lessonNo < 0 && other.lessonId === event.lessonId)),
+  );
+  return assessmentLockReason(event.competencyId, computeProgress(before)) === null;
+}
+
+/** The first (history order) Assessed+Achieved event of a milestone that counts, or null. */
+function validMilestoneAssessment(events: readonly CompetencyEvent[], id: string): CompetencyEvent | null {
+  return events.find((event) => event.competencyId === id && event.action === "assessed" && event.result === "achieved" && milestoneAssessmentCounts(events, event)) ?? null;
 }
 
 /** Only ids present in `allowed`, deduplicated, in the order first seen. */
@@ -202,6 +238,25 @@ export function diffInvalidatedMilestones(before: LearnerProgress, after: Learne
 
 export function hasInvalidatedMilestone(invalidation: MilestoneInvalidation): boolean {
   return invalidation.review1_17 || invalidation.review1_22 || invalidation.finalDrive23 || invalidation.completed;
+}
+
+/** Labels of the milestones an edit invalidated, in chain order (display-only). */
+export function invalidatedMilestoneLabels(invalidation: MilestoneInvalidation): string[] {
+  return [
+    invalidation.review1_17 ? "Review 1-17" : null,
+    invalidation.review1_22 ? "Review 1-22" : null,
+    invalidation.finalDrive23 ? "23 Final Drive" : null,
+    invalidation.completed ? "CBT&A Completed" : null,
+  ].filter((label): label is string => label !== null);
+}
+
+/** One sentence for the save status after a History Edit, e.g. "Review 1-17 is no longer valid because …"; null when nothing was invalidated. */
+export function invalidationNotice(invalidation: MilestoneInvalidation): string | null {
+  const labels = invalidatedMilestoneLabels(invalidation);
+  if (!labels.length) return null;
+  const one = labels.length === 1;
+  const subject = one ? `${labels[0]} is` : `${labels.slice(0, -1).join(", ")} and ${labels[labels.length - 1]} are`;
+  return `${subject} no longer valid because this edit changed an assessment ${one ? "it depends on" : "they depend on"} (prerequisites must be achieved in earlier lessons; the original assessments stay in History).`;
 }
 
 /**

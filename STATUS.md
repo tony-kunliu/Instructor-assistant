@@ -7,9 +7,12 @@ closed PRs; see `TASK.md` for what is in progress.
 
 ## In progress
 
-- Nothing in flight. Learner management 3a (checks) and 3b (archive reason +
-  history, migration `0010`) and the Canberra-time display convention
-  (AGENTS.md §15) are released. Next: design for 3c (transfer a learner).
+- `fix/progress-invalidation` (local branch, not pushed/merged): the two
+  CBT&A progress bugs Work reported on actgds.com Issue #3 (comment
+  6104913100). A Review / Final Drive whose prerequisite is only re-achieved
+  in a later lesson is derived as not achieved after History Edit (reported,
+  events kept); the Completed banner/summary follows derived completion. No
+  migration, no contract change. Then: design for 3c (transfer a learner).
 
 ## Repository
 

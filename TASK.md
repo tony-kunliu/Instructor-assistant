@@ -5,9 +5,10 @@ _Last updated: 2026-10-11_
 This file describes **current task only**. Completed work's detail
 lives in git log and closed PRs, not here.
 
-**Current Task:** None in flight. Learner 3a/3b and the Canberra-time convention are
-live in Production (migration `0010`, run 38106838536); Staging and Production D1
-are both at `0010`.
+**Current Task:** Partial — `fix/progress-invalidation` (local commit, not
+pushed): History Edit milestone invalidation + Completed banner consistency
+(actgds.com Issue #3, comment 6104913100) and the Competency 23 route note in
+`docs/ACT_ASSESSMENT_STANDARDS.md` (R10). Needs review, push and staging merge.
 
 **Next Recommended Task:** a design for 3c (transfer a learner to another
 instructor) before any code; then Competency 23 route suggestions. See
