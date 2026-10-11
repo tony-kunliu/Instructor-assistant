@@ -21,7 +21,8 @@ Near term (Instructor Assistant only, low risk):
 - iPad layout (branch `feature/ipad-layout`, not merged): responsive CSS only
   (≥700px wider column and 44px+ targets, ≥1000px two columns via grid
   placement, DOM order unchanged; phones in landscape keep the phone layout),
-  signature pads use a fixed 640×320 PNG (2:1, scaled by CSS),
+  signature pads use a fixed 640×320 PNG (2:1, scaled by CSS; server limit
+  700k chars with a distinct 'too large' error),
   qa-browser section 15. Waiting for review/merge; Tony checks on a real iPad.
 
 Medium term (new features; confirm rules with Tony before building):

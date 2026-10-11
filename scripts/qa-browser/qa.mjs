@@ -1368,9 +1368,10 @@ const draw = async (page, index) => {
   const tall = async (page, sel) => { const el = page.locator(sel).first(); await el.scrollIntoViewIfNeeded(); return (await el.isVisible()) && (await el.boundingBox()).height >= 44; };
   const contentWidth = (page) => page.$eval(".app", (e) => { const s = getComputedStyle(e); return e.clientWidth - parseFloat(s.paddingLeft) - parseFloat(s.paddingRight); });
   // Fixed 640×320 backing store on every device; CSS only scales it at the same 2:1 shape (never distorted).
-  const canvasFixed = (page) => page.$$eval(".sig canvas", (cs) => cs.length > 0 && cs.every((c) => { const r = c.getBoundingClientRect(); return c.width === 640 && c.height === 320 && Math.abs(r.width / r.height - 2) < 0.03; }));
+  const canvasFixed = (page) => page.$$eval(".sig canvas", (cs) => cs.length > 0 && cs.every((c) => { const r = c.getBoundingClientRect(); return c.width === 640 && c.height === 320 && Math.abs(c.clientWidth / c.clientHeight - 2) < 0.02; }));
   const pngInfo = (dataUrl) => { const b = Buffer.from(dataUrl.slice("data:image/png;base64,".length), "base64"); return { w: b.readUInt32BE(16), h: b.readUInt32BE(20), length: dataUrl.length }; };
-  // "dense": a long signature written three times over (≈450 points); "stress": 400 pseudo-random strokes across the whole pad.
+  // "dense": a long signature written three times over (≈450 points); "stress": 400 pseudo-random strokes across the whole pad;
+  // "walk": a 10 000-segment handwriting-like random walk (small steps, slowly turning) — the worst realistic case.
   async function scribble(page, canvasIndex, mode) {
     const canvas = (await page.$$(".sig canvas"))[canvasIndex];
     await canvas.scrollIntoViewIfNeeded();
@@ -1380,6 +1381,16 @@ const draw = async (page, index) => {
     await page.mouse.down();
     let seed = 12345; const rnd = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648; // deterministic, so the measure is repeatable
     if (mode === "stress") for (let i = 0; i < 400; i++) await page.mouse.move(...at(rnd(), rnd()));
+    else if (mode === "walk") {
+      let x = 0.05, y = 0.5, angle = 0;
+      for (let i = 0; i < 10_000; i++) {
+        angle += (rnd() - 0.5) * 1.2;
+        x += Math.cos(angle) * 4 / b.width; y += Math.sin(angle) * 4 / b.height;
+        if (x < 0 || x > 1) { angle = Math.PI - angle; x = Math.min(1, Math.max(0, x)); }
+        if (y < 0 || y > 1) { angle = -angle; y = Math.min(1, Math.max(0, y)); }
+        await page.mouse.move(...at(x, y));
+      }
+    }
     else for (let pass = 0; pass < 3; pass++) for (let i = 0; i <= 150; i++) { const t = i / 150; await page.mouse.move(...at(t, 0.5 + 0.4 * Math.sin(t * 40 + pass) * Math.cos(t * 7))); }
     await page.mouse.up();
   }
@@ -1452,16 +1463,7 @@ const draw = async (page, index) => {
       await page.click("text=End Lesson");
       await page.waitForSelector(".sig canvas");
       await settle(); // End Lesson focuses the finish odometer after 50ms (may scroll); draw after that
-      // Stress: the whole pad scribbled over at random (worst case), still under the limit at 640×320.
-      await scribble(page, 0, "stress");
-      const stress = pngInfo(await page.$eval(".sig canvas", (c) => c.toDataURL("image/png")));
-      check("iPad 1366: even a pad scribbled over at random (PNG > 200 000 chars, so it really drew) stays under the 400 000-char limit", stress.length > 200_000 && stress.length < 400_000, JSON.stringify(stress));
-      console.log(`signature PNG (random stress scribble): ${JSON.stringify(stress)}`);
-      await page.click("text=Discard this lesson");
-      await page.waitForSelector(".btn.go");
-      await page.click(".btn.go");
-      await page.click("text=End Lesson");
-      await page.waitForSelector(".sig canvas");
+      await signBoth(page);
     }
     if (w === 820) {
       // Rotate to landscape mid-lesson: the drawing is never resized or resampled (pixel-identical).
@@ -1476,6 +1478,19 @@ const draw = async (page, index) => {
       await shot(page, "15-ipad-rotated-1180-lesson-form");
       await page.setViewportSize({ width: w, height: h });
       await settle(400);
+    }
+    if (w === 820 || w === 1366) {
+      // Worst cases on the widest single-column pad (820) and the two-column one (1366): the pen is 5 canvas px
+      // on a fixed 640×320 canvas, so the PNG size does not depend on how wide the pad is on screen.
+      const measure = async (mode) => {
+        await page.locator(".sig").first().locator(".sig-head .link").click();
+        await scribble(page, 0, mode);
+        return { ...pngInfo(await page.$eval(".sig canvas", (c) => c.toDataURL("image/png"))), signed: (await page.locator(".sig").first().locator(".sig-ok").count()) === 1 };
+      };
+      const stress = await measure("stress");
+      const walk = await measure("walk");
+      console.log(`signature PNG at ${tag}: random stress ${JSON.stringify(stress)}, 10k walk ${JSON.stringify(walk)}`);
+      check(`iPad ${tag}: worst-case signatures (random scribble, 10k-segment walk) really drew, stay signed and well under 400 000 chars`, [stress, walk].every((i) => i.signed && i.w === 640 && i.h === 320 && i.length > 100_000 && i.length < 360_000), JSON.stringify({ stress, walk }));
     }
     await page.click("text=Discard this lesson");
     await page.waitForSelector(".btn.go");
@@ -1545,7 +1560,10 @@ const draw = async (page, index) => {
     await s.page.click(".btn.go");
     await s.page.click("text=End Lesson");
     await s.page.waitForSelector(".sig canvas");
-    check(`phone landscape ${w}x${h}: lesson form, no horizontal scroll, pads 640×320 undistorted`, (await noHScroll(s.page)) && (await canvasFixed(s.page)));
+    const padH = await s.page.$eval(".sig canvas", (c) => c.getBoundingClientRect().height);
+    check(`phone landscape ${w}x${h}: lesson form, no horizontal scroll, pads 640×320 undistorted and ≤60% of the screen height`, (await noHScroll(s.page)) && (await canvasFixed(s.page)) && padH <= h * 0.6 + 1, `pad ${Math.round(padH)}px`);
+    await signBoth(s.page);
+    check(`phone landscape ${w}x${h}: drawing on the capped pads registers`, (await s.page.$$(".sig-ok")).length === 2);
     if (w === 844) await shot(s.page, "15-phone-landscape-844x390-lesson-form");
     await s.page.click("text=Discard this lesson");
     await s.ctx.close();

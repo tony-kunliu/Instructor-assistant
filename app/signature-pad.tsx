@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 
 type Props = {
@@ -14,6 +14,13 @@ type Props = {
  * under the server's MAX_SIGNATURE_LENGTH (lib/repo.ts) even when scribbled over. */
 export const SIGNATURE_WIDTH = 640;
 export const SIGNATURE_HEIGHT = 320;
+/** Pen width in CANVAS pixels, so every saved PNG has the same stroke weight
+ * whatever the on-screen size (a thinner pen on a wide iPad pad would make
+ * bigger PNGs). */
+const PEN_WIDTH = 5;
+/** Client-side guard below the server's MAX_SIGNATURE_LENGTH (lib/repo.ts):
+ * a signature this detailed is not accepted as signed. */
+const MAX_CLIENT_SIGNATURE_LENGTH = 380_000;
 
 /** Touch-friendly signature pad. Emits a PNG data URL ("" when cleared). */
 export default function SignaturePad({ label, value, onChange }: Props) {
@@ -21,6 +28,7 @@ export default function SignaturePad({ label, value, onChange }: Props) {
   const drawing = useRef(false);
   const dirty = useRef(false);
   const last = useRef<{ x: number; y: number } | null>(null);
+  const [tooDetailed, setTooDetailed] = useState(false);
 
   // The backing store has a FIXED size (SIGNATURE_WIDTH x SIGNATURE_HEIGHT),
   // independent of layout; CSS only scales the display at the same aspect
@@ -55,10 +63,11 @@ export default function SignaturePad({ label, value, onChange }: Props) {
 
   const point = (event: ReactPointerEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current!;
+    // Map from the content box (inside the dashed border) to canvas pixels.
     const rect = canvas.getBoundingClientRect();
     return {
-      x: (event.clientX - rect.left) * (canvas.width / rect.width),
-      y: (event.clientY - rect.top) * (canvas.height / rect.height),
+      x: (event.clientX - rect.left - canvas.clientLeft) * (canvas.width / canvas.clientWidth),
+      y: (event.clientY - rect.top - canvas.clientTop) * (canvas.height / canvas.clientHeight),
     };
   };
 
@@ -67,6 +76,7 @@ export default function SignaturePad({ label, value, onChange }: Props) {
     canvasRef.current?.setPointerCapture(event.pointerId);
     drawing.current = true;
     last.current = point(event);
+    setTooDetailed(false);
   };
 
   const move = (event: ReactPointerEvent<HTMLCanvasElement>) => {
@@ -76,7 +86,7 @@ export default function SignaturePad({ label, value, onChange }: Props) {
     if (!canvas || !ctx) return;
     const next = point(event);
     ctx.strokeStyle = "#111";
-    ctx.lineWidth = 2.5 * (canvas.width / canvas.getBoundingClientRect().width);
+    ctx.lineWidth = PEN_WIDTH;
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
     ctx.beginPath();
@@ -91,13 +101,24 @@ export default function SignaturePad({ label, value, onChange }: Props) {
     if (!drawing.current) return;
     drawing.current = false;
     last.current = null;
-    if (dirty.current && canvasRef.current) onChange(canvasRef.current.toDataURL("image/png"));
+    const canvas = canvasRef.current;
+    if (!dirty.current || !canvas) return;
+    const dataUrl = canvas.toDataURL("image/png");
+    if (dataUrl.length > MAX_CLIENT_SIGNATURE_LENGTH) {
+      canvas.getContext("2d")?.clearRect(0, 0, canvas.width, canvas.height);
+      dirty.current = false;
+      setTooDetailed(true);
+      onChange("");
+      return;
+    }
+    onChange(dataUrl);
   };
 
   const clear = () => {
     const canvas = canvasRef.current;
     canvas?.getContext("2d")?.clearRect(0, 0, canvas.width, canvas.height);
     dirty.current = false;
+    setTooDetailed(false);
     onChange("");
   };
 
@@ -105,7 +126,7 @@ export default function SignaturePad({ label, value, onChange }: Props) {
     <div className="sig">
       <div className="sig-head">
         <strong>{label}</strong>
-        <span className={value ? "sig-ok" : "sig-todo"}>{value ? "Signed ✓" : "Sign below"}</span>
+        <span className={value ? "sig-ok" : tooDetailed ? "sig-todo sig-too-detailed" : "sig-todo"}>{value ? "Signed ✓" : tooDetailed ? "Signature too detailed — clear and sign again" : "Sign below"}</span>
         <button type="button" className="link" onClick={clear}>Clear</button>
       </div>
       <canvas

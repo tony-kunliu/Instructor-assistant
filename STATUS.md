@@ -19,7 +19,9 @@ closed PRs; see `TASK.md` for what is in progress.
   learner intake are written and decided by Tony 2026-10-11 (route: familiar =
   home district); waiting for the go to build.
 - `feature/ipad-layout` (not merged, not pushed): iPad layout, CSS only plus
-  a fixed 640×320 signature canvas; qa-browser section 15 covers 768-1366px.
+  a fixed 640×320 signature canvas (pen 5 canvas px); server signature limit
+  700k chars with its own "too large" error (never a silent fallback in
+  History edit); qa-browser section 15 covers 768-1366px.
 
 ## Repository
 

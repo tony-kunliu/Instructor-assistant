@@ -36,7 +36,13 @@ export class NotFoundError extends Error {}
 
 type Row = Record<string, unknown>;
 
-const MAX_SIGNATURE_LENGTH = 400_000;
+// Upper bound for one signature data URL (characters). Both signatures live
+// in the same `lessons` row and a D1 row/string may be at most 2 MB, so
+// 2 × 700 000 = 1.4 MB leaves room for the rest of the row. lesson_revisions
+// never stores the images (only whether each was present). The pad
+// (app/signature-pad.tsx) saves a fixed 640×320 PNG, typically 10-130k chars;
+// even a pad scribbled over completely stays well below this.
+export const MAX_SIGNATURE_LENGTH = 700_000;
 
 function text(value: unknown, max: number): string | null {
   const trimmed = String(value ?? "").trim();
@@ -52,9 +58,17 @@ function isoDate(value: unknown): string | null {
   return check.getUTCFullYear() === Number(match[1]) && check.getUTCMonth() === Number(match[2]) - 1 && check.getUTCDate() === Number(match[3]) ? trimmed : null;
 }
 
-function signature(value: unknown): string | null {
-  const data = String(value ?? "");
-  if (!data.startsWith("data:image/png;base64,") || data.length > MAX_SIGNATURE_LENGTH) return null;
+/**
+ * A signature the client submitted: null when none was sent (absent/empty);
+ * the PNG data URL when usable. A signature that WAS sent but cannot be
+ * stored (not a PNG data URL, or too large) is rejected with its own message,
+ * never treated as "missing" and never silently replaced by an older one.
+ */
+function submittedSignature(value: unknown, who: "ADI" | "Learner"): string | null {
+  const data = value === null || value === undefined ? "" : String(value);
+  if (!data) return null;
+  if (data.length > MAX_SIGNATURE_LENGTH) throw new ValidationError(`${who} signature image is too large — clear it and sign again.`);
+  if (!data.startsWith("data:image/png;base64,")) throw new ValidationError(`${who} signature is not a valid image — clear it and sign again.`);
   return data;
 }
 
@@ -696,8 +710,8 @@ export async function createLesson(db: D1Database, learnerId: string, input: Les
   const distance = distanceKm(startOdometer, finishOdometer);
   if (distance === null) throw new ValidationError("Finish odometer must not be less than start odometer.");
 
-  const adiSignature = signature(input.adiSignature);
-  const learnerSignature = signature(input.learnerSignature);
+  const adiSignature = submittedSignature(input.adiSignature, "ADI");
+  const learnerSignature = submittedSignature(input.learnerSignature, "Learner");
   if (!adiSignature) throw new ValidationError("ADI signature is required.");
   if (!learnerSignature) throw new ValidationError("Learner signature is required.");
 
@@ -1175,8 +1189,8 @@ export async function updateLesson(db: D1Database, learnerId: string, lessonId: 
     adiSignature = existing.adiSignature;
     learnerSignature = existing.learnerSignature;
   } else if (contentChanged) {
-    const newAdi = signature(input.adiSignature);
-    const newLearner = signature(input.learnerSignature);
+    const newAdi = submittedSignature(input.adiSignature, "ADI");
+    const newLearner = submittedSignature(input.learnerSignature, "Learner");
     if (!newAdi || !newLearner) {
       throw new ValidationError(`Content changed (${SIGNATURE_PROTECTED_FIELDS.join(", ")}) — both signatures must be redrawn before saving.`);
     }
@@ -1186,8 +1200,9 @@ export async function updateLesson(db: D1Database, learnerId: string, lessonId: 
     adiSignature = newAdi;
     learnerSignature = newLearner;
   } else {
-    adiSignature = signature(input.adiSignature) ?? existing.adiSignature ?? "";
-    learnerSignature = signature(input.learnerSignature) ?? existing.learnerSignature ?? "";
+    // Not sent → keep the stored one; sent but unusable → rejected above (never a silent fallback).
+    adiSignature = submittedSignature(input.adiSignature, "ADI") ?? existing.adiSignature ?? "";
+    learnerSignature = submittedSignature(input.learnerSignature, "Learner") ?? existing.learnerSignature ?? "";
     if (!adiSignature) throw new ValidationError("ADI signature is required.");
     if (!learnerSignature) throw new ValidationError("Learner signature is required.");
   }
