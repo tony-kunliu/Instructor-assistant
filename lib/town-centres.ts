@@ -18,8 +18,6 @@ export type TownCentre = {
   official: string;
   /** Boundary streets as printed on p 37 (Manuka and Kingston: both rows). */
   streetsAsPrinted: readonly string[];
-  /** Local names Tony's instructors may type (Q2). Matched whole-word, case-insensitive. */
-  aliases: readonly string[];
 };
 
 export const TOWN_CENTRES: readonly TownCentre[] = [
@@ -28,49 +26,42 @@ export const TOWN_CENTRES: readonly TownCentre[] = [
     name: "Civic",
     official: "Canberra City (Civic)",
     streetsAsPrinted: ["Barry Dr", "Marcus Clarke St", "Edinburgh Ave", "London Cct", "Constitution Ave", "Coranderrk St / Cooyong St"],
-    aliases: ["Canberra City", "City", "the City"],
   },
   {
     id: "gungahlin",
     name: "Gungahlin",
     official: "Gungahlin",
     streetsAsPrinted: ["Gunghalin Dr", "The Valley Ave", "Kate Crace St / Tesselaar St", "Swain St", "Pallin St", "Gundaroo Dr"],
-    aliases: [],
   },
   {
     id: "belconnen",
     name: "Belconnen",
     official: "Belconnen",
     streetsAsPrinted: ["Coulter Dr", "Nettlefold St (including Courts off Nettlefold)", "College St", "Eastern Valley Way", "Emu Bank", "Bissell St", "Joynton Smith Dr", "Emu Bank", "Luxton St"],
-    aliases: ["Belco"],
   },
   {
     id: "woden",
     name: "Woden",
     official: "Woden",
     streetsAsPrinted: ["Melrose Dr", "Launceston St", "Callam St", "Hindmarsh Dr"],
-    aliases: [],
   },
   {
     id: "tuggeranong",
     name: "Tuggeranong",
     official: "Tuggeranong",
     streetsAsPrinted: ["Athllon Dr", "Anketell St", "Colishaw St", "North Reed St / South Reed St", "Anketell St"],
-    aliases: ["Tuggers"],
   },
   {
     id: "fyshwick",
     name: "Fyshwick",
     official: "Fyshwick",
     streetsAsPrinted: ["Canberra Ave", "Newcastle St", "Collie St / Tennant St", "Gladstone St", "Newcastle St", "Ipswich St"],
-    aliases: [],
   },
   {
     id: "manuka-kingston",
     name: "Manuka/Kingston",
     official: "Manuka and Kingston – together",
     streetsAsPrinted: ["Canberra Ave", "Captain Cook Cres", "Murray St", "Furneaux St", "Eyre St", "Jardine St", "Giles St", "Kennedy St"],
-    aliases: ["Manuka", "Kingston", "Manuka and Kingston"],
   },
 ];
 

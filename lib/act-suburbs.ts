@@ -24,8 +24,17 @@
 //     (the suburb) and Sulman are gazetted but not settled: all left out.
 //   - Jerrabomberra (ACT district: Beard, Hume, Oaks Estate, Symonston), Majura
 //     (Pialligo) and Hall have no accepted centre, like Weston Creek and the
-//     Molonglo Valley. The NSW suburb of the same name, Jerrabomberra, is in the
-//     NSW list and wins when it is nearer the end of the address.
+//     Molonglo Valley. BY DESIGN a learner from Hume, Symonston or Oaks Estate
+//     gets "no accepted centre: all 7 unfamiliar", so Fyshwick next door counts
+//     as unfamiliar (the rule is the home DISTRICT, no neighbour; Tony
+//     2026-10-11). The NSW suburb of the same name, Jerrabomberra, is in the
+//     NSW list and is treated as outside the ACT.
+//
+// Matching (D3, hardened after review): the suburb must be at the END of the
+// address, followed only by state / country / postcode tokens ("ACT", "A.C.T.",
+// "Australia", "NSW", a 4-digit postcode). A suburb word followed by anything
+// else, e.g. a street type ("Taylor St", "Captain Cook Cres", "Page Pl",
+// "Gungahlin Dr, Florey"), is a street name, never a home. No match = grey line.
 // Weston Creek and the Molonglo Valley have NO accepted centre and no neighbouring
 // centre counts as home (Tony 2026-10-11): all 7 centres are suggested.
 
@@ -119,6 +128,10 @@ function tokens(text: string): string[] {
 
 type Candidate = { words: string[]; result: SuburbMatch };
 
+/** Tokens allowed AFTER the suburb: state / country words ("A.C.T." tokenises to a, c, t) and a 4-digit postcode. */
+const TAIL_WORDS = new Set(["act", "a", "c", "t", "australian", "capital", "territory", "nsw", "new", "south", "wales", "australia", "au"]);
+const isTailToken = (token: string) => TAIL_WORDS.has(token) || /^\d{4}$/.test(token);
+
 let candidatesCache: Candidate[] | null = null;
 function candidates(): Candidate[] {
   if (candidatesCache) return candidatesCache;
@@ -135,10 +148,10 @@ function candidates(): Candidate[] {
 }
 
 /**
- * The suburb named in a free-text address, whole-word and case-insensitive. When several names occur
- * (a street can be named after a suburb: "3 Gungahlin Dr, Florey"), the one whose match ends NEAREST
- * THE END of the address wins (D3: the suburb follows the street in Australian addresses); a longer
- * name wins a tie on the same end position ("Red Hill" over "Hill"). Pure; never guesses.
+ * The suburb named in a free-text address, whole-word and case-insensitive, accepted only at the END of the
+ * address (optionally followed by state / country / postcode tokens). A suburb word followed by anything else is a
+ * street name ("3 Gungahlin Dr, Florey" → Florey; "12 Taylor St" → no match). When two candidates both qualify
+ * the one ending nearer the end wins, a longer name winning a tie ("Red Hill" over "Hill"). Pure; never guesses.
  */
 export function matchSuburb(address: string | null | undefined): SuburbMatch {
   const words = tokens(address ?? "");
@@ -151,6 +164,7 @@ export function matchSuburb(address: string | null | undefined): SuburbMatch {
       for (let i = 0; i < n; i++) if (words[start + i] !== candidate.words[i]) { hit = false; break; }
       if (!hit) continue;
       const end = start + n;
+      if (!words.slice(end).every(isTailToken)) break; // followed by a street type or other text: a street name, not the suburb
       if (!best || end > best.end || (end === best.end && n > best.length)) best = { end, length: n, result: candidate.result };
       break; // the last occurrence of this candidate is found; earlier ones cannot be nearer the end
     }
