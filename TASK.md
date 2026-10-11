@@ -5,13 +5,13 @@ _Last updated: 2026-10-11_
 This file describes **current task only**. Completed work's detail
 lives in git log and closed PRs, not here.
 
-**Current Task:** Learner management Phase 3b (`feature/archive-reason`: archive
-reason + restore history, migration `0010`) - built and tested locally; needs
-independent review, then `0010` on Staging D1 BEFORE merging to `staging`.
-Staging and Production D1 are at `0009`.
+**Current Task:** None in flight. Learner 3a/3b and the Canberra-time convention are
+live in Production (migration `0010`, run 38106838536); Staging and Production D1
+are both at `0010`.
 
-**Next Recommended Task:** review + Staging for 3b, then a design for 3c
-(transfer a learner) before any code. See `docs/BACKLOG.md`.
+**Next Recommended Task:** a design for 3c (transfer a learner to another
+instructor) before any code; then Competency 23 route suggestions. See
+`docs/BACKLOG.md` "Planned order".
 
 **Waiting on Other Repo:** ACTGDS: Work's display polish (list sent) and lesson
 notification activation decisions. My Driving is live. Nothing blocks this repo.
