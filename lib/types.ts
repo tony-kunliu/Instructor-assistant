@@ -43,6 +43,25 @@ export type Learner = {
   /** Reason preset key (lib/archive-reasons.ts) and note of the CURRENT archive (migration 0010): both null when active, when none was given, or for learners archived before 0010 (never invented). */
   archiveReason: string | null;
   archiveNote: string | null;
+  /** Transfers to another instructor (learner_transfer_events, migration 0011), oldest first; [] when never transferred. */
+  transfers: LearnerTransferEvent[];
+};
+
+/** One hand-over of a learner to another instructor (learner_transfer_events, migration 0011). Only the home instructor changed; lessons keep their own instructor. */
+export type LearnerTransferEvent = {
+  id: string;
+  fromInstructorId: string;
+  fromName: string;
+  toInstructorId: string;
+  toName: string;
+  /** UTC ISO; shown in Canberra time. */
+  at: string;
+  /** The verified actor; null without an Access identity (local dev/tests). */
+  byInstructorId: string | null;
+  note: string | null;
+  /** D7: the receiving instructor's one-tap "Checked" of the CoP 9.1 h / 9.2 e reminder; null = not yet checked. */
+  recordsCheckedAt: string | null;
+  recordsCheckedBy: string | null;
 };
 
 /** One archive / restore of a learner (learner_archive_events, migration 0010), shown in the archived banner's History. */

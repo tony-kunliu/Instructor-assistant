@@ -18,6 +18,7 @@ import { FINAL_DRIVE_23, REVIEW_1_17, REVIEW_1_22, invalidationNotice, type Asse
 import { accessLogoutUrl } from "@/lib/access-logout.ts";
 import { ARCHIVE_REASONS, archiveReasonText, MAX_ARCHIVE_NOTE_LENGTH } from "@/lib/archive-reasons.ts";
 import { filterLearners } from "@/lib/learner-filter.ts";
+import { MAX_TRANSFER_NOTE_LENGTH, pendingRecordsCheck, recordsCheckText, transferLine, withTransferDividers } from "@/lib/learner-transfer.ts";
 import { archivedNotCheckedReminder, duplicateLicenceReminder, missingPdfReminder, sameLicenceLearners } from "@/lib/learner-checks.ts";
 import { currentIssues, issueFromServerMessage, validateLessonDraftFields, type IssueState } from "@/lib/lesson-form-errors.ts";
 import { availableViews, initialSelection, learnerPanel, selectionAfterViewChange, viewLearners, type PickerView } from "@/lib/learner-picker.ts";
@@ -226,7 +227,10 @@ export default function DriverApp() {
   // Archive / restore events of the open archived learner, loaded lazily when "History" is opened.
   const [archiveHistory, setArchiveHistory] = useState<LearnerArchiveEvent[] | null>(null);
   const [archiveHistoryError, setArchiveHistoryError] = useState<string | null>(null);
+  // Inline transfer panel (3c T1): null = closed; the only other instructor is preselected, so the common case is two taps.
+  const [transferDraft, setTransferDraft] = useState<{ toId: string; note: string } | null>(null);
   const resetArchiveUi = () => {
+    setTransferDraft(null);
     setArchiveDraft(null);
     setArchiveHistory(null);
     setArchiveHistoryError(null);
@@ -614,6 +618,56 @@ export default function DriverApp() {
     }
   };
 
+  // Learner transfer (3c T1, design D1-D7): effective immediately, no accept step. Lessons keep their own instructor.
+  const transferLearner = async () => {
+    if (!detail || !transferDraft?.toId) return;
+    const { id } = detail.learner;
+    setSaving(true);
+    setStatus(null);
+    const swap = (learner: Learner) => setLearners((current) => current.map((l) => (l.id === learner.id ? learner : l)));
+    try {
+      const { learner } = await api<{ learner: Learner }>(`/api/learners/${encodeURIComponent(id)}/transfer`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ toInstructorId: transferDraft.toId, note: transferDraft.note }),
+      });
+      setTransferDraft(null);
+      swap(learner);
+      setDetail((current) => (current && current.learner.id === id ? { ...current, learner } : current));
+      // The learner leaves this instructor's "My learners"; keep them open under "All" so the History line is visible.
+      if (signedInInstructorId && learner.instructorId !== signedInInstructorId) setView("all");
+      setStatus({ kind: "ok", text: `Transferred to ${learner.instructorName}.` });
+    } catch (error) {
+      setStatus({ kind: "error", text: (error as Error).message });
+      // e.g. "already transferred by someone else": show the learner as it is now.
+      try {
+        const fresh = await api<Detail>(`/api/learners/${encodeURIComponent(id)}`);
+        if (selectedRef.current === id) {
+          swap(fresh.learner);
+          setDetail((current) => (current && current.learner.id === id ? { ...current, learner: fresh.learner } : current));
+          setTransferDraft(null);
+        }
+      } catch { /* the error above is already shown */ }
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const markRecordsChecked = async () => {
+    if (!detail) return;
+    const { id } = detail.learner;
+    setSaving(true);
+    try {
+      const { learner } = await api<{ learner: Learner }>(`/api/learners/${encodeURIComponent(id)}/transfer/checked`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+      setLearners((current) => current.map((l) => (l.id === learner.id ? learner : l)));
+      setDetail((current) => (current && current.learner.id === id ? { ...current, learner } : current));
+    } catch (error) {
+      setStatus({ kind: "error", text: (error as Error).message });
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const toggleArchiveHistory = async (open: boolean) => {
     if (!detail || !open || archiveHistory) return;
     setArchiveHistoryError(null);
@@ -674,7 +728,7 @@ export default function DriverApp() {
   const optionLabel = (l: Learner) => (activeView === "mine" ? l.fullName : `${l.fullName} · ${l.instructorName}`);
   const panel = detail ? learnerPanel({ archivedAt: detail.learner.archivedAt, completed: detail.progress.completed }) : "active";
   const archivedReason = detail ? archiveReasonText(detail.learner.archiveReason, detail.learner.archiveNote) : null;
-  const openArchivePanel = () => setArchiveDraft({ reason: "", note: "" });
+  const openArchivePanel = () => { setTransferDraft(null); setArchiveDraft({ reason: "", note: "" }); };
   const archivePanel = detail && archiveDraft ? (
     <div className="lifecycle archive-panel" data-testid="archive-panel">
       <p><b>Archive {detail.learner.fullName}?</b> They will be hidden from the daily learner list. Lessons, signatures, progress and PDF are all kept, and you can restore them any time from &quot;Archived&quot;.</p>
@@ -693,6 +747,45 @@ export default function DriverApp() {
       </div>
     </div>
   ) : null;
+
+  // Transfer (3c T1): the learner's own instructor, or anyone active when that instructor is inactive (not in the
+  // active-only instructors list). Never for an archived learner (restore first). The server enforces the same rules.
+  const homeInactive = Boolean(detail) && instructors.length > 0 && !instructors.some((i) => i.id === detail?.learner.instructorId);
+  const canTransfer = Boolean(detail) && panel !== "archived" && (!signedInInstructorId || signedInInstructorId === detail?.learner.instructorId || homeInactive);
+  const transferTargets = detail ? instructors.filter((i) => i.id !== detail.learner.instructorId) : [];
+  const openTransferPanel = () => {
+    setArchiveDraft(null);
+    setTransferDraft({ toId: transferTargets.length === 1 ? transferTargets[0].id : "", note: "" });
+  };
+  const transferTargetName = transferTargets.find((i) => i.id === transferDraft?.toId)?.fullName ?? null;
+  const transferPanel = detail && transferDraft ? (
+    <div className="lifecycle transfer-panel" data-testid="transfer-panel">
+      <p><b>Transfer {detail.learner.fullName}</b> to another instructor. Lessons already recorded stay with whoever recorded them.</p>
+      {transferTargets.length ? (
+        <fieldset className="transfer-choices">
+          <legend>New instructor</legend>
+          {transferTargets.map((i) => (
+            <label key={i.id} className="transfer-choice">
+              <input type="radio" name="transfer-to" value={i.id} checked={transferDraft.toId === i.id} onChange={() => setTransferDraft({ ...transferDraft, toId: i.id })} data-testid="transfer-choice" />
+              <span>{i.fullName}</span>
+            </label>
+          ))}
+        </fieldset>
+      ) : <p className="meta">No other active instructor.</p>}
+      <label className="field"><span>Note (optional)</span>
+        <input aria-label="Transfer note" data-testid="transfer-note" value={transferDraft.note} maxLength={MAX_TRANSFER_NOTE_LENGTH} onChange={(e) => setTransferDraft({ ...transferDraft, note: e.target.value })} placeholder="Do not write personal details" autoComplete="off" />
+      </label>
+      <div className="archive-actions">
+        <button type="button" className="btn ghost" disabled={saving} onClick={() => setTransferDraft(null)} data-testid="transfer-cancel">Cancel</button>
+        <button type="button" className="btn primary" disabled={saving || !transferTargetName} onClick={() => void transferLearner()} data-testid="transfer-confirm">
+          {transferTargetName ? `Transfer to ${transferTargetName}` : "Choose an instructor"}
+        </button>
+      </div>
+    </div>
+  ) : null;
+  // D7: the receiving instructor (or anyone, without an identity) sees the CoP 9.1 h / 9.2 e reminder until "Checked".
+  const recordsCheck = detail ? pendingRecordsCheck(detail.learner) : null;
+  const showRecordsCheck = Boolean(recordsCheck) && (!signedInInstructorId || signedInInstructorId === detail?.learner.instructorId);
 
   // Assessment-rule reminders (display only; lib/rules.ts, spec D1/D2). `clock` ticks every 15 s, so the lines stay current.
   void clock;
@@ -900,6 +993,14 @@ export default function DriverApp() {
             </p>
             {licenceReminder ? <RulesReminders reminders={[licenceReminder]} testId="licence-reminder" /> : null}
             <RulesReminders reminders={learnerChecks} testId="learner-checks" />
+            {recordsCheck && showRecordsCheck ? (
+              <div className="reminders" data-testid="transfer-check">
+                <p className="reminder amber transfer-check" data-tone="amber">
+                  <span>{recordsCheckText(recordsCheck.fromName)}</span>
+                  <button type="button" className="btn ghost small" disabled={saving} onClick={() => void markRecordsChecked()} data-testid="transfer-checked">Checked</button>
+                </p>
+              </div>
+            ) : null}
             <p className="meta integration-id">
               Integration ID: <code>{detail.learner.id}</code>
               <button type="button" className="link" onClick={() => void copyIntegrationId(detail.learner.id)}>Copy ID</button>
@@ -907,6 +1008,13 @@ export default function DriverApp() {
             <ExportPdfButton key={detail.learner.id} learnerId={detail.learner.id} lessonCount={history.lessons.length} />
             {canEditLearner ? (
               <button type="button" className="btn ghost block edit-learner-btn" disabled={saving} onClick={openEditLearner} data-testid="edit-learner">Edit learner</button>
+            ) : null}
+            {canTransfer ? (
+              transferDraft ? transferPanel : (
+                <button type="button" className="link transfer-link" disabled={saving || phase !== "ready"} onClick={openTransferPanel} data-testid="transfer-open">
+                  Transfer learner…
+                </button>
+              )
             ) : null}
             {panel === "archived" ? (
               <div className="lifecycle archived" data-testid="archived-banner">
@@ -1049,10 +1157,13 @@ export default function DriverApp() {
           <section className="card history">
             <h2>History</h2>
             <p className="meta" data-testid="history-learner">{detail.learner.fullName}</p>
-            {!history.lessons.length ? <p className="empty">No lessons yet.</p> : (
+            {!history.lessons.length ? <p className="empty">No lessons yet.</p> : null}
+            {history.lessons.length || detail.learner.transfers.length ? (
               <ol>
-                {history.lessons.map((lesson) =>
-                  editingLessonId === lesson.id ? (
+                {withTransferDividers(history.lessons, detail.learner.transfers).map((item) => {
+                  if (item.kind === "transfer") return <li key={item.event.id} className="h-transfer" data-testid="history-transfer">{transferLine(item.event)}</li>;
+                  const lesson = item.lesson;
+                  return editingLessonId === lesson.id ? (
                     <li key={lesson.id} className="h-editing">
                       {editLoading || !editDraft || !editProgress ? (
                         <p className="empty">Loading…</p>
@@ -1182,10 +1293,10 @@ export default function DriverApp() {
                         </p>
                       ) : null}
                     </li>
-                  ),
-                )}
+                  );
+                })}
               </ol>
-            )}
+            ) : null}
             {/* Newest first: prior-instructor records come before lesson #1, so they sit below it. */}
             {history.prior.length ? (
               <ul className="h-prior-list">

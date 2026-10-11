@@ -14,6 +14,10 @@ closed PRs; see `TASK.md` for what is in progress.
   events kept, never blocks an edit); the Completed banner/summary follows
   derived completion. Read-only `scripts/audit-progress.mjs` compares old vs
   new rule (Production audit: 0 differences).
+- `feature/transfer-t1` (3c T1, migration `0011`, not merged): transfer a learner to
+  another instructor (two taps, owner only or anyone when the owner is inactive;
+  archived = restore first), History line, receiver's CoP 9.1 h / 9.2 e "Checked".
+  Apply `0011` to Staging D1 BEFORE merging to `staging`. Nothing sent to ACTGDS.
 - Learner 3a/3b (migration `0010`) and the Canberra-time convention (AGENTS.md §15)
   are released. Designs for 3c (learner transfer), R10 (Competency 23 route) and
   learner intake are written and decided by Tony 2026-10-11 (route: familiar =
@@ -134,6 +138,8 @@ record: `tony-kunliu/actgds.com` Issue #3.
   Vietnamese, Greek, Cyrillic, kana, Hangul, Latin Ext-B, box drawing and some
   symbols print as boxes after the user confirms the warning.
 - Minor learner-edit review follow-ups are in `docs/BACKLOG.md`.
+- `tests/pdf-export-font-subset.test.ts` leaves a `/tmp/font-subset-*` dir (~14 MB
+  out.pdf) per run; on shared machines this filled the disk (2026-10-11).
 
 ## Next
 

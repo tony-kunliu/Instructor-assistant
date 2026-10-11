@@ -23,7 +23,9 @@ import {
   importPaperLessons,
   listLearnerArchiveEvents,
   listLearners,
+  markTransferRecordsChecked,
   setLearnerArchived,
+  transferLearner,
   updateLearner,
   updateLesson,
 } from "../lib/repo.ts";
@@ -526,6 +528,39 @@ test("budget (migration 0010): archive with/without a reason and restore are 3 s
   assert.ok(archive.count() + MIDDLEWARE_AND_ROUTE_QUERIES <= FREE_PLAN_INVOCATION_LIMIT);
   assert.equal(Number((await raw.prepare("SELECT COUNT(*) AS n FROM learner_archive_events").first<{ n: number }>())?.n), 3);
   assert.equal(Number((await raw.prepare("SELECT COUNT(*) AS n FROM integration_outbox").first<{ n: number }>())?.n), outboxBefore, "archive/restore enqueue nothing for ACTGDS");
+});
+
+// ── Learner transfer (migration 0011, learner management 3c T1) ──
+
+test("budget (migration 0011): transfer is 6 statements (actor, target, learner, batch of event INSERT + UPDATE, re-read), also when it loses the race; Checked is 3; list and getLearner stay 1; binds <= 100; nothing enqueued", async (t) => {
+  const { db: raw, learner, tony } = await setup();
+  const anna = (await findInstructorByEmail(raw, "yapingqu.work@gmail.com"))!;
+  const outboxBefore = Number((await raw.prepare("SELECT COUNT(*) AS n FROM integration_outbox").first<{ n: number }>())?.n);
+  const transfer = countingD1(raw);
+  await transferLearner(transfer.db, learner.id, { toInstructorId: anna.id, note: "QA note", actingInstructorId: tony.id });
+  const lost = countingD1(raw);
+  await assert.rejects(() => transferLearner(lost.db, learner.id, { toInstructorId: anna.id, actingInstructorId: anna.id }), /already belongs to Anna/);
+  const checked = countingD1(raw);
+  await markTransferRecordsChecked(checked.db, learner.id, { actingInstructorId: anna.id });
+  const list = countingD1(raw);
+  assert.equal((await listLearners(list.db)).find((l) => l.id === learner.id)?.transfers.length, 1);
+  const get = countingD1(raw);
+  await getLearner(get.db, learner.id);
+  // A transfer whose compare-and-set loses (simulated: the learner already moved between the reads and the batch).
+  const raced = countingD1(raw);
+  const racing = { ...raced.db, batch: async (statements: Parameters<D1Database["batch"]>[0]) => { await raw.prepare("UPDATE learners SET instructor_id = ? WHERE id = ?").bind(tony.id, learner.id).run(); return raced.db.batch(statements); } } as D1Database;
+  await raw.prepare("UPDATE learners SET instructor_id = ? WHERE id = ?").bind(anna.id, learner.id).run();
+  await assert.rejects(() => transferLearner(racing, learner.id, { toInstructorId: tony.id, actingInstructorId: anna.id }), /by someone else|already belongs/);
+  t.diagnostic(`transfer: ${transfer.count()} statements, max binds ${transfer.maxBinds()}; lost race: ${raced.count()}; rejected early: ${lost.count()}; checked: ${checked.count()} (max binds ${checked.maxBinds()}); list: ${list.count()}; getLearner: ${get.count()}`);
+  assert.equal(transfer.count(), 6);
+  assert.equal(raced.count(), 6);
+  assert.equal(checked.count(), 3);
+  assert.equal(list.count(), 1, "the list endpoint gains no D1 query for transfers");
+  assert.equal(get.count(), 1);
+  assert.equal(transfer.maxBinds(), 8, "the event INSERT binds 8 values");
+  assert.equal(checked.maxBinds(), 6);
+  assert.ok(transfer.count() + MIDDLEWARE_AND_ROUTE_QUERIES <= FREE_PLAN_INVOCATION_LIMIT);
+  assert.equal(Number((await raw.prepare("SELECT COUNT(*) AS n FROM integration_outbox").first<{ n: number }>())?.n), outboxBefore, "a transfer / Checked enqueues nothing for ACTGDS");
 });
 
 // ── createLesson assessing 22 competencies ──────────────────────────────

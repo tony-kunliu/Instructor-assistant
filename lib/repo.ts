@@ -29,7 +29,8 @@ import type { IntegrationHooks, LessonUpsertedPayloadV1 } from "./integration/ty
 import { planPaperImport, type PaperImportPreview, type PaperImportRowError } from "./paper-import.ts";
 import { isPriorRecord } from "./prior-record.ts";
 import { ArchiveInputError, parseArchiveNote, parseArchiveReason } from "./archive-reasons.ts";
-import type { CompletionSummary, Instructor, Learner, LearnerArchiveEvent, LearnerInput, Lesson, LessonInput, LessonRevision, LessonRevisionSnapshot, SignatureStatus } from "./types.ts";
+import { parseTransferNote, TransferInputError } from "./learner-transfer.ts";
+import type { CompletionSummary, Instructor, Learner, LearnerArchiveEvent, LearnerInput, LearnerTransferEvent, Lesson, LessonInput, LessonRevision, LessonRevisionSnapshot, SignatureStatus } from "./types.ts";
 
 export class ValidationError extends Error {}
 export class NotFoundError extends Error {}
@@ -82,7 +83,28 @@ function toLearner(row: Row): Learner {
     archivedAt: (row.archived_at as string) ?? null,
     archiveReason: nullableString(row.archive_reason),
     archiveNote: nullableString(row.archive_note),
+    transfers: transferEvents(row.transfers_json),
   };
+}
+
+/** The learner's transfer events from LEARNER_SELECT's transfers_json (one JSON array, any order), oldest first. */
+function transferEvents(json: unknown): LearnerTransferEvent[] {
+  if (typeof json !== "string" || !json) return [];
+  const rows = JSON.parse(json) as Row[];
+  return rows
+    .map((e) => ({
+      id: String(e.id),
+      fromInstructorId: String(e.from),
+      fromName: String(e.fromName ?? ""),
+      toInstructorId: String(e.to),
+      toName: String(e.toName ?? ""),
+      at: String(e.at),
+      byInstructorId: nullableString(e.by),
+      note: nullableString(e.note),
+      recordsCheckedAt: nullableString(e.checkedAt),
+      recordsCheckedBy: nullableString(e.checkedBy),
+    }))
+    .sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0));
 }
 
 function nullableString(v: unknown): string | null {
@@ -215,9 +237,15 @@ export async function updateInstructorAdiNumber(db: D1Database, instructorId: st
 // The current archive reason/note (migration 0010) comes from the learner's LATEST archive event, only while
 // archived and only if that event is an 'archived' one: a correlated lookup on (learner_id, at), so the list
 // endpoint stays ONE query. Learners archived before 0010 have no event and get NULLs.
+// Transfers (migration 0011) come from one correlated json_group_array over (learner_id, at): still ONE query;
+// a learner never transferred gets "[]".
 const LEARNER_SELECT = `
   SELECT l.*, i.full_name AS instructor_name, i.adi_number AS instructor_adi_number,
-    ae.reason AS archive_reason, ae.note AS archive_note
+    ae.reason AS archive_reason, ae.note AS archive_note,
+    (SELECT json_group_array(json_object('id', t.id, 'from', t.from_instructor_id, 'fromName', fi.full_name, 'to', t.to_instructor_id,
+        'toName', ti.full_name, 'at', t.at, 'by', t.by_instructor_id, 'note', t.note, 'checkedAt', t.records_checked_at, 'checkedBy', t.records_checked_by))
+      FROM learner_transfer_events t LEFT JOIN instructors fi ON fi.id = t.from_instructor_id LEFT JOIN instructors ti ON ti.id = t.to_instructor_id
+      WHERE t.learner_id = l.id) AS transfers_json
   FROM learners l JOIN instructors i ON i.id = l.instructor_id
   LEFT JOIN learner_archive_events ae ON l.archived_at IS NOT NULL AND ae.action = 'archived'
     AND ae.rowid = (SELECT e.rowid FROM learner_archive_events e WHERE e.learner_id = l.id ORDER BY e.at DESC, e.rowid DESC LIMIT 1)`;
@@ -311,6 +339,101 @@ export async function listLearnerArchiveEvents(db: D1Database, learnerId: string
       byInstructorId: nullableString(row.by_instructor_id),
       byName: nullableString(row.by_name),
     }));
+}
+
+export type TransferOptions = {
+  /** The receiving instructor: must exist, be active and differ from the current one. */
+  toInstructorId?: unknown;
+  /** Optional free text, <= 200 chars after cleaning (no personal details). */
+  note?: unknown;
+  /** The verified actor (x-instructor-id via readJsonWithActor). Null/undefined = no identity (local dev/tests): allowed, as for learner edit. */
+  actingInstructorId?: unknown;
+  now?: Date;
+};
+
+/**
+ * Transfer a learner to another instructor (3c T1, design D1-D3, D10, D14). Only the learner's own instructor may
+ * hand over; when that instructor is inactive, any active instructor may take the learner over. An archived learner
+ * must be restored first. Changes ONLY learners.instructor_id + updated_at and writes one learner_transfer_events
+ * row in ONE atomic db.batch() (event INSERT first). Both statements are compare-and-set on the instructor read
+ * here, archived_at IS NULL and the target still active, so a concurrent transfer / archive writes nothing and
+ * gets a clear message. Lessons (and their instructor_id), revisions, competency events, signatures, archive
+ * events and the outbox are never touched; nothing is enqueued for ACTGDS. D1 cost: 6 statements (actor, target,
+ * learner, batch of 2, re-read); 5 without a verified actor.
+ */
+export async function transferLearner(db: D1Database, id: string, options: TransferOptions = {}): Promise<Learner> {
+  let note: string | null;
+  try {
+    note = parseTransferNote(options.note);
+  } catch (error) {
+    if (error instanceof TransferInputError) throw new ValidationError(error.message);
+    throw error;
+  }
+  const toId = String(options.toInstructorId ?? "").trim();
+  if (!toId) throw new ValidationError("Choose the instructor to transfer this learner to.");
+  const actor = await resolveActingInstructorId(db, options.actingInstructorId);
+  const target = await db.prepare("SELECT id, full_name, status FROM instructors WHERE id = ?").bind(toId).first<Row>();
+  if (!target) throw new ValidationError("That instructor was not found.");
+  if (target.status !== "active") throw new ValidationError(`${String(target.full_name)} is not an active instructor.`);
+  const current = await db
+    .prepare("SELECT l.instructor_id, l.archived_at, i.full_name, i.status FROM learners l JOIN instructors i ON i.id = l.instructor_id WHERE l.id = ?")
+    .bind(id)
+    .first<Row>();
+  if (!current) throw new NotFoundError("Learner not found.");
+  const fromId = String(current.instructor_id);
+  const fromName = String(current.full_name ?? "") || "another instructor";
+  if (current.archived_at !== null && current.archived_at !== undefined) throw new ValidationError("This learner is archived. Restore the learner first, then transfer.");
+  if (fromId === toId) throw new ValidationError(`This learner already belongs to ${fromName}.`);
+  if (actor !== null && actor !== fromId && current.status === "active") {
+    throw new ValidationError(`This learner belongs to ${fromName}; only they can transfer them.`);
+  }
+  const at = (options.now ?? new Date()).toISOString();
+  const guard = "learners.id = ? AND learners.instructor_id = ? AND learners.archived_at IS NULL AND EXISTS (SELECT 1 FROM instructors WHERE instructors.id = ? AND instructors.status = 'active')";
+  const [, update] = await db.batch([
+    // Runs first, so it sees the state BEFORE the UPDATE; the same guard on both = both or neither.
+    db
+      .prepare(
+        `INSERT INTO learner_transfer_events (id, learner_id, from_instructor_id, to_instructor_id, at, by_instructor_id, note)
+         SELECT ?, learners.id, learners.instructor_id, ?, ?, ?, ? FROM learners WHERE ${guard}`,
+      )
+      .bind(crypto.randomUUID(), toId, at, actor, note, id, fromId, toId),
+    db
+      .prepare(`UPDATE learners SET instructor_id = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE ${guard}`)
+      .bind(toId, id, fromId, toId),
+  ]);
+  const learner = await getLearner(db, id);
+  if (update.meta.changes) return learner;
+  // Someone else got there first (compare-and-set lost): nothing was written. Say what happened.
+  if (learner.archivedAt !== null) throw new ValidationError("This learner was archived meanwhile. Restore the learner first, then transfer.");
+  if (learner.instructorId !== fromId) throw new ValidationError(`This learner was already transferred to ${learner.instructorName || "another instructor"} by someone else. Nothing was changed.`);
+  throw new ValidationError(`${String(target.full_name)} is no longer an active instructor. Nothing was changed.`);
+}
+
+/**
+ * D7: the receiving instructor's one tap "Checked" on the CoP 9.1 h / 9.2 e reminder. Marks the learner's LATEST
+ * transfer event, only while unchecked and only if its receiver is still the learner's instructor (and, with a
+ * verified actor, is the actor). Idempotent: an already checked event is returned unchanged. Never blocks anything
+ * and contacts no one. D1 cost: 3 statements (actor, UPDATE, re-read); 2 without a verified actor.
+ */
+export async function markTransferRecordsChecked(db: D1Database, id: string, options: { actingInstructorId?: unknown; now?: Date } = {}): Promise<Learner> {
+  const actor = await resolveActingInstructorId(db, options.actingInstructorId);
+  const at = (options.now ?? new Date()).toISOString();
+  const update = await db
+    .prepare(
+      `UPDATE learner_transfer_events SET records_checked_at = ?, records_checked_by = ?
+       WHERE id = (SELECT e.id FROM learner_transfer_events e WHERE e.learner_id = ? ORDER BY e.at DESC, e.rowid DESC LIMIT 1)
+         AND records_checked_at IS NULL
+         AND to_instructor_id = (SELECT learners.instructor_id FROM learners WHERE learners.id = ?)
+         AND (? IS NULL OR to_instructor_id = ?)`,
+    )
+    .bind(at, actor, id, id, actor, actor)
+    .run();
+  const learner = await getLearner(db, id);
+  if (update.meta.changes) return learner;
+  const latest = learner.transfers.at(-1);
+  if (!latest) throw new ValidationError("This learner has no transfer to check.");
+  if (latest.recordsCheckedAt !== null) return learner;
+  throw new ValidationError(`Only ${latest.toName || "the receiving instructor"} can mark the previous records as checked.`);
 }
 
 export async function getLearner(db: D1Database, id: string): Promise<Learner> {
