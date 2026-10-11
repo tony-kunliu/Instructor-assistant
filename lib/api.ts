@@ -55,18 +55,20 @@ export async function readJsonWithDefaultInstructor(request: Request): Promise<R
 }
 
 /**
- * PATCH /api/learners/[id]: either `{ archived: boolean }` (archive / restore, any active instructor, unchanged)
- * or learner fields (edit; only the learner's own instructor when signed in). The actor is the verified
- * `x-instructor-id` header via readJsonWithActor, never the body. `instructorId` is rejected by updateLearner.
+ * PATCH /api/learners/[id]: either `{ archived: boolean, reason?, note? }` (archive / restore, any active
+ * instructor; reason/note optional and only with `archived: true`, migration 0010) or learner fields (edit;
+ * only the learner's own instructor when signed in). The actor is the verified `x-instructor-id` header via
+ * readJsonWithActor, never the body. `instructorId` is rejected by updateLearner.
  */
 export async function patchLearner(db: D1Database, id: string, request: Request): Promise<Record<string, unknown>> {
   const body = await readJsonWithActor(request);
-  const { archived, actingInstructorId, ...fields } = body;
+  const { archived, actingInstructorId, reason, note, ...fields } = body;
   const editing = Object.keys(fields).length > 0;
   if (archived !== undefined && editing) throw new ValidationError("Send either `archived` or learner fields, not both.");
+  if (editing && (reason !== undefined || note !== undefined)) throw new ValidationError("A reason or note can only be given when archiving.");
   if (!editing) {
     if (typeof archived !== "boolean") throw new ValidationError("`archived` must be true or false.");
-    return { learner: await setLearnerArchived(db, id, archived) };
+    return { learner: await setLearnerArchived(db, id, archived, { reason, note, actingInstructorId }) };
   }
   const result = await updateLearner(db, id, { ...fields, actingInstructorId });
   return { ...result, ...(result.changed ? {} : { message: "No changes: the details are already up to date." }) };

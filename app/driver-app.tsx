@@ -15,13 +15,14 @@ import {
 } from "@/lib/calc.ts";
 import { FINAL_DRIVE_23, REVIEW_1_17, REVIEW_1_22, type AssessmentResult, type LearnerProgress, type MilestoneInvalidation } from "@/lib/competency.ts";
 import { accessLogoutUrl } from "@/lib/access-logout.ts";
+import { ARCHIVE_REASONS, archiveReasonText, MAX_ARCHIVE_NOTE_LENGTH } from "@/lib/archive-reasons.ts";
 import { filterLearners } from "@/lib/learner-filter.ts";
 import { archivedNotCheckedReminder, duplicateLicenceReminder, missingPdfReminder, sameLicenceLearners } from "@/lib/learner-checks.ts";
 import { currentIssues, issueFromServerMessage, validateLessonDraftFields, type IssueState } from "@/lib/lesson-form-errors.ts";
 import { availableViews, initialSelection, learnerPanel, selectionAfterViewChange, viewLearners, type PickerView } from "@/lib/learner-picker.ts";
 import { priorRecordLine, splitPriorRecords } from "@/lib/prior-record.ts";
 import { revisionChanges, snapshotOfLesson } from "@/lib/revision-diff.ts";
-import type { CompletionSummary, Instructor, Learner, Lesson, LessonRevision, SignatureStatus } from "@/lib/types.ts";
+import type { CompletionSummary, Instructor, Learner, LearnerArchiveEvent, Lesson, LessonRevision, SignatureStatus } from "@/lib/types.ts";
 import CompetencyPicker from "./competency-picker.tsx";
 import CompetencyProgressCard from "./competency-progress.tsx";
 import ExportPdfButton from "./export-pdf-button.tsx";
@@ -219,6 +220,16 @@ export default function DriverApp() {
   const [view, setView] = useState<PickerView>("mine");
   const [query, setQuery] = useState("");
   const [archivedLearners, setArchivedLearners] = useState<Learner[] | null>(null);
+  // Inline archive panel (Phase 3b): null = closed. Cancel just closes it; nothing is sent until "Archive learner" is tapped.
+  const [archiveDraft, setArchiveDraft] = useState<{ reason: string; note: string } | null>(null);
+  // Archive / restore events of the open archived learner, loaded lazily when "History" is opened.
+  const [archiveHistory, setArchiveHistory] = useState<LearnerArchiveEvent[] | null>(null);
+  const [archiveHistoryError, setArchiveHistoryError] = useState<string | null>(null);
+  const resetArchiveUi = () => {
+    setArchiveDraft(null);
+    setArchiveHistory(null);
+    setArchiveHistoryError(null);
+  };
 
   const totals = detail?.totals ?? EMPTY_TOTALS;
 
@@ -234,6 +245,7 @@ export default function DriverApp() {
     setRevisions(null);
     setRevisionsError(null);
     setInvalidation(null);
+    resetArchiveUi();
     if (!id) return;
     storage.set(LAST_LEARNER_KEY, id);
     try {
@@ -543,6 +555,7 @@ export default function DriverApp() {
     setDraft(null);
     cancelEditLesson();
     setInvalidation(null);
+    resetArchiveUi();
   };
 
   const chooseView = (next: PickerView) => {
@@ -563,18 +576,21 @@ export default function DriverApp() {
 
   // Archive is a reversible lifecycle flag, never a delete — lessons,
   // signatures, progress, PDF and the Integration ID all stay as they are.
+  // Archiving goes through the inline panel (optional reason + note); restore is one tap, as before.
   const setLearnerArchived = async (archived: boolean) => {
     if (!detail) return;
+    if (archived && !archiveDraft) return;
     const { id, fullName } = detail.learner;
-    if (archived && !window.confirm(`Archive ${fullName}?\n\nThey will be hidden from the daily learner list. Lessons, signatures, progress and PDF are all kept, and you can restore them any time from "Archived".`)) return;
     setSaving(true);
     setStatus(null);
     try {
+      const body = archived && archiveDraft ? { archived, reason: archiveDraft.reason, note: archiveDraft.note } : { archived };
       const { learner } = await api<{ learner: Learner }>(`/api/learners/${encodeURIComponent(id)}`, {
         method: "PATCH",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ archived }),
+        body: JSON.stringify(body),
       });
+      resetArchiveUi();
       if (archived) {
         setLearners((current) => current.filter((l) => l.id !== id));
         setArchivedLearners((current) => (current ? [...current.filter((l) => l.id !== id), learner].sort(byName) : current));
@@ -593,6 +609,18 @@ export default function DriverApp() {
       setStatus({ kind: "error", text: (error as Error).message });
     } finally {
       setSaving(false);
+    }
+  };
+
+  const toggleArchiveHistory = async (open: boolean) => {
+    if (!detail || !open || archiveHistory) return;
+    setArchiveHistoryError(null);
+    const forId = detail.learner.id;
+    try {
+      const data = await api<{ events: LearnerArchiveEvent[] }>(`/api/learners/${encodeURIComponent(forId)}/archive-history`);
+      if (selectedRef.current === forId) setArchiveHistory(data.events); // a slow answer for a learner we have since left must not show under another
+    } catch (error) {
+      if (selectedRef.current === forId) setArchiveHistoryError((error as Error).message);
     }
   };
 
@@ -643,6 +671,26 @@ export default function DriverApp() {
     v === "mine" ? `My learners (${mineCount})` : v === "all" ? `All (${learners.length})` : `Archived${archivedLearners ? ` (${archivedLearners.length})` : ""}`;
   const optionLabel = (l: Learner) => (activeView === "mine" ? l.fullName : `${l.fullName} · ${l.instructorName}`);
   const panel = detail ? learnerPanel({ archivedAt: detail.learner.archivedAt, completed: detail.progress.completed }) : "active";
+  const archivedReason = detail ? archiveReasonText(detail.learner.archiveReason, detail.learner.archiveNote) : null;
+  const openArchivePanel = () => setArchiveDraft({ reason: "", note: "" });
+  const archivePanel = detail && archiveDraft ? (
+    <div className="lifecycle archive-panel" data-testid="archive-panel">
+      <p><b>Archive {detail.learner.fullName}?</b> They will be hidden from the daily learner list. Lessons, signatures, progress and PDF are all kept, and you can restore them any time from &quot;Archived&quot;.</p>
+      <label className="field"><span>Reason</span>
+        <select aria-label="Archive reason" data-testid="archive-reason-select" value={archiveDraft.reason} onChange={(e) => setArchiveDraft({ ...archiveDraft, reason: e.target.value })}>
+          <option value="">Choose a reason (optional)</option>
+          {ARCHIVE_REASONS.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
+        </select>
+      </label>
+      <label className="field"><span>Note (optional)</span>
+        <input aria-label="Archive note" data-testid="archive-note" value={archiveDraft.note} maxLength={MAX_ARCHIVE_NOTE_LENGTH} onChange={(e) => setArchiveDraft({ ...archiveDraft, note: e.target.value })} placeholder="e.g. moved to Sydney" autoComplete="off" />
+      </label>
+      <div className="archive-actions">
+        <button type="button" className="btn ghost" disabled={saving} onClick={() => setArchiveDraft(null)} data-testid="archive-cancel">Cancel</button>
+        <button type="button" className="btn primary" disabled={saving || phase !== "ready"} onClick={() => void setLearnerArchived(true)} data-testid="archive-confirm">Archive learner</button>
+      </div>
+    </div>
+  ) : null;
 
   // Assessment-rule reminders (display only; lib/rules.ts, spec D1/D2). `clock` ticks every 15 s, so the lines stay current.
   void clock;
@@ -860,13 +908,38 @@ export default function DriverApp() {
             ) : null}
             {panel === "archived" ? (
               <div className="lifecycle archived" data-testid="archived-banner">
-                <p><b>Archived</b> {detail.learner.archivedAt?.slice(0, 10)} — hidden from the daily learner list. Lessons, signatures, progress and PDF are kept.</p>
+                <p>
+                  <b>Archived</b> {detail.learner.archivedAt?.slice(0, 10)}
+                  {archivedReason ? <> — <span data-testid="archive-reason">{archivedReason}</span></> : null}
+                </p>
+                <p>Hidden from the daily learner list. Lessons, signatures, progress and PDF are kept.</p>
+                <details key={detail.learner.id} className="archive-history" data-testid="archive-history" onToggle={(e) => void toggleArchiveHistory((e.currentTarget as HTMLDetailsElement).open)}>
+                  <summary>History</summary>
+                  {archiveHistoryError ? <p className="status error">{archiveHistoryError}</p> : !archiveHistory ? <p className="meta">Loading…</p> : archiveHistory.length === 0 ? (
+                    <p className="meta" data-testid="archive-history-empty">No archive history recorded (archived before reasons were kept).</p>
+                  ) : (
+                    <ol>
+                      {archiveHistory.map((event) => {
+                        const why = event.action === "archived" ? archiveReasonText(event.reason, event.note) : null;
+                        return (
+                          <li key={event.id} data-testid="archive-history-item">
+                            {event.at.slice(0, 10)} <b>{event.action === "archived" ? "Archived" : "Restored"}</b>
+                            {why ? ` — ${why}` : ""}
+                            {event.byName ? <small> · {event.byName}</small> : null}
+                          </li>
+                        );
+                      })}
+                    </ol>
+                  )}
+                </details>
                 <button type="button" className="btn primary block" disabled={saving} onClick={() => void setLearnerArchived(false)}>Restore learner</button>
               </div>
             ) : panel === "active" ? (
-              <button type="button" className="link archive-link" disabled={saving || phase !== "ready"} onClick={() => void setLearnerArchived(true)}>
-                Archive learner…
-              </button>
+              archiveDraft ? archivePanel : (
+                <button type="button" className="link archive-link" disabled={saving || phase !== "ready"} onClick={openArchivePanel}>
+                  Archive learner…
+                </button>
+              )
             ) : null}
           </section>
 
@@ -884,7 +957,7 @@ export default function DriverApp() {
               </p>
               <div className="lifecycle suggest" data-testid="archive-suggestion">
                 <p>You can archive {detail.learner.fullName} to keep your daily list short — nothing is deleted and you can restore any time. Or just leave them active.</p>
-                <button type="button" className="btn ghost small" disabled={saving} onClick={() => void setLearnerArchived(true)}>Archive learner…</button>
+                {archiveDraft ? archivePanel : <button type="button" className="btn ghost small" disabled={saving} onClick={openArchivePanel}>Archive learner…</button>}
               </div>
             </section>
           ) : null}
