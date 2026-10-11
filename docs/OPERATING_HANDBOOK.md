@@ -1,10 +1,11 @@
 # Operating Handbook v2 — ACT Golden Driving School (IA + Website)
 
-_Draft 2026-10-12 for Tony's decision. Applies to `tony-kunliu/Instructor-assistant` (IA, agent: Claude) and
-`tony-kunliu/actgds.com` (Website, agent: Codex, taking over from Work). Per-repo `AGENTS.md` stays the rule
-book for its repo; this handbook is the shared layer above both. Where it says "proposed", nothing is in
-force until Tony says so. Facts marked **verified** were read from the repos/Issue #3 on 2026-10-12;
-facts marked **assumed** were not._
+_**APPROVED by Tony 2026-10-12** ("批准手册"); his decisions on the ten open items are recorded in §14.
+Applies to `tony-kunliu/Instructor-assistant` (IA, agent: Claude) and `tony-kunliu/actgds.com` (Website,
+agent: Codex, taking over from Work). Per-repo `AGENTS.md` stays the rule book for its repo; this handbook
+is the shared layer above both. Items still marked "proposed" are the ones §14 defers to follow-up work.
+Facts marked **verified** were read from the repos/Issue #3 on 2026-10-12; facts marked **assumed** were
+not. Changing §3/§4 or §14 needs Tony's explicit decision (§4.14)._
 
 ## 0. 给 Tony 的中文摘要
 
@@ -19,7 +20,7 @@ facts marked **assumed** were not._
 - 风险分级 L1/L2/L3（与网站草案一致）：作者和评审**各自独立**定级，取高者。
 - 交付流程：分支 → 独立评审 → staging → 发布 PR → 发布工作流；迁移先 Staging D1，Production 先记 Time Travel 恢复点；两仓库差异写明。
 - 记忆文件改法（§9）：每个任务只写 `docs/tasks/<branch>.md`，`STATUS.md` 只在合并/发布那一步改，`TASK.md` 变成两行指针 —— 解决几乎每次合并都冲突的问题。
-- 需要 Tony 决定的事列在 §14（共 10 项），其中最重要：是否批准本手册；网站 Production 发布机制走哪条路；IA §9 模型策略改为"代码和评审用最强模型"；是否接受 §9 的记忆文件方案。
+- Tony 2026-10-12 已批准本手册；10 项决定记录在 §14：网站发布"尽量自动"（Codex 先做只读 Sites 能力审计并提出发布机制，花钱/安全仍由 Tony 定）；IA §9 改为"agent 自选模型、代码和评审用最强模型"；采用 docs/tasks 记忆方案（后续任务实施）；跨模型互评（Codex 评 IA、Claude 评网站，L2/L3 默认）；§14 新增"新端点/新密钥必须问 Tony"；STOP/冻结 评论即熔断；分支永不删除；通知调用方按 IA-Cron 方案仅做 QA；网站 staging→main 自主仅限 L1/L2。
 
 ## 1. Mission and principles
 
@@ -50,7 +51,7 @@ facts marked **assumed** were not._
 
 One repo, one owner. A cross-repo change is two PRs, one per owner, coordinated on Issue #3 (§8).
 
-**Independent reviewer rule (proposed, both repos; closes Website PR #46 finding H3):** a different agent
+**Independent reviewer rule (approved for both repos, §14.5; closes Website PR #46 finding H3):** a different agent
 session, the strongest model available, with no access to the author's conversation or working tree. Input:
 the PR URL and the candidate SHA only; the author may not pre-classify the tier or summarise the diff for
 the reviewer. Stance: adversarial (hunt defects, §7). Output: a visible GitHub PR review (Approve / Request
@@ -110,8 +111,9 @@ Expanded (both repos; "ask" = stop, write the question in the report, wait):
 | 17 | Deleting branches, tags, releases, artifacts, evidence files | `AGENTS.md` §5; evidence is the audit trail |
 | 18 | Any action whose tier is unclear | "If in doubt, L3" (PR #46) |
 
-Phone-executable freeze (proposed): a comment by Tony containing `STOP` / `冻结` on Issue #3 (or a dedicated
-release-log issue) suspends every standing authorization in both repos until he lifts it.
+Phone-executable freeze (in force, §14.7): a comment by Tony containing `STOP` / `冻结` on Issue #3 suspends
+every standing authorization in both repos until he lifts it. Agents check the last comments before any
+merge or release.
 
 ## 5. Risk tiers
 
@@ -229,8 +231,7 @@ Proposal (IA first; Website may adopt the same shape):
 6. **Branch naming:** one branch per feature, never a single reusable "designated branch" (the
    `claude/continue-deployment-*` pattern was merged twice as PR #59 and #61 — fine, but it hides what
    changed). Force-push only on your own unmerged branch; never on `staging`/`main` or another agent's
-   branch. Delete merged branches only with Tony's standing OK (§4.17 — proposed: merged `feature/*` may be
-   deleted after the release that contains them).
+   branch. Never delete branches (`AGENTS.md` §5, §4.17; Tony kept this unchanged, §14.8).
 
 ## 10. Engineering hygiene
 
@@ -244,10 +245,10 @@ Proposal (IA first; Website may adopt the same shape):
 - **Node:** local is 22.22, CI and Production Release pin 22.13 (`engines >=22.13`). Flags that changed
   between them bite (`--experimental-strip-types` was needed by the audit CLI test, `6910a4e`). Simulate the
   Workers Builds command (`CI=1`, no `pdftotext`) before merging to `staging`.
-- **Models (proposed, supersedes IA `AGENTS.md` §9):** strongest available model for code, migrations,
-  reviews and anything in §4/§5 L2+; a lighter model only for mechanical steps (fixture regeneration, lint
-  fixes, doc index updates). Tony has said token/time budget is not the constraint; quality and not having
-  to redo work is.
+- **Models (approved, §14.3; now IA `AGENTS.md` §9):** the agent chooses its own models, aiming for top
+  quality: the strongest available model for code, migrations, reviews and anything in §4/§5 L2+; a lighter
+  model only for mechanical steps (fixture regeneration, lint fixes, doc index updates). Token/time budget
+  is not a concern; quality and not having to redo work is.
 - **Secrets:** never in git, logs, PR bodies, Issue #3 or chat; `wrangler.toml` holds non-secret config
   only; account ids are identifiers, not credentials.
 - **Synthetic data only:** QA learners are named `QA …`; no real learner in Staging/QA; Production never
@@ -305,25 +306,37 @@ version) · [ ] code: `wrangler rollback` to the recorded version (IA) / Tony re
 only if it is actively sending bad events (Tony decision) · [ ] post BLOCKED on Issue #3 if the other repo
 is affected · [ ] report ≤ 15 lines with the exact rollback evidence.
 
-## 14. Open decisions for Tony
+## 14. Tony's decisions (2026-10-12)
 
-1. Approve this handbook as the shared layer (and the AGENTS.md pointers) — it changes authorizations only
-   by adding §4 items 5, 14, 16, 17 and the freeze rule.
-2. Website Production release path: (a) stay Tony-operated via native Sites deploy; (b) fund/enable a
-   mechanism (GitHub plan for branch protection, or a verified release runner) after the Website agent's
-   read-only audit. Money + security → yours.
-3. Replace IA `AGENTS.md` §9 (Sonnet default, Opus by exception) with §10's "strongest model for code and
-   review".
-4. Adopt the §9 memory scheme (`docs/tasks/`, STATUS only at release, Memory Guard changes).
-5. Independent reviewer: accept the §2 definition for both repos; decide whether Codex may review IA PRs and
-   Claude Website PRs (cross-model review is stronger; it also means each agent reads the other's repo).
-6. Add §4 item 5 wording to IA `AGENTS.md` §14 and to the Website's PR #46 (finding M3), and record the
-   migration-policy difference in `AUTONOMOUS_DELIVERY_V1.md`.
-7. Kill switch: a repository variable (`AUTONOMOUS_RELEASE=on`, checked by workflows) plus the `STOP`/冻结
-   comment — or the comment alone.
-8. Merged-branch deletion: allow deleting merged `feature/*` branches after release (§9.6), or keep "never
-   delete" strictly.
-9. Notification scheduler caller (IA Cron → Website dispatch endpoint, new HMAC key): approve the design for
-   QA-only build, or wait.
-10. Website `main` merge authority: PR #46 H1 — do you want `staging`→`main` autonomous for L1/L2 on the
-    Website now, given `main` is unprotected?
+1. **Handbook approved** as the shared layer, with the AGENTS.md pointers (§4 items 5, 14, 16, 17 and the
+   freeze rule are now in force).
+2. **Website Production releases: as automatic as safely possible.** Codex does the read-only Sites
+   capability audit and proposes the release path (a verified release runner/mechanism, with the repository
+   -variable kill switch from item 7, compare-and-swap on the `main` SHA, rollback target and post-deploy
+   smoke). Anything that costs money (e.g. a GitHub plan for branch protection) or changes security stays
+   Tony's decision per proposal. Until the mechanism is verified, Website Production remains Tony-operated.
+3. **IA `AGENTS.md` §9 replaced** (done in this commit): the agent chooses models itself, aiming for top
+   quality — strongest model for code, migrations and review; lightweight only for mechanical steps; token
+   budget is not a concern.
+4. **`docs/tasks/` memory scheme adopted** (§9). Implementation is a follow-up task (Memory Guard changes,
+   first task files); until it lands, keep editing the current files as today.
+5. **Independent-reviewer definition accepted for both repos** (§2). Cross-model review is the default for
+   L2/L3: Codex reviews IA PRs, Claude reviews Website PRs; each reads the other repo read-only and never
+   commits to it. L1 may use any independent session.
+6. **New endpoint/transport/secret wording added to IA `AGENTS.md` §14** (done in this commit); the
+   Website adds the same to PR #46 (finding M3) and records the migration-policy difference in
+   `AUTONOMOUS_DELIVERY_V1.md`.
+7. **Kill switch now = the `STOP`/冻结 comment on Issue #3** (§4). The repository-variable kill switch is
+   part of the Website release-path work (item 2); IA adds the same variable check to its workflows when
+   the Website's design is agreed, so both repos read one convention.
+8. **Branches are never deleted** — unchanged (`AGENTS.md` §5).
+9. **Notification caller: IA-Cron transport-only design agreed in principle.** QA-only build (flag default
+   OFF, IA Staging Cron → Website QA Site) after the Website agent confirms the endpoint spec on Issue #3;
+   the new HMAC key is set by Tony in both dashboards; Production stays OFF until a separate decision.
+10. **Website `staging`→`main` autonomy limited to L1/L2** with independent tier derivation; PR #46 must
+    first apply the H1 fix (tier limit on items 1 and 3; L3 never merges to `main` without Tony).
+
+Follow-up tasks created by these decisions: (a) Codex: PR #46 H1–H5/M1–M5 fixes incl. M3 wording, then
+the read-only Sites release capability audit; (b) Claude: `docs/tasks/` scheme + Memory Guard changes;
+(c) both: cross-model review on the next L2/L3 PR; (d) Claude: IA-side notify caller spec once the Website
+confirms the endpoint. Each is a separate task with its own go from Tony (`AGENTS.md` §11).

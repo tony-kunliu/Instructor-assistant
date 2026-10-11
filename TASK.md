@@ -22,7 +22,8 @@ transfer-back of a `QA …` learner (Access identity cannot be simulated). Optio
 Production PDF and confirm it is about 0.2 MB.
 
 **Docs in flight:** `docs/operating-handbook` branch — Operating Handbook v2
-(`docs/OPERATING_HANDBOOK.md`, §14 lists 10 decisions for Tony); docs only, no code.
+(`docs/OPERATING_HANDBOOK.md`, approved by Tony 2026-10-12; §14 records his 10 decisions and
+the follow-up tasks: docs/tasks memory scheme, cross-model review, notify caller spec). Docs only.
 
 **CI note:** poppler tests are opt-in hard failures (`REQUIRE_POPPLER=1`,
 `ci.yml` only); Cloudflare Workers Builds skip them. Simulate the Workers

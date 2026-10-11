@@ -91,23 +91,15 @@ be reviewed for accuracy against the current remote state.)
 
 ## 9. Claude Code model selection
 
-- **Default: Claude Sonnet 5** for day-to-day work — feature development,
-  bug fixes, UI, API, tests, build, documentation, ordinary refactors, Git
-  operations, and staging QA.
-- **Escalate to the latest available Claude Opus** (prefer **Claude Opus
-  5.5** if the current environment offers it; otherwise the latest available
-  Opus) only for:
-  - complex architecture decisions
-  - major database changes / migrations
-  - hard-to-locate bugs
-  - repeated failed fix attempts
-  - changes that cross multiple subsystems
-  - large-scale refactors
-  - security review
-  - important code review before Production
-  - long-running autonomous coding sessions
-- Do not default to Opus just because it is more capable. Once the escalated
-  task is done, switch back to Sonnet 5 for ordinary work.
+(Decided by Tony 2026-10-12, `docs/OPERATING_HANDBOOK.md` §10/§14.3.)
+
+- The agent chooses its own models, aiming for top quality. Token and time
+  budget are not a concern; quality and not having to redo work are.
+- Use the **strongest available model** for code, migrations, independent
+  reviews and anything in the handbook's risk tiers L2/L3 or its
+  ALWAYS-ASK-TONY list.
+- A lightweight model only for mechanical steps: fixture regeneration, lint
+  fixes, documentation index updates and similar.
 
 ## Project rules (CBT&A Checklist)
 
@@ -264,7 +256,11 @@ These authorizations override the "requires Tony's explicit authorization"
 wording in §3 and §5 only for the actions listed above. Everything else in
 this file still applies: no scope creep, no secrets or real learner data in
 git, no deleting branches or data, and §11 (stop after each task and
-report; never auto-start the next task). Secrets are always set by Tony
+report; never auto-start the next task). Not covered (always ask Tony,
+decided 2026-10-12): any new or changed cross-repo inbound/outbound endpoint,
+transport or shared secret (e.g. the notification "tick" caller), in either
+repo, and everything on the ALWAYS-ASK-TONY list in
+`docs/OPERATING_HANDBOOK.md` §4. Secrets are always set by Tony
 directly, never sent through chat. Every action taken under a standing
 authorization is reported to Tony afterwards. Some actions may still need
 Tony to approve a tool-permission prompt or provide a credential (e.g. a
@@ -280,4 +276,4 @@ revocation of this section.
 
 ## 16. Operating Handbook
 
-`docs/OPERATING_HANDBOOK.md` is the shared two-repo operating layer (roles, independent review, the ALWAYS-ASK-TONY list, risk tiers, delivery flow, checklists). Draft awaiting Tony's approval; where it says "proposed" this file still governs.
+`docs/OPERATING_HANDBOOK.md` is the shared two-repo operating layer (roles, independent review, the ALWAYS-ASK-TONY list, risk tiers, delivery flow, checklists). Approved by Tony 2026-10-12; its §14 records his decisions. Where the two disagree, this file governs for this repo and the difference is fixed in the next docs task.
