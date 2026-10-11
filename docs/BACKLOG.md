@@ -65,6 +65,9 @@ Long term (ecosystem, coordinated with Work on actgds.com Issue #3):
 
 - No message when a learner is archived while the edit form is open.
 - The unmounted-key QA check for the PDF button is weak.
+- 3c T1 transfer: the compare-and-set guard does not re-check the inactive-owner exception (an owner
+  re-activated between the read and the batch still loses the learner to a colleague); add the
+  owner-status condition to the guard if this ever matters.
 
 ## Not designed yet
 

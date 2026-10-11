@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS learner_transfer_events (
   by_instructor_id    TEXT REFERENCES instructors (id),
   note                TEXT,
   records_checked_at  TEXT,
-  records_checked_by  TEXT REFERENCES instructors (id)
+  records_checked_by  TEXT REFERENCES instructors (id),
+  CHECK (from_instructor_id <> to_instructor_id)
 );
 CREATE INDEX IF NOT EXISTS learner_transfer_events_learner_idx ON learner_transfer_events (learner_id, at);

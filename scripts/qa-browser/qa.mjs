@@ -1434,7 +1434,9 @@ const draw = async (page, index) => {
   await shot(a.page, "15-transfer-panel-1024");
   await a.page.click("[data-testid=transfer-cancel]");
   const tonyTry = await api(`/api/learners/${moving.id}/transfer`, { toInstructorId: WHO.tony[0] }, { "x-instructor-id": WHO.tony[0] });
-  check("transfer: API refuses Tony (no longer the owner) and a same-instructor transfer (400)", tonyTry.status === 400, JSON.stringify(tonyTry));
+  check("transfer: API refuses Tony, who is no longer the owner (400, 'only they can transfer')", tonyTry.status === 400 && tonyTry.body.error === "This learner belongs to Anna; only they can transfer them.", JSON.stringify(tonyTry));
+  const sameTry = await api(`/api/learners/${moving.id}/transfer`, { toInstructorId: WHO.anna[0] }, { "x-instructor-id": WHO.anna[0] });
+  check("transfer: API refuses a same-instructor transfer (400, 'already belongs')", sameTry.status === 400 && sameTry.body.error === "This learner already belongs to Anna.", JSON.stringify(sameTry));
   const tonyCheck = await api(`/api/learners/${moving.id}/transfer/checked`, {}, { "x-instructor-id": WHO.tony[0] });
   check("transfer: a later 'Checked' call by Tony never changes who checked", (await learnersApi()).find((l) => l.id === moving.id).transfers[0].recordsCheckedBy === WHO.anna[0], JSON.stringify(tonyCheck));
   check("transfer: Anna: no page errors", a.errors.length === 0, a.errors.join("|"));

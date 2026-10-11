@@ -777,7 +777,7 @@ export default function DriverApp() {
       </label>
       <div className="archive-actions">
         <button type="button" className="btn ghost" disabled={saving} onClick={() => setTransferDraft(null)} data-testid="transfer-cancel">Cancel</button>
-        <button type="button" className="btn primary" disabled={saving || !transferTargetName} onClick={() => void transferLearner()} data-testid="transfer-confirm">
+        <button type="button" className="btn primary" disabled={saving || !transferTargetName || phase !== "ready"} onClick={() => void transferLearner()} data-testid="transfer-confirm">
           {transferTargetName ? `Transfer to ${transferTargetName}` : "Choose an instructor"}
         </button>
       </div>

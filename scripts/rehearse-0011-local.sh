@@ -45,6 +45,7 @@ TRANSFER() { # $1 event id, $2 learner, $3 expected from, $4 to, $5 at
 TRANSFER T1 L1 "$TONY" "$ANNA" 2026-10-11T01:00:00.000Z
 TRANSFER T2 L1 "$TONY" "$ANNA" 2026-10-11T02:00:00.000Z   # stale "from" (lost race): must write nothing
 TRANSFER T3 L2 "$ANNA" "$TONY" 2026-10-11T03:00:00.000Z   # archived learner: must write nothing
+W --command "INSERT INTO learner_transfer_events (id, learner_id, from_instructor_id, to_instructor_id, at) VALUES ('TX','L1','$ANNA','$ANNA','2026-10-11T03:30:00.000Z')" >/dev/null 2>&1 && echo "same-instructor row: UNEXPECTEDLY stored" || echo "same-instructor row rejected by CHECK (from <> to)"
 echo "events after transfer, stale repeat, archived (expect only T1): $(Q "SELECT id, learner_id, from_instructor_id = '$TONY' AS from_tony, to_instructor_id = '$ANNA' AS to_anna FROM learner_transfer_events ORDER BY at")"
 echo "owners (expect L1 Anna, L2 still Anna + archived): $(Q "SELECT id, instructor_id = '$ANNA' AS anna, archived_at IS NOT NULL AS archived FROM learners ORDER BY id")"
 # The D7 Checked UPDATE used by lib/repo.ts#markTransferRecordsChecked: Tony (not the receiver) changes nothing, Anna does.

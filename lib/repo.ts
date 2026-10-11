@@ -87,10 +87,13 @@ function toLearner(row: Row): Learner {
   };
 }
 
-/** The learner's transfer events from LEARNER_SELECT's transfers_json (one JSON array, any order), oldest first. */
+/**
+ * The learner's transfer events from LEARNER_SELECT's transfers_json (one JSON array, any order), oldest first by
+ * (at, rowid): the last element is exactly the event SQL picks with ORDER BY at DESC, rowid DESC LIMIT 1.
+ */
 function transferEvents(json: unknown): LearnerTransferEvent[] {
   if (typeof json !== "string" || !json) return [];
-  const rows = JSON.parse(json) as Row[];
+  const rows = (JSON.parse(json) as Row[]).sort((a, b) => (String(a.at) < String(b.at) ? -1 : String(a.at) > String(b.at) ? 1 : Number(a.seq) - Number(b.seq)));
   return rows
     .map((e) => ({
       id: String(e.id),
@@ -103,8 +106,7 @@ function transferEvents(json: unknown): LearnerTransferEvent[] {
       note: nullableString(e.note),
       recordsCheckedAt: nullableString(e.checkedAt),
       recordsCheckedBy: nullableString(e.checkedBy),
-    }))
-    .sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0));
+    }));
 }
 
 function nullableString(v: unknown): string | null {
@@ -242,7 +244,7 @@ export async function updateInstructorAdiNumber(db: D1Database, instructorId: st
 const LEARNER_SELECT = `
   SELECT l.*, i.full_name AS instructor_name, i.adi_number AS instructor_adi_number,
     ae.reason AS archive_reason, ae.note AS archive_note,
-    (SELECT json_group_array(json_object('id', t.id, 'from', t.from_instructor_id, 'fromName', fi.full_name, 'to', t.to_instructor_id,
+    (SELECT json_group_array(json_object('id', t.id, 'seq', t.rowid, 'from', t.from_instructor_id, 'fromName', fi.full_name, 'to', t.to_instructor_id,
         'toName', ti.full_name, 'at', t.at, 'by', t.by_instructor_id, 'note', t.note, 'checkedAt', t.records_checked_at, 'checkedBy', t.records_checked_by))
       FROM learner_transfer_events t LEFT JOIN instructors fi ON fi.id = t.from_instructor_id LEFT JOIN instructors ti ON ti.id = t.to_instructor_id
       WHERE t.learner_id = l.id) AS transfers_json
@@ -433,6 +435,7 @@ export async function markTransferRecordsChecked(db: D1Database, id: string, opt
   const latest = learner.transfers.at(-1);
   if (!latest) throw new ValidationError("This learner has no transfer to check.");
   if (latest.recordsCheckedAt !== null) return learner;
+  if (latest.toInstructorId !== learner.instructorId) throw new ValidationError("This learner's instructor has changed since this transfer. Reload the learner and try again.");
   throw new ValidationError(`Only ${latest.toName || "the receiving instructor"} can mark the previous records as checked.`);
 }
 

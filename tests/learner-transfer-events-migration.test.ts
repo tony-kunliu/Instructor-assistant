@@ -41,7 +41,7 @@ test("0011 leaves every existing table and row untouched and only adds learner_t
   assert.deepEqual(indexColumns, ["learner_id", "at"]);
 });
 
-test("0011 enforces the learner/instructor foreign keys and NOT NULLs; re-applying is harmless", () => {
+test("0011 enforces the learner/instructor foreign keys, NOT NULLs and from <> to; re-applying is harmless", () => {
   const db = dbAfter0010();
   db.exec(sql("0011_learner_transfer_events.sql"));
   db.exec(sql("0011_learner_transfer_events.sql"));
@@ -52,6 +52,7 @@ test("0011 enforces the learner/instructor foreign keys and NOT NULLs; re-applyi
   assert.throws(() => insert.run("t3", "L1", TONY, ANNA, "nobody", null), /FOREIGN KEY/);
   assert.throws(() => insert.run("t4", "L1", TONY, ANNA, null, "nobody"), /FOREIGN KEY/);
   assert.throws(() => insert.run("t5", "L1", null, ANNA, null, null), /NOT NULL/);
+  assert.throws(() => insert.run("t8", "L1", TONY, TONY, null, null), /CHECK/, "a transfer to the same instructor can never be stored");
   insert.run("t6", "L1", TONY, ANNA, TONY, null);
   insert.run("t7", "L1", ANNA, TONY, null, ANNA);
   assert.equal(db.prepare("SELECT count(*) AS n FROM learner_transfer_events").get()!.n, 2);

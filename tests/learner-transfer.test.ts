@@ -326,3 +326,24 @@ test("POST /transfer/checked: header actor; a non-receiver is rejected; the rece
   const result = (await postTransferRecordsChecked(db, learner.id, post({}, { "x-instructor-id": anna.id }))) as { learner: { transfers: LearnerTransferEvent[] } };
   assert.equal(result.learner.transfers[0].recordsCheckedBy, anna.id);
 });
+
+test("latest transfer = SQL's tie-break (at DESC, rowid DESC): equal timestamps resolve to the later insert, in the UI and in Checked", async () => {
+  const { db, tony, anna, learner } = await setup();
+  const same = at("2026-10-11T05:00:00.000Z");
+  await transferLearner(db, learner.id, { toInstructorId: anna.id, actingInstructorId: tony.id, now: same });
+  await transferLearner(db, learner.id, { toInstructorId: tony.id, actingInstructorId: anna.id, now: same });
+  const now = await getLearner(db, learner.id);
+  assert.deepEqual(now.transfers.map((t) => t.toName), ["Anna", "Tony"]);
+  assert.equal(pendingRecordsCheck(now)?.fromName, "Anna");
+  const checked = await markTransferRecordsChecked(db, learner.id, { actingInstructorId: tony.id });
+  assert.equal(checked.transfers[1].recordsCheckedBy, tony.id);
+  assert.equal(checked.transfers[0].recordsCheckedAt, null, "the older event is never the one marked");
+});
+
+test("Checked when the owner changed outside a transfer: a clear 'reload' message, nothing written", async () => {
+  const { db, tony, anna, learner } = await setup();
+  await transferLearner(db, learner.id, { toInstructorId: anna.id, actingInstructorId: tony.id });
+  await db.prepare("UPDATE learners SET instructor_id = ? WHERE id = ?").bind(CAROL, learner.id).run();
+  await assert.rejects(() => markTransferRecordsChecked(db, learner.id, { actingInstructorId: anna.id }), (e: unknown) => e instanceof ValidationError && /instructor has changed since this transfer\. Reload/.test(e.message));
+  assert.equal((await transferRows(db))[0].records_checked_at, null);
+});
