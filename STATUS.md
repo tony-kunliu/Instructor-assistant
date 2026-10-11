@@ -7,21 +7,17 @@ closed PRs; see `TASK.md` for what is in progress.
 
 ## In progress
 
-- `fix/progress-invalidation` (PR #54, to staging, then Production; no migration): the two
-  CBT&A progress bugs Work reported on actgds.com Issue #3 (comment
-  6104913100). A Review / Final Drive counts only if its prerequisites were
-  achieved in strictly earlier lessons (no timestamps; derived, reported,
-  events kept, never blocks an edit); the Completed banner/summary follows
-  derived completion. Read-only `scripts/audit-progress.mjs` compares old vs
-  new rule (Production audit: 0 differences).
-- `feature/transfer-t1` (3c T1, migration `0011`, not merged): transfer a learner to
-  another instructor (two taps, owner only or anyone when the owner is inactive;
-  archived = restore first), History line, receiver's CoP 9.1 h / 9.2 e "Checked".
-  Apply `0011` to Staging D1 BEFORE merging to `staging`. Nothing sent to ACTGDS.
-- Learner 3a/3b (migration `0010`) and the Canberra-time convention (AGENTS.md §15)
-  are released. Designs for 3c (learner transfer), R10 (Competency 23 route) and
-  learner intake are written and decided by Tony 2026-10-11 (route: familiar =
-  home district); waiting for the go to build.
+- Released to Production 2026-10-11: CBT&A progress validity fix + Completed banner
+  (Worker `908b2c9c-9228-4608-b86b-76c9e2c14e44`, run 38153327724, no migration;
+  Production audit: 0 differences), learner 3a/3b (migration `0010`), Canberra time.
+- Merged to `staging` (Production after the next release): learner intake P1, the "Competency 23 from"
+  line (panel + form) and the PDF Eligibility auto-fill (no migration).
+- `feature/transfer-t1` (3c T1, migration `0011`, reviewed, not merged): transfer a learner to another
+  instructor (two taps, owner only or anyone when the owner is inactive; archived = restore first),
+  History line, receiver's CoP 9.1 h / 9.2 e "Checked"; nothing sent to ACTGDS. Waits for `0011` on
+  Staging D1 (apply BEFORE merging to `staging`). Then R10a route reminders. iPad layout is on
+  `feature/ipad-layout` in review (signature-size fix round); needs Tony's real-iPad check.
+- Designs: `docs/superpowers/specs/2026-10-11-*.md` (transfer, route, intake), decided by Tony 2026-10-11.
 
 ## Repository
 

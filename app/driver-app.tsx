@@ -32,7 +32,8 @@ import SaveErrorSummary from "./save-error-summary.tsx";
 import PaperImportPanel from "./paper-import-panel.tsx";
 import SignaturePad from "./signature-pad.tsx";
 import { BookingLink, RulesReminders } from "./rules-reminders.tsx";
-import { finalDriveEligibilityReminder, finalDriveFormReminders, finalDrivePanelReminder, learnerLicenceReminder, reviewGapReminder, type Reminder } from "@/lib/rules.ts";
+import { finalDriveEligibilityReminder, finalDriveEligibleFromReminder, finalDriveFormReminders, finalDrivePanelReminder, learnerLicenceReminder, reviewGapReminder, type EligibilityLearner, type Reminder } from "@/lib/rules.ts";
+import { autoFillEligibility, ELIGIBILITY_DATE_KEYS, eligibilityAtSave, showsAutoHint } from "@/lib/c23-eligibility.ts";
 
 type LessonDraft = {
   lessonDate: string;
@@ -74,6 +75,30 @@ type LearnerDraft = {
 type Detail = { learner: Learner; totals: Totals; lessons: Lesson[]; progress: LearnerProgress; completion: CompletionSummary | null };
 
 const byName = (a: Learner, b: Learner) => a.fullName.localeCompare(b.fullName);
+
+/** The form's Competency 23 inputs as the rules read them ("" = not recorded). */
+function draftEligibilityLearner(d: LearnerDraft): EligibilityLearner {
+  const date = (v: string) => v || null;
+  return {
+    dob: date(d.dob), licenceExpiry: date(d.licenceExpiry), learnerLicenceIssuedOn: date(d.learnerLicenceIssuedOn),
+    learnerLicenceFirstIssuedOn: date(d.learnerLicenceFirstIssuedOn), hptPassedOn: date(d.hptPassedOn),
+    loggedHours: /^\d+$/.test(d.loggedHours) ? Number(d.loggedHours) : null, loggedHoursOn: date(d.loggedHoursOn),
+  };
+}
+
+/** D18: after a licence-date/DOB edit, an empty or app-generated Eligibility follows the dates ("C23 from …"); the instructor's own text is never touched. */
+function withAutoEligibility(d: LearnerDraft): LearnerDraft {
+  const eligibility = autoFillEligibility(d.eligibility, draftEligibilityLearner(d));
+  return eligibility === d.eligibility ? d : { ...d, eligibility };
+}
+
+/** D18 at save: an empty Eligibility box is saved as the generated value (when one can be computed). */
+function withSaveEligibility(d: LearnerDraft): LearnerDraft {
+  const eligibility = eligibilityAtSave(d.eligibility, draftEligibilityLearner(d));
+  return eligibility === d.eligibility ? d : { ...d, eligibility };
+}
+
+const isEligibilityDateKey = (key: keyof LearnerDraft) => (ELIGIBILITY_DATE_KEYS as readonly string[]).includes(key);
 
 const emptyLearner: LearnerDraft = {
   fullName: "",
@@ -183,6 +208,8 @@ export default function DriverApp() {
   const [editingLearner, setEditingLearner] = useState(false);
   // The learner the open edit form belongs to; the save targets this id, never whoever is selected at save time.
   const [editLearnerId, setEditLearnerId] = useState<string | null>(null);
+  /** The Edit form exactly as opened, to tell an untouched save (sent as is) from an edited one. */
+  const [openedLearnerDraft, setOpenedLearnerDraft] = useState<LearnerDraft | null>(null);
   const [learnerDraft, setLearnerDraft] = useState<LearnerDraft>(emptyLearner);
   const [status, setStatus] = useState<{ kind: "info" | "error" | "ok" | "warn"; text: string } | null>(null);
   const [saving, setSaving] = useState(false);
@@ -334,7 +361,7 @@ export default function DriverApp() {
       const { learner } = await api<{ learner: Learner }>("/api/learners", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(learnerDraft),
+        body: JSON.stringify(withSaveEligibility(learnerDraft)),
       });
       storage.set(LAST_INSTRUCTOR_KEY, learner.instructorId);
       setLearners((current) => [...current, learner].sort((a, b) => a.fullName.localeCompare(b.fullName)));
@@ -352,13 +379,16 @@ export default function DriverApp() {
   const openEditLearner = () => {
     if (!detail) return;
     const l = detail.learner;
-    setLearnerDraft({
+    const opened: LearnerDraft = {
       fullName: l.fullName, address: l.address ?? "", phone: l.phone ?? "", dob: l.dob ?? "", licenceNumber: l.licenceNumber ?? "",
       licenceExpiry: l.licenceExpiry ?? "", eligibility: l.eligibility ?? "", transmission: l.transmission ?? "", schoolWork: l.schoolWork ?? "",
       learnerLicenceIssuedOn: l.learnerLicenceIssuedOn ?? "", learnerLicenceFirstIssuedOn: l.learnerLicenceFirstIssuedOn ?? "", hptPassedOn: l.hptPassedOn ?? "",
       loggedHours: l.loggedHours === null ? "" : String(l.loggedHours), loggedHoursOn: l.loggedHoursOn ?? "",
       licenceStage: l.licenceStage, instructorId: l.instructorId,
-    });
+    };
+    // Opened as stored (no auto-fill yet): an untouched save must send no change. The panel and PDF show the live value anyway.
+    setLearnerDraft(opened);
+    setOpenedLearnerDraft(opened);
     setHoursOnTouched(false);
     setEditLearnerId(l.id);
     setEditingLearner(true);
@@ -386,7 +416,9 @@ export default function DriverApp() {
     setSaving(true);
     setStatus(null);
     try {
-      const { instructorId: _owner, ...fields } = learnerDraft;
+      // Untouched form: send it exactly as opened ("No changes"). Otherwise an empty Eligibility box gets the generated value (D18).
+      const untouched = openedLearnerDraft !== null && JSON.stringify(openedLearnerDraft) === JSON.stringify(learnerDraft);
+      const { instructorId: _owner, ...fields } = untouched ? learnerDraft : withSaveEligibility(learnerDraft);
       void _owner;
       const result = await api<{ learner: Learner; changed: boolean; message?: string }>(`/api/learners/${encodeURIComponent(editLearnerId)}`, {
         method: "PATCH",
@@ -705,7 +737,9 @@ export default function DriverApp() {
   const shownSaveIssues = draft ? currentIssues(saveIssues, draft, "new") : [];
   const shownEditIssues = editDraft ? currentIssues(editIssues, editDraft, editPaperSignature ? "paper" : "edit") : [];
 
-  const learnerField = (key: keyof LearnerDraft, value: string) => setLearnerDraft((current) => ({ ...current, [key]: value }));
+  // Only a licence-date/DOB edit refreshes an app-owned Eligibility; typing in Eligibility itself never auto-fills (so it can be cleared or rewritten).
+  const learnerField = (key: keyof LearnerDraft, value: string) =>
+    setLearnerDraft((current) => (isEligibilityDateKey(key) ? withAutoEligibility({ ...current, [key]: value }) : { ...current, [key]: value }));
   // Logged hours always come with an "as of" date (server rule D19): typing hours fills it with today (editable) unless the instructor set it by hand; clearing the hours clears it.
   const [hoursOnTouched, setHoursOnTouched] = useState(false);
   const loggedHoursField = (raw: string) =>
@@ -792,6 +826,9 @@ export default function DriverApp() {
   const rulesNow = new Date();
   const lessonRefs = detail?.lessons ?? [];
   const licenceReminder: Reminder | null = detail ? learnerLicenceReminder(detail.learner, localNow(rulesNow).date) : null;
+  // Learner intake D18: "Competency 23 from …" on the panel, learner stage only, not once CBT&A is completed.
+  const eligibleFromLine: Reminder | null = detail && detail.learner.licenceStage === "learner" && panel !== "completed" ? finalDriveEligibleFromReminder(detail.learner, localNow(rulesNow).date) : null;
+  const formEligibleFromLine: Reminder | null = addingLearner ? finalDriveEligibleFromReminder(draftEligibilityLearner(learnerDraft), localNow(rulesNow).date) : null;
   const panelReminders: Reminder[] = [];
   let showBookingLink = false;
   if (detail && phase === "ready" && panel === "active") {
@@ -916,7 +953,9 @@ export default function DriverApp() {
             <label className="field"><span>Licence number</span><input value={learnerDraft.licenceNumber} onChange={(e) => learnerField("licenceNumber", e.target.value)} autoCapitalize="characters" /></label>
             <label className="field"><span>Licence expiry</span><input type="date" value={learnerDraft.licenceExpiry} onChange={(e) => learnerField("licenceExpiry", e.target.value)} /></label>
             {formLicenceCheck ? <div className="full"><RulesReminders reminders={[formLicenceCheck]} testId="licence-duplicate" /></div> : null}
-            <label className="field"><span>Eligibility</span><input value={learnerDraft.eligibility} onChange={(e) => learnerField("eligibility", e.target.value)} /></label>
+            <label className="field"><span>Eligibility</span><input value={learnerDraft.eligibility} onChange={(e) => learnerField("eligibility", e.target.value)} data-testid="learner-eligibility" />
+              {showsAutoHint(learnerDraft.eligibility, draftEligibilityLearner(learnerDraft)) ? <small className="auto-hint" data-testid="eligibility-auto">auto: from the licence dates</small> : null}
+            </label>
             <label className="field"><span>Manual / Auto</span>
               <select value={learnerDraft.transmission} onChange={(e) => learnerField("transmission", e.target.value)}>
                 <option value="">—</option>
@@ -928,6 +967,7 @@ export default function DriverApp() {
             <details className="full rules-group" key={editingLearner ? "edit" : "new"} data-testid="c23-group">
               <summary>Competency 23 eligibility</summary>
               <p className="hint-note">Optional. Only used for the Competency 23 reminder; nothing here blocks a save or goes to the website.</p>
+              {formEligibleFromLine ? <RulesReminders reminders={[formEligibleFromLine]} testId="c23-from-form" /> : null}
               <div className="grid">
                 <label className="field full"><span>Learner licence issue date</span>
                   <input type="date" value={learnerDraft.learnerLicenceIssuedOn} onChange={(e) => learnerField("learnerLicenceIssuedOn", e.target.value)} max={localNow().date} data-testid="c23-issued" />
@@ -992,6 +1032,7 @@ export default function DriverApp() {
                 `ADI ${detail.learner.instructorName}`].filter(Boolean).join(" · ")}
             </p>
             {licenceReminder ? <RulesReminders reminders={[licenceReminder]} testId="licence-reminder" /> : null}
+            {eligibleFromLine ? <RulesReminders reminders={[eligibleFromLine]} testId="c23-from" /> : null}
             <RulesReminders reminders={learnerChecks} testId="learner-checks" />
             {recordsCheck && showRecordsCheck ? (
               <div className="reminders" data-testid="transfer-check">
