@@ -10,10 +10,11 @@ closed PRs; see `TASK.md` for what is in progress.
 - Released to Production 2026-10-11: CBT&A progress validity fix + Completed banner
   (Worker `908b2c9c-9228-4608-b86b-76c9e2c14e44`, run 38153327724, no migration;
   Production audit: 0 differences), learner 3a/3b (migration `0010`), Canberra time.
-- Designs decided by Tony 2026-10-11 and being built (Staging first): learner intake
-  P1 (C23 "eligible from" date + PDF auto-fill), 3c transfer T1 (migration 0011), R10a
-  route reminders (`docs/superpowers/specs/2026-10-11-*.md`). iPad layout is on
+- Built on Staging (Production after the release below): learner intake P1, the "Competency 23 from"
+  line (panel + form) and the PDF Eligibility auto-fill (no migration). Next on Staging: 3c transfer T1
+  (migration 0011, apply to Staging D1 first), R10a route reminders. iPad layout is on
   `feature/ipad-layout` in review (signature-size fix round); needs Tony's real-iPad check.
+- Designs: `docs/superpowers/specs/2026-10-11-*.md` (transfer, route, intake), decided by Tony 2026-10-11.
 
 ## Repository
 
