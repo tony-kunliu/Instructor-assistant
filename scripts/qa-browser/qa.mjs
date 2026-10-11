@@ -1655,7 +1655,7 @@ const draw = async (page, index) => {
     await s.page.click(".btn.go");
     await s.page.click("text=End Lesson");
     await s.page.waitForSelector(".sig canvas");
-    const padH = await s.page.$eval(".sig canvas", (c) => c.getBoundingClientRect().height);
+    const padH = await s.page.$eval(".sig canvas", (c) => parseFloat(getComputedStyle(c).height)); // drawing area (content box; the 1.5px border is outside the cap)
     check(`phone landscape ${w}x${h}: lesson form, no horizontal scroll, pads 640×320 undistorted and ≤60% of the screen height`, (await noHScroll(s.page)) && (await canvasFixed(s.page)) && padH <= h * 0.6 + 1, `pad ${Math.round(padH)}px`);
     await signBoth(s.page);
     check(`phone landscape ${w}x${h}: drawing on the capped pads registers`, (await s.page.$$(".sig-ok")).length === 2);
