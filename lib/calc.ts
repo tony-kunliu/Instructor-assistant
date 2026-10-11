@@ -2,6 +2,21 @@
 // server (authoritative values stored with each lesson).
 
 export const LESSON_TIME_ZONE = "Australia/Sydney"; // Canberra local time
+// Project convention: timestamps are STORED as UTC ISO strings and every user-facing date or time is SHOWN in Canberra time
+// (this zone, which handles daylight saving). Use canberraDateTime() for display, never `iso.slice(0, 10)`.
+
+/** A stored UTC ISO timestamp as Canberra local `{ date: "YYYY-MM-DD", time: "HH:MM" }`, or null if it does not parse. */
+export function canberraDateTime(iso: string | null | undefined): { date: string; time: string } | null {
+  if (!iso) return null;
+  const when = new Date(iso);
+  if (Number.isNaN(when.getTime())) return null;
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat("en-AU", { timeZone: LESSON_TIME_ZONE, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" })
+      .formatToParts(when)
+      .map((part) => [part.type, part.value]),
+  );
+  return { date: `${parts.year}-${parts.month}-${parts.day}`, time: `${parts.hour}:${parts.minute}` };
+}
 
 /** "HH:MM" (24h) → minutes since midnight, or null if invalid. */
 export function parseTime(value: string): number | null {

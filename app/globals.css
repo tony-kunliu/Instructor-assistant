@@ -67,7 +67,7 @@ html, body {
 .form-actions { display: grid; gap: 8px; margin-top: 12px; }
 .edit-learner-btn { margin-top: 10px; }
 .archive-link { display: block; margin: 10px 0 0 auto; padding: 4px 0; font-size: 13px; }
-.lifecycle.archive-panel { background: #efece6; display: grid; gap: 10px; }
+.lifecycle.archive-panel { background: #fff; border: 2px solid #6b6455; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12); display: grid; gap: 10px; }
 .lifecycle.archive-panel p { margin: 0; overflow-wrap: anywhere; }
 .archive-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .archive-actions .btn { min-width: 0; }

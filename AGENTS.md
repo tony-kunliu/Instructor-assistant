@@ -270,3 +270,10 @@ authorization is reported to Tony afterwards. Some actions may still need
 Tony to approve a tool-permission prompt or provide a credential (e.g. a
 temporary Cloudflare token); that is an environment limit, not a
 revocation of this section.
+
+## 15. Time zone convention (agreed with Tony, 2026-10-11)
+
+- Store timestamps as UTC ISO strings. Lesson dates and times are the instructor's local Canberra wall-clock values.
+- Show every user-facing date or time in **Canberra time** (IANA `Australia/Sydney`, which handles daylight saving). In this repo use `canberraDateTime()` / `LESSON_TIME_ZONE` from `lib/calc.ts`; never `iso.slice(0, 10)` for display.
+- Rules that depend on "today", the weekday or the hour (`lib/rules.ts`) use the same zone.
+- The ACTGDS Website already shows "Synced at" in Canberra time; both repos follow this rule. Contract timestamps stay UTC ISO strings.

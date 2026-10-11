@@ -154,6 +154,7 @@ try {
   check("active non-completed learner: Start Lesson present, plain Archive link, no suggestion", (await s.page.$("text=Start Lesson")) !== null && (await s.page.$("[data-testid=archive-suggestion]")) === null);
   await s.page.click(".archive-link");
   await s.page.waitForSelector("[data-testid=archive-panel]");
+  check("archive panel has a visible border (easy to tell apart from the box it sits in)", (await s.page.$eval("[data-testid=archive-panel]", (e) => { const c = getComputedStyle(e); return parseFloat(c.borderTopWidth) >= 2 && c.borderTopStyle === "solid"; })));
   await s.page.click("[data-testid=archive-cancel]"); await settle();
   check("cancelling the archive panel keeps the learner active", (await options(s.page)).includes("QA Tony Bravo") && (await s.page.$("[data-testid=archive-panel]")) === null);
   await s.page.click(".archive-link");
@@ -1264,13 +1265,13 @@ const draw = async (page, index) => {
   await s.page.waitForFunction(() => document.querySelectorAll('select[aria-label="Select learner"] option').length > 1);
   await pick(s.page, "QA Tony Archive Reason · Tony");
   await s.page.waitForSelector("[data-testid=archived-banner]");
-  const today = new Date().toISOString().slice(0, 10);
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Australia/Sydney" }).format(new Date()); // Canberra date, as the app shows it
   const bannerText = (await s.page.textContent("[data-testid=archived-banner] p")).replace(/\s+/g, " ").trim();
   check("archive reason: banner shows 'Archived <date> — Moved away: note' (note trimmed)", bannerText === `Archived ${today} — Moved away: QA moved to Sydney`, bannerText);
   await s.page.click("[data-testid=archive-history] summary");
   await s.page.waitForSelector("[data-testid=archive-history-item]");
   const hist1 = await s.page.$$eval("[data-testid=archive-history-item]", (e) => e.map((x) => x.textContent.replace(/\s+/g, " ").trim()));
-  check("archive reason: History lists the archive with reason, note and who", hist1.length === 1 && hist1[0] === `${today} Archived — Moved away: QA moved to Sydney · Tony`, hist1.join(" | "));
+  check("archive reason: History lists the archive with reason, note and who", hist1.length === 1 && hist1[0] === `${today} ${hist1[0].slice(11, 16)} Archived — Moved away: QA moved to Sydney · Tony` && /^\d{4}-\d{2}-\d{2} \d{2}:\d{2} /.test(hist1[0]), hist1.join(" | "));
   check("archive reason: no horizontal scroll at 375px (banner + History)", await noHScroll(s.page));
   await shot(s.page, "13-archived-reason-history-375");
 
@@ -1290,7 +1291,7 @@ const draw = async (page, index) => {
   await s.page.click("[data-testid=archive-history] summary");
   await s.page.waitForSelector("[data-testid=archive-history-item]");
   const hist2 = await s.page.$$eval("[data-testid=archive-history-item]", (e) => e.map((x) => x.textContent.replace(/\s+/g, " ").trim()));
-  check("archive reason: History shows archived, restored, archived (newest first)", hist2.length === 3 && hist2[0] === `${today} Archived · Tony` && hist2[1] === `${today} Restored · Tony` && hist2[2].includes("Moved away"), hist2.join(" | "));
+  check("archive reason: History shows archived, restored, archived (newest first)", hist2.length === 3 && /^\d{4}-\d{2}-\d{2} \d{2}:\d{2} Archived · Tony$/.test(hist2[0]) && hist2[0].startsWith(today) && /^\d{4}-\d{2}-\d{2} \d{2}:\d{2} Restored · Tony$/.test(hist2[1]) && hist2[2].includes("Moved away"), hist2.join(" | "));
 
   // Archive without choosing a reason still works (plain confirm).
   await tab(s.page, "My learners");
