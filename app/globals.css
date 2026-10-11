@@ -127,6 +127,7 @@ html, body {
 .status.ok { background: #e3f3e8; color: #135c32; }
 .status.error { background: #fbe4e1; color: #8e2418; }
 .status.info { background: #efece6; }
+.status.warn { background: #fdf0d2; color: #6b4a00; }
 
 .summary-main { display: flex; flex-direction: column; }
 .summary-main small { color: var(--muted); font-weight: 600; }

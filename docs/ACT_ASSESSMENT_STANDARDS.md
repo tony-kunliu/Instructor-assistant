@@ -31,6 +31,13 @@ The instruments win over this summary. If they disagree, fix this file.
   - "All 22 competencies must be assessed as competent prior to Review 2
     and competency 23 being undertaken."
   - In the app, only 18, 20 and 21 are gated behind Review 1.
+- Chronology: a Review 1-17 / Review 1-22 / 23 Final Drive counts only if
+  its prerequisites were achieved in STRICTLY EARLIER lessons (lesson
+  number order; prior-instructor records count as one unit, before every
+  lesson). Same-lesson or later achievements never make it valid. After a
+  History Edit such a milestone is derived as not achieved and reported;
+  the original events stay. "CBT&A Completed" follows that derived state.
+  `scripts/audit-progress.mjs` compares old vs current rule on an export.
 
 ## Rules not yet (fully) reflected in the app
 
@@ -45,7 +52,7 @@ The instruments win over this summary. If they disagree, fix this file.
 | R7 | Rear-view cameras **permitted**; no automated/assisted reverse parking. Instructors must teach safe use of in-car technology. | NI2020-703 Comp 23 NB; CoP | — | Note |
 | R8 | Removing the 'A' condition in the first 12 months: Review 2 drive in a manual vehicle, with ADI Audit notified beforehand. | CoP 9.4 | Not modelled | Backlog |
 | R9 | Record keeping (see the breakdown below). | CoP 9.3, 10 f | PDF export; paper originals kept 5 years | Possible certificate-number field |
-| R10 | Competency 23 route (see the breakdown below). | NI2020-703 Comp 23 | Free-text location | Possible location suggestions |
+| R10 | Competency 23 route (see the breakdown below). | NI2020-703 Comp 23; CoP 9.2 f, k | Free-text location; **not auto-checked** | Possible location suggestions |
 | R11 | Instructor phone use during a lesson ≤ 30 seconds. | CoP | — | **UX principle**: in-lesson actions are one or two taps; details after the lesson |
 | R12 | Inform ADI Audit if a transfer student's record from another instructor is incorrect, false, misleading or incomplete. | CoP 9.2 e | — | Note for transfers |
 
@@ -75,11 +82,27 @@ The instruments win over this summary. If they disagree, fix this file.
 - Keep certificate copies ≥ 6 months.
 - Issue certificates in ascending number order.
 
-**R10 — Competency 23 route**
-- One accepted town centre: Civic, Gungahlin, Belconnen, Woden,
-  Tuggeranong, Fyshwick, or Manuka+Kingston.
-- At least 1 stop sign, 1 give way, 2 traffic lights, 2 pedestrian
-  crossings, and 5 right + 5 left turns.
+**R10 — Competency 23 / Final Drive route condition** (**not auto-checked
+by the app**: the route is the instructor's call; the app stores free-text
+location only). Source: NI2020-703 Schedule 1, Competency No. 23,
+"Requirements" (PDF pp. 36-37); CoP DI2020-294 cl. 9.2 f and k (PDF p. 11)
+require Competency 23 to be assessed as the Assessment Standards set out.
+- "An assessment must be conducted to include **2 designated zones** (a
+  designated zone is a zone as approved by the RTA)."
+- "The student must negotiate the following in an **UNFAMILIAR Town Centre
+  within ONE (1) zone**": 1 stop sign; 1 give way sign; 2 traffic lights;
+  2 pedestrian crossings; minimum of 5 right and 5 left turns.
+- Accepted Town Centres: Canberra City (Civic), Gungahlin, Belconnen, Woden,
+  Tuggeranong, Fyshwick, Manuka and Kingston together. They are "bounded by
+  the streets listed" in the instrument (p. 37), and "A Competency 23
+  assessment can only be undertaken within and including the streets
+  listed."
+- Also: "heavy traffic flow conditions and … unfamiliar areas"; tasks
+  performed "continually throughout a single lesson unaided by the
+  instructor" (p. 38).
+- Wording note: the text says 2 designated **zones** (RTA-approved), one of
+  which contains the unfamiliar accepted Town Centre; it does not use the
+  words "designated area" or "designated town centre".
 
 Student complaints channel: Access Canberra ADI Audit section,
 Audit.Bookings@act.gov.au (CoP 11 b). Relevant to the ACTGDS website.

@@ -222,11 +222,12 @@ export function planPaperImport(csvText: string, instructors: readonly Pick<Inst
 
       const lessonId = `prior-row-${rowNo}`;
       const createdAt = new Date(Date.UTC(2000, 0, 1, 0, 0, rowNo)).toISOString();
-      for (const competencyId of achievedIds) events.push({ competencyId, action: "assessed", result: "achieved", lessonId, createdAt });
+      const priorLessonNo = priorRecords.length - priorRowCount; // -k .. -1, oldest first
+      for (const competencyId of achievedIds) events.push({ competencyId, action: "assessed", result: "achieved", lessonId, createdAt, lessonNo: priorLessonNo });
       totalMinutes += minutes;
       totalKm += km ?? 0;
       priorRecords.push({
-        lessonNo: priorRecords.length - priorRowCount, // -k .. -1, oldest first
+        lessonNo: priorLessonNo,
         date,
         label: get("prior_instructor"),
         lessonCount, minutes, km,
@@ -310,13 +311,14 @@ export function planPaperImport(csvText: string, instructors: readonly Pick<Inst
 
     const lessonId = `paper-row-${rowNo}`;
     const createdAt = new Date(Date.UTC(2000, 0, 1, 0, 0, rowNo)).toISOString();
-    for (const competencyId of taughtIds) events.push({ competencyId, action: "taught", result: null, lessonId, createdAt });
-    for (const competencyId of assessedIds) events.push({ competencyId, action: "assessed", result: achievedResults[competencyId] ?? null, lessonId, createdAt });
+    const lessonNo = lessons.length + 1;
+    for (const competencyId of taughtIds) events.push({ competencyId, action: "taught", result: null, lessonId, createdAt, lessonNo });
+    for (const competencyId of assessedIds) events.push({ competencyId, action: "assessed", result: achievedResults[competencyId] ?? null, lessonId, createdAt, lessonNo });
 
     totalMinutes += duration ?? 0;
     totalKm += distance ?? 0;
     lessons.push({
-      lessonNo: lessons.length + 1,
+      lessonNo,
       lessonDate: date,
       startTime, finishTime, startOdometer, finishOdometer,
       durationMinutes: duration, distanceKm: distance,

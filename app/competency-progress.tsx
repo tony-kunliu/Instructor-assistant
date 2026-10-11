@@ -1,15 +1,10 @@
-import { ALL_ASSESSABLE_IDS, CORE_COMPETENCY_IDS, competencyFullName, competencyLabel, type LearnerProgress, type MilestoneInvalidation, type ReviewState } from "@/lib/competency.ts";
+import { ALL_ASSESSABLE_IDS, CORE_COMPETENCY_IDS, competencyFullName, competencyLabel, invalidatedMilestoneLabels, type LearnerProgress, type MilestoneInvalidation, type ReviewState } from "@/lib/competency.ts";
 import type { CompletionSummary } from "@/lib/types.ts";
 
 function invalidationMessage(invalidated: MilestoneInvalidation): string | null {
-  const rolledBack = [
-    invalidated.review1_17 ? "Review 1-17" : null,
-    invalidated.review1_22 ? "Review 1-22" : null,
-    invalidated.finalDrive23 ? "23 Final Drive" : null,
-    invalidated.completed ? "CBT&A Completed" : null,
-  ].filter((label): label is string => label !== null);
-  if (!rolledBack.length) return null;
-  return `This edit removed a prerequisite: ${rolledBack.join(", ")} no longer meets its requirements and has been reset. Please review and re-assess.`;
+  const labels = invalidatedMilestoneLabels(invalidated);
+  if (!labels.length) return null;
+  return `After this edit, ${labels.join(", ")} no longer meets its requirements (prerequisites must be achieved in earlier lessons) and has been reset. The original assessments stay in History. Please review and re-assess.`;
 }
 
 function reviewLabel(status: ReviewState, remaining: number): string {
@@ -70,8 +65,9 @@ export default function CompetencyProgressCard({ progress, completion, invalidat
           ))}
         </ul>
       </details>
-      {completion ? (
-        <p className="status ok">
+      {/* Only while the derived progress is completed: a raw Final Drive event alone never shows the banner. */}
+      {progress.completed && completion ? (
+        <p className="status ok" data-testid="cbta-completed-banner">
           CBT&amp;A Completed — Lesson #{completion.completingLessonNo} · {completion.instructorName} · {completion.totalLessons} lessons ·{" "}
           {completion.cumulativeHours} h · {completion.cumulativeKm} km
         </p>

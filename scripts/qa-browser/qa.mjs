@@ -1,4 +1,4 @@
-// Real-browser business regression at iPhone 13 width (390px), plus iPad viewports (section 14). See run.sh.
+// Real-browser business regression at iPhone 13 width (390px), plus iPad viewports (section 15). See run.sh.
 import { createRequire } from "node:module";
 import { readFileSync, writeFileSync } from "node:fs";
 
@@ -1306,7 +1306,55 @@ const draw = async (page, index) => {
   await s.ctx.close();
 }
 
-// ═══ 14. iPad layout: wider column (≥700px), two columns (≥1000px), touch targets, signature pads ═══
+// ═══ 14. Derived milestone validity after History Edit + Completed banner (progress-invalidation fix) ═══
+{
+  const post = async (path, body, method = "POST") => { const r = await fetch(B + path, { method, headers: { "content-type": "application/json" }, body: JSON.stringify(body) }); const d = await r.json(); if (!r.ok) throw new Error(`${path} ${JSON.stringify(d)}`); return d; };
+  const rng = (a, b) => Array.from({ length: b - a + 1 }, (_, i) => String(a + i));
+  const doneBy = (ids) => ({ assessedIds: ids, achievedResults: Object.fromEntries(ids.map((id) => [id, "achieved"])) });
+  const mkLessons = async (learnerId, steps) => {
+    let odo = 1000;
+    for (const step of steps) { const start = odo; odo += 12; await post(`/api/learners/${learnerId}/lessons`, { lessonDate: "2026-09-20", startTime: "09:00", finishTime: "10:00", startOdometer: String(start), finishOdometer: String(odo), adiSignature: SIG, learnerSignature: SIG, ...step }); }
+  };
+  // Bug 1: Lesson 1 achieves 1-17, Lesson 2 Review 1-17, Lesson 3 achieves 17 again; the UI edit removes 17 from Lesson 1.
+  const r17 = (await post("/api/learners", { fullName: "QA Tony Invalid R17", instructorId: WHO.tony[0] })).learner;
+  await mkLessons(r17.id, [doneBy(rng(1, 17)), doneBy(["review-1-17"]), doneBy(["17"])]);
+  // Bug 2: a full valid chain, then Lesson 3 edited (API) so 22 is Not achieved.
+  const revoked = (await post("/api/learners", { fullName: "QA Tony Completion Revoked", instructorId: WHO.tony[0] })).learner;
+  await mkLessons(revoked.id, [doneBy(rng(1, 17)), doneBy(["review-1-17"]), doneBy(rng(18, 22)), doneBy(["review-1-22"]), doneBy(["final-drive-23"])]);
+  const revokedDetail = await (await fetch(`${B}/api/learners/${revoked.id}`)).json();
+  check("completed chain: API completion summary present while completed", revokedDetail.progress.completed === true && revokedDetail.completion?.completingLessonNo === 5);
+  const l3 = revokedDetail.lessons.find((l) => l.lessonNo === 3);
+  await post(`/api/learners/${revoked.id}/lessons/${l3.id}`, { lessonDate: l3.lessonDate, startTime: l3.startTime, finishTime: l3.finishTime, startOdometer: String(l3.startOdometer), finishOdometer: String(l3.finishOdometer),
+    assessedIds: rng(18, 22), achievedResults: { ...Object.fromEntries(rng(18, 21).map((id) => [id, "achieved"])), "22": "not_achieved" },
+    adiSignature: SIG.replace("AAAAC0lEQVR42", "AAAAC0lEQVR45"), learnerSignature: SIG.replace("AAAAC0lEQVR42", "AAAAC0lEQVR46") }, "PATCH");
+  const afterRevoke = await (await fetch(`${B}/api/learners/${revoked.id}`)).json();
+  check("revoked completion: API progress.completed false and completion null (raw Final Drive event kept)", afterRevoke.progress.completed === false && afterRevoke.completion === null && afterRevoke.progress.competencies["final-drive-23"].achieved === true, JSON.stringify(afterRevoke.completion));
+
+  const s = await session("tony");
+  await ready(s.page);
+  await s.page.setViewportSize({ width: 375, height: 812 });
+  await pick(s.page, "QA Tony Completion Revoked");
+  await s.page.waitForSelector("text=Start Lesson");
+  check("revoked completion: no 'CBT&A Completed' banner, no completed card, Start Lesson available", (await s.page.$("[data-testid=cbta-completed-banner]")) === null && (await s.page.$("[data-testid=cbta-completed-card]")) === null);
+  await pick(s.page, "QA Tony Invalid R17");
+  await s.page.waitForSelector("[data-testid=history-row]");
+  await s.page.click("[data-testid=history-row] .h-edit >> nth=-1");
+  await s.page.waitForSelector("text=/Editing Lesson #1/");
+  await s.page.locator(".h-editing .comp-section:has(.comp-label:text-is('Assessed')) .chip-row >> nth=0 >> button:text-is(\"17\")").click();
+  await signBoth(s.page);
+  await s.page.click(".h-editing .btn.save");
+  await s.page.waitForSelector(".status:has-text('Lesson updated'), .h-editing .status.error");
+  const statusText = (await s.page.textContent(".status")) ?? "";
+  check("History Edit removing 17 from Lesson #1 (17 only re-achieved in Lesson #3): saved with a short amber warning naming Review 1-17", statusText === "Lesson updated. No longer valid: Review 1-17 (prerequisites must be achieved in earlier lessons)." && (await s.page.$(".status.warn")) !== null, statusText);
+  const r17After = await (await fetch(`${B}/api/learners/${r17.id}`)).json();
+  check("…and the derived progress persists: Review 1-17 ready (not achieved), original Review 1-17 event kept", r17After.progress.review1_17.status === "ready" && r17After.progress.competencies["review-1-17"].achieved === true, r17After.progress.review1_17.status);
+  check("progress-invalidation: no horizontal scroll at 375px", await noHScroll(s.page));
+  await shot(s.page, "14-milestone-invalidated-375");
+  check("progress-invalidation: Tony: no page errors", s.errors.length === 0, s.errors.join("|"));
+  await s.ctx.close();
+}
+
+// ═══ 15. iPad layout: wider column (≥700px), two columns (≥1000px), touch targets, signature pads ═══
 {
   const headers = { "content-type": "application/json", "x-instructor-id": WHO.tony[0], "x-instructor-name": WHO.tony[1] };
   const mk = async (fullName) => { const r = await fetch(B + "/api/learners", { method: "POST", headers, body: JSON.stringify({ fullName, instructorId: WHO.tony[0] }) }); const d = await r.json(); if (!r.ok) throw new Error(JSON.stringify(d)); return d.learner; };
@@ -1367,7 +1415,7 @@ const draw = async (page, index) => {
       const order = [".card.picker", ".summary", ".card.progress", ".card.lesson", ".card.history"].map((s) => document.querySelector(s));
       return order.every((el, i) => i === 0 || (order[i - 1].compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING));
     }));
-    await shot(page, `14-ipad-${tag}-learner`);
+    await shot(page, `15-ipad-${tag}-learner`);
 
     await page.click(".btn.go");
     await page.click("text=End Lesson");
@@ -1382,7 +1430,7 @@ const draw = async (page, index) => {
     await signBoth(page);
     check(`iPad ${tag}: drawing on both pads registers`, (await page.$$(".sig-ok")).length === 2);
     check(`iPad ${tag}: Save Lesson ≥44px and visible`, await tall(page, ".btn.save"));
-    await shot(page, `14-ipad-${tag}-lesson-form`);
+    await shot(page, `15-ipad-${tag}-lesson-form`);
     if (w === 1366) {
       // A dense scribble on both pads, then Save: the posted PNGs are 640×320 and far below MAX_SIGNATURE_LENGTH (400 000).
       await page.click('.comp-section:has(.comp-label:text-is("Taught")) .chip-row >> text="5"');
@@ -1425,7 +1473,7 @@ const draw = async (page, index) => {
       // One more stroke after the rotation lands on the same fixed canvas (no squashed composite).
       await signBoth(page);
       check("iPad after rotation + extra stroke: saved PNGs are still 640×320", (await pixels()).every((d) => { const i = pngInfo(d); return i.w === 640 && i.h === 320; }));
-      await shot(page, "14-ipad-rotated-1180-lesson-form");
+      await shot(page, "15-ipad-rotated-1180-lesson-form");
       await page.setViewportSize({ width: w, height: h });
       await settle(400);
     }
@@ -1436,13 +1484,13 @@ const draw = async (page, index) => {
     await page.waitForSelector(".h-editing .sig canvas");
     await settle();
     check(`iPad ${tag}: History edit form, no horizontal scroll, pads 640×320 undistorted`, (await noHScroll(page)) && (await canvasFixed(page)));
-    await shot(page, `14-ipad-${tag}-history-edit`);
+    await shot(page, `15-ipad-${tag}-history-edit`);
     await page.click(".h-editing >> text=Cancel");
 
     await page.click(".archive-link");
     await page.waitForSelector("[data-testid=archive-panel]");
     check(`iPad ${tag}: archive panel, no horizontal scroll, buttons ≥44px`, (await noHScroll(page)) && (await tall(page, "[data-testid=archive-confirm]")) && (await tall(page, "[data-testid=archive-cancel]")));
-    await shot(page, `14-ipad-${tag}-archive-panel`);
+    await shot(page, `15-ipad-${tag}-archive-panel`);
     await page.click("[data-testid=archive-cancel]");
 
     await page.click("text=+ New");
@@ -1450,7 +1498,7 @@ const draw = async (page, index) => {
     await page.click("[data-testid=c23-group] summary");
     check(`iPad ${tag}: New learner form, no horizontal scroll, Save ≥44px`, (await noHScroll(page)) && (await tall(page, "[data-testid=save-learner]")));
     if (twoCol) check(`iPad ${tag}: New learner form sits in the right column`, (await box(page, ".learner-form")).x >= (await box(page, ".card.picker")).right);
-    await shot(page, `14-ipad-${tag}-new-learner`);
+    await shot(page, `15-ipad-${tag}-new-learner`);
     await page.click(".picker-row .btn");
 
     await pick(page, "QA Tony iPad Empty");
@@ -1458,7 +1506,7 @@ const draw = async (page, index) => {
     await page.click("[data-testid=paper-import-open]");
     await page.waitForSelector("[data-testid=paper-import-panel]");
     check(`iPad ${tag}: paper import panel, no horizontal scroll`, await noHScroll(page));
-    if (w === 820 || w === 1180) await shot(page, `14-ipad-${tag}-paper-import`);
+    if (w === 820 || w === 1180) await shot(page, `15-ipad-${tag}-paper-import`);
     check(`iPad ${tag}: no page errors`, errors.length === 0, errors.join("|"));
     await ctx.close();
   }
@@ -1477,7 +1525,7 @@ const draw = async (page, index) => {
     const lesson = await box(s.page, ".card.lesson"), picker = await box(s.page, ".card.picker");
     const sigH = await s.page.$eval(".sig canvas", (c) => Math.round(c.getBoundingClientRect().height));
     check(`phone ${w}px: one column, 2:1 pads ≥130px tall, no horizontal scroll (iPad CSS not applied)`, Math.abs(lesson.x - picker.x) < 2 && sigH >= 130 && (await canvasFixed(s.page)) && (await noHScroll(s.page)), `sig ${sigH}`);
-    if (w === 390) await shot(s.page, "14-phone-390-lesson-form");
+    if (w === 390) await shot(s.page, "15-phone-390-lesson-form");
     await s.page.click("text=Discard this lesson");
     await s.ctx.close();
   }
@@ -1498,7 +1546,7 @@ const draw = async (page, index) => {
     await s.page.click("text=End Lesson");
     await s.page.waitForSelector(".sig canvas");
     check(`phone landscape ${w}x${h}: lesson form, no horizontal scroll, pads 640×320 undistorted`, (await noHScroll(s.page)) && (await canvasFixed(s.page)));
-    if (w === 844) await shot(s.page, "14-phone-landscape-844x390-lesson-form");
+    if (w === 844) await shot(s.page, "15-phone-landscape-844x390-lesson-form");
     await s.page.click("text=Discard this lesson");
     await s.ctx.close();
   }

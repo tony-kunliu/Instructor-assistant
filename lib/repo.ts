@@ -5,6 +5,8 @@ import {
   CompetencyRuleError,
   POST_REVIEW_1_17_IDS,
   POST_REVIEW_1_17_LOCK_MESSAGE,
+  REVIEW_1_17,
+  REVIEW_1_22,
   assessmentChronologyViolations,
   assessmentLockReason,
   FINAL_DRIVE_23,
@@ -744,8 +746,8 @@ export async function createLesson(db: D1Database, learnerId: string, input: Les
   // outcomes, which don't depend on sub-second event ordering.
   const nowIso = new Date().toISOString();
   const newEvents: CompetencyEvent[] = [
-    ...taughtIds.map((competencyId) => ({ competencyId, action: "taught" as const, result: null, lessonId: id, createdAt: nowIso })),
-    ...assessedIds.map((competencyId) => ({ competencyId, action: "assessed" as const, result: achievedResults[competencyId] ?? null, lessonId: id, createdAt: nowIso })),
+    ...taughtIds.map((competencyId) => ({ competencyId, action: "taught" as const, result: null, lessonId: id, createdAt: nowIso, lessonNo: totals.lessonCount + 1 })),
+    ...assessedIds.map((competencyId) => ({ competencyId, action: "assessed" as const, result: achievedResults[competencyId] ?? null, lessonId: id, createdAt: nowIso, lessonNo: totals.lessonCount + 1 })),
   ];
   const progressAfter = computeProgress([...priorEvents, ...newEvents]);
   const instructorNames = await integrationInstructorNames(db, integration, [actingInstructorId]);
@@ -1105,6 +1107,13 @@ export async function updateLesson(db: D1Database, learnerId: string, lessonId: 
   }
   const achievedIds = assessedIds.filter((id) => achievedResults[id] === "achieved");
 
+  // This lesson's events after the edit (in memory: validation below and the "after" snapshot).
+  const nowIso = new Date().toISOString();
+  const newEventsForThisLesson: CompetencyEvent[] = [
+    ...taughtIds.map((competencyId) => ({ competencyId, action: "taught" as const, result: null, lessonId, createdAt: nowIso, lessonNo: existing.lessonNo })),
+    ...assessedIds.map((competencyId) => ({ competencyId, action: "assessed" as const, result: achievedResults[competencyId] ?? null, lessonId, createdAt: nowIso, lessonNo: existing.lessonNo })),
+  ];
+
   // An edit may not introduce a NEW gated assessment (in this lesson) whose
   // prerequisites weren't Achieved in earlier lessons. Violations already in
   // legacy data are tolerated and never rewritten — only new ones block.
@@ -1122,12 +1131,7 @@ export async function updateLesson(db: D1Database, learnerId: string, lessonId: 
       }
       return [...groups].map(([lessonNo, events]) => ({ lessonNo, events }));
     };
-    const stamp = new Date().toISOString();
-    const proposedEvents: CompetencyEvent[] = [
-      ...otherLessonsEvents,
-      ...taughtIds.map((competencyId) => ({ competencyId, action: "taught" as const, result: null, lessonId, createdAt: stamp })),
-      ...assessedIds.map((competencyId) => ({ competencyId, action: "assessed" as const, result: achievedResults[competencyId] ?? null, lessonId, createdAt: stamp })),
-    ];
+    const proposedEvents: CompetencyEvent[] = [...otherLessonsEvents, ...newEventsForThisLesson];
     const already = assessmentChronologyViolations(groupByLesson(allEventsBeforeEdit));
     const introduced = [...assessmentChronologyViolations(groupByLesson(proposedEvents))].filter((key) => !already.has(key));
     const idOf = (key: string) => key.slice(key.indexOf(":") + 1);
@@ -1139,6 +1143,11 @@ export async function updateLesson(db: D1Database, learnerId: string, lessonId: 
       const laterLessonNo = Math.min(...laterCompetencies.map(lessonNoOf));
       throw new ValidationError(`This edit would leave Lesson #${laterLessonNo} assessing Competency 18, 20 or 21 before Competency 1-17 and Review 1-17 were achieved in earlier lessons. Correct Lesson #${laterLessonNo} first.`);
     }
+    // Review / Final Drive assessments are never blocked here beyond the
+    // own-lesson gate above: one whose prerequisites are not achieved in
+    // earlier lessons (removed by this edit, or a result flipped to Achieved
+    // under an existing violation) is simply derived as not achieved
+    // (computeProgress) and reported through `invalidated`; its events stay.
   }
 
   const location = text(input.location, 200);
@@ -1276,11 +1285,6 @@ export async function updateLesson(db: D1Database, learnerId: string, lessonId: 
   // in memory (otherLessonsEvents + this lesson's own new events) so the
   // outbox INSERT can go in the same atomic batch as the edit itself,
   // rather than a separate post-write statement.
-  const nowIso = new Date().toISOString();
-  const newEventsForThisLesson: CompetencyEvent[] = [
-    ...taughtIds.map((competencyId) => ({ competencyId, action: "taught" as const, result: null, lessonId, createdAt: nowIso })),
-    ...assessedIds.map((competencyId) => ({ competencyId, action: "assessed" as const, result: achievedResults[competencyId] ?? null, lessonId, createdAt: nowIso })),
-  ];
   const after = computeProgress([...otherLessonsEvents, ...newEventsForThisLesson]);
 
   // Version lookup for the directly edited lesson itself, combined with the
@@ -1405,27 +1409,45 @@ export async function updateLesson(db: D1Database, learnerId: string, lessonId: 
   // statements, however many lessons follow the edited one.
   await db.batch([revisionInsertStatement(db, lessonId, actingInstructorId, reason), updateEditedLesson, recomputeCumulative, deleteOldEvents, ...(eventsInsert ? [eventsInsert] : []), ...(outboxInsert ? [outboxInsert] : [])]);
 
-  const [updatedLesson, completion] = await Promise.all([getLesson(db, learnerId, lessonId), getCompletionSummary(db, learnerId)]);
+  const [updatedLesson, completion] = await Promise.all([getLesson(db, learnerId, lessonId), getCompletionSummary(db, learnerId, after)]);
 
   scheduleIntegrationDelivery(db, integration);
 
-  return { lesson: updatedLesson, progress: after, completion, invalidated: diffInvalidatedMilestones(before, after) };
+  // Reported: milestones that were valid and no longer are, plus any milestone this lesson now
+  // records as Achieved that does not count (its prerequisites are not in earlier lessons).
+  const invalidated = diffInvalidatedMilestones(before, after);
+  const recordedHere = (id: string) => newEventsForThisLesson.some((event) => event.competencyId === id && event.action === "assessed" && event.result === "achieved");
+  if (recordedHere(REVIEW_1_17) && after.review1_17.status !== "achieved") invalidated.review1_17 = true;
+  if (recordedHere(REVIEW_1_22) && after.review1_22.status !== "achieved") invalidated.review1_22 = true;
+  if (recordedHere(FINAL_DRIVE_23) && after.finalDrive23.status !== "achieved") invalidated.finalDrive23 = true;
+
+  return { lesson: updatedLesson, progress: after, completion, invalidated };
 }
 
 // ── CBT&A V2 competency progress ────────────────────────────────────────
 
 export async function getCompetencyEvents(db: D1Database, learnerId: string): Promise<CompetencyEvent[]> {
   const { results } = await db
-    .prepare("SELECT competency_id, action, result, lesson_id, created_at FROM competency_events WHERE learner_id = ? ORDER BY created_at ASC")
+    .prepare(
+      `SELECT e.competency_id, e.action, e.result, e.lesson_id, e.created_at, l.lesson_no
+       FROM competency_events e LEFT JOIN lessons l ON l.id = e.lesson_id
+       WHERE e.learner_id = ? ORDER BY e.created_at ASC`,
+    )
     .bind(learnerId)
     .all<Row>();
-  return results.map((row) => ({
+  return results.map(competencyEventFromRow);
+}
+
+/** lesson_no travels with every event: Review / Final Drive validity is judged by lesson order (lib/competency.ts#milestoneAssessmentCounts). No lesson row (never expected) = unknown lesson number, which can never validate a milestone. */
+function competencyEventFromRow(row: Row): CompetencyEvent {
+  return {
     competencyId: String(row.competency_id),
     action: row.action as CompetencyEvent["action"],
     result: (row.result as CompetencyEvent["result"]) ?? null,
     lessonId: String(row.lesson_id),
     createdAt: String(row.created_at),
-  }));
+    lessonNo: row.lesson_no === null || row.lesson_no === undefined ? undefined : Number(row.lesson_no),
+  };
 }
 
 export async function getLearnerProgress(db: D1Database, learnerId: string): Promise<LearnerProgress> {
@@ -1441,22 +1463,14 @@ export async function getProgressExcludingLesson(db: D1Database, learnerId: stri
 export async function getProgressBeforeLesson(db: D1Database, learnerId: string, lessonId: string): Promise<LearnerProgress> {
   const { results } = await db
     .prepare(
-      `SELECT e.competency_id, e.action, e.result, e.lesson_id, e.created_at
+      `SELECT e.competency_id, e.action, e.result, e.lesson_id, e.created_at, l.lesson_no
        FROM competency_events e JOIN lessons l ON l.id = e.lesson_id
        WHERE e.learner_id = ? AND l.lesson_no < (SELECT lesson_no FROM lessons WHERE id = ? AND learner_id = ?)
        ORDER BY e.created_at ASC`,
     )
     .bind(learnerId, lessonId, learnerId)
     .all<Row>();
-  return computeProgress(
-    results.map((row) => ({
-      competencyId: String(row.competency_id),
-      action: row.action as CompetencyEvent["action"],
-      result: (row.result as CompetencyEvent["result"]) ?? null,
-      lessonId: String(row.lesson_id),
-      createdAt: String(row.created_at),
-    })),
-  );
+  return computeProgress(results.map(competencyEventFromRow));
 }
 
 /** A lesson's current Taught/Assessed/Achieved selections, reconstructed from its competency events (for the edit form). */
@@ -1477,18 +1491,26 @@ export async function getLessonCompetencySelections(db: D1Database, lessonId: st
   return { taughtIds, assessedIds, achievedResults };
 }
 
-/** Set once 23 Final Drive has been Assessed + Achieved for this learner, else null. */
-export async function getCompletionSummary(db: D1Database, learnerId: string): Promise<CompletionSummary | null> {
+/**
+ * The CBT&A Completed summary, consistent with the derived progress: set only while
+ * `progress.completed` (a valid 23 Final Drive, see computeProgress), naming that Final Drive's
+ * lesson; null otherwise, even if a raw Final Drive Achieved event exists (kept for audit). Pass the
+ * progress the caller already has; without it the progress is read first (one extra statement).
+ * No D1 statement at all when not completed.
+ */
+export async function getCompletionSummary(db: D1Database, learnerId: string, progress?: LearnerProgress): Promise<CompletionSummary | null> {
+  const derived = progress ?? (await getLearnerProgress(db, learnerId));
+  if (!derived.completed || derived.completedLessonId === null) return null;
   const row = await db
     .prepare(
       `SELECT e.created_at AS completed_at, l.lesson_no, l.cumulative_minutes, l.cumulative_km, i.full_name AS instructor_name
        FROM competency_events e
        JOIN lessons l ON l.id = e.lesson_id
        JOIN instructors i ON i.id = l.instructor_id
-       WHERE e.learner_id = ? AND e.competency_id = ? AND e.action = 'assessed' AND e.result = 'achieved'
+       WHERE e.learner_id = ? AND e.lesson_id = ? AND e.competency_id = ? AND e.action = 'assessed' AND e.result = 'achieved'
        ORDER BY e.created_at ASC LIMIT 1`,
     )
-    .bind(learnerId, FINAL_DRIVE_23)
+    .bind(learnerId, derived.completedLessonId, FINAL_DRIVE_23)
     .first<Row>();
   if (!row) return null;
   return {

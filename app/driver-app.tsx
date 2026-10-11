@@ -14,7 +14,7 @@ import {
   parseTime,
   type Totals,
 } from "@/lib/calc.ts";
-import { FINAL_DRIVE_23, REVIEW_1_17, REVIEW_1_22, type AssessmentResult, type LearnerProgress, type MilestoneInvalidation } from "@/lib/competency.ts";
+import { FINAL_DRIVE_23, REVIEW_1_17, REVIEW_1_22, invalidationNotice, type AssessmentResult, type LearnerProgress, type MilestoneInvalidation } from "@/lib/competency.ts";
 import { accessLogoutUrl } from "@/lib/access-logout.ts";
 import { ARCHIVE_REASONS, archiveReasonText, MAX_ARCHIVE_NOTE_LENGTH } from "@/lib/archive-reasons.ts";
 import { filterLearners } from "@/lib/learner-filter.ts";
@@ -183,7 +183,7 @@ export default function DriverApp() {
   // The learner the open edit form belongs to; the save targets this id, never whoever is selected at save time.
   const [editLearnerId, setEditLearnerId] = useState<string | null>(null);
   const [learnerDraft, setLearnerDraft] = useState<LearnerDraft>(emptyLearner);
-  const [status, setStatus] = useState<{ kind: "info" | "error" | "ok"; text: string } | null>(null);
+  const [status, setStatus] = useState<{ kind: "info" | "error" | "ok" | "warn"; text: string } | null>(null);
   const [saving, setSaving] = useState(false);
   const [clock, setClock] = useState(() => localNow().time);
   const finishOdoRef = useRef<HTMLInputElement>(null);
@@ -522,7 +522,8 @@ export default function DriverApp() {
       await loadLearner(detail.learner.id);
       setInvalidation(result.invalidated);
       cancelEditLesson();
-      setStatus({ kind: "ok", text: "Lesson updated." });
+      const notice = invalidationNotice(result.invalidated);
+      setStatus(notice ? { kind: "warn", text: `Lesson updated. ${notice}` } : { kind: "ok", text: "Lesson updated." });
     } catch (error) {
       setEditIssues({ source: "server", issues: [issueFromServerMessage((error as Error).message)], snapshot: editDraft });
       setEditAttempt((n) => n + 1);
