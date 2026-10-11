@@ -7,17 +7,14 @@ closed PRs; see `TASK.md` for what is in progress.
 
 ## In progress
 
-- `fix/progress-invalidation` (PR #54, to staging, then Production; no migration): the two
-  CBT&A progress bugs Work reported on actgds.com Issue #3 (comment
-  6104913100). A Review / Final Drive counts only if its prerequisites were
-  achieved in strictly earlier lessons (no timestamps; derived, reported,
-  events kept, never blocks an edit); the Completed banner/summary follows
-  derived completion. Read-only `scripts/audit-progress.mjs` compares old vs
-  new rule (Production audit: 0 differences).
-- Learner 3a/3b (migration `0010`) and the Canberra-time convention (AGENTS.md §15)
-  are released. Designs for 3c (learner transfer), R10 (Competency 23 route) and
-  learner intake are written and decided by Tony 2026-10-11 (route: familiar =
-  home district); waiting for the go to build.
+- Released to Production 2026-10-11: CBT&A progress validity fix + Completed banner
+  (Worker `908b2c9c-9228-4608-b86b-76c9e2c14e44`, run 38153327724, no migration;
+  Production audit: 0 differences), learner 3a/3b (migration `0010`), Canberra time.
+- Built on Staging (Production after the release below): learner intake P1, the "Competency 23 from"
+  line (panel + form) and the PDF Eligibility auto-fill (no migration). Next on Staging: 3c transfer T1
+  (migration 0011, apply to Staging D1 first), R10a route reminders. iPad layout is on
+  `feature/ipad-layout` in review (signature-size fix round); needs Tony's real-iPad check.
+- Designs: `docs/superpowers/specs/2026-10-11-*.md` (transfer, route, intake), decided by Tony 2026-10-11.
 
 ## Repository
 

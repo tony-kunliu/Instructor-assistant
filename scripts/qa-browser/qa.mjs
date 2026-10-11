@@ -1354,6 +1354,100 @@ const draw = async (page, index) => {
   await s.ctx.close();
 }
 
+// ═══ 15. Learner intake P1: "Competency 23 from" line + PDF Eligibility auto-fill (no migration) ═══
+{
+  const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Australia/Sydney" }).format(new Date());
+  const addDays = (d, n) => new Date(Date.parse(`${d}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
+  // First day of a month `back` months before today's month (never after today; no month-end clamping involved).
+  const firstOf = (back, years = 0) => { const [y, m] = today.split("-").map(Number); const t = y * 12 + (m - 1) - back + years * 12; return `${Math.floor(t / 12)}-${String((t % 12) + 1).padStart(2, "0")}-01`; };
+  const nice = (iso) => { const [y, m, d] = iso.split("-").map(Number); return `${d} ${MON[m - 1]} ${y}`; };
+  const post = async (path, body) => { const r = await fetch(B + path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }); const d = await r.json(); if (!r.ok) throw new Error(`${path} ${JSON.stringify(d)}`); return d; };
+  const dob = addDays(firstOf(0, -18), -40); // 18 at issue: under 25, already 17.
+  const issue1 = firstOf(1);
+  const due1 = firstOf(1, 1);
+  const learner = (await post("/api/learners", { fullName: "QA Tony C23 From", instructorId: WHO.tony[0], dob, learnerLicenceIssuedOn: issue1, loggedHours: 40, loggedHoursOn: today })).learner;
+  const stored = async () => (await (await fetch(`${B}/api/learners/${learner.id}`)).json()).learner;
+  const s = await session("tony");
+  await ready(s.page);
+  await s.page.setViewportSize({ width: 375, height: 812 });
+  await pick(s.page, "QA Tony C23 From");
+  await s.page.waitForSelector("[data-testid=c23-from] .reminder");
+  const line = async (sel) => s.page.$eval(sel, (e) => ({ tone: e.dataset.tone, text: e.textContent }));
+  const panel1 = await line("[data-testid=c23-from] .reminder");
+  check("C23 from: panel line 'Competency 23 from <date> (licence 12 months; plus 100 h and HPT)', amber", panel1.tone === "amber" && panel1.text === `Competency 23 from ${nice(due1)} (licence 12 months; plus 100 h and HPT).`, panel1.text);
+  check("C23 from: no horizontal scroll at 375px (panel)", await noHScroll(s.page));
+  await shot(s.page, "15-c23-from-panel-375");
+  check("C23 from: stored Eligibility is still empty before any form save (export computes it)", (await stored()).eligibility === null);
+
+  const openEdit = async () => { await s.page.click("[data-testid=edit-learner]"); await s.page.waitForSelector("[data-testid=c23-group]"); };
+  const expand = async () => { if (!(await s.page.$eval("[data-testid=c23-group]", (e) => e.open))) await s.page.click("[data-testid=c23-group] summary"); };
+  const save = async () => { await s.page.click("[data-testid=save-learner]"); await s.page.waitForSelector(".status.ok, .status.error"); return s.page.textContent(".status"); };
+  const elig = () => s.page.inputValue("[data-testid=learner-eligibility]");
+  await openEdit();
+  check("C23 from: Edit opens Eligibility as stored (empty) with the 'auto' hint (filled on save)", (await elig()) === "" && (await s.page.isVisible("[data-testid=eligibility-auto]")), await elig());
+  const untouched = await save();
+  check("C23 from: opening Edit and saving untouched records no change ('No changes', Eligibility still empty)", /No changes/.test(untouched) && (await stored()).eligibility === null, untouched);
+  check("C23 from: the panel still shows the live computed line after an untouched save", (await line("[data-testid=c23-from] .reminder")).text === panel1.text);
+  await openEdit();
+  await expand();
+  const form1 = await line("[data-testid=c23-from-form] .reminder");
+  check("C23 from: the Competency 23 group shows the same line, live", form1.text === panel1.text, form1.text);
+  const issue2 = firstOf(2);
+  const due2 = firstOf(2, 1);
+  await s.page.fill("[data-testid=c23-issued]", issue2);
+  check("C23 from: changing the issue date updates the generated Eligibility and the line live", (await elig()) === `C23 from ${due2}` && (await line("[data-testid=c23-from-form] .reminder")).text.startsWith(`Competency 23 from ${nice(due2)} (`), await elig());
+  check("C23 from: no horizontal scroll at 375px (Edit form, group open)", await noHScroll(s.page));
+  await shot(s.page, "15-c23-from-edit-375");
+  const saved1 = await save();
+  check("C23 from: the generated value is saved with the learner (normal save)", /updated/.test(saved1) && (await stored()).eligibility === `C23 from ${due2}`, saved1);
+
+  // Tony's own text is never overwritten, even when the dates change.
+  await openEdit(); await expand();
+  await s.page.fill("[data-testid=learner-eligibility]", "QA own eligibility");
+  check("C23 from: own text hides the auto hint", !(await s.page.isVisible("[data-testid=eligibility-auto]")));
+  await s.page.fill("[data-testid=c23-issued]", issue1);
+  check("C23 from: own text stays when the dates change", (await elig()) === "QA own eligibility", await elig());
+  await save();
+  check("C23 from: own text is saved unchanged", (await stored()).eligibility === "QA own eligibility");
+  await openEdit(); await expand();
+  check("C23 from: reopening keeps the own text (not regenerated)", (await elig()) === "QA own eligibility");
+  // Clearing the field restarts auto-fill.
+  await s.page.fill("[data-testid=learner-eligibility]", "");
+  await save();
+  check("C23 from: a cleared Eligibility is saved as the generated value again", (await stored()).eligibility === `C23 from ${due1}`, (await stored()).eligibility);
+
+  // Tablet width: panel and form, no horizontal scroll.
+  await s.page.setViewportSize({ width: 820, height: 1180 });
+  check("C23 from: no horizontal scroll at 820px tablet (panel)", (await noHScroll(s.page)) && (await s.page.isVisible("[data-testid=c23-from] .reminder")));
+  await openEdit(); await expand();
+  check("C23 from: no horizontal scroll at 820px tablet (Edit form, group open)", await noHScroll(s.page));
+  await shot(s.page, "15-c23-from-edit-820");
+  await s.page.click("[data-testid=cancel-edit-learner]");
+  await s.page.setViewportSize({ width: 375, height: 812 });
+
+  // New learner: estimate from the expiry (≈ on screen, ~ in the Eligibility value); grey and empty without a DOB.
+  await s.page.click("text=+ New");
+  await s.page.waitForSelector("[data-testid=c23-group]");
+  await s.page.fill('label:has-text("Student name") input', "QA Tony C23 Estimate");
+  await expand();
+  await s.page.fill('label:has-text("Licence expiry") input', firstOf(1, 5));
+  const noDob = await line("[data-testid=c23-from-form] .reminder");
+  check("C23 from: New form without a DOB → grey reason, no date, Eligibility stays empty, no auto hint", noDob.tone === "grey" && noDob.text === "Add date of birth to work out the Competency 23 date." && (await elig()) === "" && !(await s.page.isVisible("[data-testid=eligibility-auto]")), noDob.text);
+  await s.page.fill('label:has-text("DOB") input', dob);
+  const est = await line("[data-testid=c23-from-form] .reminder");
+  check("C23 from: estimated issue date → '≈ <date>, between …' labelled as estimated", est.text.startsWith(`Competency 23 from ≈ ${nice(due1)}, between `) && est.text.includes("issue date estimated from the licence expiry"), est.text);
+  check("C23 from: estimated Eligibility value uses ASCII '~'", (await elig()) === `C23 from ~${due1}`, await elig());
+  check("C23 from: no horizontal scroll at 375px (New form)", await noHScroll(s.page));
+  await shot(s.page, "15-c23-from-new-375");
+  await s.page.click("[data-testid=save-learner]");
+  await s.page.waitForSelector(".status.ok, .status.error");
+  const created = (await learnersApi()).find((l) => l.fullName === "QA Tony C23 Estimate");
+  check("C23 from: New learner saves the estimated Eligibility value", created?.eligibility === `C23 from ~${due1}`, JSON.stringify(created?.eligibility));
+  check("C23 from: Tony: no page errors", s.errors.length === 0, s.errors.join("|"));
+  await s.ctx.close();
+}
+
 } catch (error) {
   check(`script aborted: ${String(error.message).split("\n")[0]}`, false, String(error.message).split("\n").slice(1,4).join(" ").trim());
 }

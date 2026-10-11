@@ -30,7 +30,8 @@ import {
 import { PAPER_CSV_COLUMNS } from "../lib/paper-import.ts";
 import { jsonInsertStatement } from "../lib/d1-json-insert.ts";
 import { CORE_COMPETENCY_IDS, REVIEW_1_17, REVIEW_1_22 } from "../lib/competency.ts";
-import { finalDriveFormReminders, finalDrivePanelReminder, learnerLicenceReminder, reviewGapReminder } from "../lib/rules.ts";
+import { finalDriveEligibleFromReminder, finalDriveFormReminders, finalDrivePanelReminder, learnerLicenceReminder, reviewGapReminder } from "../lib/rules.ts";
+import { generatedEligibility, pdfEligibility } from "../lib/c23-eligibility.ts";
 import { resolveIntegrationConfig } from "../lib/integration/config.ts";
 import { CRON_SWEEP_LIMIT, IMMEDIATE_DELIVERY_LIMIT, processDueOutbox } from "../lib/integration/sender.ts";
 import { readFileSync } from "node:fs";
@@ -492,6 +493,27 @@ test("budget (migration 0009): a learner edit and a create with all 15 fields, i
   assert.equal(edit.maxBinds(), 16, "the UPDATE binds 15 columns + the id");
   assert.equal(create.maxBinds(), 16, "the INSERT binds 16 values");
   assert.equal(Number((await raw.prepare("SELECT COUNT(*) AS n FROM integration_outbox").first<{ n: number }>())?.n), outboxBefore, "a learner edit/create enqueues no ACTGDS event");
+});
+
+test("budget (learner intake P1): the Eligibility auto-fill rides in the normal learner save (edit 5, create 3 statements); 'eligible from' and the PDF value add 0", async (t) => {
+  const { db: raw, learner, tony } = await setup();
+  const dates = { dob: "2008-05-06", licenceExpiry: "2030-11-15", learnerLicenceIssuedOn: null, learnerLicenceFirstIssuedOn: null, hptPassedOn: null, loggedHours: null, loggedHoursOn: null };
+  const generated = generatedEligibility(dates);
+  assert.equal(generated, "C23 from ~2026-11-15");
+  const edit = countingD1(raw);
+  const result = await updateLearner(edit.db, learner.id, { ...dates, eligibility: generated, actingInstructorId: tony.id }, new Date("2026-10-11T02:00:00Z"));
+  assert.equal(result.learner.eligibility, generated);
+  const create = countingD1(raw);
+  await createLearner(create.db, { ...dates, eligibility: generated, fullName: "QA Budget Auto Elig", instructorId: tony.id }, new Date("2026-10-11T02:00:00Z"));
+  const read = countingD1(raw);
+  const stored = (await getLearner(read.db, learner.id))!;
+  const reads = read.count();
+  finalDriveEligibleFromReminder(stored, "2026-10-11");
+  pdfEligibility(stored);
+  t.diagnostic(`learner edit with the auto-filled Eligibility: ${edit.count()} statements (max binds ${edit.maxBinds()}); create: ${create.count()} (max binds ${create.maxBinds()}); eligible-from + PDF value: ${read.count() - reads} extra`);
+  assert.equal(edit.count(), 5);
+  assert.equal(create.count(), 3);
+  assert.equal(read.count(), reads, "eligible-from and the PDF value must not touch D1");
 });
 
 // ── Archive reason + restore history (migration 0010, learner management Phase 3b) ──
