@@ -10,10 +10,10 @@ Direction, not an authorization: each item still needs Tony's go-ahead and
 ends with a stop (AGENTS.md §11).
 
 Near term (Instructor Assistant only, low risk):
-1. Learner management 3a: missing-PDF-details marker + duplicate licence
-   warning (built; review, then Staging, then Production).
-2. 3b: archive reason and restore history (migration 0010; built on
-   `feature/archive-reason`, apply 0010 to Staging D1 before merging).
+1. DONE (Production 2026-10-11): learner management 3a (missing-PDF-details
+   marker, duplicate licence warning incl. archived) and 3b (archive reason and
+   restore history, migration 0010).
+2. (done, see 1)
 3. 3c: transfer a learner to another instructor. Design first, no code before
    Tony reads it (touches lesson ownership, prior-instructor records and the
    ACTGDS link).
