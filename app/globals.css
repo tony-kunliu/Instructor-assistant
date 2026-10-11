@@ -291,6 +291,8 @@ html, body {
 .rules-group summary { font-size: 14px; font-weight: 600; color: var(--muted); padding: 8px 0; cursor: pointer; }
 .rules-group .hint-note { margin: 0 0 8px; font-size: 13px; color: var(--muted); }
 .rules-group .field small { font-size: 12px; color: var(--muted); }
+/* Learner intake D18: the Eligibility box follows the licence dates while it is empty or app-generated. */
+.field small.auto-hint { font-size: 12px; color: var(--muted); }
 
 /* ── Tablet / iPad (mobile-first: everything above is the phone layout). ──
    ≥700px wide AND ≥600px tall (so phones in landscape keep the phone layout):
