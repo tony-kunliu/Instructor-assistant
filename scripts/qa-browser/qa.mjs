@@ -1368,7 +1368,7 @@ const draw = async (page, index) => {
   const tall = async (page, sel) => { const el = page.locator(sel).first(); await el.scrollIntoViewIfNeeded(); return (await el.isVisible()) && (await el.boundingBox()).height >= 44; };
   const contentWidth = (page) => page.$eval(".app", (e) => { const s = getComputedStyle(e); return e.clientWidth - parseFloat(s.paddingLeft) - parseFloat(s.paddingRight); });
   // Fixed 640×320 backing store on every device; CSS only scales it at the same 2:1 shape (never distorted).
-  const canvasFixed = (page) => page.$$eval(".sig canvas", (cs) => cs.length > 0 && cs.every((c) => { const r = c.getBoundingClientRect(); return c.width === 640 && c.height === 320 && Math.abs(c.clientWidth / c.clientHeight - 2) < 0.02; }));
+  const canvasFixed = (page) => page.$$eval(".sig canvas", (cs) => cs.length > 0 && cs.every((c) => { const r = c.getBoundingClientRect(); return c.width === 640 && c.height === 320 && Math.abs(parseFloat(getComputedStyle(c).width) / parseFloat(getComputedStyle(c).height) - 2) < 0.002; }));
   const pngInfo = (dataUrl) => { const b = Buffer.from(dataUrl.slice("data:image/png;base64,".length), "base64"); return { w: b.readUInt32BE(16), h: b.readUInt32BE(20), length: dataUrl.length }; };
   // "dense": a long signature written three times over (≈450 points); "stress": 400 pseudo-random strokes across the whole pad;
   // "walk": a 10 000-segment handwriting-like random walk (small steps, slowly turning) — the worst realistic case.
@@ -1443,7 +1443,7 @@ const draw = async (page, index) => {
     check(`iPad ${tag}: Save Lesson ≥44px and visible`, await tall(page, ".btn.save"));
     await shot(page, `15-ipad-${tag}-lesson-form`);
     if (w === 1366) {
-      // A dense scribble on both pads, then Save: the posted PNGs are 640×320 and far below MAX_SIGNATURE_LENGTH (400 000).
+      // A dense scribble on both pads, then Save: the posted PNGs are 640×320 and far below the client guard (380 000) and MAX_SIGNATURE_LENGTH (700 000).
       await page.click('.comp-section:has(.comp-label:text-is("Taught")) .chip-row >> text="5"');
       await page.click(".edit-times summary");
       await page.fill('.edit-times input[type="time"] >> nth=0', "11:00");
@@ -1456,7 +1456,7 @@ const draw = async (page, index) => {
       await page.waitForSelector(".status.ok, .save-errors, .status.error");
       check("iPad 1366: lesson with dense signatures saves", ((await page.textContent(".status").catch(() => "")) || "").includes("saved"), await page.textContent(".save-errors, .status").catch(() => ""));
       const adi = posted ? pngInfo(posted.adiSignature) : null, learner = posted ? pngInfo(posted.learnerSignature) : null;
-      check("iPad 1366: dense signatures save as 640×320 PNGs well under the 400 000-char limit", Boolean(adi && learner) && [adi, learner].every((i) => i.w === 640 && i.h === 320 && i.length < 200_000), JSON.stringify({ adi, learner }));
+      check("iPad 1366: dense signatures save as 640×320 PNGs well under the 380 000-char client guard", Boolean(adi && learner) && [adi, learner].every((i) => i.w === 640 && i.h === 320 && i.length < 200_000), JSON.stringify({ adi, learner }));
       console.log(`signature PNG (dense signature): ADI ${JSON.stringify(adi)}, learner ${JSON.stringify(learner)}`);
       await page.waitForSelector(".btn.go");
       await page.click(".btn.go");
@@ -1481,16 +1481,17 @@ const draw = async (page, index) => {
     }
     if (w === 820 || w === 1366) {
       // Worst cases on the widest single-column pad (820) and the two-column one (1366): the pen is 5 canvas px
-      // on a fixed 640×320 canvas, so the PNG size does not depend on how wide the pad is on screen.
+      // on a fixed 640×320 canvas, so the PNG size does not depend on how wide the pad is on screen. The slow
+      // 10k-segment walk runs once (1366); the 400-stroke scribble at both widths.
       const measure = async (mode) => {
         await page.locator(".sig").first().locator(".sig-head .link").click();
         await scribble(page, 0, mode);
         return { ...pngInfo(await page.$eval(".sig canvas", (c) => c.toDataURL("image/png"))), signed: (await page.locator(".sig").first().locator(".sig-ok").count()) === 1 };
       };
       const stress = await measure("stress");
-      const walk = await measure("walk");
-      console.log(`signature PNG at ${tag}: random stress ${JSON.stringify(stress)}, 10k walk ${JSON.stringify(walk)}`);
-      check(`iPad ${tag}: worst-case signatures (random scribble, 10k-segment walk) really drew, stay signed and well under 400 000 chars`, [stress, walk].every((i) => i.signed && i.w === 640 && i.h === 320 && i.length > 100_000 && i.length < 360_000), JSON.stringify({ stress, walk }));
+      const walk = w === 1366 ? await measure("walk") : null;
+      console.log(`signature PNG at ${tag}: random stress ${JSON.stringify(stress)}${walk ? `, 10k walk ${JSON.stringify(walk)}` : ""}`);
+      check(`iPad ${tag}: worst-case signature${walk ? "s (random scribble, 10k-segment walk)" : " (random scribble)"} really drew, stay signed and under the 380 000-char client guard (server 700 000)`, [stress, walk].filter(Boolean).every((i) => i.signed && i.w === 640 && i.h === 320 && i.length > 100_000 && i.length < 360_000), JSON.stringify({ stress, walk }));
     }
     await page.click("text=Discard this lesson");
     await page.waitForSelector(".btn.go");

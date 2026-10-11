@@ -40,7 +40,10 @@ test("signature limit: 700 000 chars (two per lessons row stay well under D1's 2
   assert.ok(2 * MAX_SIGNATURE_LENGTH < 2_000_000);
 });
 
-test("new lesson: a large but allowed signature (500k chars, above the old 400k limit) is stored as sent", async () => {
+// Note: openTestD1 is a node:sqlite shim, so this only proves the app's own
+// validation accepts 500k. It does NOT prove Cloudflare D1's row/string limits;
+// scripts/check-signature-row-limits.mjs is the manual check against a real D1.
+test("new lesson: a large but allowed signature (500k chars, above the old 400k limit) passes validation and is stored as sent (sqlite shim)", async () => {
   const { db, learner } = await setup();
   const big = sized(500_000);
   const lesson = await createLesson(db, learner.id, lessonInput({ adiSignature: big }));

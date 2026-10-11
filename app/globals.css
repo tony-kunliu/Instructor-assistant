@@ -167,7 +167,10 @@ html, body {
 .sig-too-detailed { color: var(--stop); font-weight: 600; }
 .sig canvas {
   display: block;
-  width: 100%;
+  /* content-box: the 2:1 ratio applies to the drawing area itself (exactly the
+     640×320 bitmap's shape), with the dashed border outside it. */
+  box-sizing: content-box;
+  width: calc(100% - 3px);
   height: auto;
   aspect-ratio: 2 / 1; /* = SIGNATURE_WIDTH / SIGNATURE_HEIGHT in signature-pad.tsx: scaled, never distorted */
   border: 1.5px dashed #bdb7aa;
@@ -179,7 +182,7 @@ html, body {
 }
 /* Phone in landscape: keep the 2:1 pad within 60% of the short screen (centred, never distorted). */
 @media (orientation: landscape) and (max-height: 599px) {
-  .sig canvas { width: auto; max-width: 100%; max-height: 60vh; margin: 0 auto; }
+  .sig canvas { width: auto; max-width: calc(100% - 3px); max-height: 60vh; max-height: 60dvh; margin: 0 auto; }
 }
 
 .comp-section { margin-bottom: 14px; }

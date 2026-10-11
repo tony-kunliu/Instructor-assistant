@@ -63,11 +63,17 @@ export default function SignaturePad({ label, value, onChange }: Props) {
 
   const point = (event: ReactPointerEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current!;
-    // Map from the content box (inside the dashed border) to canvas pixels.
+    // Map from the content box (inside the dashed border; fractional border
+    // widths, unlike clientLeft/clientWidth) to canvas pixels.
     const rect = canvas.getBoundingClientRect();
+    const style = getComputedStyle(canvas);
+    const left = parseFloat(style.borderLeftWidth) || 0;
+    const top = parseFloat(style.borderTopWidth) || 0;
+    const width = rect.width - left - (parseFloat(style.borderRightWidth) || 0);
+    const height = rect.height - top - (parseFloat(style.borderBottomWidth) || 0);
     return {
-      x: (event.clientX - rect.left - canvas.clientLeft) * (canvas.width / canvas.clientWidth),
-      y: (event.clientY - rect.top - canvas.clientTop) * (canvas.height / canvas.clientHeight),
+      x: (event.clientX - rect.left - left) * (canvas.width / width),
+      y: (event.clientY - rect.top - top) * (canvas.height / height),
     };
   };
 
@@ -126,7 +132,7 @@ export default function SignaturePad({ label, value, onChange }: Props) {
     <div className="sig">
       <div className="sig-head">
         <strong>{label}</strong>
-        <span className={value ? "sig-ok" : tooDetailed ? "sig-todo sig-too-detailed" : "sig-todo"}>{value ? "Signed ✓" : tooDetailed ? "Signature too detailed — clear and sign again" : "Sign below"}</span>
+        <span className={value ? "sig-ok" : tooDetailed ? "sig-todo sig-too-detailed" : "sig-todo"}>{value ? "Signed ✓" : tooDetailed ? "Signature too detailed — please sign again" : "Sign below"}</span>
         <button type="button" className="link" onClick={clear}>Clear</button>
       </div>
       <canvas
