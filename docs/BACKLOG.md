@@ -47,6 +47,8 @@ Long term (ecosystem, coordinated with Work on actgds.com Issue #3):
 
 ## Minor follow-ups (bundle into the next feature)
 
+- Archiving an already-archived learner with a reason (two devices) returns 200 and drops the reason silently; consider a message.
+
 - No message when a learner is archived while the edit form is open.
 - The unmounted-key QA check for the PDF button is weak.
 

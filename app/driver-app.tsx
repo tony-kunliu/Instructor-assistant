@@ -615,11 +615,12 @@ export default function DriverApp() {
   const toggleArchiveHistory = async (open: boolean) => {
     if (!detail || !open || archiveHistory) return;
     setArchiveHistoryError(null);
+    const forId = detail.learner.id;
     try {
-      const data = await api<{ events: LearnerArchiveEvent[] }>(`/api/learners/${encodeURIComponent(detail.learner.id)}/archive-history`);
-      setArchiveHistory(data.events);
+      const data = await api<{ events: LearnerArchiveEvent[] }>(`/api/learners/${encodeURIComponent(forId)}/archive-history`);
+      if (selectedRef.current === forId) setArchiveHistory(data.events); // a slow answer for a learner we have since left must not show under another
     } catch (error) {
-      setArchiveHistoryError((error as Error).message);
+      if (selectedRef.current === forId) setArchiveHistoryError((error as Error).message);
     }
   };
 
@@ -686,7 +687,7 @@ export default function DriverApp() {
       </label>
       <div className="archive-actions">
         <button type="button" className="btn ghost" disabled={saving} onClick={() => setArchiveDraft(null)} data-testid="archive-cancel">Cancel</button>
-        <button type="button" className="btn primary" disabled={saving} onClick={() => void setLearnerArchived(true)} data-testid="archive-confirm">Archive learner</button>
+        <button type="button" className="btn primary" disabled={saving || phase !== "ready"} onClick={() => void setLearnerArchived(true)} data-testid="archive-confirm">Archive learner</button>
       </div>
     </div>
   ) : null;
