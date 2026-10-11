@@ -44,6 +44,7 @@
 import { PDFDocument, type PDFFont, type PDFPage } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
 import { decimalHours } from "./calc.ts";
+import { pdfEligibility } from "./c23-eligibility.ts";
 import { isPriorRecord, priorRecordLine, priorTotals } from "./prior-record.ts";
 import {
   COLUMNS,
@@ -478,7 +479,10 @@ function drawAppendixPage(page: PDFPage, font: PDFFont, lines: string[], appendi
 }
 
 export async function buildCbtaChecklistPdf(input: PdfExportInput): Promise<PdfExportResult> {
-  const { templateBytes, fontBytes, learner } = input;
+  const { templateBytes, fontBytes } = input;
+  // Eligibility box (learner intake D18): an empty or app-generated value is recomputed at export ("C23 from …"); the
+  // instructor's own text prints unchanged. Export writes nothing back.
+  const learner: Learner = { ...input.learner, eligibility: pdfEligibility(input.learner) };
   // Table rows are lessons #1..N only; prior-instructor records are printed as lines above the table.
   const lessons = input.lessons.filter((lesson) => !isPriorRecord(lesson));
   const priorLessons = input.lessons.filter(isPriorRecord).sort((a, b) => a.lessonNo - b.lessonNo);

@@ -7,6 +7,8 @@ closed PRs; see `TASK.md` for what is in progress.
 
 ## In progress
 
+- `feature/intake-p1` (not merged; no migration): learner intake P1, the "Competency 23 from"
+  line (panel + form) and the PDF Eligibility auto-fill (D17-D18 of the learner intake design).
 - `fix/progress-invalidation` (PR #54, to staging, then Production; no migration): the two
   CBT&A progress bugs Work reported on actgds.com Issue #3 (comment
   6104913100). A Review / Final Drive counts only if its prerequisites were

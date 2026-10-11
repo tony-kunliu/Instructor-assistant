@@ -5,7 +5,12 @@ _Last updated: 2026-10-11_
 This file describes **current task only**. Completed work's detail
 lives in git log and closed PRs, not here.
 
-**Current Task:** `fix/progress-invalidation` (PR #54): History Edit milestone invalidation +
+**Current Task (Completed, not merged):** `feature/intake-p1`: learner intake P1 (no migration):
+"Competency 23 from" date (`finalDriveEligibleFrom`, `lib/rules.ts`) on the learner panel and in the learner
+form, and the PDF Eligibility auto-fill `C23 from [~]YYYY-MM-DD` (`lib/c23-eligibility.ts`; only while empty or
+generated; refreshed at export). Next: independent review, then staging merge (§14).
+
+**Earlier task:** `fix/progress-invalidation` (PR #54): History Edit milestone invalidation +
 Completed banner consistency (actgds.com Issue #3, comment 6104913100) and the
 Competency 23 route note in `docs/ACT_ASSESSMENT_STANDARDS.md` (R10). Reviewed twice;
 next: staging merge, then Production release (no migration). Staging and Production D1 are at `0010`.

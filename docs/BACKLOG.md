@@ -49,6 +49,7 @@ Long term (ecosystem, coordinated with Work on actgds.com Issue #3):
 | Learner management, Phase 3b: archive reason and restore history | learner management plan (Phase 3) | **DONE** on `feature/archive-reason` (not merged): migration 0010 (`learner_archive_events`, additive), optional preset reason + note, History in the archived banner. Needs 0010 on Staging D1 before merging. |
 | Learner management, Phase 3c: transfer a learner to another instructor (incl. the CoP 9.1 h / 9.2 e previous-records reminder, R12) | `docs/superpowers/specs/2026-10-11-learner-transfer-design.md` | Designed; Q1-Q6 decided (defaults, Tony 2026-10-11). Waiting for the go to build T1. |
 | Competency 23 route suggestions and route check (R10) | `docs/superpowers/specs/2026-10-11-competency-23-route-design.md` | Designed; Q1-Q6 decided 2026-10-11 (Q1 changed: home district). Waiting for the go to build R10a. |
+| Learner intake P1: "Competency 23 from" date + PDF Eligibility auto-fill (D17-D18) | `docs/superpowers/specs/2026-10-11-learner-intake-design.md` (branch `docs/learner-intake-design`) | **DONE** on `feature/intake-p1` (not merged; no migration). P2 address suggestions, P3 overseas/interstate licence, P4 scan: waiting for a go. |
 
 ## Minor follow-ups (bundle into the next feature)
 
@@ -63,6 +64,7 @@ Long term (ecosystem, coordinated with Work on actgds.com Issue #3):
 
 - No message when a learner is archived while the edit form is open.
 - The unmounted-key QA check for the PDF button is weak.
+- Learner intake P1: "Missing for the PDF: Eligibility" still shows for an empty stored value even when the PDF will print the auto-filled `C23 from …`; consider counting a computable value as present.
 
 ## Not designed yet
 
