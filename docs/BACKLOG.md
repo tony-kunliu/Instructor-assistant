@@ -64,6 +64,7 @@ Long term (ecosystem, coordinated with Work on actgds.com Issue #3):
 
 - No message when a learner is archived while the edit form is open.
 - The unmounted-key QA check for the PDF button is weak.
+- Learner intake P1: the exact text `C23 from YYYY-MM-DD` (optionally `~`) is reserved for the app; hand-typed identical text is treated as generated and refreshed (documented in `lib/c23-eligibility.ts`; no behaviour change planned).
 - Learner intake P1: "Missing for the PDF: Eligibility" still shows for an empty stored value even when the PDF will print the auto-filled `C23 from …`; consider counting a computable value as present.
 
 ## Not designed yet

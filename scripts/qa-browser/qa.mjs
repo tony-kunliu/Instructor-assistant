@@ -1385,7 +1385,11 @@ const draw = async (page, index) => {
   const save = async () => { await s.page.click("[data-testid=save-learner]"); await s.page.waitForSelector(".status.ok, .status.error"); return s.page.textContent(".status"); };
   const elig = () => s.page.inputValue("[data-testid=learner-eligibility]");
   await openEdit();
-  check("C23 from: Edit form auto-fills an empty Eligibility with 'C23 from YYYY-MM-DD' and shows the auto hint", (await elig()) === `C23 from ${due1}` && (await s.page.isVisible("[data-testid=eligibility-auto]")), await elig());
+  check("C23 from: Edit opens Eligibility as stored (empty) with the 'auto' hint (filled on save)", (await elig()) === "" && (await s.page.isVisible("[data-testid=eligibility-auto]")), await elig());
+  const untouched = await save();
+  check("C23 from: opening Edit and saving untouched records no change ('No changes', Eligibility still empty)", /No changes/.test(untouched) && (await stored()).eligibility === null, untouched);
+  check("C23 from: the panel still shows the live computed line after an untouched save", (await line("[data-testid=c23-from] .reminder")).text === panel1.text);
+  await openEdit();
   await expand();
   const form1 = await line("[data-testid=c23-from-form] .reminder");
   check("C23 from: the Competency 23 group shows the same line, live", form1.text === panel1.text, form1.text);
@@ -1429,7 +1433,7 @@ const draw = async (page, index) => {
   await expand();
   await s.page.fill('label:has-text("Licence expiry") input', firstOf(1, 5));
   const noDob = await line("[data-testid=c23-from-form] .reminder");
-  check("C23 from: New form without a DOB → grey reason, no date, Eligibility stays empty", noDob.tone === "grey" && noDob.text === "Add date of birth to work out the Competency 23 date." && (await elig()) === "", noDob.text);
+  check("C23 from: New form without a DOB → grey reason, no date, Eligibility stays empty, no auto hint", noDob.tone === "grey" && noDob.text === "Add date of birth to work out the Competency 23 date." && (await elig()) === "" && !(await s.page.isVisible("[data-testid=eligibility-auto]")), noDob.text);
   await s.page.fill('label:has-text("DOB") input', dob);
   const est = await line("[data-testid=c23-from-form] .reminder");
   check("C23 from: estimated issue date → '≈ <date>, between …' labelled as estimated", est.text.startsWith(`Competency 23 from ≈ ${nice(due1)}, between `) && est.text.includes("issue date estimated from the licence expiry"), est.text);

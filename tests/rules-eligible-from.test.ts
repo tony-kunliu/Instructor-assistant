@@ -6,7 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import fontkit from "@pdf-lib/fontkit";
 import { addDaysIso, finalDriveEligibilityReminder, finalDriveEligibleFrom, finalDriveEligibleFromReminder, type EligibilityLearner, type EligibleFrom } from "../lib/rules.ts";
-import { autoFillEligibility, GENERATED_ELIGIBILITY, generatedEligibility, isAppOwnedEligibility, pdfEligibility } from "../lib/c23-eligibility.ts";
+import { autoFillEligibility, ELIGIBILITY_DATE_KEYS, eligibilityAtSave, GENERATED_ELIGIBILITY, generatedEligibility, isAppOwnedEligibility, pdfEligibility, showsAutoHint } from "../lib/c23-eligibility.ts";
 import { buildCbtaChecklistPdf, createMeasurer } from "../lib/pdf-export.ts";
 import { HEADER_FIELDS } from "../lib/pdf-layout.ts";
 import type { Learner, Lesson } from "../lib/types.ts";
@@ -148,6 +148,45 @@ test("consistent with R2: the day before the date R2 is not yet met, on the date
   }
 });
 
+test("hours and HPT dated after today are not met yet (never plain while R2 is not)", () => {
+  // Reviewer's case: HPT and the hours as-of date both lie after "today".
+  const reviewer = L({ dob: "1978-08-12", learnerLicenceIssuedOn: "2020-01-01", hptPassedOn: "2021-02-20", loggedHours: 51, loggedHoursOn: "2024-09-19" });
+  const r = finalDriveEligibleFromReminder(reviewer, "2020-10-10");
+  assert.notEqual(r.tone, "plain", r.text);
+  assert.equal(r.text, "Competency 23 from 1 Jul 2020 (licence 6 months; plus 50 h and HPT).");
+  assert.notEqual(finalDriveEligibilityReminder(reviewer, "2020-10-10").tone, "plain");
+  // Once those dates have passed, both agree on plain.
+  assert.equal(finalDriveEligibleFromReminder(reviewer, "2024-09-19").tone, "plain");
+  assert.equal(finalDriveEligibilityReminder(reviewer, "2024-09-19").tone, "plain");
+  // Without `today` (the PDF value) the date itself does not depend on hours or HPT.
+  assert.deepEqual(ok(finalDriveEligibleFrom(reviewer)).plus, []);
+  assert.deepEqual(ok(finalDriveEligibleFrom(reviewer, "2020-10-10")).plus, ["50 h", "HPT"]);
+  assert.equal(generatedEligibility(reviewer), "C23 from 2020-07-01");
+});
+
+test("parity grid: the eligible-from line is never plain unless R2 is plain on the same day", () => {
+  const days = ["2026-08-31", "2026-09-01", "2026-09-02", "2026-10-10", "2026-10-11", "2026-10-12"];
+  let plainSeen = 0;
+  for (const dob of ["2008-05-06", "2009-09-01", "2001-09-01", "2001-09-02", "1990-01-01"]) {
+    for (const issue of ["2025-09-01", "2025-03-01", "2026-03-01", "2019-12-31"]) {
+      for (const hpt of [null, "2026-09-01", "2026-10-11", "2026-10-12"]) {
+        for (const [hours, hoursOn] of [[null, null], [49, "2026-09-01"], [50, "2026-10-12"], [100, "2026-09-01"], [100, "2026-10-12"]] as const) {
+          for (const expiry of [null, "2026-10-10", "2030-09-01"]) {
+            for (const today of days) {
+              const learner = L({ dob, learnerLicenceIssuedOn: issue, hptPassedOn: hpt, loggedHours: hours, loggedHoursOn: hoursOn, licenceExpiry: expiry });
+              const line = finalDriveEligibleFromReminder(learner, today);
+              if (line.tone !== "plain") continue;
+              plainSeen++;
+              assert.equal(finalDriveEligibilityReminder(learner, today).tone, "plain", `${JSON.stringify(learner)} on ${today}: ${line.text}`);
+            }
+          }
+        }
+      }
+    }
+  }
+  assert.ok(plainSeen > 50, `grid exercised ${plainSeen} plain lines`);
+});
+
 test("auto-fill ownership: empty or generated follows the dates; the instructor's own text is never overwritten", () => {
   assert.ok(GENERATED_ELIGIBILITY.test("C23 from 2026-11-15"));
   assert.ok(GENERATED_ELIGIBILITY.test("C23 from ~2026-11-15"));
@@ -169,6 +208,23 @@ test("auto-fill ownership: empty or generated follows the dates; the instructor'
   assert.equal(autoFillEligibility("C23 from 2026-11-15", L({ dob: null, learnerLicenceIssuedOn: "2025-11-15" })), "");
   assert.equal(autoFillEligibility("   ", first), "C23 from 2026-11-15");
   assert.equal(autoFillEligibility("Manual", L({ dob: null })), "Manual");
+});
+
+test("save rule and hint: an empty box is saved as the generated value; the hint shows for generated or empty-and-computable", () => {
+  const learner = L({ learnerLicenceIssuedOn: "2025-11-15" });
+  assert.equal(eligibilityAtSave("", learner), "C23 from 2026-11-15");
+  assert.equal(eligibilityAtSave("  ", learner), "C23 from 2026-11-15");
+  assert.equal(eligibilityAtSave("", L({ dob: null })), "", "nothing computable: stays empty");
+  assert.equal(eligibilityAtSave("C23 from 2026-01-01", learner), "C23 from 2026-01-01", "a stale generated value is only refreshed by a date edit or at export");
+  assert.equal(eligibilityAtSave("Own", learner), "Own");
+  assert.equal(showsAutoHint("", learner), true);
+  assert.equal(showsAutoHint("", L({ dob: null })), false);
+  assert.equal(showsAutoHint("C23 from 2026-01-01", L({ dob: null })), true);
+  assert.equal(showsAutoHint("Own", learner), false);
+  // Only the fields the DATE depends on trigger the live refresh (hours and HPT do not move the date).
+  assert.deepEqual([...ELIGIBILITY_DATE_KEYS], ["dob", "licenceExpiry", "learnerLicenceIssuedOn", "learnerLicenceFirstIssuedOn"]);
+  // Reserved pattern: hand-typed text identical to a generated value is treated as generated.
+  assert.equal(autoFillEligibility("C23 from 2000-01-01", learner), "C23 from 2026-11-15");
 });
 
 test("PDF Eligibility value: recomputed at export while empty or generated, own text unchanged, empty when not computable", () => {

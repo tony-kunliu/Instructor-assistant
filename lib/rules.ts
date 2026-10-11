@@ -482,7 +482,7 @@ export type EligibleFrom =
   | { ok: true; date: string; estimated: boolean; earliest: string; latest: string; because: string[]; plus: string[]; kind: string }
   | { ok: false; reason: string };
 
-export function finalDriveEligibleFrom(learner: EligibilityLearner): EligibleFrom {
+export function finalDriveEligibleFrom(learner: EligibilityLearner, today?: string): EligibleFrom {
   const typedIssue = learner.learnerLicenceIssuedOn && parseIsoDate(learner.learnerLicenceIssuedOn) ? learner.learnerLicenceIssuedOn : null;
   const validExpiry = learner.licenceExpiry && parseIsoDate(learner.licenceExpiry) ? learner.licenceExpiry : null;
   const estimate = !typedIssue && validExpiry ? estimateIssueFromExpiry(validExpiry) : null;
@@ -519,9 +519,12 @@ export function finalDriveEligibleFrom(learner: EligibilityLearner): EligibleFro
   }
   const plus: string[] = [];
   if (!main.rule.old && !main.rule.unclear) {
-    const hoursMet = learner.loggedHours !== null && learner.loggedHours >= main.rule.needHours && Boolean(learner.loggedHoursOn && parseIsoDate(learner.loggedHoursOn));
+    // With `today` given, a date after today is not yet met (as in R2: a future HPT is "not yet", a future as-of date
+    // "cannot be checked"), so the line is never plain while R2 is not.
+    const upToToday = (date: string | null) => Boolean(date && parseIsoDate(date) && (today === undefined || date <= today));
+    const hoursMet = learner.loggedHours !== null && learner.loggedHours >= main.rule.needHours && upToToday(learner.loggedHoursOn);
     if (!hoursMet) plus.push(`${main.rule.needHours} h`);
-    if (!(learner.hptPassedOn && parseIsoDate(learner.hptPassedOn))) plus.push("HPT");
+    if (!upToToday(learner.hptPassedOn)) plus.push("HPT");
   }
   return { ok: true, date: main.date, estimated: Boolean(estimate), earliest, latest, because: main.because, plus, kind: main.rule.kind };
 }
@@ -543,7 +546,7 @@ function formatRange(from: string, to: string): string {
  */
 export function finalDriveEligibleFromReminder(learner: EligibilityLearner, today: string): Reminder {
   const id = "c23-from";
-  const from = finalDriveEligibleFrom(learner);
+  const from = finalDriveEligibleFrom(learner, parseIsoDate(today) ? today : undefined);
   if (!from.ok) return { id, tone: "grey", text: from.reason };
   const range = from.estimated && from.earliest !== from.latest ? `, ${formatRange(from.earliest, from.latest)}` : "";
   const notes = [from.because.join(", ")];

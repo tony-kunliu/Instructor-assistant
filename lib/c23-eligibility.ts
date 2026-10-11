@@ -7,7 +7,11 @@
 
 import { finalDriveEligibleFrom, type EligibilityLearner } from "./rules.ts";
 
-/** "Generated" = exactly this pattern. Anything else (even one extra character) is the instructor's own text. */
+/**
+ * "Generated" = exactly this pattern. Anything else (even one extra character) is the instructor's own text.
+ * The pattern is RESERVED for the app: hand-typed text that is identical to it (e.g. "C23 from 2026-11-15") is
+ * treated as generated and refreshed/recomputed like the app's own value. Add any other character to keep it as typed.
+ */
 export const GENERATED_ELIGIBILITY = /^C23 from ~?\d{4}-\d{2}-\d{2}$/;
 
 /** The value the app would write now, or null when no Competency 23 date can be worked out. */
@@ -29,4 +33,20 @@ export function autoFillEligibility(current: string, learner: EligibilityLearner
 /** What the PDF prints in the Eligibility box: the value computed at export while the stored one is app-owned, else the stored text unchanged. */
 export function pdfEligibility(learner: EligibilityLearner & { eligibility: string | null }): string {
   return isAppOwnedEligibility(learner.eligibility) ? generatedEligibility(learner) ?? "" : (learner.eligibility as string);
+}
+
+/**
+ * The learner fields the "C23 from" DATE depends on. Only an edit of one of these refreshes an app-owned Eligibility
+ * in the form (hours and HPT do not change the date), so opening Edit and saving untouched sends no change.
+ */
+export const ELIGIBILITY_DATE_KEYS = ["dob", "licenceExpiry", "learnerLicenceIssuedOn", "learnerLicenceFirstIssuedOn"] as const;
+
+/** Value sent on save (D18): an empty/blank box gets the generated value (if computable); anything else is sent as is. */
+export function eligibilityAtSave(current: string, learner: EligibilityLearner): string {
+  return current.trim() === "" ? generatedEligibility(learner) ?? current : current;
+}
+
+/** Whether the form shows "auto: from the licence dates": the value is generated, or the box is empty and a date is computable (filled on save). */
+export function showsAutoHint(current: string, learner: EligibilityLearner): boolean {
+  return GENERATED_ELIGIBILITY.test(current) || (current.trim() === "" && generatedEligibility(learner) !== null);
 }
