@@ -1,25 +1,23 @@
 # STATUS.md
 
-_Last updated: 2026-10-11_ (Production and Staging D1 at migration `0009`; rules reminders T1+T2 live in Production)
+_Last updated: 2026-10-11_ (Production and Staging D1 at migration `0010`; learner 3a/3b live in Production)
 
 This file describes **current state only**. History lives in git log and
 closed PRs; see `TASK.md` for what is in progress.
 
 ## In progress
 
-- Learner management Phase 3a (missing-PDF-details line, duplicate licence
-  warning; client-side only, no migration, ACTGDS contract unchanged) is
-  released with archived-list preload: archived learners load in the
-  background after start (one extra read of the existing endpoint) so the
-  duplicate check includes them; if that load fails the form shows a grey "not
-  checked" line.
-
-- Learner management Phase 3b on `feature/archive-reason` (not merged):
-  archive reason (optional preset + note) and archive/restore history. Needs
-  migration `0010` (new table `learner_archive_events`, additive only;
-  rehearsal `scripts/rehearse-0010-local.sh`) applied to **Staging D1 BEFORE
-  merging to `staging`**. Archive/restore: 3 D1 statements; list unchanged (1).
-  ACTGDS contract unchanged, nothing enqueued.
+- `fix/progress-invalidation` (PR #54, to staging, then Production; no migration): the two
+  CBT&A progress bugs Work reported on actgds.com Issue #3 (comment
+  6104913100). A Review / Final Drive counts only if its prerequisites were
+  achieved in strictly earlier lessons (no timestamps; derived, reported,
+  events kept, never blocks an edit); the Completed banner/summary follows
+  derived completion. Read-only `scripts/audit-progress.mjs` compares old vs
+  new rule (Production audit: 0 differences).
+- Learner 3a/3b (migration `0010`) and the Canberra-time convention (AGENTS.md §15)
+  are released. Designs for 3c (learner transfer), R10 (Competency 23 route) and
+  learner intake are written and decided by Tony 2026-10-11 (route: familiar =
+  home district); waiting for the go to build.
 
 ## Repository
 
@@ -49,7 +47,7 @@ closed PRs; see `TASK.md` for what is in progress.
 - Workers Builds deploys every `staging` push to Worker
   `instructor-assistant`. The agent's token can read deployment metadata, not
   the commit mapping, so the live commit is inferred from push time.
-- D1 migration level: `0009`. Apply a migration to Staging D1 BEFORE merging
+- D1 migration level: `0010`. Apply a migration to Staging D1 BEFORE merging
   code that needs it to `staging`, with the manual workflow `Staging D1
   Migrate` (`staging-migrate.yml`, on `main`; inputs `ref` = a branch,
   `confirm` = `staging`).
@@ -65,9 +63,9 @@ closed PRs; see `TASK.md` for what is in progress.
   prior-instructor records, `0006` (run 37796457888, Worker
   `96228a32-5f32-42b5-8f0d-7985e59c5d82`); lesson edit ownership + revisions,
   `0007` (run 37806351565); learner edit Phase 1, `0008` (run 37891106278);
-  compact PDF font + CI fix (run 37907021677); rules reminders T1+T2, `0009` (run 38044255328, Worker `edde393c-40be-4974-8b3f-2d6df901361f`, PR #38). Run 37668118567 was Release B
+  compact PDF font + CI fix (run 37907021677); rules reminders T1+T2, `0009` (run 38044255328, Worker `edde393c-40be-4974-8b3f-2d6df901361f`, PR #38); learner 3a/3b + Canberra time, `0010` (run 38106838536, Worker `792fed94-2fe1-41c6-8ff1-aaead13b7e67`, PR #50). Run 37668118567 was Release B
   (rollback target `08ca0c75-cd97-44fa-87ec-ed0f7e6efbae`).
-- D1 migration level: `0009`. Cloudflare Access: enabled (Tony + Anna only).
+- D1 migration level: `0010`. Cloudflare Access: enabled (Tony + Anna only).
 - Integration enabled: **YES**, `ACTGDS_INTEGRATION_ENV=production`, Receiver
   `https://actgds.com/api/integrations/instructor-assistant/events`,
   `ACTGDS_WEBHOOK_SECRET` set by Tony. Outbox Cron `*/5`. No backfill.
@@ -93,8 +91,9 @@ closed PRs; see `TASK.md` for what is in progress.
 - Paper Records Import (P1b) and PDF cumulative line per page (P1a); paper and
   prior-instructor rows never emit Integration events.
 - CBT&A chronology: a lesson may Assess a gated item only if its prerequisites
-  were Achieved in EARLIER lessons; enforced server-side, legacy violations
-  tolerated. Save errors show jump links.
+  were Achieved in EARLIER lessons; enforced server-side, legacy data never
+  rewritten (Review / Final Drive validity derived by lesson order). Save
+  errors show jump links.
 - CBT&A Checklist PDF export with an embedded compact font subset (about 0.2
   MB typical, was ~14 MB); Export shows "PDF ready: <size> (compact font)".
   Full 16 MB font only for rare CJK characters. Access-gated sign-in; "Copy

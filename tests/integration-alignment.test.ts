@@ -52,6 +52,7 @@ function fakeProgress(overrides: Partial<LearnerProgress> = {}): LearnerProgress
     review1_22: { status: "locked", remaining: 7, review1_17Achieved: true },
     finalDrive23: { status: "locked", remaining: 7, review1_17Achieved: true, review1_22Achieved: false },
     completed: false,
+    completedLessonId: null,
     ...overrides,
   };
 }

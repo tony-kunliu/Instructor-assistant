@@ -8,13 +8,9 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   const { id } = await params;
   return handle(async () => {
     const db = getD1();
-    const [learner, totals, lessons, progress, completion] = await Promise.all([
-      getLearner(db, id),
-      getTotals(db, id),
-      listLessons(db, id),
-      getLearnerProgress(db, id),
-      getCompletionSummary(db, id),
-    ]);
+    const [learner, totals, lessons, progress] = await Promise.all([getLearner(db, id), getTotals(db, id), listLessons(db, id), getLearnerProgress(db, id)]);
+    // From the same derived progress, so the "CBT&A Completed" banner can never disagree with it.
+    const completion = await getCompletionSummary(db, id, progress);
     return { learner, totals, lessons, progress, completion };
   });
 }

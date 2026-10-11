@@ -28,6 +28,12 @@ export type CompetencyEvent = {
   result: AssessmentResult | null;
   lessonId: string;
   createdAt: string;
+  /**
+   * The lesson's number (creation order, never editable; prior-instructor records are negative).
+   * Review / Final Drive validity is judged by it alone. Unknown (undefined) = conservative: such an
+   * event never validates a Review / Final Drive and never counts as an earlier prerequisite of one.
+   */
+  lessonNo?: number;
 };
 
 export type CompetencyStatus = {
@@ -55,6 +61,8 @@ export type LearnerProgress = {
   review1_22: { status: ReviewState; remaining: number; review1_17Achieved: boolean };
   finalDrive23: { status: ReviewState; remaining: number; review1_17Achieved: boolean; review1_22Achieved: boolean };
   completed: boolean;
+  /** The lesson holding the 23 Final Drive assessment that makes `completed` true; null when not completed. */
+  completedLessonId: string | null;
 };
 
 function emptyStatus(id: string): CompetencyStatus {
@@ -98,19 +106,22 @@ export function computeProgress(events: readonly CompetencyEvent[]): LearnerProg
   // currently allows (locked/ready), not stay stuck as "achieved" on stale
   // data. This is what lets an edit automatically roll back an invalidated
   // Review 1-17 / Review 1-22 / 23 Final Drive / CBT&A Completed milestone.
-  const review1_17EverAchieved = byId[REVIEW_1_17].achieved;
+  //
+  // It must ALSO have held when that assessment was made, judged by lesson
+  // order only: prerequisites achieved in the same or a later lesson never
+  // make it valid (see milestoneAssessmentCounts). Each milestone's validity
+  // feeds the next gate.
   const review1_17GateOpen = first17Remaining === 0;
-  const review1_17Valid = review1_17EverAchieved && review1_17GateOpen;
+  const review1_17Valid = review1_17GateOpen && validMilestoneAssessment(events, REVIEW_1_17) !== null;
   const review1_17Status: ReviewState = review1_17Valid ? "achieved" : review1_17GateOpen ? "ready" : "locked";
 
-  const review1_22EverAchieved = byId[REVIEW_1_22].achieved;
   const review1_22GateOpen = allRemaining === 0 && review1_17Valid;
-  const review1_22Valid = review1_22EverAchieved && review1_22GateOpen;
+  const review1_22Valid = review1_22GateOpen && validMilestoneAssessment(events, REVIEW_1_22) !== null;
   const review1_22Status: ReviewState = review1_22Valid ? "achieved" : review1_22GateOpen ? "ready" : "locked";
 
-  const finalDrive23EverAchieved = byId[FINAL_DRIVE_23].achieved;
   const finalDrive23GateOpen = allRemaining === 0 && review1_17Valid && review1_22Valid;
-  const finalDrive23Valid = finalDrive23EverAchieved && finalDrive23GateOpen;
+  const completingFinalDrive = finalDrive23GateOpen ? validMilestoneAssessment(events, FINAL_DRIVE_23) : null;
+  const finalDrive23Valid = completingFinalDrive !== null;
   const finalDrive23Status: ReviewState = finalDrive23Valid ? "achieved" : finalDrive23GateOpen ? "ready" : "locked";
 
   return {
@@ -120,7 +131,32 @@ export function computeProgress(events: readonly CompetencyEvent[]): LearnerProg
     review1_22: { status: review1_22Status, remaining: allRemaining, review1_17Achieved: review1_17Valid },
     finalDrive23: { status: finalDrive23Status, remaining: allRemaining, review1_17Achieved: review1_17Valid, review1_22Achieved: review1_22Valid },
     completed: finalDrive23Valid,
+    completedLessonId: completingFinalDrive?.lessonId ?? null,
   };
+}
+
+/**
+ * Whether one Review / Final Drive Assessed+Achieved event counts: its gate must have been open using
+ * only achievements from STRICTLY EARLIER lessons (lesson number order; no timestamps). Prior-instructor
+ * records (negative lesson numbers) form one unit among themselves — their entries count for each
+ * other — and come before every positive lesson. An event with no known lesson number never counts,
+ * and never counts as a prerequisite either.
+ */
+export function milestoneAssessmentCounts(events: readonly CompetencyEvent[], event: CompetencyEvent): boolean {
+  const lessonNo = event.lessonNo;
+  if (lessonNo === undefined) return false;
+  const before = events.filter(
+    (other) => other !== event && other.lessonNo !== undefined && (other.lessonNo < lessonNo || (lessonNo < 0 && other.lessonNo < 0)),
+  );
+  return assessmentLockReason(event.competencyId, computeProgress(before)) === null;
+}
+
+/** The earliest (lesson order) Assessed+Achieved event of a milestone that counts, or null. */
+function validMilestoneAssessment(events: readonly CompetencyEvent[], id: string): CompetencyEvent | null {
+  const candidates = events
+    .filter((event) => event.competencyId === id && event.action === "assessed" && event.result === "achieved" && event.lessonNo !== undefined)
+    .sort((a, b) => (a.lessonNo as number) - (b.lessonNo as number));
+  return candidates.find((event) => milestoneAssessmentCounts(events, event)) ?? null;
 }
 
 /** Only ids present in `allowed`, deduplicated, in the order first seen. */
@@ -161,7 +197,7 @@ export function assessmentChronologyViolations(lessons: readonly { lessonNo: num
     for (const event of lesson.events) {
       if (event.action === "assessed" && assessmentLockReason(event.competencyId, before) !== null) violations.add(`${lesson.lessonNo}:${event.competencyId}`);
     }
-    earlier.push(...lesson.events);
+    earlier.push(...lesson.events.map((event) => ({ ...event, lessonNo: lesson.lessonNo })));
   }
   return violations;
 }
@@ -202,6 +238,23 @@ export function diffInvalidatedMilestones(before: LearnerProgress, after: Learne
 
 export function hasInvalidatedMilestone(invalidation: MilestoneInvalidation): boolean {
   return invalidation.review1_17 || invalidation.review1_22 || invalidation.finalDrive23 || invalidation.completed;
+}
+
+/** Labels of the milestones an edit invalidated, in chain order (display-only). */
+export function invalidatedMilestoneLabels(invalidation: MilestoneInvalidation): string[] {
+  return [
+    invalidation.review1_17 ? "Review 1-17" : null,
+    invalidation.review1_22 ? "Review 1-22" : null,
+    invalidation.finalDrive23 ? "23 Final Drive" : null,
+    invalidation.completed ? "CBT&A Completed" : null,
+  ].filter((label): label is string => label !== null);
+}
+
+/** Short save-status line after a History Edit, e.g. "No longer valid: Review 1-17 (…)."; null when nothing was invalidated. */
+export function invalidationNotice(invalidation: MilestoneInvalidation): string | null {
+  const labels = invalidatedMilestoneLabels(invalidation);
+  if (!labels.length) return null;
+  return `No longer valid: ${labels.join(", ")} (prerequisites must be achieved in earlier lessons).`;
 }
 
 /**
