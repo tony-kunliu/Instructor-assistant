@@ -14,14 +14,17 @@ Near term (Instructor Assistant only, low risk):
    marker, duplicate licence warning incl. archived) and 3b (archive reason and
    restore history, migration 0010).
 2. (done, see 1)
-3. 3c: transfer a learner to another instructor. **Designed, waiting for
-   Tony's go**: `docs/superpowers/specs/2026-10-11-learner-transfer-design.md`
-   (migration 0011, additive; no ACTGDS event; 6 questions with defaults).
+3. 3c: transfer a learner to another instructor. **Designed; questions
+   decided (defaults accepted by Tony 2026-10-11); build T1 on Tony's go**:
+   `docs/superpowers/specs/2026-10-11-learner-transfer-design.md` (migration
+   0011, additive; no ACTGDS event).
 
 Medium term (new features; confirm rules with Tony before building):
-4. Competency 23 route suggestions and route check (R10). **Designed, waiting
-   for Tony's go**: `docs/superpowers/specs/2026-10-11-competency-23-route-design.md`
-   (no migration; reminders only; nothing to ACTGDS; 6 questions with defaults).
+4. Competency 23 route suggestions and route check (R10). **Designed;
+   questions decided 2026-10-11 (familiar = the learner's home district, from
+   the address); build R10a on Tony's go**:
+   `docs/superpowers/specs/2026-10-11-competency-23-route-design.md` (no
+   migration; reminders only; nothing to ACTGDS; one small open question).
 5. Remove-the-"A"-condition reminder after 12 months (R8, CoP 9.4).
 6. Certificate number records (R9, CoP 9.3, 10 f).
 
@@ -44,8 +47,8 @@ Long term (ecosystem, coordinated with Work on actgds.com Issue #3):
 | Assessment-rules reminders (never blockers): 36 h gates (R1), Competency 23 eligibility (R2) and hours window (R3), ADI Audit online booking link (R4), learner licence validity (R5) | `docs/superpowers/specs/2026-10-10-rules-reminders-and-learner-phase2-design.md` | **DONE** (in Production 2026-10-10, run 38044255328): R1, R2, R3, R5 and the booking link. |
 | Learner management, Phase 3a: missing-details marker, duplicate licence warning (reminders only, client-side) | learner management plan | **DONE** on `feature/learner-phase3a` (not merged). |
 | Learner management, Phase 3b: archive reason and restore history | learner management plan (Phase 3) | **DONE** on `feature/archive-reason` (not merged): migration 0010 (`learner_archive_events`, additive), optional preset reason + note, History in the archived banner. Needs 0010 on Staging D1 before merging. |
-| Learner management, Phase 3c: transfer a learner to another instructor (incl. the CoP 9.1 h / 9.2 e previous-records reminder, R12) | `docs/superpowers/specs/2026-10-11-learner-transfer-design.md` | Designed 2026-10-11, waiting for Tony's go (Q1-Q6). |
-| Competency 23 route suggestions and route check (R10) | `docs/superpowers/specs/2026-10-11-competency-23-route-design.md` | Designed 2026-10-11, waiting for Tony's go (Q1-Q6). |
+| Learner management, Phase 3c: transfer a learner to another instructor (incl. the CoP 9.1 h / 9.2 e previous-records reminder, R12) | `docs/superpowers/specs/2026-10-11-learner-transfer-design.md` | Designed; Q1-Q6 decided (defaults, Tony 2026-10-11). Waiting for the go to build T1. |
+| Competency 23 route suggestions and route check (R10) | `docs/superpowers/specs/2026-10-11-competency-23-route-design.md` | Designed; Q1-Q6 decided 2026-10-11 (Q1 changed: home district). Waiting for the go to build R10a. |
 
 ## Minor follow-ups (bundle into the next feature)
 

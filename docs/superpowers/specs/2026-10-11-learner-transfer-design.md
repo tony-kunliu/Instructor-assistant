@@ -1,6 +1,7 @@
 # Learner management 3c: transfer a learner to another instructor — design
 
-_Date: 2026-10-11 · Status: **DESIGNED, waiting for Tony's go** (no code yet) ·
+_Date: 2026-10-11 · Status: **DESIGNED; Q1-Q6 decided: defaults accepted by Tony
+2026-10-11** · Implementation (T1, then T2) needs Tony's go per task (no code yet) ·
 Based on `origin/staging` 87f328b (D1 at migration `0010`) · Parent plan:
 `docs/superpowers/specs/2026-10-08-learner-management-plan.md` (Phase 3)._
 
@@ -172,9 +173,9 @@ Each task ends with a stop and a report (AGENTS.md §11).
 - PDF header shows one ADI for a multi-instructor checklist until T2 (already true today for shared teaching).
 - The D7 reminder could become noise if Tony and Anna swap often; it appears once per transfer and is one tap.
 
-## 12. Open questions for Tony (defaults chosen; one word each)
+## 12. Questions — decided: defaults accepted by Tony 2026-10-11
 
-| # | Question | Recommended default |
+| # | Question | Decision (default accepted) |
 |---|---|---|
 | Q1 | Hand over immediately, or must the receiving instructor accept? | Immediate hand-over by the current instructor. |
 | Q2 | May anyone take over a learner whose instructor is marked inactive? | Yes, only in that case. |
