@@ -15,7 +15,8 @@ closed PRs; see `TASK.md` for what is in progress.
 - Design for learner intake (address suggestions, overseas/interstate licence,
   Competency 23 "eligible from", licence scan) written on branch
   `docs/learner-intake-design` (not pushed):
-  `docs/superpowers/specs/2026-10-11-learner-intake-design.md`; Q1-Q11 open.
+  `docs/superpowers/specs/2026-10-11-learner-intake-design.md`; questions decided
+  by Tony 2026-10-11 (free options only). Waiting for the go to build P1.
 
 ## Repository
 
