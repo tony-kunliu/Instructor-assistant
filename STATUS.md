@@ -7,9 +7,11 @@ closed PRs; see `TASK.md` for what is in progress.
 
 ## In progress
 
-- Nothing in flight. Learner management 3a (checks) and 3b (archive reason +
-  history, migration `0010`) and the Canberra-time display convention
-  (AGENTS.md §15) are released. Next: design for 3c (transfer a learner).
+- No code in flight. Learner management 3a/3b (migration `0010`) and the
+  Canberra-time convention (AGENTS.md §15) are released. Designs for 3c
+  (learner transfer) and R10 (Competency 23 route) are written on branch
+  `docs/designs-3c-route` (local commits, not pushed); Tony decided their
+  questions 2026-10-11 (route: familiar = home district). Waiting for the go to build.
 
 ## Repository
 
