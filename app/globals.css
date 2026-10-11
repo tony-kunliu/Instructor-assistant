@@ -282,5 +282,20 @@ html, body {
 .rules-group summary { font-size: 14px; font-weight: 600; color: var(--muted); padding: 8px 0; cursor: pointer; }
 .rules-group .hint-note { margin: 0 0 8px; font-size: 13px; color: var(--muted); }
 .rules-group .field small { font-size: 12px; color: var(--muted); }
+
+/* Learner transfer (3c T1): inline panel, History divider, receiving-instructor reminder. Self-contained; phone and tablet. */
+.transfer-link { display: block; margin: 8px 0 0 auto; padding: 4px 0; font-size: 13px; }
+.lifecycle.transfer-panel { background: #fff; border: 2px solid #6b6455; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12); display: grid; gap: 10px; }
+.lifecycle.transfer-panel p { margin: 0; overflow-wrap: anywhere; }
+.transfer-choices { border: 0; margin: 0; padding: 0; min-width: 0; display: grid; gap: 6px; }
+.transfer-choices legend { padding: 0; margin-bottom: 4px; font-size: 13px; font-weight: 600; color: var(--muted); }
+.transfer-choice { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 10px; overflow-wrap: anywhere; }
+.transfer-choice input { flex: none; width: 20px; height: 20px; margin: 0; }
+.transfer-panel .archive-actions .btn { white-space: normal; }
+.reminder.transfer-check { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.reminder.transfer-check span { flex: 1 1 200px; min-width: 0; }
+.reminder.transfer-check .btn { flex: none; margin-left: auto; }
+.history li.h-transfer { border-top: 1px dashed var(--line); color: var(--muted); font-size: 13px; font-weight: 600; text-align: center; overflow-wrap: anywhere; }
+
 /* Learner intake D18: the Eligibility box follows the licence dates while it is empty or app-generated. */
 .field small.auto-hint { font-size: 12px; color: var(--muted); }

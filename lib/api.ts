@@ -1,5 +1,5 @@
 import type { D1Database } from "./d1-types.ts";
-import { NotFoundError, PaperImportError, setLearnerArchived, updateLearner, ValidationError } from "./repo.ts";
+import { markTransferRecordsChecked, NotFoundError, PaperImportError, setLearnerArchived, transferLearner, updateLearner, ValidationError } from "./repo.ts";
 
 /** Run a route handler body and map domain errors to JSON responses. */
 export async function handle(work: () => unknown | Promise<unknown>, status = 200): Promise<Response> {
@@ -72,4 +72,19 @@ export async function patchLearner(db: D1Database, id: string, request: Request)
   }
   const result = await updateLearner(db, id, { ...fields, actingInstructorId });
   return { ...result, ...(result.changed ? {} : { message: "No changes: the details are already up to date." }) };
+}
+
+/**
+ * POST /api/learners/[id]/transfer `{ toInstructorId, note? }` (learner transfer 3c T1). The actor is the verified
+ * `x-instructor-id` header via readJsonWithActor, never the body when signed in. Rules: lib/repo.ts#transferLearner.
+ */
+export async function postLearnerTransfer(db: D1Database, id: string, request: Request): Promise<Record<string, unknown>> {
+  const body = await readJsonWithActor(request);
+  return { learner: await transferLearner(db, id, { toInstructorId: body.toInstructorId, note: body.note, actingInstructorId: body.actingInstructorId }) };
+}
+
+/** POST /api/learners/[id]/transfer/checked (D7 "Checked"): same verified actor rule. See lib/repo.ts#markTransferRecordsChecked. */
+export async function postTransferRecordsChecked(db: D1Database, id: string, request: Request): Promise<Record<string, unknown>> {
+  const body = await readJsonWithActor(request);
+  return { learner: await markTransferRecordsChecked(db, id, { actingInstructorId: body.actingInstructorId }) };
 }
