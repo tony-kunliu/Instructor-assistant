@@ -188,7 +188,7 @@ function learner(id: string, fullName: string, instructorId: string): Learner {
     schoolWork: null,
     licenceStage: "learner",
     learnerLicenceIssuedOn: null, learnerLicenceFirstIssuedOn: null, hptPassedOn: null, loggedHours: null, loggedHoursOn: null,
-    archivedAt: null,
+    archivedAt: null, archiveReason: null, archiveNote: null,
   };
 }
 

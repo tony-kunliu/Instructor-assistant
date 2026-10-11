@@ -21,6 +21,9 @@ import {
   listLessons,
   getLessonCompetencySelections,
   importPaperLessons,
+  listLearnerArchiveEvents,
+  listLearners,
+  setLearnerArchived,
   updateLearner,
   updateLesson,
 } from "../lib/repo.ts";
@@ -489,6 +492,40 @@ test("budget (migration 0009): a learner edit and a create with all 15 fields, i
   assert.equal(edit.maxBinds(), 16, "the UPDATE binds 15 columns + the id");
   assert.equal(create.maxBinds(), 16, "the INSERT binds 16 values");
   assert.equal(Number((await raw.prepare("SELECT COUNT(*) AS n FROM integration_outbox").first<{ n: number }>())?.n), outboxBefore, "a learner edit/create enqueues no ACTGDS event");
+});
+
+// ── Archive reason + restore history (migration 0010, learner management Phase 3b) ──
+
+test("budget (migration 0010): archive with/without a reason and restore are 3 statements each (batch of event INSERT + UPDATE, re-read); repeats too; list and getLearner stay 1, history 1; binds <= 100; nothing enqueued", async (t) => {
+  const { db: raw, learner, tony } = await setup();
+  const outboxBefore = Number((await raw.prepare("SELECT COUNT(*) AS n FROM integration_outbox").first<{ n: number }>())?.n);
+  const archive = countingD1(raw);
+  await setLearnerArchived(archive.db, learner.id, true, { reason: "moved_away", note: "QA note", actingInstructorId: tony.id });
+  const again = countingD1(raw);
+  await setLearnerArchived(again.db, learner.id, true, { reason: "stopped" });
+  const list = countingD1(raw);
+  const archivedList = await listLearners(list.db, { archived: true });
+  assert.equal(archivedList[0].archiveReason, "moved_away");
+  const get = countingD1(raw);
+  await getLearner(get.db, learner.id);
+  const history = countingD1(raw);
+  assert.equal((await listLearnerArchiveEvents(history.db, learner.id)).length, 1);
+  const restore = countingD1(raw);
+  await setLearnerArchived(restore.db, learner.id, false, { actingInstructorId: tony.id });
+  const plain = countingD1(raw);
+  await setLearnerArchived(plain.db, learner.id, true);
+  t.diagnostic(`archive (reason+note): ${archive.count()} statements, max binds ${archive.maxBinds()}; repeat archive: ${again.count()}; restore: ${restore.count()}; archive without reason: ${plain.count()}; list: ${list.count()}; getLearner: ${get.count()}; history: ${history.count()}`);
+  assert.equal(archive.count(), 3);
+  assert.equal(again.count(), 3);
+  assert.equal(restore.count(), 3);
+  assert.equal(plain.count(), 3);
+  assert.equal(list.count(), 1, "the list endpoint gains no D1 query for the reason");
+  assert.equal(get.count(), 1);
+  assert.equal(history.count(), 1);
+  assert.equal(archive.maxBinds(), 8, "the event INSERT binds 8 values");
+  assert.ok(archive.count() + MIDDLEWARE_AND_ROUTE_QUERIES <= FREE_PLAN_INVOCATION_LIMIT);
+  assert.equal(Number((await raw.prepare("SELECT COUNT(*) AS n FROM learner_archive_events").first<{ n: number }>())?.n), 3);
+  assert.equal(Number((await raw.prepare("SELECT COUNT(*) AS n FROM integration_outbox").first<{ n: number }>())?.n), outboxBefore, "archive/restore enqueue nothing for ACTGDS");
 });
 
 // ── createLesson assessing 22 competencies ──────────────────────────────

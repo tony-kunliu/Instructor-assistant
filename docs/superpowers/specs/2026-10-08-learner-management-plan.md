@@ -65,7 +65,9 @@ Designed together with the rules batch so the learners table changes once
 - Duplicate warning (same licence number).
 - Transfer a learner to another instructor (touches lesson ownership, prior-
   instructor records and the ACTGDS link: needs its own design).
-- Archive reason and restore history.
+- Archive reason and restore history. Built as 3b (migration 0010, new table
+  `learner_archive_events`; optional preset reason + note; restore recorded;
+  History in the archived banner; no ACTGDS change).
 
 ## Defaults confirmed in chat
 

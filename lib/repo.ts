@@ -26,7 +26,8 @@ import { IMMEDIATE_DELIVERY_LIMIT, processDueOutbox } from "./integration/sender
 import type { IntegrationHooks, LessonUpsertedPayloadV1 } from "./integration/types.ts";
 import { planPaperImport, type PaperImportPreview, type PaperImportRowError } from "./paper-import.ts";
 import { isPriorRecord } from "./prior-record.ts";
-import type { CompletionSummary, Instructor, Learner, LearnerInput, Lesson, LessonInput, LessonRevision, LessonRevisionSnapshot, SignatureStatus } from "./types.ts";
+import { ArchiveInputError, parseArchiveNote, parseArchiveReason } from "./archive-reasons.ts";
+import type { CompletionSummary, Instructor, Learner, LearnerArchiveEvent, LearnerInput, Lesson, LessonInput, LessonRevision, LessonRevisionSnapshot, SignatureStatus } from "./types.ts";
 
 export class ValidationError extends Error {}
 export class NotFoundError extends Error {}
@@ -77,6 +78,8 @@ function toLearner(row: Row): Learner {
     loggedHours: nullableNumber(row.logged_hours),
     loggedHoursOn: (row.logged_hours_on as string) ?? null,
     archivedAt: (row.archived_at as string) ?? null,
+    archiveReason: nullableString(row.archive_reason),
+    archiveNote: nullableString(row.archive_note),
   };
 }
 
@@ -207,9 +210,15 @@ export async function updateInstructorAdiNumber(db: D1Database, instructorId: st
 
 // ── Learners ─────────────────────────────────────────────────────────────
 
+// The current archive reason/note (migration 0010) comes from the learner's LATEST archive event, only while
+// archived and only if that event is an 'archived' one: a correlated lookup on (learner_id, at), so the list
+// endpoint stays ONE query. Learners archived before 0010 have no event and get NULLs.
 const LEARNER_SELECT = `
-  SELECT l.*, i.full_name AS instructor_name, i.adi_number AS instructor_adi_number
-  FROM learners l JOIN instructors i ON i.id = l.instructor_id`;
+  SELECT l.*, i.full_name AS instructor_name, i.adi_number AS instructor_adi_number,
+    ae.reason AS archive_reason, ae.note AS archive_note
+  FROM learners l JOIN instructors i ON i.id = l.instructor_id
+  LEFT JOIN learner_archive_events ae ON l.archived_at IS NOT NULL AND ae.action = 'archived'
+    AND ae.rowid = (SELECT e.rowid FROM learner_archive_events e WHERE e.learner_id = l.id ORDER BY e.at DESC, e.rowid DESC LIMIT 1)`;
 
 export async function listLearners(db: D1Database, options: { archived?: boolean } = {}): Promise<Learner[]> {
   const where = options.archived ? "l.archived_at IS NOT NULL" : "l.archived_at IS NULL";
@@ -217,24 +226,89 @@ export async function listLearners(db: D1Database, options: { archived?: boolean
   return results.map(toLearner);
 }
 
+export type ArchiveOptions = {
+  /** Optional preset key (lib/archive-reasons.ts); only when archiving. Unknown = ValidationError. */
+  reason?: unknown;
+  /** Optional free text, <= 200 chars after cleaning; only when archiving. */
+  note?: unknown;
+  /** The verified actor (x-instructor-id); recorded on the event when it is a known instructor, else NULL. */
+  actingInstructorId?: unknown;
+  now?: Date;
+};
+
 /**
  * Archive (or restore) a learner. Only toggles `archived_at` — identity,
  * lessons, competency events, signatures and Integration mapping are never
  * touched, and no integration event is emitted. Re-archiving keeps the
- * original timestamp.
+ * original timestamp. A REAL state change also records one learner_archive_events
+ * row (archived + optional reason/note, or restored) in the same atomic
+ * db.batch() as the UPDATE; a repeat (archive an archived / restore an active
+ * learner) writes no event. D1 cost: 3 statements (batch of event INSERT +
+ * UPDATE, re-read), the same with or without a reason.
  */
-export async function setLearnerArchived(db: D1Database, id: string, archived: boolean): Promise<Learner> {
-  const result = await db
-    .prepare(
-      `UPDATE learners SET
-         archived_at = CASE WHEN ? THEN COALESCE(archived_at, strftime('%Y-%m-%dT%H:%M:%fZ', 'now')) ELSE NULL END,
-         updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-       WHERE id = ?`,
-    )
-    .bind(archived ? 1 : 0, id)
-    .run();
-  if (!result.meta.changes) throw new NotFoundError("Learner not found.");
+export async function setLearnerArchived(db: D1Database, id: string, archived: boolean, options: ArchiveOptions = {}): Promise<Learner> {
+  let reason: string | null;
+  let note: string | null;
+  try {
+    reason = parseArchiveReason(options.reason);
+    note = parseArchiveNote(options.note);
+  } catch (error) {
+    if (error instanceof ArchiveInputError) throw new ValidationError(error.message);
+    throw error;
+  }
+  if (!archived && (reason !== null || note !== null)) throw new ValidationError("A reason or note can only be given when archiving.");
+  const actor = options.actingInstructorId === undefined || options.actingInstructorId === null || options.actingInstructorId === "" ? null : String(options.actingInstructorId);
+  const at = (options.now ?? new Date()).toISOString();
+  const [, update] = await db.batch([
+    // Runs first, so it sees the state BEFORE the UPDATE: inserts only when the state really changes.
+    db
+      .prepare(
+        `INSERT INTO learner_archive_events (id, learner_id, action, reason, note, at, by_instructor_id)
+         SELECT ?, learners.id, ?, ?, ?, ?, (SELECT instructors.id FROM instructors WHERE instructors.id = ?)
+         FROM learners WHERE learners.id = ? AND (learners.archived_at IS NULL) = ?`,
+      )
+      .bind(crypto.randomUUID(), archived ? "archived" : "restored", reason, note, at, actor, id, archived ? 1 : 0),
+    db
+      .prepare(
+        `UPDATE learners SET
+           archived_at = CASE WHEN ? THEN COALESCE(archived_at, ?) ELSE NULL END,
+           updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+         WHERE id = ?`,
+      )
+      .bind(archived ? 1 : 0, at, id),
+  ]);
+  if (!update.meta.changes) throw new NotFoundError("Learner not found.");
   return getLearner(db, id);
+}
+
+/**
+ * A learner's archive / restore events, newest first, with the actor's name: ONE query (learners LEFT JOIN
+ * events, so an unknown learner is a NotFoundError and a learner with no events is []). Loaded only when the
+ * archived banner's History is opened.
+ */
+export async function listLearnerArchiveEvents(db: D1Database, learnerId: string): Promise<LearnerArchiveEvent[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT e.id, e.action, e.reason, e.note, e.at, e.by_instructor_id, i.full_name AS by_name
+       FROM learners l
+       LEFT JOIN learner_archive_events e ON e.learner_id = l.id
+       LEFT JOIN instructors i ON i.id = e.by_instructor_id
+       WHERE l.id = ? ORDER BY e.at DESC, e.rowid DESC`,
+    )
+    .bind(learnerId)
+    .all<Row>();
+  if (!results.length) throw new NotFoundError("Learner not found.");
+  return results
+    .filter((row) => row.id !== null && row.id !== undefined)
+    .map((row) => ({
+      id: String(row.id),
+      action: row.action === "restored" ? "restored" : "archived",
+      reason: nullableString(row.reason),
+      note: nullableString(row.note),
+      at: String(row.at),
+      byInstructorId: nullableString(row.by_instructor_id),
+      byName: nullableString(row.by_name),
+    }));
 }
 
 export async function getLearner(db: D1Database, id: string): Promise<Learner> {
