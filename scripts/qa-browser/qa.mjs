@@ -1343,9 +1343,9 @@ const draw = async (page, index) => {
   await s.page.locator(".h-editing .comp-section:has(.comp-label:text-is('Assessed')) .chip-row >> nth=0 >> button:text-is(\"17\")").click();
   await signBoth(s.page);
   await s.page.click(".h-editing .btn.save");
-  await s.page.waitForSelector(".status.ok:has-text('Lesson updated'), .h-editing .status.error");
+  await s.page.waitForSelector(".status:has-text('Lesson updated'), .h-editing .status.error");
   const statusText = (await s.page.textContent(".status")) ?? "";
-  check("History Edit removing 17 from Lesson #1 (17 only re-achieved in Lesson #3): saved, message says Review 1-17 is no longer valid because …", /^Lesson updated\. Review 1-17 is no longer valid because /.test(statusText), statusText);
+  check("History Edit removing 17 from Lesson #1 (17 only re-achieved in Lesson #3): saved with a short amber warning naming Review 1-17", statusText === "Lesson updated. No longer valid: Review 1-17 (prerequisites must be achieved in earlier lessons)." && (await s.page.$(".status.warn")) !== null, statusText);
   const r17After = await (await fetch(`${B}/api/learners/${r17.id}`)).json();
   check("…and the derived progress persists: Review 1-17 ready (not achieved), original Review 1-17 event kept", r17After.progress.review1_17.status === "ready" && r17After.progress.competencies["review-1-17"].achieved === true, r17After.progress.review1_17.status);
   check("progress-invalidation: no horizontal scroll at 375px", await noHScroll(s.page));

@@ -1,12 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { openTestD1 } from "../lib/db.ts";
-import { createLearner, createLesson, findInstructorByEmail, getCompletionSummary, getLearnerProgress, updateLesson } from "../lib/repo.ts";
+import { createLearner, createLesson, findInstructorByEmail, getCompletionSummary, getLearnerProgress, importPaperLessons, updateLesson } from "../lib/repo.ts";
+import { PAPER_CSV_COLUMNS } from "../lib/paper-import.ts";
 import {
   FINAL_DRIVE_23,
   REVIEW_1_17,
   REVIEW_1_22,
-  assessmentChronologyViolations,
   computeProgress,
   invalidationNotice,
   type CompetencyEvent,
@@ -21,7 +21,9 @@ import type { IntegrationHooks, LessonUpsertedPayloadV1 } from "../lib/integrati
 // dependent assessment never retroactively validates it. Policy: the edit is
 // allowed, the milestone is derived as not achieved (never deleting the
 // original assessment events), and the response reports it as invalidated.
-// Legacy violations (already in the data before an edit) stay tolerated.
+// Validity is judged by lesson order only (no timestamps): data that already
+// broke the chronology is derived the same way (Tony's call via the
+// coordinator, 2026-10-11: Production holds ~3 learners, mostly test data).
 // Item 2: the completion summary follows the derived completed state.
 
 const SIG = "data:image/png;base64,iVBORw0KGgoAAAA1";
@@ -80,7 +82,7 @@ test("repro: removing 17 from Lesson 1 while 17 is only re-achieved in Lesson 3 
   assert.notEqual(reread.review1_17.status, "achieved", "the derived state persists on the next read (GET)");
   assert.equal(reread.competencies[REVIEW_1_17].achieved, true, "the original Review 1-17 assessment event is kept for audit");
   assert.equal(reread.competencies[REVIEW_1_17].achievedLessonIds.length, 1);
-  assert.match(invalidationNotice(result.invalidated) ?? "", /Review 1-17 is no longer valid because/);
+  assert.equal(invalidationNotice(result.invalidated), "No longer valid: Review 1-17 (prerequisites must be achieved in earlier lessons).");
 });
 
 test("repro: the corrected progress is what is enqueued for ACTGDS (direct and downstream events), schema shape unchanged", async () => {
@@ -160,65 +162,119 @@ test("pure: Review 1-22 whose Review 1-17 prerequisite exists only in a later le
   assert.equal(progress.completed, false);
 });
 
-test("pure: a clean forward chain is fully achieved, with or without lesson numbers", () => {
+test("pure: a clean forward chain is fully achieved; without lesson numbers no milestone can be validated (conservative)", () => {
   const events = [...evs(1, range(1, 17), 0), ...evs(2, [REVIEW_1_17], 100), ...evs(3, range(18, 22), 200), ...evs(4, [REVIEW_1_22], 300), ...evs(5, [FINAL_DRIVE_23], 400)];
   assert.equal(computeProgress(events).completed, true);
-  assert.equal(computeProgress(events.map(({ lessonNo: _n, ...rest }) => rest)).completed, true);
+  const unknown = computeProgress(events.map(({ lessonNo: _n, ...rest }) => rest));
+  assert.equal(unknown.review1_17.status, "ready");
+  assert.equal(unknown.completed, false);
 });
 
-// ── 3. Legacy tolerance: violations already in the data stay tolerated ───
-
-test("pure legacy: a milestone backdated by an old edit (recorded AFTER its prerequisites, but in an earlier lesson) stays achieved", () => {
-  // Lesson 2 achieved 1-17 at minute 1; an old History Edit (before the chronology rule) later put Review 1-17 into Lesson 1.
-  const events = [...evs(2, range(1, 17), 60), ev(1, REVIEW_1_17, 600)];
-  assert.equal(assessmentChronologyViolations([{ lessonNo: 1, events: [ev(1, REVIEW_1_17, 600)] }, { lessonNo: 2, events: evs(2, range(1, 17), 60) }]).has(`1:${REVIEW_1_17}`), true, "it is a chronology violation");
-  assert.equal(computeProgress(events).review1_17.status, "achieved", "…tolerated, as before");
+test("pure: recording time never matters — a prerequisite in a later lesson recorded earlier does not count, one in an earlier lesson recorded later does", () => {
+  // Lesson 2 holds 1-17 recorded at minute 1; Review 1-17 sits in Lesson 1, recorded later (an old backdating edit).
+  assert.equal(computeProgress([...evs(2, range(1, 17), 60), ev(1, REVIEW_1_17, 600)]).review1_17.status, "ready");
+  // 1-17 in Lesson 1 but recorded after the Review in Lesson 2 (Lesson 1 re-saved by an edit): still valid.
+  assert.equal(computeProgress([ev(2, REVIEW_1_17, 0), ...evs(1, range(1, 17), 600)]).review1_17.status, "achieved");
 });
 
-test("pure legacy: a prior-instructor record stamping 1-22, Review 1-17 and Review 1-22 together stays valid", () => {
+// ── 3. Prior-instructor and paper records, events without a lesson ──────
+
+test("pure: prior-instructor records are one unit among themselves and come before every positive lesson", () => {
   const prior = [...range(1, 22), REVIEW_1_17, REVIEW_1_22].map((id) => ({ competencyId: id, action: "assessed" as const, result: "achieved" as const, lessonId: "P1", lessonNo: -1, createdAt: "2026-09-01T00:00:00.000Z" }));
   const progress = computeProgress([...prior, ...evs(1, [FINAL_DRIVE_23], 100)]);
   assert.equal(progress.review1_17.status, "achieved");
   assert.equal(progress.review1_22.status, "achieved");
   assert.equal(progress.completed, true);
+  // Split over two prior records (-2: 1-17, -1: the rest) is the same unit.
+  const split = [...evs(-2, range(1, 17), 0), ...evs(-1, [...range(18, 22), REVIEW_1_17, REVIEW_1_22], 0)];
+  assert.equal(computeProgress(split).review1_22.status, "achieved");
 });
 
-test("legacy (DB): a learner whose only Review 1-17 was backdated before the rule keeps it achieved, and unrelated edits neither block nor invalidate", async () => {
+test("DB: a transfer learner (one prior record stamping 1-22 + both reviews) completes with an app Final Drive; completion names that lesson", async () => {
   const ctx = await setup();
-  const l1 = await ctx.create({ taughtIds: ["1"] });
-  const l2 = await ctx.assess(range(1, 17));
-  await new Promise((resolve) => setTimeout(resolve, 5)); // the old edit happened after Lesson 2 was recorded
-  await ctx.db.prepare("INSERT INTO competency_events (id, learner_id, lesson_id, competency_id, action, result) VALUES (?, ?, ?, ?, 'assessed', 'achieved')").bind(crypto.randomUUID(), ctx.learner.id, l1.id, REVIEW_1_17).run();
-  assert.equal((await ctx.progress()).review1_17.status, "achieved");
-  const result = await ctx.editAssess(l2, range(1, 17), { comments: "unrelated typo fix" });
-  assert.equal(result.invalidated.review1_17, false);
-  assert.equal(result.progress.review1_17.status, "achieved");
-  assert.equal((await ctx.progress()).review1_17.status, "achieved");
+  const all = [...range(1, 22), REVIEW_1_17, REVIEW_1_22].join(";");
+  const csv = [PAPER_CSV_COLUMNS.join(","), PAPER_CSV_COLUMNS.map((c) => ({ date: "2025-12-01", prior_instructor: "QA ADI 1", prior_lessons: "10", prior_hours: "20", prior_km: "100", assessed_achieved: all } as Record<string, string>)[c] ?? "").join(",")].join("\n") + "\n";
+  await importPaperLessons(ctx.db, ctx.learner.id, csv, "commit");
+  assert.equal((await ctx.progress()).review1_22.status, "achieved");
+  const fd = await ctx.assess([FINAL_DRIVE_23]);
+  const progress = await ctx.progress();
+  assert.equal(progress.completed, true);
+  assert.equal((await getCompletionSummary(ctx.db, ctx.learner.id, progress))?.completingLessonNo, fd.lessonNo);
 });
 
-test("an unrelated edit of the Review 1-17 lesson keeps its events' original recording time, so a later prerequisite removal is still derived as invalid", async () => {
+test("DB: paper-import lessons are ordinary lessons (forward chain valid; Final Drive in a later app lesson completes)", async () => {
   const ctx = await setup();
-  const l1 = await ctx.assess(range(1, 17)); // 1
-  const l2 = await ctx.assess([REVIEW_1_17]); // 2
-  await ctx.assess(["17"]); // 3
-  const stampOf = async () => (await ctx.db.prepare("SELECT created_at FROM competency_events WHERE lesson_id = ?").bind(l2.id).first<{ created_at: string }>())!.created_at;
-  const original = await stampOf();
-  await new Promise((resolve) => setTimeout(resolve, 5));
-  await ctx.editAssess(l2, [REVIEW_1_17], { comments: "typo" });
-  assert.equal(await stampOf(), original, "unchanged event keeps its created_at");
+  const row = (date: string, ids: string[]) => PAPER_CSV_COLUMNS.map((c) => ({ date, signature: "on_paper", instructor: "Tony", assessed_achieved: ids.join(";") } as Record<string, string>)[c] ?? "").join(",");
+  const csv = [PAPER_CSV_COLUMNS.join(","), row("2026-01-01", range(1, 17)), row("2026-01-02", [REVIEW_1_17]), row("2026-01-03", range(18, 22)), row("2026-01-04", [REVIEW_1_22])].join("\n") + "\n";
+  await importPaperLessons(ctx.db, ctx.learner.id, csv, "commit");
+  assert.equal((await ctx.progress()).finalDrive23.status, "ready");
+  await ctx.assess([FINAL_DRIVE_23]);
+  assert.equal((await ctx.progress()).completed, true);
+});
+
+test("DB: an event whose lesson row is missing is still read (LEFT JOIN) but can never validate a milestone", async () => {
+  const ctx = await setup();
+  await ctx.assess(range(1, 17));
+  await ctx.db.exec("PRAGMA foreign_keys = OFF");
+  await ctx.db.prepare("INSERT INTO competency_events (id, learner_id, lesson_id, competency_id, action, result) VALUES (?, ?, 'no-such-lesson', ?, 'assessed', 'achieved')").bind(crypto.randomUUID(), ctx.learner.id, REVIEW_1_17).run();
+  const progress = await ctx.progress();
+  assert.equal(progress.competencies[REVIEW_1_17].achieved, true, "the orphan event is not silently dropped");
+  assert.equal(progress.review1_17.status, "ready", "…but it does not count");
+});
+
+// ── Reviewer's scenario: flipping a result never revives a milestone ─────
+
+test("reviewer S1: Review 1-17 Not achieved in L2, 17 only in L3 after L1 loses 17; flipping L2 to Achieved is saved but derived invalid and reported", async () => {
+  const ctx = await setup();
+  const l1 = await ctx.assess(range(1, 17));
+  const l2 = await ctx.create({ assessedIds: [REVIEW_1_17], achievedResults: ach([REVIEW_1_17], "not_achieved") });
+  await ctx.assess(["17"]);
+  await ctx.editAssess(l1, range(1, 16));
+  const flipped = await ctx.editAssess(l2, [REVIEW_1_17]);
+  assert.notEqual(flipped.progress.review1_17.status, "achieved");
+  assert.equal(flipped.invalidated.review1_17, true, "reported: the Achieved it records does not count");
+  assert.notEqual((await ctx.progress()).review1_17.status, "achieved");
+});
+
+test("reviewer S1, other order: flip L2 to Achieved first (valid), then remove 17 from L1 → invalidated", async () => {
+  const ctx = await setup();
+  const l1 = await ctx.assess(range(1, 17));
+  const l2 = await ctx.create({ assessedIds: [REVIEW_1_17], achievedResults: ach([REVIEW_1_17], "not_achieved") });
+  await ctx.assess(["17"]);
+  assert.equal((await ctx.editAssess(l2, [REVIEW_1_17])).progress.review1_17.status, "achieved");
   const result = await ctx.editAssess(l1, range(1, 16));
   assert.equal(result.invalidated.review1_17, true);
+  assert.notEqual((await ctx.progress()).review1_17.status, "achieved");
 });
 
-test("safety net: data already re-recorded by an edit before this fix (milestone recorded after the later prerequisite) cannot show the new violation, so that edit is rejected and nothing is written", async () => {
+test("an invalidated Review / Final Drive cannot be revived by Achieved → Not achieved → Achieved edits", async () => {
   const ctx = await setup();
-  const l1 = await ctx.assess(range(1, 17)); // 1
-  const l2 = await ctx.assess([REVIEW_1_17]); // 2
-  await ctx.assess(["17"]); // 3
-  // What a pre-fix edit of Lesson 2 did: re-insert its events with the edit time.
-  await ctx.db.prepare("UPDATE competency_events SET created_at = '2999-01-01T00:00:00.000Z' WHERE lesson_id = ?").bind(l2.id).run();
-  await assert.rejects(() => ctx.editAssess(l1, range(1, 16)), /Lesson #2's Review 1-17 relying on prerequisites achieved only in the same or a later lesson/);
-  assert.equal((await ctx.progress()).competencies["17"].achievedLessonIds.length, 2, "Lesson 1 still holds 17");
+  await ctx.assess(range(1, 17)); // 1
+  await ctx.assess([REVIEW_1_17]); // 2
+  const l3 = await ctx.assess(range(18, 22)); // 3
+  const l4 = await ctx.assess([REVIEW_1_22]); // 4
+  await ctx.assess(["22"]); // 5
+  const l6 = await ctx.assess([FINAL_DRIVE_23]); // 6
+  await ctx.editAssess(l3, range(18, 21)); // 22 only in Lesson 5 now
+  for (const [lesson, id] of [[l4, REVIEW_1_22], [l6, FINAL_DRIVE_23]] as const) {
+    await ctx.edit(lesson, { assessedIds: [id], achievedResults: ach([id], "not_achieved") });
+    const revived = await ctx.editAssess(lesson, [id]);
+    assert.equal(revived.progress.review1_22.status, "ready", `${id}: Review 1-22 stays not achieved`);
+    assert.equal(revived.progress.completed, false);
+  }
+  const progress = await ctx.progress();
+  assert.equal(progress.completed, false);
+  assert.equal(await getCompletionSummary(ctx.db, ctx.learner.id, progress), null);
+});
+
+test("an unrelated edit never blocks: correcting the Review 1-17 lesson, then removing 17 from Lesson 1, is allowed and derived invalid", async () => {
+  const ctx = await setup();
+  const l1 = await ctx.assess(range(1, 17));
+  const l2 = await ctx.assess([REVIEW_1_17]);
+  await ctx.assess(["17"]);
+  await ctx.editAssess(l2, [REVIEW_1_17], { comments: "typo" });
+  const result = await ctx.editAssess(l1, range(1, 16));
+  assert.equal(result.invalidated.review1_17, true);
 });
 
 // ── 4. Completion summary follows derived completion (bug 2) ─────────────
@@ -250,8 +306,13 @@ test("bug 2: completion summary names the Final Drive that is actually valid whe
   assert.equal(progress.completedLessonId, "L7");
 });
 
-test("invalidationNotice: null when nothing was invalidated, one sentence naming every invalidated milestone otherwise", () => {
+test("bug 2: with two valid Final Drives the completion names the earlier LESSON, whatever the recording order", () => {
+  const chain = [...evs(1, range(1, 17), 0), ...evs(2, [REVIEW_1_17], 100), ...evs(3, range(18, 22), 200), ...evs(4, [REVIEW_1_22], 300)];
+  const progress = computeProgress([...chain, ev(6, FINAL_DRIVE_23, 400), ev(5, FINAL_DRIVE_23, 500)]);
+  assert.equal(progress.completedLessonId, "L5");
+});
+
+test("invalidationNotice: null when nothing was invalidated, one short line naming every invalidated milestone otherwise", () => {
   assert.equal(invalidationNotice({ review1_17: false, review1_22: false, finalDrive23: false, completed: false }), null);
-  assert.match(invalidationNotice({ review1_17: true, review1_22: false, finalDrive23: false, completed: false })!, /^Review 1-17 is no longer valid because this edit changed an assessment it depends on/);
-  assert.match(invalidationNotice({ review1_17: false, review1_22: true, finalDrive23: true, completed: true })!, /^Review 1-22, 23 Final Drive and CBT&A Completed are no longer valid because/);
+  assert.equal(invalidationNotice({ review1_17: false, review1_22: true, finalDrive23: true, completed: true }), "No longer valid: Review 1-22, 23 Final Drive, CBT&A Completed (prerequisites must be achieved in earlier lessons).");
 });

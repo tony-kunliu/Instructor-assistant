@@ -5,14 +5,13 @@ import {
   CompetencyRuleError,
   POST_REVIEW_1_17_IDS,
   POST_REVIEW_1_17_LOCK_MESSAGE,
-  SPECIAL_ASSESSMENT_IDS,
+  REVIEW_1_17,
+  REVIEW_1_22,
   assessmentChronologyViolations,
   assessmentLockReason,
   FINAL_DRIVE_23,
-  competencyLabel,
   computeProgress,
   diffInvalidatedMilestones,
-  milestoneAssessmentCounts,
   formatIdList,
   parseAchievedResults,
   parseIdList,
@@ -1108,19 +1107,11 @@ export async function updateLesson(db: D1Database, learnerId: string, lessonId: 
   }
   const achievedIds = assessedIds.filter((id) => achievedResults[id] === "achieved");
 
-  // This lesson's events after the edit. An event the edit leaves unchanged
-  // (same competency, action and result) keeps its original created_at: an
-  // unrelated correction must not make a prerequisite look recorded AFTER a
-  // milestone that relied on it (lib/competency.ts#milestoneAssessmentCounts).
-  // Only a new or changed event gets this edit's time.
+  // This lesson's events after the edit (in memory: validation below and the "after" snapshot).
   const nowIso = new Date().toISOString();
-  const originalStamp = new Map(allEventsBeforeEdit.filter((event) => event.lessonId === lessonId).map((event) => [`${event.action}:${event.competencyId}:${event.result ?? ""}`, event.createdAt]));
-  const editedEvent = (competencyId: string, action: CompetencyEvent["action"], result: CompetencyEvent["result"]): CompetencyEvent => ({
-    competencyId, action, result, lessonId, lessonNo: existing.lessonNo, createdAt: originalStamp.get(`${action}:${competencyId}:${result ?? ""}`) ?? nowIso,
-  });
   const newEventsForThisLesson: CompetencyEvent[] = [
-    ...taughtIds.map((competencyId) => editedEvent(competencyId, "taught", null)),
-    ...assessedIds.map((competencyId) => editedEvent(competencyId, "assessed", achievedResults[competencyId] ?? null)),
+    ...taughtIds.map((competencyId) => ({ competencyId, action: "taught" as const, result: null, lessonId, createdAt: nowIso, lessonNo: existing.lessonNo })),
+    ...assessedIds.map((competencyId) => ({ competencyId, action: "assessed" as const, result: achievedResults[competencyId] ?? null, lessonId, createdAt: nowIso, lessonNo: existing.lessonNo })),
   ];
 
   // An edit may not introduce a NEW gated assessment (in this lesson) whose
@@ -1152,21 +1143,11 @@ export async function updateLesson(db: D1Database, learnerId: string, lessonId: 
       const laterLessonNo = Math.min(...laterCompetencies.map(lessonNoOf));
       throw new ValidationError(`This edit would leave Lesson #${laterLessonNo} assessing Competency 18, 20 or 21 before Competency 1-17 and Review 1-17 were achieved in earlier lessons. Correct Lesson #${laterLessonNo} first.`);
     }
-    // A later Review / Final Drive whose prerequisites this edit removes is
-    // derived as no longer valid (computeProgress) and reported through
-    // `invalidated` — the edit itself is allowed and the original assessment
-    // events stay. Safety net: if the derived state would still count such an
-    // assessment (only possible when its lesson's events were re-recorded by
-    // an edit after the later prerequisite, see milestoneAssessmentCounts),
-    // the new violation could not be shown, so the edit is rejected instead.
-    const stillCounted = introduced.find((key) =>
-      SPECIAL_ASSESSMENT_IDS.includes(idOf(key)) &&
-      proposedEvents.some((event) => event.competencyId === idOf(key) && event.action === "assessed" && event.result === "achieved" && event.lessonNo === lessonNoOf(key) && milestoneAssessmentCounts(proposedEvents, event)),
-    );
-    if (stillCounted) {
-      const laterLessonNo = lessonNoOf(stillCounted);
-      throw new ValidationError(`This edit would leave Lesson #${laterLessonNo}'s ${competencyLabel(idOf(stillCounted))} relying on prerequisites achieved only in the same or a later lesson. Correct Lesson #${laterLessonNo} first.`);
-    }
+    // Review / Final Drive assessments are never blocked here beyond the
+    // own-lesson gate above: one whose prerequisites are not achieved in
+    // earlier lessons (removed by this edit, or a result flipped to Achieved
+    // under an existing violation) is simply derived as not achieved
+    // (computeProgress) and reported through `invalidated`; its events stay.
   }
 
   const location = text(input.location, 200);
@@ -1298,12 +1279,7 @@ export async function updateLesson(db: D1Database, learnerId: string, lessonId: 
   }
 
   const deleteOldEvents = db.prepare("DELETE FROM competency_events WHERE lesson_id = ?").bind(lessonId);
-  const eventsInsert = jsonInsertStatement(
-    db,
-    "competency_events",
-    [...COMPETENCY_EVENT_COLUMNS, "created_at"],
-    competencyEventRows(learnerId, lessonId, taughtIds, assessedIds, achievedResults).map((row, index) => ({ ...row, created_at: newEventsForThisLesson[index].createdAt })),
-  );
+  const eventsInsert = insertCompetencyEventsStatement(db, competencyEventRows(learnerId, lessonId, taughtIds, assessedIds, achievedResults));
 
   // Same reasoning as createLesson: build the "after" progress snapshot
   // in memory (otherLessonsEvents + this lesson's own new events) so the
@@ -1437,7 +1413,15 @@ export async function updateLesson(db: D1Database, learnerId: string, lessonId: 
 
   scheduleIntegrationDelivery(db, integration);
 
-  return { lesson: updatedLesson, progress: after, completion, invalidated: diffInvalidatedMilestones(before, after) };
+  // Reported: milestones that were valid and no longer are, plus any milestone this lesson now
+  // records as Achieved that does not count (its prerequisites are not in earlier lessons).
+  const invalidated = diffInvalidatedMilestones(before, after);
+  const recordedHere = (id: string) => newEventsForThisLesson.some((event) => event.competencyId === id && event.action === "assessed" && event.result === "achieved");
+  if (recordedHere(REVIEW_1_17) && after.review1_17.status !== "achieved") invalidated.review1_17 = true;
+  if (recordedHere(REVIEW_1_22) && after.review1_22.status !== "achieved") invalidated.review1_22 = true;
+  if (recordedHere(FINAL_DRIVE_23) && after.finalDrive23.status !== "achieved") invalidated.finalDrive23 = true;
+
+  return { lesson: updatedLesson, progress: after, completion, invalidated };
 }
 
 // ── CBT&A V2 competency progress ────────────────────────────────────────
@@ -1446,7 +1430,7 @@ export async function getCompetencyEvents(db: D1Database, learnerId: string): Pr
   const { results } = await db
     .prepare(
       `SELECT e.competency_id, e.action, e.result, e.lesson_id, e.created_at, l.lesson_no
-       FROM competency_events e JOIN lessons l ON l.id = e.lesson_id
+       FROM competency_events e LEFT JOIN lessons l ON l.id = e.lesson_id
        WHERE e.learner_id = ? ORDER BY e.created_at ASC`,
     )
     .bind(learnerId)
@@ -1454,7 +1438,7 @@ export async function getCompetencyEvents(db: D1Database, learnerId: string): Pr
   return results.map(competencyEventFromRow);
 }
 
-/** lesson_no travels with every event: Review / Final Drive validity is judged by lesson chronology (lib/competency.ts#milestoneAssessmentCounts). */
+/** lesson_no travels with every event: Review / Final Drive validity is judged by lesson order (lib/competency.ts#milestoneAssessmentCounts). No lesson row (never expected) = unknown lesson number, which can never validate a milestone. */
 function competencyEventFromRow(row: Row): CompetencyEvent {
   return {
     competencyId: String(row.competency_id),
@@ -1462,7 +1446,7 @@ function competencyEventFromRow(row: Row): CompetencyEvent {
     result: (row.result as CompetencyEvent["result"]) ?? null,
     lessonId: String(row.lesson_id),
     createdAt: String(row.created_at),
-    lessonNo: Number(row.lesson_no),
+    lessonNo: row.lesson_no === null || row.lesson_no === undefined ? undefined : Number(row.lesson_no),
   };
 }
 

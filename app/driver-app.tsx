@@ -183,7 +183,7 @@ export default function DriverApp() {
   // The learner the open edit form belongs to; the save targets this id, never whoever is selected at save time.
   const [editLearnerId, setEditLearnerId] = useState<string | null>(null);
   const [learnerDraft, setLearnerDraft] = useState<LearnerDraft>(emptyLearner);
-  const [status, setStatus] = useState<{ kind: "info" | "error" | "ok"; text: string } | null>(null);
+  const [status, setStatus] = useState<{ kind: "info" | "error" | "ok" | "warn"; text: string } | null>(null);
   const [saving, setSaving] = useState(false);
   const [clock, setClock] = useState(() => localNow().time);
   const finishOdoRef = useRef<HTMLInputElement>(null);
@@ -523,7 +523,7 @@ export default function DriverApp() {
       setInvalidation(result.invalidated);
       cancelEditLesson();
       const notice = invalidationNotice(result.invalidated);
-      setStatus({ kind: "ok", text: notice ? `Lesson updated. ${notice}` : "Lesson updated." });
+      setStatus(notice ? { kind: "warn", text: `Lesson updated. ${notice}` } : { kind: "ok", text: "Lesson updated." });
     } catch (error) {
       setEditIssues({ source: "server", issues: [issueFromServerMessage((error as Error).message)], snapshot: editDraft });
       setEditAttempt((n) => n + 1);

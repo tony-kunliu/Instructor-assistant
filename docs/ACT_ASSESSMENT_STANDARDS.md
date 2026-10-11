@@ -32,11 +32,12 @@ The instruments win over this summary. If they disagree, fix this file.
     and competency 23 being undertaken."
   - In the app, only 18, 20 and 21 are gated behind Review 1.
 - Chronology: a Review 1-17 / Review 1-22 / 23 Final Drive counts only if
-  its prerequisites were achieved before it (an earlier lesson, or recorded
-  earlier for legacy data). A prerequisite achieved only afterwards never
-  makes it valid; after a History Edit such a milestone is derived as no
-  longer achieved and reported, and the original events stay. "CBT&A
-  Completed" follows that derived state.
+  its prerequisites were achieved in STRICTLY EARLIER lessons (lesson
+  number order; prior-instructor records count as one unit, before every
+  lesson). Same-lesson or later achievements never make it valid. After a
+  History Edit such a milestone is derived as not achieved and reported;
+  the original events stay. "CBT&A Completed" follows that derived state.
+  `scripts/audit-progress.mjs` compares old vs current rule on an export.
 
 ## Rules not yet (fully) reflected in the app
 
