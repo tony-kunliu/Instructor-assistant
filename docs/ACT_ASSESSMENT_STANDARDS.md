@@ -52,7 +52,7 @@ The instruments win over this summary. If they disagree, fix this file.
 | R7 | Rear-view cameras **permitted**; no automated/assisted reverse parking. Instructors must teach safe use of in-car technology. | NI2020-703 Comp 23 NB; CoP | — | Note |
 | R8 | Removing the 'A' condition in the first 12 months: Review 2 drive in a manual vehicle, with ADI Audit notified beforehand. | CoP 9.4 | Not modelled | Backlog |
 | R9 | Record keeping (see the breakdown below). | CoP 9.3, 10 f | PDF export; paper originals kept 5 years | Possible certificate-number field |
-| R10 | Competency 23 route (see the breakdown below). | NI2020-703 Comp 23; CoP 9.2 f, k | Free-text location; **not auto-checked** | Possible location suggestions |
+| R10 | Competency 23 route (see the breakdown below). | NI2020-703 Comp 23; CoP 9.2 f, k | Reminder only, never blocks: unfamiliar-centre suggestion (home district from the address) and a self-attested route checklist stored in location + one comment line | **Implemented on branch** `feature/route-r10a` (design `docs/superpowers/specs/2026-10-11-competency-23-route-design.md`) |
 | R11 | Instructor phone use during a lesson ≤ 30 seconds. | CoP | — | **UX principle**: in-lesson actions are one or two taps; details after the lesson |
 | R12 | Inform ADI Audit if a transfer student's record from another instructor is incorrect, false, misleading or incomplete. | CoP 9.2 e | — | Note for transfers |
 
@@ -82,16 +82,22 @@ The instruments win over this summary. If they disagree, fix this file.
 - Keep certificate copies ≥ 6 months.
 - Issue certificates in ascending number order.
 
-**R10 — Competency 23 / Final Drive route condition** (**not auto-checked
-by the app**: the route is the instructor's call; the app stores free-text
-location only). Source: NI2020-703 Schedule 1, Competency No. 23,
+**R10 — Competency 23 / Final Drive route condition** (reminders only: the
+route is the instructor's call; the app suggests unfamiliar centres and
+records a self-attested checklist in the existing location + comments fields,
+`lib/route-check.ts`). Source: NI2020-703 Schedule 1, Competency No. 23,
 "Requirements" (PDF pp. 36-37); CoP DI2020-294 cl. 9.2 f and k (PDF p. 11)
 require Competency 23 to be assessed as the Assessment Standards set out.
 - "An assessment must be conducted to include **2 designated zones** (a
-  designated zone is a zone as approved by the RTA)."
+  designated zone is a zone as approved by the RTA)." The RTA zone list is
+  not in the instruments; the app records only a "2 designated zones" tick.
 - "The student must negotiate the following in an **UNFAMILIAR Town Centre
   within ONE (1) zone**": 1 stop sign; 1 give way sign; 2 traffic lights;
-  2 pedestrian crossings; minimum of 5 right and 5 left turns.
+  2 pedestrian crossings; minimum of 5 right and 5 left turns. Only the
+  turns say "minimum"; the app treats all five counts as **minimums
+  (assumption A1)**. "Unfamiliar" is not defined; the school rule (Tony,
+  2026-10-11) is that the accepted centre of the learner's **home district**
+  (derived from the address, `lib/act-suburbs.ts`) is familiar.
 - Accepted Town Centres: Canberra City (Civic), Gungahlin, Belconnen, Woden,
   Tuggeranong, Fyshwick, Manuka and Kingston together. They are "bounded by
   the streets listed" in the instrument (p. 37), and "A Competency 23

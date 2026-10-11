@@ -2,7 +2,7 @@
 
 _Date: 2026-10-11 · Status: **DESIGNED; questions decided by Tony 2026-10-11**
 (defaults accepted, with one change: "familiar" = the learner's home district,
-D4; Weston Creek / Molonglo: no neighbouring centre, decided 2026-10-11) · Implementation needs Tony's go per task (no code yet) ·
+D4; Weston Creek / Molonglo: no neighbouring centre, decided 2026-10-11) · **Built 2026-10-11 on `feature/route-r10a`** (R10a + R10b content in one slice, no migration; `lib/town-centres.ts`, `lib/act-suburbs.ts`, `lib/route-check.ts`, `app/route-check.tsx`; suburb table cross-checked against Wikipedia's list of Canberra suburbs, see the file header for the entries left out) ·
 Based on `origin/staging` 87f328b · Builds on the reminders engine in
 `docs/superpowers/specs/2026-10-10-rules-reminders-and-learner-phase2-design.md`
 (D1 "reminders never block", D4 "pure functions, zero D1")._

@@ -22,12 +22,13 @@ Near term (Instructor Assistant only, low risk):
    0011, additive; no ACTGDS event).
 
 Medium term (new features; confirm rules with Tony before building):
-4. Competency 23 route suggestions and route check (R10). **Designed;
-   questions decided 2026-10-11 (familiar = the learner's home district, from
-   the address); build R10a on Tony's go**:
-   `docs/superpowers/specs/2026-10-11-competency-23-route-design.md` (no
-   migration; reminders only; nothing to ACTGDS; all questions decided,
-   incl. Weston Creek / Molonglo: no neighbouring centre counts as home).
+4. Competency 23 route suggestions and route check (R10). **Built on
+   `feature/route-r10a` (not merged; no migration)**: suggestion line (home
+   district from the address), route check group stored in location + one
+   comment line, nothing to ACTGDS:
+   `docs/superpowers/specs/2026-10-11-competency-23-route-design.md`.
+   Left for later: Fyshwick / Russell / Capital Hill residents get the grey
+   "not in the district table" line (instructor decides); P4 GPS counting.
 5. Remove-the-"A"-condition reminder after 12 months (R8, CoP 9.4).
 6. Certificate number records (R9, CoP 9.3, 10 f).
 6a. Learner intake (Tony's 4 requests, 2026-10-11): address suggestions
@@ -61,9 +62,8 @@ Long term (ecosystem, coordinated with Work on actgds.com Issue #3):
 | Learner management, Phase 3a: missing-details marker, duplicate licence warning (reminders only, client-side) | learner management plan | **DONE** on `feature/learner-phase3a` (not merged). |
 | Learner management, Phase 3b: archive reason and restore history | learner management plan (Phase 3) | **DONE** on `feature/archive-reason` (not merged): migration 0010 (`learner_archive_events`, additive), optional preset reason + note, History in the archived banner. Needs 0010 on Staging D1 before merging. |
 | Learner management, Phase 3c: transfer a learner to another instructor (incl. the CoP 9.1 h / 9.2 e previous-records reminder, R12) | `docs/superpowers/specs/2026-10-11-learner-transfer-design.md` | T1 built on `feature/transfer-t1` (migration 0011; not merged). T2 waits for Tony's go. |
-| Competency 23 route suggestions and route check (R10) | `docs/superpowers/specs/2026-10-11-competency-23-route-design.md` | Designed; all questions decided 2026-10-11 (Q1 changed: home district; Weston Creek / Molonglo: no neighbour). Waiting for the go to build R10a. |
+| Competency 23 route suggestions and route check (R10) | `docs/superpowers/specs/2026-10-11-competency-23-route-design.md` | **DONE** on `feature/route-r10a` (not merged; no migration): D3-D10 (suggestion line, route group, location + comment line, parse-back in History Edit). P4 GPS counting waits for a separate approval. |
 | Learner intake: address suggestions, overseas/interstate licence, Competency 23 "eligible from", licence scan | `docs/superpowers/specs/2026-10-11-learner-intake-design.md` | Designed; Q1-Q11 decided by Tony 2026-10-11 (free options only; AI scan not planned). Waiting for the go to build P1. |
-| Competency 23 route suggestions and route check (R10) | `docs/superpowers/specs/2026-10-11-competency-23-route-design.md` | Designed; Q1-Q6 decided 2026-10-11 (Q1 changed: home district). Waiting for the go to build R10a. |
 | Learner intake P1: "Competency 23 from" date + PDF Eligibility auto-fill (D17-D18) | `docs/superpowers/specs/2026-10-11-learner-intake-design.md` (branch `docs/learner-intake-design`) | **DONE** on `feature/intake-p1` (not merged; no migration). P2 address suggestions, P3 overseas/interstate licence, P4 scan: waiting for a go. |
 
 ## Minor follow-ups (bundle into the next feature)
