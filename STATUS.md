@@ -101,7 +101,8 @@ closed PRs; see `TASK.md` for what is in progress.
   MB typical, was ~14 MB); Export shows "PDF ready: <size> (compact font)".
   Full 16 MB font only for rare CJK characters. Access-gated sign-in; "Copy
   Integration ID" for manual ACTGDS CRM linking.
-- Working rule: `AGENTS.md` §13, standing authorizations §14.
+- Working rule: `AGENTS.md` §13, standing authorizations §14; two-repo
+  Operating Handbook draft `docs/OPERATING_HANDBOOK.md` (§16, awaiting Tony).
 
 ## Integration V1
 

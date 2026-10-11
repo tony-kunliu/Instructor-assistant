@@ -277,3 +277,7 @@ revocation of this section.
 - Show every user-facing date or time in **Canberra time** (IANA `Australia/Sydney`, which handles daylight saving). In this repo use `canberraDateTime()` / `LESSON_TIME_ZONE` from `lib/calc.ts`; never `iso.slice(0, 10)` for display.
 - Rules that depend on "today", the weekday or the hour (`lib/rules.ts`) use the same zone.
 - The ACTGDS Website already shows "Synced at" in Canberra time; both repos follow this rule. Contract timestamps stay UTC ISO strings.
+
+## 16. Operating Handbook
+
+`docs/OPERATING_HANDBOOK.md` is the shared two-repo operating layer (roles, independent review, the ALWAYS-ASK-TONY list, risk tiers, delivery flow, checklists). Draft awaiting Tony's approval; where it says "proposed" this file still governs.

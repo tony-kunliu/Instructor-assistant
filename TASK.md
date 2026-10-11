@@ -21,6 +21,9 @@ notification activation decisions. My Driving is live. Nothing blocks this repo.
 transfer-back of a `QA …` learner (Access identity cannot be simulated). Optional: export one
 Production PDF and confirm it is about 0.2 MB.
 
+**Docs in flight:** `docs/operating-handbook` branch — Operating Handbook v2
+(`docs/OPERATING_HANDBOOK.md`, §14 lists 10 decisions for Tony); docs only, no code.
+
 **CI note:** poppler tests are opt-in hard failures (`REQUIRE_POPPLER=1`,
 `ci.yml` only); Cloudflare Workers Builds skip them. Simulate the Workers
 Builds command locally before merging (see STATUS.md CI).
