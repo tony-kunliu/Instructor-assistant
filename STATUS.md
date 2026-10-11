@@ -15,13 +15,16 @@ closed PRs; see `TASK.md` for what is in progress.
 - `feature/transfer-t1` (3c T1, migration `0011`, reviewed, not merged): transfer a learner to another
   instructor (two taps, owner only or anyone when the owner is inactive; archived = restore first),
   History line, receiver's CoP 9.1 h / 9.2 e "Checked"; nothing sent to ACTGDS. Waits for `0011` on
-  Staging D1 (apply BEFORE merging to `staging`). iPad layout is on
-  `feature/ipad-layout` in review (signature-size fix round); needs Tony's real-iPad check.
+  Staging D1 (apply BEFORE merging to `staging`). iPad layout (PR #61) is merged to `staging`;
+  needs Tony's real-iPad check.
 - `feature/route-r10a` (R10 Competency 23 route reminders, no migration, not merged): Start Lesson
   panel line with the unfamiliar town centres (home district from the learner's address,
   `lib/act-suburbs.ts`), "Competency 23 route" group in the lesson form (7 centre chips, 6 ticks,
   "All met") stored in location + one comment line, parsed back in History Edit; nothing to ACTGDS.
 - Designs: `docs/superpowers/specs/2026-10-11-*.md` (transfer, route, intake), decided by Tony 2026-10-11.
+- `feature/ipad-layout` detail: CSS-only layout plus a fixed 640×320 signature canvas
+  (pen 5 canvas px); server signature limit 700k chars with its own "too large"
+  error (no silent fallback in History edit); qa-browser section 16.
 
 ## Repository
 
@@ -35,7 +38,7 @@ closed PRs; see `TASK.md` for what is in progress.
 
 ## CI
 
-- Latest `staging` GitHub Actions run: **SUCCESS**. Tests: 607 on `feature/route-r10a` (2 poppler
+- Latest `staging` GitHub Actions run: **SUCCESS**. Tests: 617 on `feature/route-r10a` (2 poppler
   tests skip without `pdftotext`; they hard-fail only with `REQUIRE_POPPLER=1`,
   set in `ci.yml` only).
 - `npm test` needs `--experimental-strip-types` (already in `package.json`).
