@@ -14,8 +14,10 @@ Near term (Instructor Assistant only, low risk):
    marker, duplicate licence warning incl. archived) and 3b (archive reason and
    restore history, migration 0010).
 2. (done, see 1)
-3. 3c: transfer a learner to another instructor. **Designed; questions
-   decided (defaults accepted by Tony 2026-10-11); build T1 on Tony's go**:
+3. 3c: transfer a learner to another instructor. **T1 built on
+   `feature/transfer-t1` (not merged; apply migration 0011 to Staging D1 BEFORE
+   merging to staging)**; T2 (PDF "lessons by instructor" line, multi-transfer
+   list, Issue #3 info post) next on Tony's go:
    `docs/superpowers/specs/2026-10-11-learner-transfer-design.md` (migration
    0011, additive; no ACTGDS event).
 - iPad layout (branch `feature/ipad-layout`, not merged): responsive CSS only
@@ -64,7 +66,7 @@ Long term (ecosystem, coordinated with Work on actgds.com Issue #3):
 | Assessment-rules reminders (never blockers): 36 h gates (R1), Competency 23 eligibility (R2) and hours window (R3), ADI Audit online booking link (R4), learner licence validity (R5) | `docs/superpowers/specs/2026-10-10-rules-reminders-and-learner-phase2-design.md` | **DONE** (in Production 2026-10-10, run 38044255328): R1, R2, R3, R5 and the booking link. |
 | Learner management, Phase 3a: missing-details marker, duplicate licence warning (reminders only, client-side) | learner management plan | **DONE** on `feature/learner-phase3a` (not merged). |
 | Learner management, Phase 3b: archive reason and restore history | learner management plan (Phase 3) | **DONE** on `feature/archive-reason` (not merged): migration 0010 (`learner_archive_events`, additive), optional preset reason + note, History in the archived banner. Needs 0010 on Staging D1 before merging. |
-| Learner management, Phase 3c: transfer a learner to another instructor (incl. the CoP 9.1 h / 9.2 e previous-records reminder, R12) | `docs/superpowers/specs/2026-10-11-learner-transfer-design.md` | Designed; Q1-Q6 decided (defaults, Tony 2026-10-11). Waiting for the go to build T1. |
+| Learner management, Phase 3c: transfer a learner to another instructor (incl. the CoP 9.1 h / 9.2 e previous-records reminder, R12) | `docs/superpowers/specs/2026-10-11-learner-transfer-design.md` | T1 built on `feature/transfer-t1` (migration 0011; not merged). T2 waits for Tony's go. |
 | Competency 23 route suggestions and route check (R10) | `docs/superpowers/specs/2026-10-11-competency-23-route-design.md` | Designed; all questions decided 2026-10-11 (Q1 changed: home district; Weston Creek / Molonglo: no neighbour). Waiting for the go to build R10a. |
 | Learner intake: address suggestions, overseas/interstate licence, Competency 23 "eligible from", licence scan | `docs/superpowers/specs/2026-10-11-learner-intake-design.md` | Designed; Q1-Q11 decided by Tony 2026-10-11 (free options only; AI scan not planned). Waiting for the go to build P1. |
 | Competency 23 route suggestions and route check (R10) | `docs/superpowers/specs/2026-10-11-competency-23-route-design.md` | Designed; Q1-Q6 decided 2026-10-11 (Q1 changed: home district). Waiting for the go to build R10a. |
@@ -85,6 +87,12 @@ Long term (ecosystem, coordinated with Work on actgds.com Issue #3):
 - The unmounted-key QA check for the PDF button is weak.
 - Learner intake P1: the exact text `C23 from YYYY-MM-DD` (optionally `~`) is reserved for the app; hand-typed identical text is treated as generated and refreshed (documented in `lib/c23-eligibility.ts`; no behaviour change planned).
 - Learner intake P1: "Missing for the PDF: Eligibility" still shows for an empty stored value even when the PDF will print the auto-filled `C23 from …`; consider counting a computable value as present.
+- 3c T1 transfer: the compare-and-set guard does not re-check the inactive-owner exception (an owner
+  re-activated between the read and the batch still loses the learner to a colleague); add the
+  owner-status condition to the guard if this ever matters.
+- 3c T1 transfer (review L5): `listLearners` ships every transfer event, notes included, for every
+  learner (unbounded by design; tiny today). If it grows, send only the latest event in the list and
+  the full history with the detail.
 
 ## Not designed yet
 

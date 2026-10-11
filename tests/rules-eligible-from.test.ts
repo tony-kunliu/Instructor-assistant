@@ -254,7 +254,7 @@ const pdfLearner: Learner = {
   id: "learner-qa", instructorId: "instructor-1", instructorName: "QA Instructor", instructorAdiNumber: "ADI-9", fullName: "QA Eligible From",
   address: "1 QA St", phone: "0400 000 000", dob: "2008-05-06", licenceNumber: "QA1", licenceExpiry: "2030-11-15", eligibility: null,
   transmission: "auto", schoolWork: null, licenceStage: "learner", learnerLicenceIssuedOn: null, learnerLicenceFirstIssuedOn: null, hptPassedOn: null, loggedHours: null, loggedHoursOn: null,
-  archivedAt: null, archiveReason: null, archiveNote: null,
+  archivedAt: null, archiveReason: null, archiveNote: null, transfers: [],
 };
 const pdfLesson: Lesson = {
   id: "lesson-1", learnerId: "learner-qa", instructorId: "instructor-1", lessonNo: 1, lessonDate: "2026-01-01", startTime: "09:00", finishTime: "09:30",

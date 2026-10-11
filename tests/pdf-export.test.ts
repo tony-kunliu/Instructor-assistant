@@ -31,7 +31,7 @@ const learner: Learner = {
   schoolWork: null,
   licenceStage: "learner",
   learnerLicenceIssuedOn: null, learnerLicenceFirstIssuedOn: null, hptPassedOn: null, loggedHours: null, loggedHoursOn: null,
-  archivedAt: null, archiveReason: null, archiveNote: null,
+  archivedAt: null, archiveReason: null, archiveNote: null, transfers: [],
 };
 
 function lesson(n: number, overrides: Partial<Lesson> = {}): Lesson {

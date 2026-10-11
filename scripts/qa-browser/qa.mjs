@@ -1,4 +1,4 @@
-// Real-browser business regression at iPhone 13 width (390px), plus iPad viewports (section 16). See run.sh.
+// Real-browser business regression at iPhone 13 width (390px), plus iPad viewports (section 17). See run.sh.
 import { createRequire } from "node:module";
 import { readFileSync, writeFileSync } from "node:fs";
 
@@ -1448,7 +1448,96 @@ const draw = async (page, index) => {
   await s.ctx.close();
 }
 
-// ═══ 16. iPad layout: wider column (≥700px), two columns (≥1000px), touch targets, signature pads ═══
+// ═══ 16. Learner transfer (3c T1, migration 0011): two taps, History line, receiver's CoP 9.1 h / 9.2 e check ═══
+{
+  const api = async (path, body, headers = {}, method = "POST") => { const r = await fetch(B + path, { method, headers: { "content-type": "application/json", ...headers }, body: body === undefined ? undefined : JSON.stringify(body) }); return { status: r.status, body: await r.json() }; };
+  const mkLearner = async (fullName, who) => (await api("/api/learners", { fullName, instructorId: WHO[who][0] }, { "x-instructor-id": WHO[who][0] })).body.learner;
+  const moving = await mkLearner("QA Tony Transfer Move", "tony");
+  await api(`/api/learners/${moving.id}/lessons`, { lessonDate: "2026-09-20", startTime: "09:00", finishTime: "10:00", startOdometer: "1000", finishOdometer: "1012", taughtIds: ["1"], adiSignature: SIG, learnerSignature: SIG }, { "x-instructor-id": WHO.tony[0] });
+  const archived = await mkLearner("QA Tony Transfer Archived", "tony");
+  await api(`/api/learners/${archived.id}`, { archived: true }, { "x-instructor-id": WHO.tony[0] }, "PATCH");
+  const longDate = (() => { const p = Object.fromEntries(new Intl.DateTimeFormat("en-AU", { timeZone: "Australia/Sydney", weekday: "short", day: "numeric", month: "short", year: "numeric" }).formatToParts(new Date()).map((x) => [x.type, x.value])); return `${p.weekday} ${p.day} ${p.month} ${p.year}`; })();
+
+  // Tony (home instructor) at 375px: Transfer learner… → Anna preselected → "Transfer to Anna" = two taps.
+  const s = await session("tony");
+  await ready(s.page);
+  await s.page.setViewportSize({ width: 375, height: 812 });
+  await pick(s.page, "QA Tony Transfer Move");
+  await s.page.waitForSelector("[data-testid=transfer-open]");
+  check("transfer: no 'check the records' reminder before any transfer", (await s.page.$("[data-testid=transfer-check]")) === null);
+  await s.page.click("[data-testid=transfer-open]");
+  await s.page.waitForSelector("[data-testid=transfer-panel]");
+  const choices = await s.page.$$eval("[data-testid=transfer-choice]", (els) => els.map((e) => ({ checked: e.checked, label: e.closest("label").textContent.trim() })));
+  check("transfer: the panel lists only the other active instructor (Anna), preselected", choices.length === 1 && choices[0].label === "Anna" && choices[0].checked, JSON.stringify(choices));
+  check("transfer: confirm button reads 'Transfer to Anna'", (await s.page.textContent("[data-testid=transfer-confirm]")).trim() === "Transfer to Anna");
+  check("transfer: no horizontal scroll at 375px (transfer panel)", await noHScroll(s.page));
+  await shot(s.page, "16-transfer-panel-375");
+  await s.page.click("[data-testid=transfer-cancel]");
+  check("transfer: Cancel closes the panel and writes nothing", (await s.page.$("[data-testid=transfer-panel]")) === null && (await learnersApi()).find((l) => l.id === moving.id).instructorId === WHO.tony[0]);
+  await s.page.click("[data-testid=transfer-open]");
+  await s.page.click("[data-testid=transfer-confirm]");
+  await s.page.waitForSelector('.status:has-text("Transferred to Anna")');
+  const moved = (await learnersApi()).find((l) => l.id === moving.id);
+  check("transfer: two taps moved the learner to Anna (one event, by Tony)", moved.instructorId === WHO.anna[0] && moved.transfers.length === 1 && moved.transfers[0].byInstructorId === WHO.tony[0], JSON.stringify(moved.transfers));
+  check("transfer: Tony's view switches to All and the learner stays open", (await activeTab(s.page)).startsWith("All") && (await s.page.textContent(".summary-main small")) === "QA Tony Transfer Move");
+  const divider = (await s.page.textContent("[data-testid=history-transfer]")).trim();
+  check("transfer: History shows 'Transferred from Tony to Anna, <Canberra date>' above Tony's lesson", divider === `Transferred from Tony to Anna, ${longDate}` && (await s.page.$$eval(".history ol > li", (els) => els.map((e) => e.dataset.testid))).join() === "history-transfer,history-row", divider);
+  check("transfer: Tony can still edit his own lesson (Edit shown, not 'Recorded by')", (await s.page.$("[data-testid=history-row] .h-edit")) !== null && (await s.page.$("[data-testid=history-readonly]")) === null);
+  check("transfer: Tony no longer sees Edit learner or Transfer, nor the receiver's reminder", (await s.page.$("[data-testid=edit-learner]")) === null && (await s.page.$("[data-testid=transfer-open]")) === null && (await s.page.$("[data-testid=transfer-check]")) === null);
+  await tab(s.page, "My learners");
+  check("transfer: the learner left Tony's My learners", !(await options(s.page)).includes("QA Tony Transfer Move"));
+  check("transfer: no horizontal scroll at 375px (after transfer)", await noHScroll(s.page));
+  await shot(s.page, "16-transfer-done-tony-375");
+  // Archived learner: no Transfer in the UI; the API says restore first.
+  await tab(s.page, "Archived");
+  await s.page.waitForFunction(() => document.querySelectorAll('select[aria-label="Select learner"] option').length > 1);
+  await pick(s.page, "QA Tony Transfer Archived · Tony");
+  await s.page.waitForSelector("[data-testid=archived-banner]");
+  check("transfer: an archived learner shows no Transfer", (await s.page.$("[data-testid=transfer-open]")) === null);
+  const archivedTry = await api(`/api/learners/${archived.id}/transfer`, { toInstructorId: WHO.anna[0] }, { "x-instructor-id": WHO.tony[0] });
+  check("transfer: API refuses an archived learner (400, 'Restore the learner first')", archivedTry.status === 400 && /Restore the learner first/.test(archivedTry.body.error), JSON.stringify(archivedTry));
+  check("transfer: Tony: no page errors", s.errors.length === 0, s.errors.join("|"));
+  await s.ctx.close();
+
+  // Anna (receiver) at tablet width: My learners has the learner, amber reminder, "Recorded by Tony", one tap Checked.
+  const a = await session("anna");
+  await ready(a.page);
+  await a.page.setViewportSize({ width: 768, height: 1024 });
+  check("transfer: Anna's My learners now lists the learner", (await options(a.page)).includes("QA Tony Transfer Move"));
+  await pick(a.page, "QA Tony Transfer Move");
+  await a.page.waitForSelector("[data-testid=transfer-check]");
+  const reminder = (await a.page.textContent("[data-testid=transfer-check] span")).trim();
+  check("transfer: receiver sees the CoP 9.1 h / 9.2 e reminder (amber)", reminder === "Check the records from Tony. If any is not filled out correctly, or is false, misleading or incomplete, tell ADI Audit as soon as possible (CoP 9.1 h, 9.2 e)." && (await a.page.$("[data-testid=transfer-check] .reminder.amber")) !== null, reminder);
+  check("transfer: Anna sees 'Recorded by Tony' (no Edit) on Tony's lesson", ((await a.page.textContent("[data-testid=history-readonly]")) ?? "").trim() === "Recorded by Tony" && (await a.page.$("[data-testid=history-row] .h-edit")) === null);
+  check("transfer: Anna can now edit the learner and transfer back", (await a.page.$("[data-testid=edit-learner]")) !== null && (await a.page.$("[data-testid=transfer-open]")) !== null);
+  check("transfer: Start Lesson is not blocked by the reminder", (await a.page.$("text=Start Lesson")) !== null);
+  check("transfer: no horizontal scroll at tablet width 768px (reminder + History)", await noHScroll(a.page));
+  await shot(a.page, "16-transfer-receiver-768");
+  await a.page.click("[data-testid=transfer-checked]");
+  await a.page.waitForFunction(() => document.querySelector("[data-testid=transfer-check]") === null);
+  const afterCheck = (await learnersApi()).find((l) => l.id === moving.id).transfers[0];
+  check("transfer: one tap 'Checked' is stored (who + when) and hides the reminder", afterCheck.recordsCheckedBy === WHO.anna[0] && Boolean(afterCheck.recordsCheckedAt), JSON.stringify(afterCheck));
+  await a.page.reload(); await ready(a.page);
+  await pick(a.page, "QA Tony Transfer Move");
+  await a.page.waitForSelector("[data-testid=history-transfer]");
+  check("transfer: after reload the reminder stays hidden", (await a.page.$("[data-testid=transfer-check]")) === null);
+  await a.page.setViewportSize({ width: 1024, height: 768 });
+  await a.page.click("[data-testid=transfer-open]");
+  await a.page.waitForSelector("[data-testid=transfer-panel]");
+  check("transfer: no horizontal scroll at tablet landscape 1024px (transfer panel)", await noHScroll(a.page));
+  await shot(a.page, "16-transfer-panel-1024");
+  await a.page.click("[data-testid=transfer-cancel]");
+  const tonyTry = await api(`/api/learners/${moving.id}/transfer`, { toInstructorId: WHO.tony[0] }, { "x-instructor-id": WHO.tony[0] });
+  check("transfer: API refuses Tony, who is no longer the owner (400, 'only they can transfer')", tonyTry.status === 400 && tonyTry.body.error === "This learner belongs to Anna; only they can transfer them.", JSON.stringify(tonyTry));
+  const sameTry = await api(`/api/learners/${moving.id}/transfer`, { toInstructorId: WHO.anna[0] }, { "x-instructor-id": WHO.anna[0] });
+  check("transfer: API refuses a same-instructor transfer (400, 'already belongs')", sameTry.status === 400 && sameTry.body.error === "This learner already belongs to Anna.", JSON.stringify(sameTry));
+  const tonyCheck = await api(`/api/learners/${moving.id}/transfer/checked`, {}, { "x-instructor-id": WHO.tony[0] });
+  check("transfer: a later 'Checked' call by Tony never changes who checked", (await learnersApi()).find((l) => l.id === moving.id).transfers[0].recordsCheckedBy === WHO.anna[0], JSON.stringify(tonyCheck));
+  check("transfer: Anna: no page errors", a.errors.length === 0, a.errors.join("|"));
+  await a.ctx.close();
+}
+
+// ═══ 17. iPad layout: wider column (≥700px), two columns (≥1000px), touch targets, signature pads ═══
 {
   const headers = { "content-type": "application/json", "x-instructor-id": WHO.tony[0], "x-instructor-name": WHO.tony[1] };
   const mk = async (fullName) => { const r = await fetch(B + "/api/learners", { method: "POST", headers, body: JSON.stringify({ fullName, instructorId: WHO.tony[0] }) }); const d = await r.json(); if (!r.ok) throw new Error(JSON.stringify(d)); return d.learner; };
@@ -1520,7 +1609,7 @@ const draw = async (page, index) => {
       const order = [".card.picker", ".summary", ".card.progress", ".card.lesson", ".card.history"].map((s) => document.querySelector(s));
       return order.every((el, i) => i === 0 || (order[i - 1].compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING));
     }));
-    await shot(page, `16-ipad-${tag}-learner`);
+    await shot(page, `17-ipad-${tag}-learner`);
 
     await page.click(".btn.go");
     await page.click("text=End Lesson");
@@ -1535,7 +1624,7 @@ const draw = async (page, index) => {
     await signBoth(page);
     check(`iPad ${tag}: drawing on both pads registers`, (await page.$$(".sig-ok")).length === 2);
     check(`iPad ${tag}: Save Lesson ≥44px and visible`, await tall(page, ".btn.save"));
-    await shot(page, `16-ipad-${tag}-lesson-form`);
+    await shot(page, `17-ipad-${tag}-lesson-form`);
     if (w === 1366) {
       // A dense scribble on both pads, then Save: the posted PNGs are 640×320 and far below the client guard (380 000) and MAX_SIGNATURE_LENGTH (700 000).
       await page.click('.comp-section:has(.comp-label:text-is("Taught")) .chip-row >> text="5"');
@@ -1569,7 +1658,7 @@ const draw = async (page, index) => {
       // One more stroke after the rotation lands on the same fixed canvas (no squashed composite).
       await signBoth(page);
       check("iPad after rotation + extra stroke: saved PNGs are still 640×320", (await pixels()).every((d) => { const i = pngInfo(d); return i.w === 640 && i.h === 320; }));
-      await shot(page, "16-ipad-rotated-1180-lesson-form");
+      await shot(page, "17-ipad-rotated-1180-lesson-form");
       await page.setViewportSize({ width: w, height: h });
       await settle(400);
     }
@@ -1594,21 +1683,27 @@ const draw = async (page, index) => {
     await page.waitForSelector(".h-editing .sig canvas");
     await settle();
     check(`iPad ${tag}: History edit form, no horizontal scroll, pads 640×320 undistorted`, (await noHScroll(page)) && (await canvasFixed(page)));
-    await shot(page, `16-ipad-${tag}-history-edit`);
+    await shot(page, `17-ipad-${tag}-history-edit`);
     await page.click(".h-editing >> text=Cancel");
 
     await page.click(".archive-link");
     await page.waitForSelector("[data-testid=archive-panel]");
     check(`iPad ${tag}: archive panel, no horizontal scroll, buttons ≥44px`, (await noHScroll(page)) && (await tall(page, "[data-testid=archive-confirm]")) && (await tall(page, "[data-testid=archive-cancel]")));
-    await shot(page, `16-ipad-${tag}-archive-panel`);
+    await shot(page, `17-ipad-${tag}-archive-panel`);
     await page.click("[data-testid=archive-cancel]");
+
+    await page.click("[data-testid=transfer-open]");
+    await page.waitForSelector("[data-testid=transfer-panel]");
+    check(`iPad ${tag}: transfer panel, no horizontal scroll, choice + Cancel/Transfer ≥44px`, (await noHScroll(page)) && (await tall(page, "[data-testid=transfer-choice] >> xpath=ancestor::label")) && (await tall(page, "[data-testid=transfer-cancel]")) && (await tall(page, "[data-testid=transfer-confirm]")));
+    if (w === 820 || w === 1180) await shot(page, `17-ipad-${tag}-transfer-panel`);
+    await page.click("[data-testid=transfer-cancel]");
 
     await page.click("text=+ New");
     await page.waitForSelector("[data-testid=save-learner]");
     await page.click("[data-testid=c23-group] summary");
     check(`iPad ${tag}: New learner form, no horizontal scroll, Save ≥44px`, (await noHScroll(page)) && (await tall(page, "[data-testid=save-learner]")));
     if (twoCol) check(`iPad ${tag}: New learner form sits in the right column`, (await box(page, ".learner-form")).x >= (await box(page, ".card.picker")).right);
-    await shot(page, `16-ipad-${tag}-new-learner`);
+    await shot(page, `17-ipad-${tag}-new-learner`);
     await page.click(".picker-row .btn");
 
     await pick(page, "QA Tony iPad Empty");
@@ -1616,9 +1711,30 @@ const draw = async (page, index) => {
     await page.click("[data-testid=paper-import-open]");
     await page.waitForSelector("[data-testid=paper-import-panel]");
     check(`iPad ${tag}: paper import panel, no horizontal scroll`, await noHScroll(page));
-    if (w === 820 || w === 1180) await shot(page, `16-ipad-${tag}-paper-import`);
+    if (w === 820 || w === 1180) await shot(page, `17-ipad-${tag}-paper-import`);
     check(`iPad ${tag}: no page errors`, errors.length === 0, errors.join("|"));
     await ctx.close();
+  }
+
+  // Receiving instructor (Anna) on a tablet and a phone in landscape: amber 'Checked' reminder and the History transfer divider.
+  {
+    const learner = await mk("QA Tony iPad Transferred");
+    await fetch(`${B}/api/learners/${learner.id}/lessons`, { method: "POST", headers, body: JSON.stringify({ lessonDate: "2026-09-21", startTime: "09:00", finishTime: "10:00", startOdometer: "7000", finishOdometer: "7012", taughtIds: ["1"], adiSignature: SIG, learnerSignature: SIG }) });
+    const moved = await fetch(`${B}/api/learners/${learner.id}/transfer`, { method: "POST", headers, body: JSON.stringify({ toInstructorId: WHO.anna[0] }) });
+    if (!moved.ok) throw new Error(`iPad transfer seed: ${moved.status}`);
+    for (const [w, h] of [[820, 1180], [1180, 820], [844, 390]]) {
+      const tag = `${w}x${h}`;
+      const ctx = await browser.newContext({ viewport: { width: w, height: h }, deviceScaleFactor: 2, hasTouch: true, isMobile: h < 600, extraHTTPHeaders: { "x-instructor-id": WHO.anna[0], "x-instructor-name": WHO.anna[1] } });
+      const page = await ctx.newPage();
+      await page.goto(B);
+      await ready(page);
+      await pick(page, "QA Tony iPad Transferred");
+      await page.waitForSelector("[data-testid=transfer-check]");
+      await page.waitForSelector("[data-testid=history-transfer]");
+      check(`transfer receiver ${tag}: reminder + History divider, no horizontal scroll, 'Checked' ≥44px on tablets`, (await noHScroll(page)) && (h < 600 || (await tall(page, "[data-testid=transfer-checked]"))) && (await page.isVisible("[data-testid=history-transfer]")));
+      await shot(page, `17-transfer-receiver-${tag}`);
+      await ctx.close();
+    }
   }
 
   // Phone widths keep the phone layout: one column, 560px cap, no horizontal scroll; pads keep the 2:1 shape.
@@ -1635,7 +1751,7 @@ const draw = async (page, index) => {
     const lesson = await box(s.page, ".card.lesson"), picker = await box(s.page, ".card.picker");
     const sigH = await s.page.$eval(".sig canvas", (c) => Math.round(c.getBoundingClientRect().height));
     check(`phone ${w}px: one column, 2:1 pads ≥130px tall, no horizontal scroll (iPad CSS not applied)`, Math.abs(lesson.x - picker.x) < 2 && sigH >= 130 && (await canvasFixed(s.page)) && (await noHScroll(s.page)), `sig ${sigH}`);
-    if (w === 390) await shot(s.page, "16-phone-390-lesson-form");
+    if (w === 390) await shot(s.page, "17-phone-390-lesson-form");
     await s.page.click("text=Discard this lesson");
     await s.ctx.close();
   }
@@ -1659,7 +1775,7 @@ const draw = async (page, index) => {
     check(`phone landscape ${w}x${h}: lesson form, no horizontal scroll, pads 640×320 undistorted and ≤60% of the screen height`, (await noHScroll(s.page)) && (await canvasFixed(s.page)) && padH <= h * 0.6 + 1, `pad ${Math.round(padH)}px`);
     await signBoth(s.page);
     check(`phone landscape ${w}x${h}: drawing on the capped pads registers`, (await s.page.$$(".sig-ok")).length === 2);
-    if (w === 844) await shot(s.page, "16-phone-landscape-844x390-lesson-form");
+    if (w === 844) await shot(s.page, "17-phone-landscape-844x390-lesson-form");
     await s.page.click("text=Discard this lesson");
     await s.ctx.close();
   }

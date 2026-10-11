@@ -10,9 +10,12 @@ closed PRs; see `TASK.md` for what is in progress.
 - Released to Production 2026-10-11: CBT&A progress validity fix + Completed banner
   (Worker `908b2c9c-9228-4608-b86b-76c9e2c14e44`, run 38153327724, no migration;
   Production audit: 0 differences), learner 3a/3b (migration `0010`), Canberra time.
-- Built on Staging (Production after the release below): learner intake P1, the "Competency 23 from"
-  line (panel + form) and the PDF Eligibility auto-fill (no migration). Next on Staging: 3c transfer T1
-  (migration 0011, apply to Staging D1 first), R10a route reminders. iPad layout is on
+- Merged to `staging` (Production after the next release): learner intake P1, the "Competency 23 from"
+  line (panel + form) and the PDF Eligibility auto-fill (no migration).
+- `feature/transfer-t1` (3c T1, migration `0011`, reviewed, not merged): transfer a learner to another
+  instructor (two taps, owner only or anyone when the owner is inactive; archived = restore first),
+  History line, receiver's CoP 9.1 h / 9.2 e "Checked"; nothing sent to ACTGDS. Waits for `0011` on
+  Staging D1 (apply BEFORE merging to `staging`). Then R10a route reminders. iPad layout is on
   `feature/ipad-layout` in review (signature-size fix round); needs Tony's real-iPad check.
 - Designs: `docs/superpowers/specs/2026-10-11-*.md` (transfer, route, intake), decided by Tony 2026-10-11.
 - `feature/ipad-layout` detail: CSS-only layout plus a fixed 640×320 signature canvas
@@ -134,6 +137,8 @@ record: `tony-kunliu/actgds.com` Issue #3.
   Vietnamese, Greek, Cyrillic, kana, Hangul, Latin Ext-B, box drawing and some
   symbols print as boxes after the user confirms the warning.
 - Minor learner-edit review follow-ups are in `docs/BACKLOG.md`.
+- `tests/pdf-export-font-subset.test.ts` leaves a `/tmp/font-subset-*` dir (~14 MB
+  out.pdf) per run; on shared machines this filled the disk (2026-10-11).
 
 ## Next
 

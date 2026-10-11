@@ -7,7 +7,7 @@
 //                               accounts reference these ids.
 // None of those features exist yet.
 
-export const SCHEMA_VERSION = 10;
+export const SCHEMA_VERSION = 11;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS instructors (
@@ -197,4 +197,18 @@ CREATE TABLE IF NOT EXISTS learner_archive_events (
   by_instructor_id  TEXT REFERENCES instructors (id)
 );
 CREATE INDEX IF NOT EXISTS learner_archive_events_learner_idx ON learner_archive_events (learner_id, at);
+
+CREATE TABLE IF NOT EXISTS learner_transfer_events (
+  id                  TEXT PRIMARY KEY,
+  learner_id          TEXT NOT NULL REFERENCES learners (id),
+  from_instructor_id  TEXT NOT NULL REFERENCES instructors (id),
+  to_instructor_id    TEXT NOT NULL REFERENCES instructors (id),
+  at                  TEXT NOT NULL,
+  by_instructor_id    TEXT REFERENCES instructors (id),
+  note                TEXT,
+  records_checked_at  TEXT,
+  records_checked_by  TEXT REFERENCES instructors (id),
+  CHECK (from_instructor_id <> to_instructor_id)
+);
+CREATE INDEX IF NOT EXISTS learner_transfer_events_learner_idx ON learner_transfer_events (learner_id, at);
 `;
