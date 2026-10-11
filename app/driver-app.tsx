@@ -5,6 +5,7 @@ import {
   decimalHours,
   distanceKm,
   durationMinutes,
+  canberraDateTime,
   EMPTY_TOTALS,
   formatMinutes,
   localNow,
@@ -909,7 +910,7 @@ export default function DriverApp() {
             {panel === "archived" ? (
               <div className="lifecycle archived" data-testid="archived-banner">
                 <p>
-                  <b>Archived</b> {detail.learner.archivedAt?.slice(0, 10)}
+                  <b>Archived</b> {canberraDateTime(detail.learner.archivedAt)?.date}
                   {archivedReason ? <> — <span data-testid="archive-reason">{archivedReason}</span></> : null}
                 </p>
                 <p>Hidden from the daily learner list. Lessons, signatures, progress and PDF are kept.</p>
@@ -923,7 +924,7 @@ export default function DriverApp() {
                         const why = event.action === "archived" ? archiveReasonText(event.reason, event.note) : null;
                         return (
                           <li key={event.id} data-testid="archive-history-item">
-                            {event.at.slice(0, 10)} <b>{event.action === "archived" ? "Archived" : "Restored"}</b>
+                            {canberraDateTime(event.at)?.date} {canberraDateTime(event.at)?.time} <b>{event.action === "archived" ? "Archived" : "Restored"}</b>
                             {why ? ` — ${why}` : ""}
                             {event.byName ? <small> · {event.byName}</small> : null}
                           </li>
