@@ -3,7 +3,8 @@
 // (Review / Final Drive valid only from STRICTLY EARLIER lessons, lib/competency.ts). No network, no DB:
 // it only reads a JSON export you made yourself and prints, per learner, both statuses and any difference.
 //
-//   node scripts/audit-progress.mjs <export.json>
+//   node --experimental-strip-types scripts/audit-progress.mjs <export.json>
+//   (the flag is needed before Node 22.18, which imports the .ts rule files)
 //
 // The export is an array of rows {learner_id, lesson_no, record_source, competency_id, action, result,
 // created_at}; a wrangler `--json` result ([{ results: [...] }]) is accepted too. A read-only query that

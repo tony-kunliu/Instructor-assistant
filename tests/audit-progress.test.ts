@@ -4,6 +4,9 @@ import { spawnSync } from "node:child_process";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+
+// Node 22.13 (CI) needs the flag to import .ts files; newer Node strips types by default.
+const NODE_ARGS = ["--disable-warning=ExperimentalWarning", "--experimental-strip-types"];
 // @ts-expect-error plain .mjs script without type declarations
 import { auditProgress } from "../scripts/audit-progress.mjs";
 
@@ -37,11 +40,11 @@ test("audit CLI: reads a file (plain array or wrangler --json), prints DIFF line
   writeFileSync(wrangler, JSON.stringify([{ results: ROWS, success: true }]));
   writeFileSync(bad, "{}");
   for (const file of [plain, wrangler]) {
-    const run = spawnSync(process.execPath, ["scripts/audit-progress.mjs", file], { encoding: "utf8" });
+    const run = spawnSync(process.execPath, NODE_ARGS.concat(["scripts/audit-progress.mjs", file]), { encoding: "utf8" });
     assert.equal(run.status, 1, run.stderr);
     assert.match(run.stdout, /^DIFF {2}bug$/m);
     assert.match(run.stdout, /^same {2}clean$/m);
     assert.match(run.stdout, /2 learner\(s\), 1 with differences\./);
   }
-  assert.equal(spawnSync(process.execPath, ["scripts/audit-progress.mjs", bad], { encoding: "utf8" }).status, 2);
+  assert.equal(spawnSync(process.execPath, NODE_ARGS.concat(["scripts/audit-progress.mjs", bad]), { encoding: "utf8" }).status, 2);
 });
