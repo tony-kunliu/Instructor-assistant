@@ -152,11 +152,13 @@ try {
   await pick(s.page, "QA Tony Bravo");
   await s.page.waitForSelector(".archive-link");
   check("active non-completed learner: Start Lesson present, plain Archive link, no suggestion", (await s.page.$("text=Start Lesson")) !== null && (await s.page.$("[data-testid=archive-suggestion]")) === null);
-  s.page.dialogAnswer = "dismiss";
-  await s.page.click(".archive-link"); await settle();
-  check("cancelling the archive confirm keeps the learner active", (await options(s.page)).includes("QA Tony Bravo"));
-  s.page.dialogAnswer = "accept";
   await s.page.click(".archive-link");
+  await s.page.waitForSelector("[data-testid=archive-panel]");
+  check("archive panel has a visible border (easy to tell apart from the box it sits in)", (await s.page.$eval("[data-testid=archive-panel]", (e) => { const c = getComputedStyle(e); return parseFloat(c.borderTopWidth) >= 2 && c.borderTopStyle === "solid"; })));
+  await s.page.click("[data-testid=archive-cancel]"); await settle();
+  check("cancelling the archive panel keeps the learner active", (await options(s.page)).includes("QA Tony Bravo") && (await s.page.$("[data-testid=archive-panel]")) === null);
+  await s.page.click(".archive-link");
+  await s.page.click("[data-testid=archive-confirm]");
   await s.page.waitForSelector('.status:has-text("archived")');
   check("archive: removed from My learners; selection cleared", !(await options(s.page)).includes("QA Tony Bravo") && !(await hasSummary(s.page)));
   await s.page.reload(); await ready(s.page);
@@ -234,8 +236,8 @@ try {
   await shot(s.page, "05-completed");
   const api = await postLesson(ids.completed, { lessonDate: "2026-09-21", startTime: "09:00", finishTime: "10:00", startOdometer: "9000", finishOdometer: "9010", taughtIds: ["1"], adiSignature: SIG, learnerSignature: SIG });
   check("server rejects an ordinary lesson for a completed learner (400)", api.status === 400 && /already completed/.test(api.body.error), `${api.status} ${api.body.error}`);
-  s.page.dialogAnswer = "dismiss";
-  await s.page.click("[data-testid=archive-suggestion] button"); await settle();
+  await s.page.click("[data-testid=archive-suggestion] button");
+  await s.page.click("[data-testid=archive-cancel]"); await settle();
   check("instructor can decline the suggestion: learner stays active", (await learnersApi()).some((l) => l.id === ids.completed && l.archivedAt === null) && (await s.page.$("[data-testid=archive-suggestion]")) !== null);
   await s.ctx.close();
 }
@@ -265,6 +267,7 @@ try {
   await s.page.waitForSelector("[data-testid=cbta-completed-card]");
   check("after reload the completed state is preserved", (await s.page.$("text=Start Lesson")) === null);
   await s.page.click("[data-testid=archive-suggestion] button");
+  await s.page.click("[data-testid=archive-confirm]");
   await s.page.waitForSelector('.status:has-text("archived")');
   check("completed learner can be archived by the instructor", !(await options(s.page)).includes("QA Tony FD Ready"), (await options(s.page)).join(","));
   await tab(s.page, "Archived");
@@ -1223,6 +1226,84 @@ const draw = async (page, index) => {
   check("learner checks: non-owner sees the missing line without the Edit learner hint", annaMiss?.tone === "amber" && annaMiss.text.startsWith("Missing for the PDF: Address") && !annaMiss.text.includes("Edit learner"), JSON.stringify(annaMiss));
   check("learner checks: Anna: no horizontal scroll, no page errors", (await noHScroll(a.page)) && a.errors.length === 0, a.errors.join("|"));
   await a.ctx.close();
+}
+
+// ═══ 13. Archive reason + restore history (Phase 3b, migration 0010) at 375px ═══
+{
+  const post = async (fullName) => { const r = await fetch(B + "/api/learners", { method: "POST", headers: { "content-type": "application/json", "x-instructor-id": WHO.tony[0] }, body: JSON.stringify({ fullName, instructorId: WHO.tony[0] }) }); const d = await r.json(); if (!r.ok) throw new Error(JSON.stringify(d)); return d.learner; };
+  const withReason = await post("QA Tony Archive Reason");
+  const noReason = await post("QA Tony Archive Plain");
+  const learnerById = async (id) => (await learnersApi("?status=archived")).find((l) => l.id === id) ?? (await learnersApi()).find((l) => l.id === id);
+  const s = await session("tony");
+  await ready(s.page);
+  await s.page.setViewportSize({ width: 375, height: 812 });
+
+  // Cancel changes nothing, even after choosing a reason and typing a note.
+  await pick(s.page, "QA Tony Archive Reason");
+  await s.page.click(".archive-link");
+  await s.page.waitForSelector("[data-testid=archive-panel]");
+  check("archive reason: panel defaults to 'Choose a reason (optional)'", (await s.page.$eval("[data-testid=archive-reason-select]", (e) => e.selectedOptions[0].textContent)) === "Choose a reason (optional)");
+  check("archive reason: panel has the five presets", (await s.page.$$eval("[data-testid=archive-reason-select] option", (os) => os.filter((o) => o.value).map((o) => o.textContent))).join("|") === "Completed / licensed|Stopped learning|Moved away|Went to another instructor|Other");
+  check("archive reason: no horizontal scroll at 375px (archive panel)", await noHScroll(s.page));
+  await shot(s.page, "13-archive-panel-375");
+  await s.page.selectOption("[data-testid=archive-reason-select]", "moved_away");
+  await s.page.fill("[data-testid=archive-note]", "QA moved to Sydney");
+  await s.page.click("[data-testid=archive-cancel]"); await settle();
+  const afterCancel = await learnerById(withReason.id);
+  check("archive reason: Cancel changes nothing (still active, panel closed, still listed)", afterCancel.archivedAt === null && (await s.page.$("[data-testid=archive-panel]")) === null && (await options(s.page)).includes("QA Tony Archive Reason"), JSON.stringify(afterCancel));
+  const historyNow = async (id) => (await (await fetch(`${B}/api/learners/${id}/archive-history`)).json()).events;
+  check("archive reason: Cancel writes no history event", (await historyNow(withReason.id)).length === 0);
+
+  // Archive with a reason and note: shown in the banner and in History.
+  await s.page.click(".archive-link");
+  await s.page.selectOption("[data-testid=archive-reason-select]", "moved_away");
+  await s.page.fill("[data-testid=archive-note]", "  QA moved to Sydney  ");
+  await s.page.click("[data-testid=archive-confirm]");
+  await s.page.waitForSelector('.status:has-text("archived")');
+  check("archive reason: archived with a reason leaves My learners", !(await options(s.page)).includes("QA Tony Archive Reason"));
+  await tab(s.page, "Archived");
+  await s.page.waitForFunction(() => document.querySelectorAll('select[aria-label="Select learner"] option').length > 1);
+  await pick(s.page, "QA Tony Archive Reason · Tony");
+  await s.page.waitForSelector("[data-testid=archived-banner]");
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Australia/Sydney" }).format(new Date()); // Canberra date, as the app shows it
+  const bannerText = (await s.page.textContent("[data-testid=archived-banner] p")).replace(/\s+/g, " ").trim();
+  check("archive reason: banner shows 'Archived <date> — Moved away: note' (note trimmed)", bannerText === `Archived ${today} — Moved away: QA moved to Sydney`, bannerText);
+  await s.page.click("[data-testid=archive-history] summary");
+  await s.page.waitForSelector("[data-testid=archive-history-item]");
+  const hist1 = await s.page.$$eval("[data-testid=archive-history-item]", (e) => e.map((x) => x.textContent.replace(/\s+/g, " ").trim()));
+  check("archive reason: History lists the archive with reason, note and who", hist1.length === 1 && hist1[0] === `${today} ${hist1[0].slice(11, 16)} Archived — Moved away: QA moved to Sydney · Tony` && /^\d{4}-\d{2}-\d{2} \d{2}:\d{2} /.test(hist1[0]), hist1.join(" | "));
+  check("archive reason: no horizontal scroll at 375px (banner + History)", await noHScroll(s.page));
+  await shot(s.page, "13-archived-reason-history-375");
+
+  // Restore adds a history line; archiving again without a reason shows no (old) reason.
+  await s.page.click("text=Restore learner");
+  await s.page.waitForSelector('.status:has-text("restored")');
+  const restoredHist = await historyNow(withReason.id);
+  check("archive reason: restore adds a 'restored' history event", restoredHist.length === 2 && restoredHist[0].action === "restored" && restoredHist[0].reason === null, JSON.stringify(restoredHist));
+  await s.page.click(".archive-link");
+  await s.page.click("[data-testid=archive-confirm]");
+  await s.page.waitForSelector('.status:has-text("archived")');
+  await tab(s.page, "Archived");
+  await s.page.waitForFunction(() => document.querySelectorAll('select[aria-label="Select learner"] option').length > 1);
+  await pick(s.page, "QA Tony Archive Reason · Tony");
+  await s.page.waitForSelector("[data-testid=archived-banner]");
+  check("archive reason: re-archived without a reason → banner shows no reason (never the old one)", (await s.page.$("[data-testid=archive-reason]")) === null);
+  await s.page.click("[data-testid=archive-history] summary");
+  await s.page.waitForSelector("[data-testid=archive-history-item]");
+  const hist2 = await s.page.$$eval("[data-testid=archive-history-item]", (e) => e.map((x) => x.textContent.replace(/\s+/g, " ").trim()));
+  check("archive reason: History shows archived, restored, archived (newest first)", hist2.length === 3 && /^\d{4}-\d{2}-\d{2} \d{2}:\d{2} Archived · Tony$/.test(hist2[0]) && hist2[0].startsWith(today) && /^\d{4}-\d{2}-\d{2} \d{2}:\d{2} Restored · Tony$/.test(hist2[1]) && hist2[2].includes("Moved away"), hist2.join(" | "));
+
+  // Archive without choosing a reason still works (plain confirm).
+  await tab(s.page, "My learners");
+  await pick(s.page, "QA Tony Archive Plain");
+  await s.page.click(".archive-link");
+  await s.page.click("[data-testid=archive-confirm]");
+  await s.page.waitForSelector('.status:has-text("archived")');
+  const plain = await learnerById(noReason.id);
+  check("archive reason: archiving without a reason works (no reason stored)", Boolean(plain.archivedAt) && plain.archiveReason === null && plain.archiveNote === null, JSON.stringify(plain));
+  check("archive reason: API {archived:true} with an unknown reason is a 400", (await fetch(`${B}/api/learners/${noReason.id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ archived: true, reason: "nope" }) })).status === 400);
+  check("archive reason: Tony: no page errors", s.errors.length === 0, s.errors.join("|"));
+  await s.ctx.close();
 }
 
 } catch (error) {

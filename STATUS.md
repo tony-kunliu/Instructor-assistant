@@ -1,6 +1,6 @@
 # STATUS.md
 
-_Last updated: 2026-10-10_ (Production and Staging D1 at migration `0009`; rules reminders T1+T2 live in Production)
+_Last updated: 2026-10-11_ (Production and Staging D1 at migration `0009`; rules reminders T1+T2 live in Production)
 
 This file describes **current state only**. History lives in git log and
 closed PRs; see `TASK.md` for what is in progress.
@@ -14,6 +14,13 @@ closed PRs; see `TASK.md` for what is in progress.
   duplicate check includes them; if that load fails the form shows a grey "not
   checked" line.
 
+- Learner management Phase 3b on `feature/archive-reason` (not merged):
+  archive reason (optional preset + note) and archive/restore history. Needs
+  migration `0010` (new table `learner_archive_events`, additive only;
+  rehearsal `scripts/rehearse-0010-local.sh`) applied to **Staging D1 BEFORE
+  merging to `staging`**. Archive/restore: 3 D1 statements; list unchanged (1).
+  ACTGDS contract unchanged, nothing enqueued.
+
 ## Repository
 
 - **main:** has everything released to Production (Release B, P1b, lesson
@@ -26,7 +33,7 @@ closed PRs; see `TASK.md` for what is in progress.
 
 ## CI
 
-- Latest `staging` GitHub Actions run: **SUCCESS**. Tests: 505 on `feature/learner-phase3a` (2 poppler
+- Latest `staging` GitHub Actions run: **SUCCESS**. Tests: 523 on `feature/archive-reason` (2 poppler
   tests skip without `pdftotext`; they hard-fail only with `REQUIRE_POPPLER=1`,
   set in `ci.yml` only).
 - `npm test` needs `--experimental-strip-types` (already in `package.json`).

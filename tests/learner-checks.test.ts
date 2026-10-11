@@ -35,7 +35,7 @@ function learner(id: string, over: Partial<Learner> = {}): Learner {
     hptPassedOn: null,
     loggedHours: null,
     loggedHoursOn: null,
-    archivedAt: null,
+    archivedAt: null, archiveReason: null, archiveNote: null,
     ...over,
   };
 }

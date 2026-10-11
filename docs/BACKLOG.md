@@ -1,6 +1,6 @@
 # Backlog
 
-_Last updated: 2026-10-10. Not an authorization: every item still needs Tony's
+_Last updated: 2026-10-11. Not an authorization: every item still needs Tony's
 go-ahead and ends with a stop (AGENTS.md §11). The longer-term two-repo
 direction is in `docs/ECOSYSTEM_ROADMAP.md` (P1–P6)._
 
@@ -12,7 +12,8 @@ ends with a stop (AGENTS.md §11).
 Near term (Instructor Assistant only, low risk):
 1. Learner management 3a: missing-PDF-details marker + duplicate licence
    warning (built; review, then Staging, then Production).
-2. 3b: archive reason and restore history (small migration).
+2. 3b: archive reason and restore history (migration 0010; built on
+   `feature/archive-reason`, apply 0010 to Staging D1 before merging).
 3. 3c: transfer a learner to another instructor. Design first, no code before
    Tony reads it (touches lesson ownership, prior-instructor records and the
    ACTGDS link).
@@ -41,10 +42,12 @@ Long term (ecosystem, coordinated with Work on actgds.com Issue #3):
 | Learner data for assessment rules, Phase 2 (licence issue date, HPT, logged hours) | same plan; design: `docs/superpowers/specs/2026-10-10-rules-reminders-and-learner-phase2-design.md` | **DONE** (in Production, migration 0009). |
 | Assessment-rules reminders (never blockers): 36 h gates (R1), Competency 23 eligibility (R2) and hours window (R3), ADI Audit online booking link (R4), learner licence validity (R5) | `docs/superpowers/specs/2026-10-10-rules-reminders-and-learner-phase2-design.md` | **DONE** (in Production 2026-10-10, run 38044255328): R1, R2, R3, R5 and the booking link. |
 | Learner management, Phase 3a: missing-details marker, duplicate licence warning (reminders only, client-side) | learner management plan | **DONE** on `feature/learner-phase3a` (not merged). |
-| Learner management, Phase 3: archive reason and restore history | learner management plan | Open; decide when wanted. |
-| Learner management, Phase 3: transfer a learner to another instructor | learner management plan | Open; needs its own design (lesson ownership, prior-instructor records, ACTGDS link). |
+| Learner management, Phase 3b: archive reason and restore history | learner management plan (Phase 3) | **DONE** on `feature/archive-reason` (not merged): migration 0010 (`learner_archive_events`, additive), optional preset reason + note, History in the archived banner. Needs 0010 on Staging D1 before merging. |
+| Learner management, Phase 3c: transfer a learner to another instructor | learner management plan | Open; needs its own design first (lesson ownership, prior-instructor records, ACTGDS link). |
 
 ## Minor follow-ups (bundle into the next feature)
+
+- Archiving an already-archived learner with a reason (two devices) returns 200 and drops the reason silently; consider a message.
 
 - No message when a learner is archived while the edit form is open.
 - The unmounted-key QA check for the PDF button is weak.

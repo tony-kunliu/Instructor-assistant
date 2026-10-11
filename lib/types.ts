@@ -40,6 +40,20 @@ export type Learner = {
   loggedHoursOn: string | null;
   /** Lifecycle state only (reversible, never a delete): set = hidden from the daily picker. Independent of Final Drive 23 completion. */
   archivedAt: string | null;
+  /** Reason preset key (lib/archive-reasons.ts) and note of the CURRENT archive (migration 0010): both null when active, when none was given, or for learners archived before 0010 (never invented). */
+  archiveReason: string | null;
+  archiveNote: string | null;
+};
+
+/** One archive / restore of a learner (learner_archive_events, migration 0010), shown in the archived banner's History. */
+export type LearnerArchiveEvent = {
+  id: string;
+  action: "archived" | "restored";
+  reason: string | null;
+  note: string | null;
+  at: string;
+  byInstructorId: string | null;
+  byName: string | null;
 };
 
 export type RecordSource = "app" | "paper_import" | "prior_instructor";
