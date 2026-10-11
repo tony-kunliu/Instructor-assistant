@@ -19,7 +19,8 @@ Near term (Instructor Assistant only, low risk):
    ACTGDS link).
 - iPad layout (branch `feature/ipad-layout`, not merged): responsive CSS only
   (≥700px wider column and 44px+ targets, ≥1000px two columns via grid
-  placement, DOM order unchanged), signature pad re-fits on rotation,
+  placement, DOM order unchanged; phones in landscape keep the phone layout),
+  signature pads use a fixed 640×320 PNG (2:1, scaled by CSS),
   qa-browser section 14. Waiting for review/merge; Tony checks on a real iPad.
 
 Medium term (new features; confirm rules with Tony before building):

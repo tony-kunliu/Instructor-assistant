@@ -9,6 +9,12 @@ type Props = {
   onChange: (value: string) => void;
 };
 
+/** Backing-store size of every signature PNG: 2:1, no more pixels than a phone pad
+ * produced before (≈732×300), so saved PNG sizes stay where they were and
+ * under the server's MAX_SIGNATURE_LENGTH (lib/repo.ts) even when scribbled over. */
+export const SIGNATURE_WIDTH = 640;
+export const SIGNATURE_HEIGHT = 320;
+
 /** Touch-friendly signature pad. Emits a PNG data URL ("" when cleared). */
 export default function SignaturePad({ label, value, onChange }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -16,38 +22,13 @@ export default function SignaturePad({ label, value, onChange }: Props) {
   const dirty = useRef(false);
   const last = useRef<{ x: number; y: number } | null>(null);
 
-  const valueRef = useRef(value);
-  valueRef.current = value;
-
-  // Size the backing store to the rendered size so strokes stay sharp, and
-  // re-fit it when the rendered size changes (iPad rotation, phone ↔ tablet
-  // layout): resizing clears a canvas, so the current signature is redrawn.
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const fit = () => {
-      const rect = canvas.getBoundingClientRect();
-      if (!rect.width || !rect.height) return;
-      const ratio = Math.min(window.devicePixelRatio || 1, 2);
-      const width = Math.max(1, Math.round(rect.width * ratio));
-      const height = Math.max(1, Math.round(rect.height * ratio));
-      if (canvas.width === width && canvas.height === height) return;
-      canvas.width = width;
-      canvas.height = height;
-      const saved = valueRef.current;
-      if (!saved) return;
-      const image = new Image();
-      image.onload = () => canvas.getContext("2d")?.drawImage(image, 0, 0, canvas.width, canvas.height);
-      image.src = saved;
-    };
-    fit();
-    if (typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(fit);
-    observer.observe(canvas);
-    return () => observer.disconnect();
-  }, []);
-
-  // Clear when the value is reset; redraw a restored signature (e.g. saved draft).
+  // The backing store has a FIXED size (SIGNATURE_WIDTH x SIGNATURE_HEIGHT),
+  // independent of layout; CSS only scales the display at the same aspect
+  // ratio (.sig canvas), so rotation or a phone/tablet layout change never
+  // resizes or resamples the drawing, and every saved PNG has the same size.
+  // Clear when the value is reset; redraw a restored signature (saved draft,
+  // History edit). PNGs of other sizes (older saves) are letterboxed, keeping
+  // their aspect ratio.
   useEffect(() => {
     const canvas = canvasRef.current;
     const ctx = canvas?.getContext("2d");
@@ -58,9 +39,18 @@ export default function SignaturePad({ label, value, onChange }: Props) {
       return;
     }
     if (dirty.current) return;
+    let cancelled = false;
     const image = new Image();
-    image.onload = () => ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+    image.onload = () => {
+      if (cancelled || dirty.current || !image.naturalWidth || !image.naturalHeight) return;
+      const scale = Math.min(canvas.width / image.naturalWidth, canvas.height / image.naturalHeight);
+      const w = image.naturalWidth * scale;
+      const h = image.naturalHeight * scale;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(image, (canvas.width - w) / 2, (canvas.height - h) / 2, w, h);
+    };
     image.src = value;
+    return () => { cancelled = true; };
   }, [value]);
 
   const point = (event: ReactPointerEvent<HTMLCanvasElement>) => {
@@ -120,6 +110,8 @@ export default function SignaturePad({ label, value, onChange }: Props) {
       </div>
       <canvas
         ref={canvasRef}
+        width={SIGNATURE_WIDTH}
+        height={SIGNATURE_HEIGHT}
         aria-label={label}
         onPointerDown={start}
         onPointerMove={move}
