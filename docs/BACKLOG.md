@@ -14,22 +14,23 @@ Near term (Instructor Assistant only, low risk):
    marker, duplicate licence warning incl. archived) and 3b (archive reason and
    restore history, migration 0010).
 2. (done, see 1)
-3. 3c: transfer a learner to another instructor. **T1 built on
-   `feature/transfer-t1` (not merged; apply migration 0011 to Staging D1 BEFORE
-   merging to staging)**; T2 (PDF "lessons by instructor" line, multi-transfer
+3. 3c: transfer a learner to another instructor. **T1 DONE (Production
+   2026-10-11, release #12, migration 0011)**; T2 (PDF "lessons by instructor" line, multi-transfer
    list, Issue #3 info post) next on Tony's go:
    `docs/superpowers/specs/2026-10-11-learner-transfer-design.md` (migration
    0011, additive; no ACTGDS event).
-- iPad layout (branch `feature/ipad-layout`, not merged): responsive CSS only
+- iPad layout: **DONE (Production 2026-10-12, release #13; accepted by Tony on a
+  real iPad)**. Responsive CSS only
   (≥700px wider column and 44px+ targets, ≥1000px two columns via grid
   placement, DOM order unchanged; phones in landscape keep the phone layout),
   signature pads use a fixed 640×320 PNG (2:1, scaled by CSS; server limit
   700k chars with a distinct 'too large' error),
-  qa-browser section 16. Waiting for review/merge; Tony checks on a real iPad.
+  qa-browser section 16. Still open: run `scripts/check-signature-row-limits.mjs`
+  against Staging D1 (never Production) to prove the two-signature row on real D1.
 
 Medium term (new features; confirm rules with Tony before building):
-4. Competency 23 route suggestions and route check (R10). **Built on
-   `feature/route-r10a` (not merged; no migration)**: suggestion line (home
+4. Competency 23 route suggestions and route check (R10). **R10a DONE
+   (Production 2026-10-12, release #14; no migration; tested on Staging by Tony)**: suggestion line (home
    district from the address), route check group stored in location + one
    comment line, nothing to ACTGDS:
    `docs/superpowers/specs/2026-10-11-competency-23-route-design.md`.
@@ -43,15 +44,18 @@ Medium term (new features; confirm rules with Tony before building):
    or overseas FULL licence held 12 months removes the wait; overseas learner
    does not count), "Competency 23 eligible from" with the PDF Eligibility box
    auto-filled (never overwriting Tony's text), iOS Scan Text + local parser.
-   **P1 done (merged to staging); P2 built on `feature/intake-p2-address`
-   (migration 0012, not merged); P3/P4 on Tony's go**:
+   **P1 DONE (Production, release #12); P2 DONE (Production, release #13,
+   migration 0012; iOS Scan Text / list-vs-keyboard reported OK by Tony on
+   Staging); P3 (overseas/interstate licence) and P4 (iOS Scan Text + local
+   parser) on Tony's go**:
    `docs/superpowers/specs/2026-10-11-learner-intake-design.md` (P3 additive
    columns; free options only, AI scan not planned; nothing to ACTGDS).
 
 Long term (ecosystem, coordinated with Work on actgds.com Issue #3):
-7. P2 lesson notification emails: ACTGDS source is complete; activation is
-   blocked on a secure unattended 5-minute schedule and the quiet-window
-   check. No Instructor Assistant change needed.
+7. P2 lesson notification emails: the notify-tick waits for Website PR #47
+   rework and Tony's explicit approval of the new endpoint + secret
+   (`AGENTS.md` §14 exclusion; Production stays OFF). IA-side caller spec only
+   once the Website confirms the endpoint (Handbook §14 follow-up d).
 8. P3 bookings into Today's Lessons (Cal.com).
 9. P4 GPS tracking, then P5 drive intelligence. New storage = new
    infrastructure: needs Tony's separate approval; design first. Revisit when
@@ -65,13 +69,13 @@ Long term (ecosystem, coordinated with Work on actgds.com Issue #3):
 | Learner edit, Phase 1 (name, address, phone, licence, ...) | `docs/superpowers/specs/2026-10-08-learner-management-plan.md` | **DONE** (in Production, migration 0008). |
 | Learner data for assessment rules, Phase 2 (licence issue date, HPT, logged hours) | same plan; design: `docs/superpowers/specs/2026-10-10-rules-reminders-and-learner-phase2-design.md` | **DONE** (in Production, migration 0009). |
 | Assessment-rules reminders (never blockers): 36 h gates (R1), Competency 23 eligibility (R2) and hours window (R3), ADI Audit online booking link (R4), learner licence validity (R5) | `docs/superpowers/specs/2026-10-10-rules-reminders-and-learner-phase2-design.md` | **DONE** (in Production 2026-10-10, run 38044255328): R1, R2, R3, R5 and the booking link. |
-| Learner management, Phase 3a: missing-details marker, duplicate licence warning (reminders only, client-side) | learner management plan | **DONE** on `feature/learner-phase3a` (not merged). |
-| Learner management, Phase 3b: archive reason and restore history | learner management plan (Phase 3) | **DONE** on `feature/archive-reason` (not merged): migration 0010 (`learner_archive_events`, additive), optional preset reason + note, History in the archived banner. Needs 0010 on Staging D1 before merging. |
-| Learner management, Phase 3c: transfer a learner to another instructor (incl. the CoP 9.1 h / 9.2 e previous-records reminder, R12) | `docs/superpowers/specs/2026-10-11-learner-transfer-design.md` | T1 built on `feature/transfer-t1` (migration 0011; not merged). T2 waits for Tony's go. |
-| Competency 23 route suggestions and route check (R10) | `docs/superpowers/specs/2026-10-11-competency-23-route-design.md` | **DONE** on `feature/route-r10a` (not merged; no migration): D3-D10 (suggestion line, route group, location + comment line, parse-back in History Edit). P4 GPS counting waits for a separate approval. |
-| Learner intake: address suggestions, overseas/interstate licence, Competency 23 "eligible from", licence scan | `docs/superpowers/specs/2026-10-11-learner-intake-design.md` | Designed; Q1-Q11 decided by Tony 2026-10-11 (free options only; AI scan not planned). Waiting for the go to build P1. |
-| Learner intake P1: "Competency 23 from" date + PDF Eligibility auto-fill (D17-D18) | `docs/superpowers/specs/2026-10-11-learner-intake-design.md` (branch `docs/learner-intake-design`) | **DONE** (merged to `staging`; no migration). |
-| Learner intake P2: address suggestions from the bundled G-NAF street index, structured suburb/state/postcode (D1-D10, D23) | same design | **DONE** on `feature/intake-p2-address` (not merged): migration `0012` (3 nullable columns, apply to Staging D1 BEFORE merging), `scripts/build-street-index.mjs`, `public/data/streets-aug26.json`, listbox UI, qa-browser section 18. P3 overseas/interstate licence and P4 scan: waiting for a go. |
+| Learner management, Phase 3a: missing-details marker, duplicate licence warning (reminders only, client-side) | learner management plan | **DONE** (in Production, release 2026-10-11). |
+| Learner management, Phase 3b: archive reason and restore history | learner management plan (Phase 3) | **DONE** (in Production, migration 0010): optional preset reason + note, History in the archived banner. |
+| Learner management, Phase 3c: transfer a learner to another instructor (incl. the CoP 9.1 h / 9.2 e previous-records reminder, R12) | `docs/superpowers/specs/2026-10-11-learner-transfer-design.md` | T1 **DONE** (in Production, release #12, migration 0011). T2 waits for Tony's go. |
+| Competency 23 route suggestions and route check (R10) | `docs/superpowers/specs/2026-10-11-competency-23-route-design.md` | R10a **DONE** (in Production, release #14; no migration): D3-D10 (suggestion line, route group, location + comment line, parse-back in History Edit). P4 GPS counting waits for a separate approval. |
+| Learner intake: address suggestions, overseas/interstate licence, Competency 23 "eligible from", licence scan | `docs/superpowers/specs/2026-10-11-learner-intake-design.md` | Q1-Q11 decided by Tony 2026-10-11 (free options only; AI scan not planned). P1 and P2 DONE (below); P3/P4 wait for a go. |
+| Learner intake P1: "Competency 23 from" date + PDF Eligibility auto-fill (D17-D18) | `docs/superpowers/specs/2026-10-11-learner-intake-design.md` (branch `docs/learner-intake-design`) | **DONE** (in Production, release #12; no migration). |
+| Learner intake P2: address suggestions from the bundled G-NAF street index, structured suburb/state/postcode (D1-D10, D23) | same design | **DONE** (in Production, release #13, migration `0012` on Staging and Production): `scripts/build-street-index.mjs`, `public/data/streets-aug26.json`, listbox UI, qa-browser section 18. P3 overseas/interstate licence and P4 scan: waiting for a go. |
 
 ## Minor follow-ups (bundle into the next feature)
 
@@ -137,11 +141,16 @@ Long term (ecosystem, coordinated with Work on actgds.com Issue #3):
   streets have the type inside the name with an empty type ("The Pines
   Avenue", "The Valley Avenue", "The Causeway", "Emu Bank") and are shown as
   named. Decide with Tony whether to hide the ACT Jerrabomberra district.
-- Learner intake D8 hook (route design R10): `homeDistrict()` should read
-  `learner.addressSuburb` first when set (exact; evidence "from the picked
-  suburb X") and fall back to the address-text derivation. R10a had not landed
-  on `staging` when P2 was built (no `lib/route-check.ts`), so this is done
-  when R10a is built or merged, with tests.
+
+## Process and tooling (not product)
+
+- `docs/tasks/` memory scheme + Memory Guard changes (`docs/OPERATING_HANDBOOK.md`
+  §9, §14 follow-up b): not started; until then keep editing STATUS/TASK/BACKLOG.
+- `tests/pdf-export-font-subset.test.ts` leaves a `/tmp/font-subset-*` dir (~14 MB)
+  per run; clean it up in the test.
+- Tony's optional 30-minute tooling checklist (not done yet): GitHub Dependabot
+  alerts + push protection, merge the duplicate GitHub environments, claude.ai
+  plugins (Security Guidance, claude-security, Cloudflare read-only).
 
 ## Ecosystem phases (see the roadmap)
 

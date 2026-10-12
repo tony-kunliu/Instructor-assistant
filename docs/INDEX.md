@@ -11,7 +11,7 @@ Start with the repo root docs, in this order:
 
 - `docs/OPERATING_HANDBOOK.md` — Operating Handbook v2 for both repos (IA +
   ACTGDS Website): principles, roles, independent review, ALWAYS-ASK-TONY list,
-  risk tiers, delivery flow, checklists, open decisions. Draft for Tony.
+  risk tiers, delivery flow, checklists, open decisions. Approved by Tony 2026-10-12 (decisions in its §14).
 - `docs/ACT_ASSESSMENT_STANDARDS.md` — rules from the current ACT Assessment
   Standards (NI2020-703) and Code of Practice (DI2020-294) the app must respect.
 - `docs/ECOSYSTEM_ROADMAP.md` — longer-term shared direction between this

@@ -5,29 +5,27 @@ _Last updated: 2026-10-12_
 This file describes **current task only**. Completed work's detail
 lives in git log and closed PRs, not here.
 
-**Current Task:** R10a Competency 23 route reminders — **Completed** on `feature/route-r10a`
-(pushed, not merged; no migration, 0 new D1 statements; two independent reviews, all findings
-fixed; `origin/staging` merged in incl. intake P2 / migration `0012`): unfamiliar town-centre
-suggestion line on the Start Lesson panel (home district from the structured suburb/state, else the
-address text), route check group when 23 is Assessed (centre chips + 6 official ticks + "All met")
-written into location + one generated comment line only on an explicit tap, parsed back in History
-Edit; reminders only; nothing to ACTGDS (contract hash unchanged). Intake P2 and 3c T1 as below.
+**Current Task:** Docs status sync (`docs/status-sync-20261012`, docs only) — **Completed**.
+Production releases #12 (3c T1, `0011`), #13 (iPad layout, intake P2 address suggestions,
+`0012`, Operating Handbook) and #14 (R10a route reminders, no migration) all succeeded;
+Production and Staging D1 are at `0012`. Detail: STATUS.md "Current Snapshot".
 
-**Next Recommended Task:** merge `feature/route-r10a` to `staging` under §14 (no migration; `0012`
-must already be on Staging D1 since P2 is merged). Then P3 (overseas/interstate licence) or T2
-(apply `0011` to Staging D1 BEFORE merging T1), on Tony's go.
+**Next Recommended Task:** one of, on Tony's go: (a) `docs/tasks` memory scheme + Memory
+Guard changes (Handbook §9, §14 follow-up b); (b) intake P3 (overseas/interstate licence
+fields, additive columns); (c) run `scripts/check-signature-row-limits.mjs` against Staging
+D1 (never Production) to close the iPad signature row-limit check; (d) fix the
+`tests/pdf-export-font-subset.test.ts` temp-dir leak. P4 (iOS Scan Text + local parser) and
+3c T2 after that.
 
-**Waiting on Other Repo:** ACTGDS: Work's display polish (list sent) and lesson
-notification activation decisions. My Driving is live. Nothing blocks this repo.
+**Waiting on Other Repo:** ACTGDS: notify-tick (lesson notifications) waits for Website PR
+#47 rework and Tony's explicit approval of the new endpoint + secret (Production stays OFF);
+Work's display polish list. Nothing blocks this repo.
 
-**Tony Manual Action Required:** R10a: none (no real-device-only behaviour). After P2 is on Staging, on the real iPhone: tap the Address
-field, confirm iOS "Scan Text" still appears in the callout, type `44 app` and check the list is
-not hidden behind the keyboard (Access identity and iOS keyboard cannot be simulated). After T1 is
-on Staging, one real-login transfer and transfer-back of a `QA …` learner.
-
-**Docs in flight:** `docs/operating-handbook` branch — Operating Handbook v2
-(`docs/OPERATING_HANDBOOK.md`, approved by Tony 2026-10-12; §14 records his 10 decisions and
-the follow-up tasks: docs/tasks memory scheme, cross-model review, notify caller spec). Docs only.
+**Tony Manual Action Required:** none blocking. Optional: (1) answer whether to hide the
+ACT "Jerrabomberra" district in Address suggestions (BACKLOG); (2) the 30-minute tooling
+checklist, not done yet: GitHub Dependabot alerts + push protection, merge the duplicate
+GitHub environments, claude.ai plugins (Security Guidance, claude-security, Cloudflare
+read-only).
 
 **CI note:** poppler tests are opt-in hard failures (`REQUIRE_POPPLER=1`,
 `ci.yml` only); Cloudflare Workers Builds skip them. Simulate the Workers
