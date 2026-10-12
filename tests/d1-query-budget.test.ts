@@ -22,6 +22,7 @@ import {
   getLessonCompetencySelections,
   importPaperLessons,
   listLearnerArchiveEvents,
+  learnerSummariesSql,
   listLearners,
   listLearnerSummaries,
   markTransferRecordsChecked,
@@ -641,8 +642,15 @@ test("budget (learner list cards): GET /api/learners = listLearners + listLearne
   const withReview = Object.values(summaries).filter((s) => s.review1_17 === "achieved").length;
   assert.equal(withReview, 33, "Review 1-17 done exactly for the learners assessed in a later lesson");
   const bytes = Buffer.byteLength(JSON.stringify(summaries), "utf8");
-  t.diagnostic(`learner list GET for 101 learners: ${statements} statements, max binds ${maxBinds()}, summaries ${bytes} bytes (+${Math.round(bytes / 101)} per learner), + middleware lookup = ${statements + 1}`);
+  const plan = (await raw.prepare(`EXPLAIN QUERY PLAN ${learnerSummariesSql(false)}`).all<{ detail: string }>()).results.map((r) => r.detail);
+  const indexSearches = plan.filter((d) => /SEARCH (lessons|e) USING INDEX \S+ \(learner_id=\?\)/.test(d)).length;
+  t.diagnostic(`learner list GET for 101 learners: ${statements} statements, max binds ${maxBinds()}, summaries ${bytes} bytes (+${Math.round(bytes / 101)} per learner), + middleware lookup = ${statements + 1}; rows read bounded by ${indexSearches} learner_id index searches (no scan of lessons / competency_events)`);
+  assert.equal(indexSearches, 2);
   assert.equal(statements, 2, "learners + summaries; no per-learner query");
+  // The background archived fetch (duplicate-licence check only) skips the aggregate: 1 statement.
+  const bg = countingD1(raw);
+  await listLearners(bg.db, { archived: true });
+  assert.equal(bg.count(), 1, "GET /api/learners?status=archived&summaries=0 is the learners statement alone");
   assert.equal(maxBinds(), 0);
   assert.ok(bytes <= 101 * 400, `summaries payload ${bytes} bytes (budget 400 per learner)`);
   assert.ok(statements + 1 <= FREE_PLAN_INVOCATION_LIMIT);

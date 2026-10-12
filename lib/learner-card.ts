@@ -114,6 +114,17 @@ export function cardReminders(learner: EligibilityLearner & Pick<Learner, "licen
   return out;
 }
 
+/**
+ * Whether the list shows only the open learner's card (plus "Show all learners") instead of every card in the view.
+ * Collapsed while a learner of this view is open or the learner form is open, unless the instructor is searching or
+ * tapped "Show all learners". Never collapsed with nothing to collapse to and no form (a selected id that is not in
+ * this view counts as nothing open), so the "No learners here yet" line can only mean the view really is empty.
+ */
+export function listCollapsed(state: { query: string; expanded: boolean; formOpen: boolean; openInView: boolean }): boolean {
+  if (state.query.trim() || state.expanded) return false;
+  return state.openInView || state.formOpen;
+}
+
 export type Glance = { learning: number; withReminder: number; readyForFinalDrive: number };
 
 /** The one-line summary above the list: learners shown, amber reminders, Final Drive 23 gates open. */

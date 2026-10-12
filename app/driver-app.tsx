@@ -15,7 +15,7 @@ import {
   type Totals,
 } from "@/lib/calc.ts";
 import { CORE_COMPETENCY_IDS, FINAL_DRIVE_23, REVIEW_1_17, REVIEW_1_22, invalidationNotice, type AssessmentResult, type LearnerProgress, type MilestoneInvalidation } from "@/lib/competency.ts";
-import { cardMeta, cardReminders, emptySummary, gateChips, glance, initials, lastLessonLine, optionLabel, summaryFromProgress, type LearnerListSummary } from "@/lib/learner-card.ts";
+import { cardMeta, cardReminders, emptySummary, gateChips, glance, initials, lastLessonLine, listCollapsed, optionLabel, summaryFromProgress, type LearnerListSummary } from "@/lib/learner-card.ts";
 import { accessLogoutUrl } from "@/lib/access-logout.ts";
 import { ARCHIVE_REASONS, archiveReasonText, MAX_ARCHIVE_NOTE_LENGTH } from "@/lib/archive-reasons.ts";
 import { filterLearners } from "@/lib/learner-filter.ts";
@@ -221,6 +221,11 @@ export default function DriverApp() {
   const [summaries, setSummaries] = useState<Record<string, LearnerListSummary>>({});
   // With a learner open, the list shows only their card until "Show all learners" (or a search / view change) expands it.
   const [listExpanded, setListExpanded] = useState(false);
+  // "Show all learners" moves keyboard focus to the open learner's card (or the first card) once the list has expanded.
+  const focusCardAfterExpand = useRef(false);
+  // The archived learners' card data is fetched only when the Archived tab is opened (the background archived fetch for
+  // the duplicate-licence check carries no summaries, so D1 does not aggregate every archived learner on each page load).
+  const [archivedSummariesLoaded, setArchivedSummariesLoaded] = useState(false);
   const [instructors, setInstructors] = useState<Instructor[]>([]);
   const [selectedId, setSelectedId] = useState("");
   const [detail, setDetail] = useState<Detail | null>(null);
@@ -332,11 +337,8 @@ export default function DriverApp() {
         setView(start.view);
         setReady(true);
         // Archived learners load in the background too, so the duplicate-licence check covers them; a failure just leaves the "not checked" note.
-        void api<{ learners: Learner[]; summaries: Record<string, LearnerListSummary> }>("/api/learners?status=archived")
-          .then((data) => {
-            setArchivedLearners((current) => current ?? data.learners);
-            setSummaries((current) => ({ ...data.summaries, ...current }));
-          })
+        void api<{ learners: Learner[] }>("/api/learners?status=archived&summaries=0")
+          .then((data) => setArchivedLearners((current) => current ?? data.learners))
           .catch(() => undefined);
         if (start.learnerId) await loadLearner(start.learnerId);
         else if (!learnerData.learners.length) setAddingLearner(true);
@@ -346,6 +348,14 @@ export default function DriverApp() {
       }
     })();
   }, [loadLearner]);
+
+  // After "Show all learners": focus the open learner's card, else the first card (keyboard / screen-reader continuity).
+  useEffect(() => {
+    if (!listExpanded || !focusCardAfterExpand.current) return;
+    focusCardAfterExpand.current = false;
+    const card = document.querySelector<HTMLElement>('[data-testid="learner-card"][aria-current="true"]') ?? document.querySelector<HTMLElement>('[data-testid="learner-card"]');
+    card?.focus({ preventScroll: true });
+  }, [listExpanded]);
 
   // Keep the in-progress lesson on this device in case the page reloads mid-lesson.
   useEffect(() => {
@@ -639,11 +649,13 @@ export default function DriverApp() {
       clearSelection();
       setStatus(null);
     }
-    if (next === "archived" && archivedLearners === null) {
+    if (next === "archived" && !archivedSummariesLoaded) {
       api<{ learners: Learner[]; summaries: Record<string, LearnerListSummary> }>("/api/learners?status=archived")
         .then((data) => {
           setArchivedLearners(data.learners);
-          setSummaries((current) => ({ ...data.summaries, ...current }));
+          // The server's figures win over anything older on this device; an archived learner opened since keeps its fresh detail-derived summary (same data).
+          setSummaries((current) => ({ ...current, ...data.summaries }));
+          setArchivedSummariesLoaded(true);
         })
         .catch((error: Error) => setStatus({ kind: "error", text: error.message }));
     }
@@ -812,8 +824,11 @@ export default function DriverApp() {
   // A compact list while a learner is open (or the learner form is open): their card, plus "Show all learners", which
   // always works — switching learner while the edit form is open discards that form, as with the former dropdown.
   const openCard = selectedId ? viewMembers.find((l) => l.id === selectedId) : undefined;
-  const showAllCards = Boolean(query.trim()) || listExpanded || (!addingLearner && !openCard);
-  const shownCards = cardsOf(showAllCards ? searchResults : openCard ? [openCard] : []);
+  const collapsed = listCollapsed({ query, expanded: listExpanded, formOpen: addingLearner, openInView: openCard !== undefined });
+  const shownCards = cardsOf(collapsed ? (openCard ? [openCard] : []) : searchResults);
+  const hiddenCards = collapsed ? viewMembers.length - shownCards.length : 0;
+  // Archived card data arrives with the Archived tab's own fetch; until then the list shows a loading line, never zeros.
+  const listLoading = activeView === "archived" && !archivedSummariesLoaded;
   const viewGlance = glance(cardsOf(viewMembers));
   const emptyListText = query.trim()
     ? `No matching learners${activeView === "mine" ? ' — try "All"' : ""}.`
@@ -1007,6 +1022,8 @@ export default function DriverApp() {
             <span><b>{viewGlance.readyForFinalDrive}</b> ready for Final Drive</span>
           </p>
         ) : null}
+        {collapsed && hiddenCards > 0 ? <p className="sr-only" aria-live="polite" data-testid="list-collapsed-note">Showing {shownCards.length} of {viewMembers.length} learners.</p> : null}
+        {listLoading ? <p className="empty" data-testid="list-loading" role="status">Loading archived learners…</p> : (
         <ul className="learner-list" data-testid="learner-list" aria-label={activeView === "archived" ? "Archived learners" : "Learners"}>
           {shownCards.map(({ learner: l, summary: s, reminders }) => {
             const selected = l.id === selectedId;
@@ -1049,10 +1066,11 @@ export default function DriverApp() {
               </li>
             );
           })}
-          {shownCards.length === 0 ? <li className="empty">{emptyListText}</li> : null}
+          {shownCards.length === 0 && !collapsed ? <li className="empty" data-testid="learner-list-empty">{emptyListText}</li> : null}
         </ul>
-        {!showAllCards && viewMembers.length > shownCards.length ? (
-          <button type="button" className="btn ghost block list-expand" onClick={() => setListExpanded(true)} data-testid="learner-list-expand">
+        )}
+        {hiddenCards > 0 && !listLoading ? (
+          <button type="button" className="btn ghost block list-expand" onClick={() => { focusCardAfterExpand.current = true; setListExpanded(true); }} data-testid="learner-list-expand">
             Show all learners ({viewMembers.length})
           </button>
         ) : null}

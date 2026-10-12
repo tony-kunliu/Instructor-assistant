@@ -42,7 +42,7 @@ const hasSummary = async (page) => (await page.$(".summary")) !== null;
 const noHScroll = (page) => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth);
 const tab = (page, label) => page.click(`.view-tab:has-text("${label}")`);
 const pick = async (page, label) => {
-  if ((await page.$(cardSel(label))) === null) { const expand = await page.$("[data-testid=learner-list-expand]"); if (expand) { await expand.click(); await settle(150); } }
+  if ((await page.$(cardSel(label))) === null) { const expand = await page.$("[data-testid=learner-list-expand]"); if (expand) { await expand.click(); await page.waitForSelector(cardSel(label), { timeout: 10000 }); } }
   await page.click(cardSel(label));
 };
 const settle = (ms = 400) => new Promise((r) => setTimeout(r, ms));
@@ -1156,7 +1156,7 @@ const draw = async (page, index) => {
 
   const s = await session("tony");
   // The archived list normally loads in the background; fail it first so the "not checked" grey note path is exercised.
-  await s.page.route("**/api/learners?status=archived", (route) => route.abort());
+  await s.page.route("**/api/learners?status=archived*", (route) => route.abort());
   await ready(s.page);
   await s.page.setViewportSize({ width: 375, height: 812 });
   check("learner checks: viewport is 375px", (await s.page.evaluate(() => window.innerWidth)) === 375);
@@ -1197,7 +1197,7 @@ const draw = async (page, index) => {
   check("learner checks: the saved licence number is stored", (await learnersApi()).some((l) => l.fullName === "QA Tony Dup New" && l.licenceNumber), "");
 
   // Normal case: the archived list loads in the background, so the panel already includes archived duplicates without opening Archived.
-  await s.page.unroute("**/api/learners?status=archived");
+  await s.page.unroute("**/api/learners?status=archived*");
   await s.page.reload();
   await ready(s.page);
   await pick(s.page, "QA Tony Dup One");
@@ -2104,6 +2104,15 @@ const draw = async (page, index) => {
   const api = await (await fetch(`${B}/api/learners`)).json();
   const archivedApi = await learnersApi("?status=archived");
   const mine = api.learners.filter((l) => l.instructorId === WHO.tony[0]);
+  // Fresh load, nothing open: "+ New learner" must not show the empty-list text under the form (the view has learners).
+  await s.page.click("[data-testid=new-learner]");
+  await s.page.waitForSelector("[data-testid=save-learner]");
+  check("cards 375px: + New learner with no learner open: no 'No learners here yet' text, no cards, 'Show all learners (N)' offered", (await s.page.$("[data-testid=learner-list-empty]")) === null && (await options(s.page)).length === 0 && (await s.page.textContent("[data-testid=learner-list-expand]")) === `Show all learners (${mine.length})`);
+  await s.page.click("[data-testid=learner-list-expand]");
+  check("cards 375px: Show all learners under the open form lists every card and focuses the first one", (await options(s.page)).length === mine.length && (await s.page.evaluate(() => document.activeElement?.dataset.testid === "learner-card" && document.activeElement === document.querySelector("[data-testid=learner-card]"))));
+  await s.page.click("[data-testid=new-learner]");
+  await s.page.waitForFunction(() => document.querySelector("[data-testid=save-learner]") === null);
+  await s.page.waitForFunction(() => document.querySelectorAll(".view-tab .view-count").length === 3);
   const readCards = () => s.page.$$eval("[data-testid=learner-card]", (cs) => cs.map((c) => ({
     id: c.dataset.learnerId, label: c.dataset.optionLabel, name: c.querySelector(".lc-name").textContent, meta: c.querySelector(".lc-meta").textContent, head: c.querySelector(".lc-prog-head").textContent,
     achieved: Number(c.querySelector("[data-testid=card-achieved]").textContent), on: c.querySelectorAll(".lc-segs i.on").length, segs: c.querySelectorAll(".lc-segs i").length,
@@ -2132,7 +2141,10 @@ const draw = async (page, index) => {
   const tall44 = (sel) => s.page.$$eval(sel, (es) => es.length > 0 && es.every((e) => e.getBoundingClientRect().height >= 44));
   check("cards 375px: ≥44px targets — + New learner, tabs, search, Sign out, every card", (await tall44("[data-testid=new-learner]")) && (await tall44(".view-tab")) && (await tall44(".learner-search")) && (await tall44("[data-testid=signout-link]")) && (await tall44("[data-testid=learner-card]")));
   check("cards 375px: no text under 12px in the top bar or the list", await s.page.evaluate(() => [...document.querySelectorAll(".topbar *, .card.picker *")].filter((e) => e.textContent.trim() && !e.children.length).every((e) => parseFloat(getComputedStyle(e).fontSize) >= 12)));
-  check("cards 375px: keyboard focus is visible on a card (gold outline)", await s.page.evaluate(() => { const c = document.querySelector("[data-testid=learner-card]"); c.focus(); const cs = getComputedStyle(c); return cs.outlineStyle !== "none" && cs.outlineColor === "rgb(184, 137, 43)"; }));
+  // Real keyboard focus (Tab from the search box) — a programmatic focus() after a mouse click never shows :focus-visible.
+  await s.page.focus(".learner-search");
+  for (let i = 0; i < 12 && !(await s.page.evaluate(() => document.activeElement?.dataset.testid === "learner-card")); i++) await s.page.keyboard.press("Tab");
+  check("cards 375px: keyboard focus is visible on a card (gold outline)", await s.page.evaluate(() => { const c = document.activeElement; if (c?.dataset.testid !== "learner-card") return false; const cs = getComputedStyle(c); return cs.outlineStyle !== "none" && cs.outlineColor === "rgb(184, 137, 43)"; }));
   await shot(s.page, "20-list-375-light");
 
   // Search narrows the cards; clearing restores them.
@@ -2147,6 +2159,7 @@ const draw = async (page, index) => {
   check("cards 375px: All subline", (await s.page.textContent("[data-testid=view-subline]")) === "Everyone in the school");
   await tab(s.page, "Archived");
   await s.page.waitForFunction(() => document.querySelectorAll("[data-testid=learner-card]").length > 0);
+  check("cards 375px: the Archived tab fetched its summaries on open (no loading line left, no zeros)", (await s.page.$("[data-testid=list-loading]")) === null);
   const archivedCard = await s.page.$eval(`[data-testid=learner-card][data-learner-id="${cardArchived.id}"]`, (c) => ({ meta: c.querySelector(".lc-meta").textContent, on: c.querySelectorAll(".lc-segs i.on").length, gates: [...c.querySelectorAll("[data-gate]")].map((g) => g.dataset.state) }));
   check("cards 375px: Archived tab shows the archived learner's card with real data (Manual · L plates · 1 lesson · 1.5 h, 2 of 22, all gates locked), no glance line", archivedCard.meta === "Manual · L plates · 1 lesson · 1.5 h" && archivedCard.on === 2 && archivedCard.gates.join() === "locked,locked,locked" && (await s.page.$("[data-testid=glance]")) === null, JSON.stringify(archivedCard));
   check("cards 375px: no horizontal scroll (Archived)", await noHScroll(s.page));
@@ -2156,9 +2169,9 @@ const draw = async (page, index) => {
   await s.page.click(cardSel("QA Card Open"));
   await s.page.waitForSelector(".summary");
   check("cards 375px: tapping a card opens that learner (summary, History)", (await s.page.textContent(".summary-main small")) === "QA Card Open" && (await s.page.textContent("[data-testid=history-learner]")) === "QA Card Open" && (await selectedValue(s.page)) === cardOpen.id);
-  check("cards 375px: with a learner open, only their card shows (aria-current) plus 'Show all learners (N)'", (await options(s.page)).join() === "QA Card Open" && (await s.page.getAttribute(cardSel("QA Card Open"), "aria-current")) === "true" && (await s.page.textContent("[data-testid=learner-list-expand]")) === `Show all learners (${mine.length})`);
+  check("cards 375px: with a learner open, only their card shows (aria-current) plus 'Show all learners (N)' and a live 'Showing 1 of N' note", (await options(s.page)).join() === "QA Card Open" && (await s.page.getAttribute(cardSel("QA Card Open"), "aria-current")) === "true" && (await s.page.textContent("[data-testid=learner-list-expand]")) === `Show all learners (${mine.length})` && (await s.page.textContent("[data-testid=list-collapsed-note]")) === `Showing 1 of ${mine.length} learners.`);
   await s.page.click("[data-testid=learner-list-expand]");
-  check("cards 375px: Show all learners expands the list, the open learner stays open and marked", (await options(s.page)).length === mine.length && (await hasSummary(s.page)) && (await s.page.$$("[data-testid=learner-card][aria-current=true]")).length === 1);
+  check("cards 375px: Show all learners expands the list, the open learner stays open, marked and focused; the note goes", (await options(s.page)).length === mine.length && (await hasSummary(s.page)) && (await s.page.$$("[data-testid=learner-card][aria-current=true]")).length === 1 && (await s.page.evaluate(() => document.activeElement?.getAttribute("aria-current") === "true")) && (await s.page.$("[data-testid=list-collapsed-note]")) === null);
   check("cards 375px: no horizontal scroll (learner open, list expanded)", await noHScroll(s.page));
   await shot(s.page, "20-list-375-open-expanded");
   // Reminder chip: once the licence dates are known, the C23 date appears on the card (same rule as the panel line).
@@ -2185,7 +2198,7 @@ const draw = async (page, index) => {
   // iPad 820px: two columns of cards, still ≥44px targets, no horizontal scroll.
   await s.page.setViewportSize({ width: 820, height: 1180 });
   await s.page.reload(); await ready(s.page);
-  if (await s.page.$("[data-testid=learner-list-expand]")) { await s.page.click("[data-testid=learner-list-expand]"); await settle(150); } // the remembered learner reopens: expand the list
+  if (await s.page.$("[data-testid=learner-list-expand]")) { await s.page.click("[data-testid=learner-list-expand]"); await s.page.waitForFunction(() => document.querySelectorAll("[data-testid=learner-card]").length > 1); } // the remembered learner reopens: expand the list
   const boxes = await s.page.$$eval("[data-testid=learner-card]", (cs) => cs.map((c) => { const r = c.getBoundingClientRect(); return { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width) }; }));
   check("cards 820px: two columns (first two cards side by side, same top; third below the first)", boxes.length >= 3 && boxes[0].y === boxes[1].y && boxes[1].x > boxes[0].x + boxes[0].w - 1 && boxes[2].x === boxes[0].x && boxes[2].y > boxes[0].y, JSON.stringify(boxes.slice(0, 3)));
   check("cards 820px: no horizontal scroll, ≥44px targets", (await noHScroll(s.page)) && (await tall44(".view-tab")) && (await tall44("[data-testid=new-learner]")));

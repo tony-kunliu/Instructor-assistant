@@ -88,6 +88,9 @@ Long term (ecosystem, coordinated with Work on actgds.com Issue #3):
   (lessons aggregate + json_group_array of assessed events per learner), 0 binds; the list GET is
   2 statements; `tests/learner-list-summaries.test.ts`, `tests/learner-card.test.ts`, budget test,
   qa-browser section 20 (375px light/dark, 820px two columns).
+- Extras beyond the concept for Tony to confirm (review M7-M9): global reduced-motion rule,
+  `--font-ui` stack (adds "PingFang SC"), the glance line, the "Instructor <name>" chip in All /
+  Archived, the C23-from and licence-expiry chips, the collapsed list + "Show all learners".
 - Follow-ups: migrate the lesson, history, PDF-export and form cards to the tokens (full dark
   theme; today they stay light islands); the concept's "36 h not yet logged" chip was NOT built
   (R1 needs each learner's lessons, not in the list payload); "Instructor <name>" chip shows

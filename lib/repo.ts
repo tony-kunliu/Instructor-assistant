@@ -277,6 +277,27 @@ export async function listLearners(db: D1Database, options: { archived?: boolean
   return results.map(toLearner);
 }
 
+/** The one statement behind listLearnerSummaries (exported so tests can EXPLAIN it). */
+export function learnerSummariesSql(archived: boolean): string {
+  const where = archived ? "archived_at IS NOT NULL" : "archived_at IS NULL";
+  // Both grouped subqueries are bounded to the requested learners (IN on the learners index, then the learner_id
+  // indexes of lessons / competency_events), so D1 rows read scale with that set, not with every learner ever.
+  return `SELECT l.id AS learner_id,
+              COALESCE(ls.lesson_count, 0) AS lesson_count, COALESCE(ls.total_minutes, 0) AS total_minutes, ls.last_lesson_date,
+              ev.events_json
+       FROM learners l
+       LEFT JOIN (SELECT learner_id,
+                         COUNT(CASE WHEN lesson_no > 0 THEN 1 END) AS lesson_count,
+                         COALESCE(SUM(duration_minutes), 0) AS total_minutes,
+                         MAX(CASE WHEN lesson_no > 0 THEN lesson_date END) AS last_lesson_date
+                  FROM lessons WHERE learner_id IN (SELECT id FROM learners WHERE ${where}) GROUP BY learner_id) ls ON ls.learner_id = l.id
+       LEFT JOIN (SELECT e.learner_id,
+                         json_group_array(json_array(e.competency_id, e.result, e.lesson_id, e.created_at, le.lesson_no)) AS events_json
+                  FROM competency_events e LEFT JOIN lessons le ON le.id = e.lesson_id
+                  WHERE e.action = 'assessed' AND e.learner_id IN (SELECT id FROM learners WHERE ${where}) GROUP BY e.learner_id) ev ON ev.learner_id = l.id
+       WHERE l.${where}`;
+}
+
 /**
  * Per-learner card data for the learner list (UI redesign 2026-10-12), in ONE set-based statement with no bound
  * parameters: a grouped aggregate over `lessons` (lesson count, total minutes, latest lesson date — the same
@@ -287,25 +308,7 @@ export async function listLearners(db: D1Database, options: { archived?: boolean
  * tests/learner-list-summaries.test.ts against getLearnerProgress). Never a per-learner query.
  */
 export async function listLearnerSummaries(db: D1Database, options: { archived?: boolean } = {}): Promise<Record<string, LearnerListSummary>> {
-  const where = options.archived ? "l.archived_at IS NOT NULL" : "l.archived_at IS NULL";
-  const { results } = await db
-    .prepare(
-      `SELECT l.id AS learner_id,
-              COALESCE(ls.lesson_count, 0) AS lesson_count, COALESCE(ls.total_minutes, 0) AS total_minutes, ls.last_lesson_date,
-              ev.events_json
-       FROM learners l
-       LEFT JOIN (SELECT learner_id,
-                         COUNT(CASE WHEN lesson_no > 0 THEN 1 END) AS lesson_count,
-                         COALESCE(SUM(duration_minutes), 0) AS total_minutes,
-                         MAX(CASE WHEN lesson_no > 0 THEN lesson_date END) AS last_lesson_date
-                  FROM lessons GROUP BY learner_id) ls ON ls.learner_id = l.id
-       LEFT JOIN (SELECT e.learner_id,
-                         json_group_array(json_array(e.competency_id, e.result, e.lesson_id, e.created_at, le.lesson_no)) AS events_json
-                  FROM competency_events e LEFT JOIN lessons le ON le.id = e.lesson_id
-                  WHERE e.action = 'assessed' GROUP BY e.learner_id) ev ON ev.learner_id = l.id
-       WHERE ${where}`,
-    )
-    .all<Row>();
+  const { results } = await db.prepare(learnerSummariesSql(Boolean(options.archived))).all<Row>();
   const summaries: Record<string, LearnerListSummary> = {};
   for (const row of results) {
     const packed = row.events_json ? (JSON.parse(String(row.events_json)) as [string, string | null, string, string, number | null][]) : [];

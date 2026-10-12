@@ -12,6 +12,7 @@ import {
   glance,
   initials,
   lastLessonLine,
+  listCollapsed,
   optionLabel,
   summaryFromProgress,
   type LearnerListSummary,
@@ -122,6 +123,18 @@ test("reminder chips come only from lib/rules.ts: C23-from date for learner-stag
   assert.deepEqual(cardReminders(expiring, emptySummary(), today), [{ id: "r5", tone: "amber", text: "Licence expires 20 Oct 2026" }]);
   // A current licence (plain R5) adds no chip.
   assert.deepEqual(cardReminders(learner({ licenceExpiry: "2029-01-01" }), emptySummary(), today), []);
+});
+
+test("listCollapsed: only the open card (or nothing, under the form) until a search / Show all / nothing open", () => {
+  const base = { query: "", expanded: false, formOpen: false, openInView: false };
+  assert.equal(listCollapsed(base), false, "nothing open: every card");
+  assert.equal(listCollapsed({ ...base, openInView: true }), true, "a learner of this view is open: their card only");
+  assert.equal(listCollapsed({ ...base, formOpen: true }), true, "the learner form is open: compact list (no empty-state text)");
+  assert.equal(listCollapsed({ ...base, openInView: true, formOpen: true }), true);
+  assert.equal(listCollapsed({ ...base, openInView: true, query: " al" }), false, "searching always shows the matches");
+  assert.equal(listCollapsed({ ...base, formOpen: true, expanded: true }), false, "Show all learners works with the form open");
+  assert.equal(listCollapsed({ ...base, openInView: true, expanded: true }), false);
+  assert.equal(listCollapsed({ ...base, query: "   " }), false, "blank query is no query");
 });
 
 test("glance counts: learners in view, amber reminders only, Final Drive 23 ready", () => {

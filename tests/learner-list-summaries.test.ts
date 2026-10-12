@@ -5,7 +5,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { openTestD1 } from "../lib/db.ts";
 import type { D1Database, D1PreparedStatement, D1Result } from "../lib/d1-types.ts";
-import { createLearner, createLesson, findInstructorByEmail, getLearnerProgress, getTotals, importPaperLessons, listLearners, listLearnerSummaries, setLearnerArchived, updateLesson } from "../lib/repo.ts";
+import { createLearner, createLesson, findInstructorByEmail, getLearnerProgress, getTotals, importPaperLessons, learnerSummariesSql, listLearners, listLearnerSummaries, setLearnerArchived, updateLesson } from "../lib/repo.ts";
 import { PAPER_CSV_COLUMNS } from "../lib/paper-import.ts";
 import { CORE_COMPETENCY_IDS, FINAL_DRIVE_23, REVIEW_1_17, REVIEW_1_22 } from "../lib/competency.ts";
 import { summaryFromProgress } from "../lib/learner-card.ts";
@@ -163,6 +163,12 @@ test("listLearnerSummaries: 100 learners with lessons stay ONE statement, 0 bind
     if (stage >= 3) await assess(id, "2026-08-03", range(18, 22));
     if (stage >= 4) await assess(id, "2026-08-04", [REVIEW_1_22]);
   }
+  // 20 archived learners with lessons too: the ACTIVE statement must not read their rows (D1 bills rows read).
+  for (let i = 0; i < 20; i++) {
+    const id = await mk(`QA Card Archived ${i}`);
+    await assess(id, "2026-07-01", range(1, 17));
+    await setLearnerArchived(db, id, true);
+  }
   const counted = countingD1(db);
   const started = performance.now();
   const summaries = await listLearnerSummaries(counted.db);
@@ -172,7 +178,19 @@ test("listLearnerSummaries: 100 learners with lessons stay ONE statement, 0 bind
   assert.equal(Object.keys(summaries).length, 100);
   for (const id of ids) assert.deepEqual(summaries[id], await expected(db, id));
   const bytes = Buffer.byteLength(JSON.stringify(summaries), "utf8");
-  t.diagnostic(`100 learners: 1 statement, ${ms.toFixed(0)} ms locally, response payload ${bytes} bytes (${Math.round(bytes / 100)} bytes per learner)`);
+  // Rows-read observation: node:sqlite cannot report D1's rows_read, so pin the shape that bounds it — every access to
+  // lessons / competency_events is an index SEARCH on learner_id (never a SCAN), restricted to the requested learners.
+  const plan = (await db.prepare(`EXPLAIN QUERY PLAN ${learnerSummariesSql(false)}`).all<{ detail: string }>()).results.map((r) => r.detail);
+  assert.ok(plan.some((d) => /SEARCH lessons USING INDEX \S+ \(learner_id=\?\)/.test(d)), `lessons aggregate must be an index search on learner_id: ${plan.join(" | ")}`);
+  assert.ok(plan.some((d) => /SEARCH e USING INDEX competency_events_learner_idx \(learner_id=\?\)/.test(d)), `events aggregate must be an index search on learner_id: ${plan.join(" | ")}`);
+  assert.ok(!plan.some((d) => /SCAN (lessons|e|competency_events)\b/.test(d)), `no table scan of lessons / competency_events: ${plan.join(" | ")}`);
+  const rows = async (sql: string) => Number((await db.prepare(sql).first<{ n: number }>())?.n);
+  const activeLessons = await rows("SELECT COUNT(*) AS n FROM lessons WHERE learner_id IN (SELECT id FROM learners WHERE archived_at IS NULL)");
+  const allLessons = await rows("SELECT COUNT(*) AS n FROM lessons");
+  const activeEvents = await rows("SELECT COUNT(*) AS n FROM competency_events WHERE action = 'assessed' AND learner_id IN (SELECT id FROM learners WHERE archived_at IS NULL)");
+  const allEvents = await rows("SELECT COUNT(*) AS n FROM competency_events");
+  assert.ok(allLessons > activeLessons && allEvents > activeEvents, "the archived learners' rows exist and are outside the active set");
+  t.diagnostic(`100 active (+20 archived) learners: 1 statement, ${ms.toFixed(0)} ms locally, response payload ${bytes} bytes (${Math.round(bytes / 100)} bytes per learner); rows in scope: ${activeLessons} of ${allLessons} lessons, ${activeEvents} of ${allEvents} competency_events (index searches on learner_id, no scan)`);
   assert.ok(bytes < 100 * 400, `summaries payload ${bytes} bytes for 100 learners (budget 400 bytes each)`);
   assert.deepEqual(Object.values(summaries).map((s) => s.finalDrive23).filter((s) => s === "ready").length, 20);
 });

@@ -9,12 +9,14 @@ lives in git log and closed PRs, not here.
 2026-10-12) — **Completed on the branch, not merged**: shared CSS tokens (website navy/gold/paper,
 light + dark), navy top bar with "+ New learner", search, Mine/All/Archived counts, glance line,
 one card per learner (initials, meta, 22-segment bar, Review 1-17 / 1-22 / Final Drive 23 chips,
-C23-from / licence chips). Card data from ONE set-based D1 aggregate (`listLearnerSummaries`; the
-list GET is 2 statements, 0 binds); no migration; contract untouched. Needs independent review
-(cross-model, Handbook §2) before `staging`. Production and Staging D1 stay at `0012`.
+C23-from / licence chips). Card data from ONE set-based D1 aggregate (`listLearnerSummaries`,
+index-bounded to the requested learners; the list GET is 2 statements, 0 binds; the background
+archived fetch skips it); no migration; contract untouched. Independent review done (approve
+with fixes; fixes in the second commit). Ready to merge to `staging` on the go. D1 stays `0012`.
 
-**Next Recommended Task:** independent review + merge of `feature/ui-learner-list` to
-`staging`, then Tony's real-phone look (light and dark). After that, on Tony's go: (a) `docs/tasks`
+**Next Recommended Task:** merge `feature/ui-learner-list` to `staging` (post-merge CI green),
+then Tony's real-phone look (light and dark) and his confirmation of the extras listed in
+`docs/BACKLOG.md`. After that, on Tony's go: (a) `docs/tasks`
 memory scheme + Memory Guard changes (Handbook §9); (b) intake P3; (c) run
 `scripts/check-signature-row-limits.mjs` against Staging D1; (d) fix the
 `tests/pdf-export-font-subset.test.ts` temp-dir leak; (e) migrate the remaining screens to the

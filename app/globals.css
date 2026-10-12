@@ -47,12 +47,14 @@
     --paper: #09131c; --surface: #101f2d; --surface-2: #17283a; --text: #eee9dc; --text-muted: #9aa6b2; --hairline: #22364a;
     --navy: #050d14; --on-navy: #eee9dc; --brand-gold: #d8ae55; --gold-ink: #e2bf6a; --gold-soft: #3a2f16; --on-gold: #0b1b2b;
     --good: #5fd08e; --good-soft: #14352a; --warn: #f0b95c; --warn-soft: #3a2a10; --seg-off: #243a4e;
+    color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
   --paper: #09131c; --surface: #101f2d; --surface-2: #17283a; --text: #eee9dc; --text-muted: #9aa6b2; --hairline: #22364a;
   --navy: #050d14; --on-navy: #eee9dc; --brand-gold: #d8ae55; --gold-ink: #e2bf6a; --gold-soft: #3a2f16; --on-gold: #0b1b2b;
   --good: #5fd08e; --good-soft: #14352a; --warn: #f0b95c; --warn-soft: #3a2a10; --seg-off: #243a4e;
+  color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
@@ -87,10 +89,11 @@ html, body {
 .brand-name { display: flex; flex-direction: column; min-width: 0; }
 .brand strong { font-size: 16px; line-height: 1.25; }
 .brand small { font-size: 12px; opacity: .72; letter-spacing: .01em; }
-.signed-in-as { margin-left: auto; display: flex; flex-direction: column; align-items: flex-end; gap: 0; text-align: right; flex: none; }
+.signed-in-as { margin-left: auto; display: flex; flex-direction: column; align-items: flex-end; justify-content: center; gap: 0; text-align: right; flex: none; }
 .signed-in-as span { font-size: 12px; font-weight: 600; opacity: .85; }
-/* 44px hit area without growing the row. */
-.signout-link { display: inline-flex; align-items: center; min-height: 44px; margin: -12px 0; padding: 0 var(--space-1); font-size: 12px; color: inherit; text-decoration: underline; text-underline-offset: 2px; }
+/* 44px hit area from its own padding (the name above it is not part of the link). */
+.signout-link { display: inline-flex; align-items: center; min-height: 44px; padding: 0 var(--space-1); font-size: 12px; color: inherit; text-decoration: underline; text-underline-offset: 2px; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 .headline { display: flex; align-items: flex-end; justify-content: space-between; gap: var(--space-3); }
 .headline h1 { margin: 0; font-size: 28px; line-height: 1.1; font-weight: 700; letter-spacing: -.01em; }
 .headline-sub { display: block; font-size: 13px; opacity: .72; margin-top: 2px; }
@@ -217,7 +220,7 @@ html, body {
 .status { margin: 0 0 12px; padding: 10px 12px; border-radius: 10px; font-weight: 600; }
 .status.ok { background: #e3f3e8; color: #135c32; }
 .status.error { background: #fbe4e1; color: #8e2418; }
-.status.info { background: #efece6; }
+.status.info { background: #efece6; color: #1d1d1f; }
 .status.warn { background: #fdf0d2; color: #6b4a00; }
 
 .summary-main { display: flex; flex-direction: column; }
@@ -455,6 +458,13 @@ html, body {
   .card { padding: 20px 22px; margin-bottom: 16px; }
   .card h2 { font-size: 20px; }
   .card.picker { padding: 0 0 4px; gap: 14px; }
+}
+/* Wider than the 880px column (+ its gutters): the bar becomes a rounded island the width of the content, not a
+   full-bleed strip that stops at the column edges. */
+@media (min-width: 929px) and (min-height: 600px) {
+  .topbar { margin: 0 0 16px; padding: 16px 24px 18px; border-radius: var(--radius-l); }
+}
+@media (min-width: 700px) and (min-height: 600px) {
   .view-tab { min-height: 44px; font-size: 15px; }
   .lc-name { font-size: 17px; }
   .lc-meta, .lc-prog-head, .glance { font-size: 14px; }
