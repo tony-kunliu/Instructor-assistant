@@ -42,11 +42,17 @@ const shot = (page, name) => page.screenshot({ path: `${OUT}/${name}.png`, fullP
 async function signBoth(page) {
   for (const canvas of await page.$$(".sig canvas")) {
     await canvas.scrollIntoViewIfNeeded();
-    const b = await canvas.boundingBox();
+    // End Lesson focuses the finish-odometer input 50 ms later (app behaviour), which scrolls the page after the canvas was
+    // positioned: draw only once the canvas box has been still for two consecutive reads, or the strokes land beside it.
+    let b = await canvas.boundingBox();
+    for (let i = 0, still = 0; i < 60 && still < 2; i++) { await settle(60); const n = await canvas.boundingBox(); still = n && b && n.x === b.x && n.y === b.y ? still + 1 : 0; b = n; }
+    await canvas.scrollIntoViewIfNeeded();
+    b = await canvas.boundingBox();
     await page.mouse.move(b.x + 20, b.y + 30);
     await page.mouse.down();
     await page.mouse.move(b.x + 120 + Math.random() * 30, b.y + 90, { steps: 8 });
     await page.mouse.up();
+    await page.waitForFunction((el) => el.closest(".sig")?.querySelector(".sig-ok") !== null, canvas, { timeout: 5000 }).catch(() => {});
   }
 }
 const learnersApi = async (q = "") => (await (await fetch(`${B}/api/learners${q}`)).json()).learners;
