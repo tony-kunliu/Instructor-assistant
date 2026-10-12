@@ -1,6 +1,6 @@
 # STATUS.md
 
-_Last updated: 2026-10-11_ (Production and Staging D1 at migration `0010`; learner 3a/3b live in Production)
+_Last updated: 2026-10-12_ (Production and Staging D1 at migration `0010`; learner 3a/3b live in Production)
 
 This file describes **current state only**. History lives in git log and
 closed PRs; see `TASK.md` for what is in progress.
@@ -17,7 +17,16 @@ closed PRs; see `TASK.md` for what is in progress.
   History line, receiver's CoP 9.1 h / 9.2 e "Checked"; nothing sent to ACTGDS. Waits for `0011` on
   Staging D1 (apply BEFORE merging to `staging`). Then R10a route reminders. iPad layout is on
   `feature/ipad-layout` in review (signature-size fix round); needs Tony's real-iPad check.
+- `feature/intake-p2-address` (learner intake P2, migration `0012`, not pushed/merged): Address
+  suggestions from a bundled G-NAF street index (`public/data/streets-aug26.json`, 7,928 streets /
+  146 localities, 49 kB gz, Aug 2026 release; attribution in footer/README), custom listbox (≥44 px
+  rows, ≤5), picked suburb/state/postcode stored in 3 new nullable columns, server shape check,
+  free text always saves; nothing to ACTGDS. **Apply `0012` to Staging D1 BEFORE merging to
+  `staging`** (`Staging D1 Migrate`, `ref` = this branch). Yearly index rebuild: BACKLOG.
 - Designs: `docs/superpowers/specs/2026-10-11-*.md` (transfer, route, intake), decided by Tony 2026-10-11.
+- `feature/ipad-layout` detail: CSS-only layout plus a fixed 640×320 signature canvas
+  (pen 5 canvas px); server signature limit 700k chars with its own "too large"
+  error (no silent fallback in History edit); qa-browser section 16.
 
 ## Repository
 
@@ -31,7 +40,7 @@ closed PRs; see `TASK.md` for what is in progress.
 
 ## CI
 
-- Latest `staging` GitHub Actions run: **SUCCESS**. Tests: 523 on `feature/archive-reason` (2 poppler
+- Latest `staging` GitHub Actions run: **SUCCESS**. Tests: 616 on `feature/intake-p2-address` (2 poppler
   tests skip without `pdftotext`; they hard-fail only with `REQUIRE_POPPLER=1`,
   set in `ci.yml` only).
 - `npm test` needs `--experimental-strip-types` (already in `package.json`).
@@ -98,7 +107,9 @@ closed PRs; see `TASK.md` for what is in progress.
   MB typical, was ~14 MB); Export shows "PDF ready: <size> (compact font)".
   Full 16 MB font only for rare CJK characters. Access-gated sign-in; "Copy
   Integration ID" for manual ACTGDS CRM linking.
-- Working rule: `AGENTS.md` §13, standing authorizations §14.
+- Working rule: `AGENTS.md` §13, standing authorizations §14 (new-endpoint/secret
+  exclusion 2026-10-12), model choice §9; two-repo Operating Handbook
+  `docs/OPERATING_HANDBOOK.md` approved by Tony 2026-10-12 (§16).
 
 ## Integration V1
 
@@ -134,6 +145,8 @@ record: `tony-kunliu/actgds.com` Issue #3.
   Vietnamese, Greek, Cyrillic, kana, Hangul, Latin Ext-B, box drawing and some
   symbols print as boxes after the user confirms the warning.
 - Minor learner-edit review follow-ups are in `docs/BACKLOG.md`.
+- qa-browser §17 "phone landscape 844x390: drawing on the capped pads registers" (and 932x430) failed in
+  2 of 4 runs (random mouse stroke; clean reruns 496/496). Flaky, not a product bug; make the stroke deterministic.
 - `tests/pdf-export-font-subset.test.ts` leaves a `/tmp/font-subset-*` dir (~14 MB
   out.pdf) per run; on shared machines this filled the disk (2026-10-11).
 

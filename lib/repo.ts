@@ -30,6 +30,7 @@ import { planPaperImport, type PaperImportPreview, type PaperImportRowError } fr
 import { isPriorRecord } from "./prior-record.ts";
 import { ArchiveInputError, parseArchiveNote, parseArchiveReason } from "./archive-reasons.ts";
 import { parseTransferNote, TransferInputError } from "./learner-transfer.ts";
+import { validateAddressParts } from "./address-suggest.ts";
 import type { CompletionSummary, Instructor, Learner, LearnerArchiveEvent, LearnerInput, LearnerTransferEvent, Lesson, LessonInput, LessonRevision, LessonRevisionSnapshot, SignatureStatus } from "./types.ts";
 
 export class ValidationError extends Error {}
@@ -37,7 +38,13 @@ export class NotFoundError extends Error {}
 
 type Row = Record<string, unknown>;
 
-const MAX_SIGNATURE_LENGTH = 400_000;
+// Upper bound for one signature data URL (characters). Both signatures live
+// in the same `lessons` row and a D1 row/string may be at most 2 MB, so
+// 2 × 700 000 = 1.4 MB leaves room for the rest of the row. lesson_revisions
+// never stores the images (only whether each was present). The pad
+// (app/signature-pad.tsx) saves a fixed 640×320 PNG, typically 10-130k chars;
+// even a pad scribbled over completely stays well below this.
+export const MAX_SIGNATURE_LENGTH = 700_000;
 
 function text(value: unknown, max: number): string | null {
   const trimmed = String(value ?? "").trim();
@@ -53,9 +60,17 @@ function isoDate(value: unknown): string | null {
   return check.getUTCFullYear() === Number(match[1]) && check.getUTCMonth() === Number(match[2]) - 1 && check.getUTCDate() === Number(match[3]) ? trimmed : null;
 }
 
-function signature(value: unknown): string | null {
-  const data = String(value ?? "");
-  if (!data.startsWith("data:image/png;base64,") || data.length > MAX_SIGNATURE_LENGTH) return null;
+/**
+ * A signature the client submitted: null when none was sent (absent/empty);
+ * the PNG data URL when usable. A signature that WAS sent but cannot be
+ * stored (not a PNG data URL, or too large) is rejected with its own message,
+ * never treated as "missing" and never silently replaced by an older one.
+ */
+function submittedSignature(value: unknown, who: "ADI" | "Learner"): string | null {
+  const data = value === null || value === undefined ? "" : String(value);
+  if (!data) return null;
+  if (data.length > MAX_SIGNATURE_LENGTH) throw new ValidationError(`${who} signature image is too large — clear it and sign again.`);
+  if (!data.startsWith("data:image/png;base64,")) throw new ValidationError(`${who} signature is not a valid image — clear it and sign again.`);
   return data;
 }
 
@@ -67,6 +82,9 @@ function toLearner(row: Row): Learner {
     instructorAdiNumber: (row.instructor_adi_number as string) ?? null,
     fullName: String(row.full_name),
     address: (row.address as string) ?? null,
+    addressSuburb: nullableString(row.address_suburb),
+    addressState: nullableString(row.address_state),
+    addressPostcode: nullableString(row.address_postcode),
     phone: (row.phone as string) ?? null,
     dob: (row.dob as string) ?? null,
     licenceNumber: (row.licence_number as string) ?? null,
@@ -453,6 +471,9 @@ export type LearnerEditInput = LearnerInput & {
 type LearnerFields = {
   fullName: string | null;
   address: string | null;
+  addressSuburb: string | null;
+  addressState: string | null;
+  addressPostcode: string | null;
   phone: string | null;
   dob: string | null;
   licenceNumber: string | null;
@@ -470,13 +491,16 @@ type LearnerFields = {
 const LEARNER_EDIT_KEYS = [
   "fullName", "address", "phone", "dob", "licenceNumber", "licenceExpiry", "eligibility", "transmission", "schoolWork", "licenceStage",
   "learnerLicenceIssuedOn", "learnerLicenceFirstIssuedOn", "hptPassedOn", "loggedHours", "loggedHoursOn",
+  "addressSuburb", "addressState", "addressPostcode",
 ] as const satisfies readonly (keyof LearnerFields)[];
+const ADDRESS_PART_KEYS = ["address", "addressSuburb", "addressState", "addressPostcode"] as const;
 const LICENCE_STAGES = ["learner", "p1", "p2", "full"] as const;
 const LEARNER_COLUMN: Record<(typeof LEARNER_EDIT_KEYS)[number], string> = {
   fullName: "full_name", address: "address", phone: "phone", dob: "dob", licenceNumber: "licence_number", licenceExpiry: "licence_expiry",
   eligibility: "eligibility", transmission: "transmission", schoolWork: "school_work", licenceStage: "licence_stage",
   learnerLicenceIssuedOn: "learner_licence_issued_on", learnerLicenceFirstIssuedOn: "learner_licence_first_issued_on", hptPassedOn: "hpt_passed_on",
   loggedHours: "logged_hours", loggedHoursOn: "logged_hours_on",
+  addressSuburb: "address_suburb", addressState: "address_state", addressPostcode: "address_postcode",
 };
 
 /** A real calendar date that throws a labelled error (the Competency 23 fields); `isoDate` is the non-throwing twin. */
@@ -525,6 +549,18 @@ function checkRulesFields(merged: Pick<Learner, "dob" | "learnerLicenceIssuedOn"
 }
 
 /**
+ * D7: the picked suburb/state/postcode are all set or all null, well-formed, and the suburb is a whole word of the
+ * address text. Checked on the merged values, only when the address or one of the parts is being changed, so an
+ * unrelated edit is never blocked by older data. Returns the normalised parts to store (when touched).
+ */
+function checkAddressParts(merged: Pick<Learner, "address" | "addressSuburb" | "addressState" | "addressPostcode">, touched: ReadonlySet<string>): Pick<LearnerFields, "addressSuburb" | "addressState" | "addressPostcode"> | null {
+  if (!ADDRESS_PART_KEYS.some((key) => touched.has(key))) return null;
+  const result = validateAddressParts(merged.address, merged.addressSuburb, merged.addressState, merged.addressPostcode);
+  if (!result.ok) throw new ValidationError(result.error);
+  return { addressSuburb: result.parts?.suburb ?? null, addressState: result.parts?.state ?? null, addressPostcode: result.parts?.postcode ?? null };
+}
+
+/**
  * The ONE place learner field rules live (create and edit share it): trim, "" -> null, per-field max length,
  * ISO dates, transmission manual|auto. Only keys present on `input` are returned (create fills the rest with
  * null; edit leaves them unchanged). `strict` (edit only) refuses an unparseable date / transmission / stage
@@ -539,6 +575,10 @@ function parseLearnerFields(input: LearnerEditInput, strict: boolean, existing?:
     if (!out.fullName) throw new ValidationError("Student name is required.");
   }
   if (has("address")) out.address = text(input.address, 300);
+  // Address parts (D7): shape and the whole-word suburb rule are checked together in checkAddressParts on the merged values.
+  if (has("addressSuburb")) out.addressSuburb = text(input.addressSuburb, 300);
+  if (has("addressState")) out.addressState = text(input.addressState, 300);
+  if (has("addressPostcode")) out.addressPostcode = text(input.addressPostcode, 300);
   if (has("phone")) out.phone = text(input.phone, 40);
   if (has("licenceNumber")) out.licenceNumber = text(input.licenceNumber, 40);
   if (has("eligibility")) out.eligibility = text(input.eligibility, 120);
@@ -573,6 +613,8 @@ export async function createLearner(db: D1Database, input: LearnerInput, now: Da
     new Set(Object.keys(fields)),
     localNow(now).date,
   );
+  const parts = checkAddressParts({ address: fields.address ?? null, addressSuburb: fields.addressSuburb ?? null, addressState: fields.addressState ?? null, addressPostcode: fields.addressPostcode ?? null }, new Set(Object.keys(fields)));
+  if (parts) Object.assign(fields, parts);
   // Instructor must already exist and be active — no free-text name, no
   // auto-creation. Reuses the same existing-and-active check as lesson
   // attribution, just made required here (an omitted/unknown/inactive id
@@ -584,8 +626,9 @@ export async function createLearner(db: D1Database, input: LearnerInput, now: Da
   await db
     .prepare(
       `INSERT INTO learners (id, instructor_id, full_name, address, phone, dob, licence_number, licence_expiry, eligibility, transmission, school_work,
-         learner_licence_issued_on, learner_licence_first_issued_on, hpt_passed_on, logged_hours, logged_hours_on)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         learner_licence_issued_on, learner_licence_first_issued_on, hpt_passed_on, logged_hours, logged_hours_on,
+         address_suburb, address_state, address_postcode)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .bind(
       id,
@@ -604,6 +647,9 @@ export async function createLearner(db: D1Database, input: LearnerInput, now: Da
       fields.hptPassedOn ?? null,
       fields.loggedHours ?? null,
       fields.loggedHoursOn ?? null,
+      fields.addressSuburb ?? null,
+      fields.addressState ?? null,
+      fields.addressPostcode ?? null,
     )
     .run();
   return getLearner(db, id);
@@ -643,10 +689,17 @@ export async function updateLearner(db: D1Database, id: string, input: LearnerEd
   const fields = parseLearnerFields(input, true, existing);
   const keys = LEARNER_EDIT_KEYS.filter((key) => fields[key] !== undefined);
   if (!keys.length) throw new ValidationError("Nothing to change: send at least one learner field.");
-  const changedFields = keys.filter((key) => fields[key] !== existing[key]);
+  let changedFields = keys.filter((key) => fields[key] !== existing[key]);
   if (!changedFields.length) return { learner: existing, changed: false, changedFields: [] };
   // Only CHANGED keys trigger the cross-field rules: the form re-sends every field, and unchanged older data must never block an unrelated edit.
   checkRulesFields({ ...existing, ...fields } as Learner, new Set(changedFields), localNow(now).date);
+  const parts = checkAddressParts({ ...existing, ...fields } as Learner, new Set(changedFields));
+  if (parts) {
+    // Normalised parts (trimmed, upper-case state) may differ from what was sent: store them as validated.
+    Object.assign(fields, parts);
+    changedFields = keys.filter((key) => fields[key] !== existing[key]);
+    if (!changedFields.length) return { learner: existing, changed: false, changedFields: [] };
+  }
 
   await db.batch([
     learnerRevisionInsertStatement(db, id, actingInstructorId),
@@ -822,8 +875,8 @@ export async function createLesson(db: D1Database, learnerId: string, input: Les
   const distance = distanceKm(startOdometer, finishOdometer);
   if (distance === null) throw new ValidationError("Finish odometer must not be less than start odometer.");
 
-  const adiSignature = signature(input.adiSignature);
-  const learnerSignature = signature(input.learnerSignature);
+  const adiSignature = submittedSignature(input.adiSignature, "ADI");
+  const learnerSignature = submittedSignature(input.learnerSignature, "Learner");
   if (!adiSignature) throw new ValidationError("ADI signature is required.");
   if (!learnerSignature) throw new ValidationError("Learner signature is required.");
 
@@ -1301,8 +1354,8 @@ export async function updateLesson(db: D1Database, learnerId: string, lessonId: 
     adiSignature = existing.adiSignature;
     learnerSignature = existing.learnerSignature;
   } else if (contentChanged) {
-    const newAdi = signature(input.adiSignature);
-    const newLearner = signature(input.learnerSignature);
+    const newAdi = submittedSignature(input.adiSignature, "ADI");
+    const newLearner = submittedSignature(input.learnerSignature, "Learner");
     if (!newAdi || !newLearner) {
       throw new ValidationError(`Content changed (${SIGNATURE_PROTECTED_FIELDS.join(", ")}) — both signatures must be redrawn before saving.`);
     }
@@ -1312,8 +1365,9 @@ export async function updateLesson(db: D1Database, learnerId: string, lessonId: 
     adiSignature = newAdi;
     learnerSignature = newLearner;
   } else {
-    adiSignature = signature(input.adiSignature) ?? existing.adiSignature ?? "";
-    learnerSignature = signature(input.learnerSignature) ?? existing.learnerSignature ?? "";
+    // Not sent → keep the stored one; sent but unusable → rejected above (never a silent fallback).
+    adiSignature = submittedSignature(input.adiSignature, "ADI") ?? existing.adiSignature ?? "";
+    learnerSignature = submittedSignature(input.learnerSignature, "Learner") ?? existing.learnerSignature ?? "";
     if (!adiSignature) throw new ValidationError("ADI signature is required.");
     if (!learnerSignature) throw new ValidationError("Learner signature is required.");
   }

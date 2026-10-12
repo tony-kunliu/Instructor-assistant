@@ -1,6 +1,6 @@
 # Backlog
 
-_Last updated: 2026-10-11. Not an authorization: every item still needs Tony's
+_Last updated: 2026-10-12. Not an authorization: every item still needs Tony's
 go-ahead and ends with a stop (AGENTS.md §11). The longer-term two-repo
 direction is in `docs/ECOSYSTEM_ROADMAP.md` (P1–P6)._
 
@@ -20,6 +20,12 @@ Near term (Instructor Assistant only, low risk):
    list, Issue #3 info post) next on Tony's go:
    `docs/superpowers/specs/2026-10-11-learner-transfer-design.md` (migration
    0011, additive; no ACTGDS event).
+- iPad layout (branch `feature/ipad-layout`, not merged): responsive CSS only
+  (≥700px wider column and 44px+ targets, ≥1000px two columns via grid
+  placement, DOM order unchanged; phones in landscape keep the phone layout),
+  signature pads use a fixed 640×320 PNG (2:1, scaled by CSS; server limit
+  700k chars with a distinct 'too large' error),
+  qa-browser section 16. Waiting for review/merge; Tony checks on a real iPad.
 
 Medium term (new features; confirm rules with Tony before building):
 4. Competency 23 route suggestions and route check (R10). **Designed;
@@ -36,10 +42,10 @@ Medium term (new features; confirm rules with Tony before building):
    or overseas FULL licence held 12 months removes the wait; overseas learner
    does not count), "Competency 23 eligible from" with the PDF Eligibility box
    auto-filled (never overwriting Tony's text), iOS Scan Text + local parser.
-   **Designed; questions decided 2026-10-11; build P1 on Tony's go**:
-   `docs/superpowers/specs/2026-10-11-learner-intake-design.md` (P1 no
-   migration; P2/P3 additive columns; free options only, AI scan not
-   planned; nothing to ACTGDS).
+   **P1 done (merged to staging); P2 built on `feature/intake-p2-address`
+   (migration 0012, not merged); P3/P4 on Tony's go**:
+   `docs/superpowers/specs/2026-10-11-learner-intake-design.md` (P3 additive
+   columns; free options only, AI scan not planned; nothing to ACTGDS).
 
 Long term (ecosystem, coordinated with Work on actgds.com Issue #3):
 7. P2 lesson notification emails: ACTGDS source is complete; activation is
@@ -64,7 +70,8 @@ Long term (ecosystem, coordinated with Work on actgds.com Issue #3):
 | Competency 23 route suggestions and route check (R10) | `docs/superpowers/specs/2026-10-11-competency-23-route-design.md` | Designed; all questions decided 2026-10-11 (Q1 changed: home district; Weston Creek / Molonglo: no neighbour). Waiting for the go to build R10a. |
 | Learner intake: address suggestions, overseas/interstate licence, Competency 23 "eligible from", licence scan | `docs/superpowers/specs/2026-10-11-learner-intake-design.md` | Designed; Q1-Q11 decided by Tony 2026-10-11 (free options only; AI scan not planned). Waiting for the go to build P1. |
 | Competency 23 route suggestions and route check (R10) | `docs/superpowers/specs/2026-10-11-competency-23-route-design.md` | Designed; Q1-Q6 decided 2026-10-11 (Q1 changed: home district). Waiting for the go to build R10a. |
-| Learner intake P1: "Competency 23 from" date + PDF Eligibility auto-fill (D17-D18) | `docs/superpowers/specs/2026-10-11-learner-intake-design.md` (branch `docs/learner-intake-design`) | **DONE** on `feature/intake-p1` (not merged; no migration). P2 address suggestions, P3 overseas/interstate licence, P4 scan: waiting for a go. |
+| Learner intake P1: "Competency 23 from" date + PDF Eligibility auto-fill (D17-D18) | `docs/superpowers/specs/2026-10-11-learner-intake-design.md` (branch `docs/learner-intake-design`) | **DONE** (merged to `staging`; no migration). |
+| Learner intake P2: address suggestions from the bundled G-NAF street index, structured suburb/state/postcode (D1-D10, D23) | same design | **DONE** on `feature/intake-p2-address` (not merged): migration `0012` (3 nullable columns, apply to Staging D1 BEFORE merging), `scripts/build-street-index.mjs`, `public/data/streets-aug26.json`, listbox UI, qa-browser section 18. P3 overseas/interstate licence and P4 scan: waiting for a go. |
 
 ## Minor follow-ups (bundle into the next feature)
 
@@ -114,8 +121,27 @@ Long term (ecosystem, coordinated with Work on actgds.com Issue #3):
   manually". Cross-check the 2026-2027 table against the ACT Government
   public-holidays page, which returned HTTP 403 to the build environment.
 - History markers for past reviews done inside 36 h (rules-reminders spec, later).
-- Once learner intake P2 ships: rebuild the G-NAF street index yearly (new
-  streets in new suburbs) with `scripts/build-street-index.mjs`.
+- **Yearly (every October, with the public holidays): rebuild the G-NAF street
+  index** for the learner Address suggestions (new streets in new suburbs, e.g.
+  Whitlam, Sulman): `NODE_USE_ENV_PROXY=1 node scripts/build-street-index.mjs`
+  (range-reads only the needed PSV files from the current national ZIP on
+  data.gov.au; ~200 MB download, nothing stored), then update
+  `STREET_INDEX_FILE` in `lib/address-suggest.ts` to the new release name,
+  run `npm test` (shape + real-data assertions) and commit the new
+  `public/data/streets-<release>.json` (the old one is removed by the build).
+  Built 2026-10-12 from the Aug 2026 release (7,928 entries, 146 localities).
+  Known data quirks to revisit (review 2026-10-12, not bugs): G-NAF has a
+  "Jerrabomberra ACT 2600" locality (the district) as well as Jerrabomberra NSW
+  2619, so an "… jerra" suburb prefix ranks the ACT one first (D4: ACT before
+  NSW); "Belconnen" appears twice (2615 and 2617, one row per postcode); a few
+  streets have the type inside the name with an empty type ("The Pines
+  Avenue", "The Valley Avenue", "The Causeway", "Emu Bank") and are shown as
+  named. Decide with Tony whether to hide the ACT Jerrabomberra district.
+- Learner intake D8 hook (route design R10): `homeDistrict()` should read
+  `learner.addressSuburb` first when set (exact; evidence "from the picked
+  suburb X") and fall back to the address-text derivation. R10a had not landed
+  on `staging` when P2 was built (no `lib/route-check.ts`), so this is done
+  when R10a is built or merged, with tests.
 
 ## Ecosystem phases (see the roadmap)
 
