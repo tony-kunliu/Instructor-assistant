@@ -69,6 +69,17 @@ See `AGENTS.md` for the full working rules every agent in this repo follows.
 - `TASK.md` — current task and next recommended step
 - `docs/INDEX.md` — everything else (ecosystem roadmap, Integration contract)
 
+## Data attribution
+
+The learner Address suggestions use a bundled street index
+(`public/data/streets-<release>.json`, built by `scripts/build-street-index.mjs`)
+that incorporates or was developed using G-NAF © Geoscape Australia, licensed by
+the Commonwealth of Australia under the Open Geo-coded National Address File
+(G-NAF) End User Licence Agreement (CC BY 4.0 plus the mail-out use
+restriction, which does not apply: this app sends no mail). Source:
+data.gov.au, "Geocoded National Address File (G-NAF)". The attribution is also
+shown in the app footer and in the data file's header.
+
 ## Production Safety
 
 Production deploy always requires Tony's explicit, separate authorization —

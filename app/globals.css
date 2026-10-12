@@ -309,6 +309,18 @@ html, body {
 /* Learner intake D18: the Eligibility box follows the licence dates while it is empty or app-generated. */
 .field small.auto-hint { font-size: 12px; color: var(--muted); }
 
+/* Learner intake D6: street suggestions listbox under the Address input (rows ≥ 44px, at most 5, in normal flow so
+   nothing is hidden behind the keyboard and the card simply grows). */
+.address-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.address-field small.address-hint { font-size: 12px; color: var(--muted); }
+.address-list { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 10px; background: #fff; overflow: hidden; box-shadow: 0 6px 18px rgba(0, 0, 0, .08); }
+.address-option { display: flex; flex-direction: column; justify-content: center; gap: 2px; min-height: 44px; padding: 8px 12px; border-top: 1px solid var(--line); cursor: pointer; touch-action: manipulation; user-select: none; -webkit-user-select: none; }
+.address-option:first-child { border-top: 0; }
+.address-option .address-main { font-size: 16px; font-weight: 600; color: var(--ink); overflow-wrap: anywhere; }
+.address-option small { font-size: 13px; color: var(--muted); }
+.address-option.active, .address-option:hover { background: #f4efe3; }
+.address-close { font: inherit; font-size: 20px; min-height: 44px; border: 0; border-top: 1px solid var(--line); background: #fbfaf8; color: var(--muted); cursor: pointer; touch-action: manipulation; }
+
 /* ── Tablet / iPad (mobile-first: everything above is the phone layout). ──
    ≥700px wide AND ≥600px tall (so phones in landscape keep the phone layout):
    one wider centred column, bigger touch targets and type. Signature pads

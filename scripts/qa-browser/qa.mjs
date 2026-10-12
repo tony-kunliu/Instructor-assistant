@@ -1781,6 +1781,131 @@ const draw = async (page, index) => {
   }
 }
 
+// ═══ 18. Learner intake P2: address suggestions (bundled G-NAF index, migration 0012) at 375px and tablet ═══
+{
+  const ADDRESS = "[data-testid=learner-address]";
+  const LIST = "[data-testid=address-suggestions]";
+  const OPTION = "[data-testid=address-option]";
+  const byName = async (name) => (await learnersApi()).find((l) => l.fullName === name);
+  const partsOf = (l) => JSON.stringify({ address: l?.address ?? null, suburb: l?.addressSuburb ?? null, state: l?.addressState ?? null, postcode: l?.addressPostcode ?? null });
+  const rowsInfo = (page) => page.$$eval(OPTION, (es) => es.map((e) => { const r = e.getBoundingClientRect(); return { h: Math.round(r.height), right: Math.round(r.right), left: Math.round(r.left), text: e.textContent }; }));
+  const focusedIsAddress = (page) => page.evaluate(() => document.activeElement?.dataset.testid === "learner-address");
+
+  const s = await session("tony");
+  await ready(s.page);
+  await s.page.setViewportSize({ width: 375, height: 812 });
+  check("address: viewport is 375px", (await s.page.evaluate(() => window.innerWidth)) === 375);
+  check("address: the G-NAF attribution is visible in the footer", /G-NAF © Geoscape Australia/.test(await s.page.textContent("[data-testid=gnaf-attribution]")));
+  const indexRequests = [];
+  s.page.on("request", (r) => { if (r.url().includes("/data/streets-")) indexRequests.push(r.url()); });
+  await s.page.click("text=+ New");
+  await s.page.waitForSelector(ADDRESS);
+  check("address: the index is NOT fetched before the Address field is used (first paint unaffected)", indexRequests.length === 0, indexRequests.join(","));
+  check("address: the input is a plain text input, never readonly (iOS Scan Text)", await s.page.$eval(ADDRESS, (e) => e.type === "text" && !e.readOnly && e.getAttribute("role") === "combobox" && e.getAttribute("aria-autocomplete") === "list"));
+  const indexResponse = s.page.waitForResponse((r) => r.url().includes("/data/streets-"), { timeout: 10000 }).catch(() => null);
+  await s.page.locator(ADDRESS).pressSequentially("44 ap");
+  await settle(300);
+  check("address: nothing before 3 letters of the street ('44 ap')", (await s.page.$(LIST)) === null);
+  await s.page.locator(ADDRESS).pressSequentially("p");
+  await s.page.waitForSelector(LIST);
+  const resp = await indexResponse;
+  check("address: the index is fetched once, on first use, from /data/streets-<release>.json with an immutable Cache-Control", indexRequests.length === 1 && /\/data\/streets-[a-z]{3}\d{2}\.json$/.test(indexRequests[0]) && resp !== null && /immutable/.test(resp.headers()["cache-control"] ?? ""), `${indexRequests.join(",")} cache-control=${resp?.headers()["cache-control"]}`);
+  const rows = await rowsInfo(s.page);
+  check("address: '44 app' → listbox with at most 5 rows, each ≥ 44px tall and inside the 375px viewport", rows.length >= 3 && rows.length <= 5 && rows.every((r) => r.h >= 44 && r.left >= 0 && r.right <= 375), JSON.stringify(rows.map((r) => [r.h, r.right])));
+  check("address: rows are 'number + street' with 'suburb state postcode'; Appleford Av (Jacka ACT 2914) is offered, ACT rows before NSW", rows.some((r) => /44 Appleford Av/.test(r.text) && /Jacka ACT 2914/.test(r.text)) && rows.findIndex((r) => /ACT/.test(r.text)) < rows.findIndex((r) => /NSW/.test(r.text)), rows.map((r) => r.text).join(" | "));
+  const a11y = await s.page.evaluate(() => {
+    const input = document.querySelector("[data-testid=learner-address]");
+    const list = document.getElementById(input.getAttribute("aria-controls"));
+    return { expanded: input.getAttribute("aria-expanded"), listRole: list?.getAttribute("role"), optionRoles: [...(list?.children ?? [])].filter((c) => c.tagName === "DIV").map((c) => c.getAttribute("role")), active: input.getAttribute("aria-activedescendant") };
+  });
+  check("address: a11y: role=combobox + aria-expanded, aria-controls → role=listbox with role=option rows, nothing active before a key press", a11y.expanded === "true" && a11y.listRole === "listbox" && a11y.optionRoles.length > 0 && a11y.optionRoles.every((r) => r === "option") && a11y.active === null, JSON.stringify(a11y));
+  await s.page.keyboard.press("ArrowDown");
+  const afterArrow = await s.page.evaluate(() => { const input = document.querySelector("[data-testid=learner-address]"); const id = input.getAttribute("aria-activedescendant"); const el = id && document.getElementById(id); return { id, selected: el?.getAttribute("aria-selected"), role: el?.getAttribute("role") }; });
+  check("address: ArrowDown sets aria-activedescendant to the first option (aria-selected=true)", Boolean(afterArrow.id) && afterArrow.selected === "true" && afterArrow.role === "option", JSON.stringify(afterArrow));
+  check("address: no horizontal scroll at 375px with the list open", await noHScroll(s.page));
+  await shot(s.page, "18-address-suggestions-375");
+  // Touch pick: the text fills in, the input keeps focus (keyboard stays open), the list closes, structured fields are stored on save.
+  await s.page.locator(`${OPTION}:has-text("Appleford")`).tap();
+  await settle(200);
+  check("address: tapping a row fills '44 Appleford Av, Jacka ACT 2914', keeps focus on the input and closes the list", (await s.page.inputValue(ADDRESS)) === "44 Appleford Av, Jacka ACT 2914" && (await focusedIsAddress(s.page)) && (await s.page.$(LIST)) === null, await s.page.inputValue(ADDRESS));
+  await s.page.fill('label:has-text("Student name") input', "QA Tony Address Pick");
+  await s.page.click("[data-testid=save-learner]");
+  await s.page.waitForSelector(".status.ok, .status.error");
+  const picked = await byName("QA Tony Address Pick");
+  check("address: saved with the picked suburb/state/postcode stored", partsOf(picked) === partsOf({ address: "44 Appleford Av, Jacka ACT 2914", addressSuburb: "Jacka", addressState: "ACT", addressPostcode: "2914" }), partsOf(picked));
+  // Edit: text changed so the suburb is gone → the form clears the parts; saved as nulls.
+  await s.page.click("[data-testid=edit-learner]");
+  await s.page.waitForSelector(ADDRESS);
+  check("address: Edit opens with the stored text", (await s.page.inputValue(ADDRESS)) === "44 Appleford Av, Jacka ACT 2914");
+  await s.page.fill(ADDRESS, "44 Appleford Av");
+  await s.page.keyboard.press("Escape");
+  check("address: Escape closes the list", (await s.page.$(LIST)) === null);
+  await s.page.click("[data-testid=save-learner]");
+  await s.page.waitForSelector(".status.ok, .status.error");
+  const cleared = await byName("QA Tony Address Pick");
+  check("address: editing the text past the suburb clears the structured fields (saved as null)", partsOf(cleared) === partsOf({ address: "44 Appleford Av" }), partsOf(cleared));
+  // Edit: pick again, then add a unit in front: the suburb is still a whole word → the parts stay.
+  await s.page.click("[data-testid=edit-learner]");
+  await s.page.waitForSelector(ADDRESS);
+  await s.page.fill(ADDRESS, "44 appleford ja");
+  await s.page.waitForSelector(LIST);
+  await s.page.keyboard.press("ArrowDown");
+  await s.page.keyboard.press("Enter");
+  check("address: keyboard: ArrowDown + Enter picks the highlighted row", (await s.page.inputValue(ADDRESS)) === "44 Appleford Av, Jacka ACT 2914" && (await s.page.$(LIST)) === null, await s.page.inputValue(ADDRESS));
+  await s.page.fill(ADDRESS, "Unit 2, 44 Appleford Av, Jacka ACT 2914");
+  await s.page.click("[data-testid=save-learner]");
+  await s.page.waitForSelector(".status.ok, .status.error");
+  const kept = await byName("QA Tony Address Pick");
+  check("address: text edited but the suburb still a whole word → parts kept on save", partsOf(kept) === partsOf({ address: "Unit 2, 44 Appleford Av, Jacka ACT 2914", addressSuburb: "Jacka", addressState: "ACT", addressPostcode: "2914" }), partsOf(kept));
+  // Free text without a pick always saves.
+  await s.page.click("text=+ New");
+  await s.page.waitForSelector(ADDRESS);
+  await s.page.locator(ADDRESS).pressSequentially("Lot 7 Unlisted Track Nowhere");
+  await settle(300);
+  check("address: an unmatched address shows no list and no warning", (await s.page.$(LIST)) === null && (await s.page.$(".status.error")) === null);
+  await s.page.fill('label:has-text("Student name") input', "QA Tony Address Free");
+  await s.page.click("[data-testid=save-learner]");
+  await s.page.waitForSelector(".status.ok, .status.error");
+  const free = await byName("QA Tony Address Free");
+  check("address: free text without a pick saves, parts null", partsOf(free) === partsOf({ address: "Lot 7 Unlisted Track Nowhere" }), partsOf(free));
+  check("address: the index was fetched exactly once for the whole session (held in memory)", indexRequests.length === 1, String(indexRequests.length));
+  check("address: Tony: no page errors", s.errors.length === 0, s.errors.join("|"));
+  await s.ctx.close();
+
+  // Index unavailable (offline before the first load / fetch fails): the field is a plain text input and saves.
+  const off = await session("tony");
+  await off.page.route("**/data/streets-*", (route) => route.abort());
+  await ready(off.page);
+  await off.page.setViewportSize({ width: 375, height: 812 });
+  await off.page.click("text=+ New");
+  await off.page.waitForSelector(ADDRESS);
+  await off.page.locator(ADDRESS).pressSequentially("44 appleford");
+  await settle(500);
+  check("address: with the index fetch failing, no list appears and the input still holds the text", (await off.page.$(LIST)) === null && (await off.page.inputValue(ADDRESS)) === "44 appleford");
+  await off.page.fill('label:has-text("Student name") input', "QA Tony Address Offline");
+  await off.page.click("[data-testid=save-learner]");
+  await off.page.waitForSelector(".status.ok, .status.error");
+  check("address: the plain text still saves when the index is unavailable", partsOf(await byName("QA Tony Address Offline")) === partsOf({ address: "44 appleford" }));
+  check("address: offline: no page errors", off.errors.length === 0, off.errors.join("|"));
+  await off.ctx.close();
+
+  // Tablet width: the list fits, rows ≥ 44px, no horizontal scroll.
+  const t = await session("tony");
+  await ready(t.page);
+  await t.page.setViewportSize({ width: 820, height: 1180 });
+  await t.page.click("text=+ New");
+  await t.page.waitForSelector(ADDRESS);
+  await t.page.locator(ADDRESS).pressSequentially("12 monaro st quean");
+  await t.page.waitForSelector(LIST);
+  const tabletRows = await rowsInfo(t.page);
+  check("address: tablet 820px: '12 monaro st quean' → Monaro St, Queanbeyan NSW 2620; rows ≥ 44px, no horizontal scroll", tabletRows.length >= 1 && tabletRows.every((r) => r.h >= 44 && r.right <= 820) && /12 Monaro St/.test(tabletRows[0].text) && /Queanbeyan NSW 2620/.test(tabletRows[0].text) && (await noHScroll(t.page)), JSON.stringify(tabletRows));
+  await shot(t.page, "18-address-suggestions-tablet-820");
+  await t.page.locator(OPTION).first().tap();
+  check("address: tablet: tap fills the row and keeps focus", (await t.page.inputValue(ADDRESS)) === "12 Monaro St, Queanbeyan NSW 2620" && (await focusedIsAddress(t.page)));
+  check("address: tablet: no page errors", t.errors.length === 0, t.errors.join("|"));
+  await t.ctx.close();
+}
+
 } catch (error) {
   check(`script aborted: ${String(error.message).split("\n")[0]}`, false, String(error.message).split("\n").slice(1,4).join(" ").trim());
 }
