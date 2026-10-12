@@ -15,14 +15,19 @@ closed PRs; see `TASK.md` for what is in progress.
 - `feature/transfer-t1` (3c T1, migration `0011`, reviewed, not merged): transfer a learner to another
   instructor (two taps, owner only or anyone when the owner is inactive; archived = restore first),
   History line, receiver's CoP 9.1 h / 9.2 e "Checked"; nothing sent to ACTGDS. Waits for `0011` on
-  Staging D1 (apply BEFORE merging to `staging`). Then R10a route reminders. iPad layout is on
-  `feature/ipad-layout` in review (signature-size fix round); needs Tony's real-iPad check.
+  Staging D1 (apply BEFORE merging to `staging`). iPad layout (PR #61) is merged to `staging`;
+  needs Tony's real-iPad check.
 - `feature/intake-p2-address` (learner intake P2, migration `0012`, not pushed/merged): Address
   suggestions from a bundled G-NAF street index (`public/data/streets-aug26.json`, 7,928 streets /
   146 localities, 49 kB gz, Aug 2026 release; attribution in footer/README), custom listbox (≥44 px
   rows, ≤5), picked suburb/state/postcode stored in 3 new nullable columns, server shape check,
   free text always saves; nothing to ACTGDS. **Apply `0012` to Staging D1 BEFORE merging to
   `staging`** (`Staging D1 Migrate`, `ref` = this branch). Yearly index rebuild: BACKLOG.
+- `feature/route-r10a` (R10 Competency 23 route reminders, no migration, pushed, reviewed twice, not merged):
+  Start Lesson panel line with the unfamiliar town centres (home district from the structured
+  suburb/state when a G-NAF suggestion was picked, else the free-text address; `lib/act-suburbs.ts`),
+  "Competency 23 route" group in the lesson form (7 centre chips, 6 ticks, "All met") written into
+  location + one comment line only on an explicit tap, parsed back in History Edit; nothing to ACTGDS.
 - Designs: `docs/superpowers/specs/2026-10-11-*.md` (transfer, route, intake), decided by Tony 2026-10-11.
 - `feature/ipad-layout` detail: CSS-only layout plus a fixed 640×320 signature canvas
   (pen 5 canvas px); server signature limit 700k chars with its own "too large"
@@ -40,7 +45,7 @@ closed PRs; see `TASK.md` for what is in progress.
 
 ## CI
 
-- Latest `staging` GitHub Actions run: **SUCCESS**. Tests: 616 on `feature/intake-p2-address` (2 poppler
+- Latest `staging` GitHub Actions run: **SUCCESS**. Tests: 645 on `feature/route-r10a` (2 poppler
   tests skip without `pdftotext`; they hard-fail only with `REQUIRE_POPPLER=1`,
   set in `ci.yml` only).
 - `npm test` needs `--experimental-strip-types` (already in `package.json`).

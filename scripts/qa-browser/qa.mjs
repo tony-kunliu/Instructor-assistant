@@ -42,11 +42,17 @@ const shot = (page, name) => page.screenshot({ path: `${OUT}/${name}.png`, fullP
 async function signBoth(page) {
   for (const canvas of await page.$$(".sig canvas")) {
     await canvas.scrollIntoViewIfNeeded();
-    const b = await canvas.boundingBox();
+    // End Lesson focuses the finish-odometer input 50 ms later (app behaviour), which scrolls the page after the canvas was
+    // positioned: draw only once the canvas box has been still for two consecutive reads, or the strokes land beside it.
+    let b = await canvas.boundingBox();
+    for (let i = 0, still = 0; i < 60 && still < 2; i++) { await settle(60); const n = await canvas.boundingBox(); still = n && b && n.x === b.x && n.y === b.y ? still + 1 : 0; b = n; }
+    await canvas.scrollIntoViewIfNeeded();
+    b = await canvas.boundingBox();
     await page.mouse.move(b.x + 20, b.y + 30);
     await page.mouse.down();
     await page.mouse.move(b.x + 120 + Math.random() * 30, b.y + 90, { steps: 8 });
     await page.mouse.up();
+    await page.waitForFunction((el) => el.closest(".sig")?.querySelector(".sig-ok") !== null, canvas, { timeout: 5000 }).catch(() => {});
   }
 }
 const learnersApi = async (q = "") => (await (await fetch(`${B}/api/learners${q}`)).json()).learners;
@@ -1774,6 +1780,8 @@ const draw = async (page, index) => {
     const padH = await s.page.$eval(".sig canvas", (c) => parseFloat(getComputedStyle(c).height)); // drawing area (content box; the 1.5px border is outside the cap)
     check(`phone landscape ${w}x${h}: lesson form, no horizontal scroll, pads 640×320 undistorted and ≤60% of the screen height`, (await noHScroll(s.page)) && (await canvasFixed(s.page)) && padH <= h * 0.6 + 1, `pad ${Math.round(padH)}px`);
     await signBoth(s.page);
+    // Wait for the Signed state instead of reading it right after the strokes (was flaky: read before React re-rendered).
+    await s.page.waitForFunction(() => document.querySelectorAll(".sig-ok").length === 2, null, { timeout: 10000 }).catch(() => {});
     check(`phone landscape ${w}x${h}: drawing on the capped pads registers`, (await s.page.$$(".sig-ok")).length === 2);
     if (w === 844) await shot(s.page, "17-phone-landscape-844x390-lesson-form");
     await s.page.click("text=Discard this lesson");
@@ -1907,6 +1915,169 @@ const draw = async (page, index) => {
   check("address: tablet: tap fills the row and keeps focus", (await t.page.inputValue(ADDRESS)) === "12 Monaro St, Queanbeyan NSW 2620" && (await focusedIsAddress(t.page)));
   check("address: tablet: no page errors", t.errors.length === 0, t.errors.join("|"));
   await t.ctx.close();
+}
+
+// ═══ 19. Competency 23 route reminders (R10): home district from the address, suggestion line, route check group ═══
+{
+  const post = async (path, body, method = "POST") => { const r = await fetch(B + path, { method, headers: { "content-type": "application/json" }, body: JSON.stringify(body) }); const d = await r.json(); if (!r.ok) throw new Error(`${path} ${JSON.stringify(d)}`); return d; };
+  const rng = (a, b) => Array.from({ length: b - a + 1 }, (_, i) => String(a + i));
+  const doneBy = (ids) => ({ assessedIds: ids, achievedResults: Object.fromEntries(ids.map((id) => [id, "achieved"])) });
+  const fdReady = async (fullName, address) => {
+    const learner = (await post("/api/learners", { fullName, instructorId: WHO.tony[0], address })).learner;
+    let odo = 1000;
+    for (const step of [doneBy(rng(1, 17)), doneBy(["review-1-17"]), doneBy(rng(18, 22)), doneBy(["review-1-22"])]) {
+      const start = odo; odo += 12;
+      await post(`/api/learners/${learner.id}/lessons`, { lessonDate: "2026-09-20", startTime: "09:00", finishTime: "10:00", startOdometer: String(start), finishOdometer: String(odo), adiSignature: SIG, learnerSignature: SIG, ...step });
+    }
+    return learner;
+  };
+  // Synthetic learners with invented street numbers in several districts (never real data).
+  const florey = await fdReady("QA Tony Route Florey", "12 Gungahlin Dr, Florey ACT 2615"); // street named after another centre: the suburb must win
+  await fdReady("QA Tony Route Weston", "7 Namatjira Dr, Weston ACT 2611");
+  await fdReady("QA Tony Route Queanbeyan", "8 Lowe St, Queanbeyan NSW 2620");
+  const noAddress = await fdReady("QA Tony Route No Address", "");
+  await fdReady("QA Tony Route Kingston", "4 Eyre St, Kingston ACT 2604");
+
+  const s = await session("tony");
+  await ready(s.page);
+  await s.page.setViewportSize({ width: 375, height: 812 });
+  const r10 = async () => { await s.page.waitForSelector("[data-testid=panel-reminders] .reminder[data-rule=r10]"); return s.page.$eval("[data-testid=panel-reminders] .reminder[data-rule=r10]", (e) => ({ tone: e.dataset.tone, text: e.textContent })); };
+  await pick(s.page, "QA Tony Route Florey");
+  let line = await r10();
+  check("route: 23-ready panel adds the 4th line with the unfamiliar centres (home Belconnen from 'Florey', not 'Gungahlin Dr')", line.tone === "plain" && line.text === "Unfamiliar town centres (home: Belconnen, from 'Florey' in the address): Civic, Gungahlin, Woden, Tuggeranong, Fyshwick, Manuka/Kingston.", line.text);
+  check("route: the line comes after R2 and R3 (r2, r3, r10) and the booking link is still shown", (await s.page.$$eval("[data-testid=panel-reminders] .reminder", (els) => els.map((e) => e.dataset.rule))).join(",") === "r2,r3,r10" && (await s.page.$("[data-testid=adi-booking]")) !== null);
+  check("route: no horizontal scroll at 375px (panel)", await noHScroll(s.page));
+  await shot(s.page, "19-route-panel-375");
+  await pick(s.page, "QA Tony Route Weston");
+  line = await r10();
+  check("route: Weston Creek has no accepted centre → plain, all 7 unfamiliar, no neighbour counts as home", line.tone === "plain" && line.text === "Home district Weston Creek (from 'Weston' in the address) has no accepted town centre: all 7 are unfamiliar by this rule.", line.text);
+  await pick(s.page, "QA Tony Route Queanbeyan");
+  line = await r10();
+  check("route: NSW address → outside the ACT, all 7 unfamiliar", line.tone === "plain" && line.text === "Address outside the ACT (Queanbeyan): all 7 town centres are unfamiliar by the home-district rule.", line.text);
+  await pick(s.page, "QA Tony Route No Address");
+  line = await r10();
+  check("route: empty address → grey 'add the learner's suburb', never a guess", line.tone === "grey" && line.text === "Cannot check the home town centre: add the learner's suburb to the address.", line.text);
+  await pick(s.page, "QA Tony Route Kingston");
+  line = await r10();
+  check("route: Kingston (South Canberra) → Manuka/Kingston is home, the other 6 are suggested", line.text === "Unfamiliar town centres (home: Manuka/Kingston, from 'Kingston' in the address): Civic, Gungahlin, Belconnen, Woden, Tuggeranong, Fyshwick.", line.text);
+
+  // Lesson form: the group appears only with 23 Assessed; Civic (first suggested) preselected; written into location + comments at once.
+  await pick(s.page, "QA Tony Route Florey");
+  await r10();
+  await s.page.click("text=Start Lesson");
+  await s.page.click("text=End Lesson");
+  check("route: no route group before 23 Final Drive is ticked", (await s.page.$("[data-testid=route-group]")) === null);
+  await s.page.click(".chip-row.special >> text=/23 Final Drive/");
+  await s.page.waitForSelector("[data-testid=route-group]");
+  const location = () => s.page.inputValue('label:has-text("Location") input');
+  const comments = () => s.page.inputValue('label:has-text("Comments") textarea');
+  check("route: ticking 23 Assessed shows the collapsed group and writes NOTHING into Location / Comments", !(await s.page.$eval("[data-testid=route-group]", (e) => e.open)) && (await location()) === "" && (await comments()) === "", `${await location()} | ${await comments()}`);
+  await s.page.click("[data-testid=route-group] summary");
+  check("route: new-lesson form has no signature hint (only History Edit)", (await s.page.$("[data-testid=route-signature-hint]")) === null);
+  check("route: the suggested chip is announced as such; home chip carries visually-hidden 'home district' text", (await s.page.$eval("[data-testid=route-centre][data-centre=civic]", (e) => e.textContent)) === "Civic (suggested, not recorded yet)" && (await s.page.$eval("[data-testid=route-centre][data-centre=belconnen]", (e) => e.textContent)) === "Belconnen (home district)" && (await s.page.$eval("[data-testid=route-centre][data-centre=belconnen] .sr-only", (e) => getComputedStyle(e).position)) === "absolute");
+  const centres = await s.page.$$eval("[data-testid=route-centre]", (els) => els.map((e) => ({ id: e.dataset.centre, pressed: e.getAttribute("aria-pressed"), selected: e.classList.contains("selected"), suggested: e.dataset.suggested === "true", home: e.classList.contains("home"), disabled: e.disabled })));
+  check("route: 7 chips, none pressed/selected before a tap, Civic only 'suggested', Belconnen marked home (all tappable)", centres.length === 7 && centres.every((c) => c.pressed === "false" && !c.selected && !c.disabled) && centres.filter((c) => c.suggested).map((c) => c.id).join() === "civic" && centres.filter((c) => c.home).map((c) => c.id).join() === "belconnen", JSON.stringify(centres));
+  const groupRem = async () => s.page.$$eval("[data-testid=route-group-reminders] .reminder", (els) => els.map((e) => ({ id: e.dataset.rule, tone: e.dataset.tone, text: e.textContent })));
+  check("route: nothing recorded yet → grey 'Route not recorded yet… Nothing is written until you do.'", JSON.stringify(await groupRem()) === JSON.stringify([{ id: "r10-centre", tone: "grey", text: "Route not recorded yet (Civic suggested): tap the town centre or a tick after the drive. Nothing is written until you do." }]), JSON.stringify(await groupRem()));
+  check("route: no horizontal scroll at 375px (group open)", await noHScroll(s.page));
+  await shot(s.page, "19-route-group-375");
+  await s.page.click("[data-testid=route-centre][data-centre=belconnen]");
+  check("route: the first explicit tap (home centre) writes Location + the line, the chip is now pressed, and the amber warning names the evidence", (await comments()) === "Comp 23 route (Belconnen): none ticked." && (await s.page.$eval("[data-testid=route-centre][data-centre=belconnen]", (e) => e.getAttribute("aria-pressed"))) === "true" && (await groupRem())[0].tone === "amber" && (await groupRem())[0].text === "Belconnen is the learner's home district (from 'Florey' in the address). Competency 23 needs an unfamiliar town centre. You can still save." && (await location()) === "Belconnen", JSON.stringify(await groupRem()));
+  await s.page.click("[data-testid=route-centre][data-centre=woden]");
+  check("route: switching to Woden removes the amber line and rewrites Location + the comment line", (await groupRem()).every((r) => r.id !== "r10-home") && (await location()) === "Woden" && (await comments()) === "Comp 23 route (Woden): none ticked.", `${await location()} | ${await comments()}`);
+  // The instructor's own comment text is kept while the group regenerates its line.
+  await s.page.fill('label:has-text("Comments") textarea', `Smooth drive.\n${await comments()}`);
+  await s.page.click("[data-testid=route-all-met]");
+  const ticked = await s.page.$$eval("[data-testid=route-item]", (els) => els.filter((e) => e.checked).length);
+  check("route: 'All met' ticks all six in one tap → plain line; own text kept above the regenerated line", ticked === 6 && (await groupRem())[0].tone === "plain" && (await comments()) === "Smooth drive.\nComp 23 route (Woden): 2 zones, stop, give way, 2 lights, 2 crossings, 5R/5L all ticked.", await comments());
+  await s.page.click("[data-testid=route-item][data-item=lights]");
+  await s.page.click('.result-list li:has-text("23 Final Drive") >> text="Achieved"');
+  check("route: one item unticked while 23 is Achieved → amber 'not complete', Save stays enabled", (await groupRem())[0].tone === "amber" && (await groupRem())[0].text === "Route check not complete: 2 lights. You can still save." && (await comments()).endsWith("ticked: 2 zones, stop, give way, 2 crossings, 5R/5L; not ticked: 2 lights.") && !(await s.page.isDisabled(".btn.save")), JSON.stringify(await groupRem()));
+  await shot(s.page, "19-route-amber-375");
+  await s.page.fill('input[placeholder="Enter now"]', "1060");
+  // Start Lesson → End Lesson in the same minute gives finish == start (rejected), so give the drive real times.
+  await s.page.click(".edit-times summary");
+  await s.page.fill('.edit-times input[type="time"] >> nth=0', "09:00");
+  await s.page.fill('.edit-times input[type="time"] >> nth=1', "10:00");
+  await signBoth(s.page);
+  await s.page.click(".btn.save");
+  await s.page.waitForSelector(".status.ok, .status.error");
+  check("route: the lesson saves with an incomplete checklist (reminders never block)", (await s.page.textContent(".status")).includes("Lesson #5 saved"), await s.page.textContent(".status"));
+  const saved = (await (await fetch(`${B}/api/learners/${florey.id}`)).json()).lessons.find((l) => l.lessonNo === 5);
+  check("route: stored as location + comment line only (no new field)", saved.location === "Woden" && saved.comments === "Smooth drive.\nComp 23 route (Woden): ticked: 2 zones, stop, give way, 2 crossings, 5R/5L; not ticked: 2 lights.", JSON.stringify([saved.location, saved.comments]));
+  check("route: History shows the line in Comments and Woden in the odometer line", (await s.page.textContent("[data-testid=history-row]")).includes("Comp 23 route (Woden)") && (await s.page.textContent("[data-testid=history-row] .h-odo")).includes("Woden"));
+
+  // History Edit parses the exact line back into ticks; a tick regenerates it; own text untouched.
+  await s.page.click("[data-testid=history-row] .h-edit");
+  await s.page.waitForSelector("[data-testid=edit-route-group]");
+  await s.page.click("[data-testid=edit-route-group] summary");
+  check("route: History Edit shows the signature hint inside the group", ((await s.page.textContent("[data-testid=edit-route-group] [data-testid=route-signature-hint]")) ?? "") === "Changing this clears both signatures: location and comments are signed content.");
+  // Toggling another Assessed chip (not 23) must not touch the signed fields of this legacy-like lesson.
+  const beforeToggle = await s.page.inputValue(".h-editing textarea");
+  await s.page.click('.h-editing .comp-section:has(.comp-label:text-is("Assessed")) .chip-row >> text="19"');
+  await s.page.click('.h-editing .comp-section:has(.comp-label:text-is("Assessed")) .chip-row >> text="19"');
+  check("route: an unrelated Assessed change in History Edit leaves Location / Comments untouched", (await s.page.inputValue(".h-editing textarea")) === beforeToggle && (await s.page.inputValue('.h-editing label:has-text("Location") input')) === "Woden");
+  const editTicks = await s.page.$$eval("[data-testid=edit-route-group] [data-testid=route-item]", (els) => els.map((e) => `${e.dataset.item}:${e.checked ? 1 : 0}`).join(","));
+  check("route: History Edit parses the stored line back (5 ticked, lights not; Woden selected)", editTicks === "zones:1,stop:1,giveWay:1,lights:0,crossings:1,turns:1" && (await s.page.$eval("[data-testid=edit-route-group] [data-testid=route-centre][data-centre=woden]", (e) => e.getAttribute("aria-pressed"))) === "true", editTicks);
+  await s.page.click("[data-testid=edit-route-group] [data-testid=route-item][data-item=lights]");
+  const editComments = await s.page.inputValue(".h-editing textarea");
+  check("route: ticking lights in History Edit regenerates the line; own text kept", editComments === "Smooth drive.\nComp 23 route (Woden): 2 zones, stop, give way, 2 lights, 2 crossings, 5R/5L all ticked.", editComments);
+  await signBoth(s.page);
+  await s.page.click(".h-editing .btn.save");
+  await s.page.waitForSelector(".status.ok:has-text('Lesson updated'), .h-editing .status.error");
+  const edited = (await (await fetch(`${B}/api/learners/${florey.id}`)).json()).lessons.find((l) => l.lessonNo === 5);
+  check("route: the edit is saved (location unchanged, line now 'all ticked')", edited.location === "Woden" && edited.comments.endsWith("5R/5L all ticked.") && edited.revisionCount === 1, JSON.stringify([edited.location, edited.comments]));
+
+  // PDF: the line prints through the existing Comments column (or Additional Notes), nothing new.
+  await s.page.click("text=/Export.*PDF/i");
+  if (await s.page.$(".export-adi-prompt input")) await s.page.fill(".export-adi-prompt input", "QA-ADI-1");
+  const [dl] = await Promise.all([s.page.waitForEvent("download", { timeout: 60000 }), s.page.click(".export-adi-prompt .btn.primary").catch(() => {})]);
+  const routePdf = `${OUT}/qa-route.pdf`;
+  await dl.saveAs(routePdf);
+  const { execFileSync: run } = await import("node:child_process");
+  const routeText = run("pdftotext", ["-layout", routePdf, "-"], { encoding: "utf8" }).replace(/\s+/g, " ");
+  check("route: PDF prints the route line and Woden through today's Location/Comments cells", /Comp 23 route \(Woden\)/.test(routeText) && /Woden/.test(routeText) && /Smooth drive\./.test(routeText), routeText.match(/Comp 23 route[^.]{0,80}/)?.[0] ?? "no route line in PDF text");
+
+  // Unticking 23 removes the app's line and the written name; a learner with no address gets Civic (first of all 7) by default.
+  await pick(s.page, "QA Tony Route No Address");
+  await r10();
+  await s.page.click("text=Start Lesson");
+  await s.page.click("text=End Lesson");
+  await s.page.click(".chip-row.special >> text=/23 Final Drive/");
+  await s.page.waitForSelector("[data-testid=route-group]");
+  check("route: no address → group still works, Civic only suggested (all 7 unfamiliar, no home chip), nothing written", (await location()) === "" && (await s.page.$$eval("[data-testid=route-group] [data-testid=route-centre].home", (els) => els.length)) === 0);
+  // A: a hand-typed Location is byte-identical after untick/retick of 23 while the app never wrote anything.
+  await s.page.fill('label:has-text("Location") input', "Belconnen");
+  await s.page.click(".chip-row.special >> text=/23 Final Drive/");
+  await s.page.waitForFunction(() => document.querySelector("[data-testid=route-group]") === null);
+  check("route: unticking 23 leaves a hand-typed Location 'Belconnen' untouched when the app wrote no line", (await location()) === "Belconnen" && (await comments()) === "", `${await location()} | ${await comments()}`);
+  await s.page.click(".chip-row.special >> text=/23 Final Drive/");
+  await s.page.waitForSelector("[data-testid=route-group]");
+  await s.page.fill('label:has-text("Location") input', "Civic: London Cct");
+  await s.page.click("[data-testid=route-group] summary");
+  await s.page.click("[data-testid=route-centre][data-centre=civic]");
+  check("route: a hand-typed 'Civic: ' prefix never stacks when Civic is tapped", (await location()) === "Civic: London Cct" && (await comments()) === "Comp 23 route (Civic): none ticked.", `${await location()} | ${await comments()}`);
+  await s.page.click(".chip-row.special >> text=/23 Final Drive/");
+  await s.page.waitForFunction(() => document.querySelector("[data-testid=route-group]") === null);
+  check("route: unticking 23 Assessed removes the group, the comment line and the 'Civic: ' prefix, keeping the instructor's text", (await location()) === "London Cct" && (await comments()) === "", `${await location()} | ${await comments()}`);
+  await s.page.click("text=Discard this lesson");
+  void noAddress;
+
+  // Tablet width: group open, two-column ticks, no horizontal scroll.
+  await s.page.setViewportSize({ width: 820, height: 1180 });
+  await pick(s.page, "QA Tony Route Kingston");
+  await r10();
+  check("route: no horizontal scroll at 820px tablet (panel)", await noHScroll(s.page));
+  await s.page.click("text=Start Lesson");
+  await s.page.click("text=End Lesson");
+  await s.page.click(".chip-row.special >> text=/23 Final Drive/");
+  await s.page.waitForSelector("[data-testid=route-group]");
+  await s.page.click("[data-testid=route-group] summary");
+  check("route: Kingston learner → Civic highlighted, Manuka/Kingston marked home, nothing written; no horizontal scroll at 820px (group open)", (await location()) === "" && (await s.page.$$eval("[data-testid=route-centre].home", (els) => els.map((e) => e.dataset.centre).join())) === "manuka-kingston" && (await noHScroll(s.page)));
+  await shot(s.page, "19-route-group-820");
+  await s.page.click("text=Discard this lesson");
+  check("route: Tony: no page errors", s.errors.length === 0, s.errors.join("|"));
+  await s.ctx.close();
 }
 
 } catch (error) {
