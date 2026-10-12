@@ -226,6 +226,19 @@ export default function DriverApp() {
   // The archived learners' card data is fetched only when the Archived tab is opened (the background archived fetch for
   // the duplicate-licence check carries no summaries, so D1 does not aggregate every archived learner on each page load).
   const [archivedSummariesLoaded, setArchivedSummariesLoaded] = useState(false);
+  // Set when that fetch failed: the archived cards show without details and offer a retry (never "Loading…" forever).
+  const [archivedSummariesError, setArchivedSummariesError] = useState<string | null>(null);
+  const loadArchivedSummaries = useCallback(() => {
+    setArchivedSummariesError(null);
+    api<{ learners: Learner[]; summaries: Record<string, LearnerListSummary> }>("/api/learners?status=archived")
+      .then((data) => {
+        setArchivedLearners(data.learners);
+        // The server's figures replace whatever this device held (an archived learner opened since derives the same data from its detail).
+        setSummaries((current) => ({ ...current, ...data.summaries }));
+        setArchivedSummariesLoaded(true);
+      })
+      .catch((error: Error) => setArchivedSummariesError(error.message));
+  }, []);
   const [instructors, setInstructors] = useState<Instructor[]>([]);
   const [selectedId, setSelectedId] = useState("");
   const [detail, setDetail] = useState<Detail | null>(null);
@@ -649,16 +662,7 @@ export default function DriverApp() {
       clearSelection();
       setStatus(null);
     }
-    if (next === "archived" && !archivedSummariesLoaded) {
-      api<{ learners: Learner[]; summaries: Record<string, LearnerListSummary> }>("/api/learners?status=archived")
-        .then((data) => {
-          setArchivedLearners(data.learners);
-          // The server's figures win over anything older on this device; an archived learner opened since keeps its fresh detail-derived summary (same data).
-          setSummaries((current) => ({ ...current, ...data.summaries }));
-          setArchivedSummariesLoaded(true);
-        })
-        .catch((error: Error) => setStatus({ kind: "error", text: error.message }));
-    }
+    if (next === "archived" && !archivedSummariesLoaded) loadArchivedSummaries();
   };
 
   // Archive is a reversible lifecycle flag, never a delete — lessons,
@@ -818,9 +822,10 @@ export default function DriverApp() {
   const viewCount = (v: PickerView) => (v === "mine" ? mineCount : v === "all" ? learners.length : archivedLearners ? archivedLearners.length : null);
   const viewSubline = activeView === "mine" ? "Your active learners" : activeView === "all" ? "Everyone in the school" : "Hidden from the daily list";
   // Card data: what the list GET sent (or the detail of an opened learner); a learner added on this device starts empty.
-  const summaryOf = (l: Learner): LearnerListSummary => summaries[l.id] ?? emptySummary();
+  // Null only for an archived learner whose summaries fetch failed: that card shows no figures rather than zeros.
+  const summaryOf = (l: Learner): LearnerListSummary | null => summaries[l.id] ?? (l.archivedAt === null ? emptySummary() : null);
   const today = localNow().date;
-  const cardsOf = (list: readonly Learner[]) => list.map((l) => ({ learner: l, summary: summaryOf(l), reminders: cardReminders(l, summaryOf(l), today) }));
+  const cardsOf = (list: readonly Learner[]) => list.map((l) => { const summary = summaryOf(l); return { learner: l, summary, reminders: summary ? cardReminders(l, summary, today) : [] }; });
   // A compact list while a learner is open (or the learner form is open): their card, plus "Show all learners", which
   // always works — switching learner while the edit form is open discards that form, as with the former dropdown.
   const openCard = selectedId ? viewMembers.find((l) => l.id === selectedId) : undefined;
@@ -828,8 +833,10 @@ export default function DriverApp() {
   const shownCards = cardsOf(collapsed ? (openCard ? [openCard] : []) : searchResults);
   const hiddenCards = collapsed ? viewMembers.length - shownCards.length : 0;
   // Archived card data arrives with the Archived tab's own fetch; until then the list shows a loading line, never zeros.
-  const listLoading = activeView === "archived" && !archivedSummariesLoaded;
-  const viewGlance = glance(cardsOf(viewMembers));
+  // If that fetch failed, the cards show without details plus a retry line.
+  const listLoading = activeView === "archived" && !archivedSummariesLoaded && archivedSummariesError === null;
+  const listDetailsFailed = activeView === "archived" && !archivedSummariesLoaded && archivedSummariesError !== null;
+  const viewGlance = glance(cardsOf(viewMembers).filter((c) => c.summary !== null).map((c) => ({ summary: c.summary as LearnerListSummary, reminders: c.reminders })));
   const emptyListText = query.trim()
     ? `No matching learners${activeView === "mine" ? ' — try "All"' : ""}.`
     : activeView === "archived" ? "No archived learners." : "No learners here yet.";
@@ -1022,7 +1029,11 @@ export default function DriverApp() {
             <span><b>{viewGlance.readyForFinalDrive}</b> ready for Final Drive</span>
           </p>
         ) : null}
-        {collapsed && hiddenCards > 0 ? <p className="sr-only" aria-live="polite" data-testid="list-collapsed-note">Showing {shownCards.length} of {viewMembers.length} learners.</p> : null}
+        {/* Always mounted so assistive tech announces the change of text, not a new element. */}
+        <p className="sr-only" aria-live="polite" data-testid="list-collapsed-note">{collapsed && hiddenCards > 0 ? `Showing ${shownCards.length} of ${viewMembers.length} learners.` : ""}</p>
+        {listDetailsFailed ? (
+          <button type="button" className="link list-retry" onClick={loadArchivedSummaries} data-testid="list-retry">Card details unavailable. Tap to retry.</button>
+        ) : null}
         {listLoading ? <p className="empty" data-testid="list-loading" role="status">Loading archived learners…</p> : (
         <ul className="learner-list" data-testid="learner-list" aria-label={activeView === "archived" ? "Archived learners" : "Learners"}>
           {shownCards.map(({ learner: l, summary: s, reminders }) => {
@@ -1042,10 +1053,11 @@ export default function DriverApp() {
                     <span className="lc-avatar" aria-hidden="true">{initials(l.fullName)}</span>
                     <span className="lc-id">
                       <span className="lc-name">{l.fullName}</span>
-                      <span className="lc-meta">{cardMeta(l, s)}</span>
+                      <span className="lc-meta">{s ? cardMeta(l, s) : "Details unavailable"}</span>
                     </span>
                     <svg className="lc-chev" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true"><path d="m8 5 5 5-5 5" /></svg>
                   </span>
+                  {s ? (<>
                   <span className="lc-prog">
                     <span className="lc-prog-head">
                       <span>Competencies</span>
@@ -1062,6 +1074,7 @@ export default function DriverApp() {
                     {reminders.map((r) => <span key={r.id} className={`lc-chip ${r.tone === "amber" ? "warn" : "plain"}`} data-testid="card-reminder" data-tone={r.tone}>{r.text}</span>)}
                     {activeView !== "mine" ? <span className="lc-chip" data-testid="card-instructor">Instructor {l.instructorName}</span> : null}
                   </span>
+                  </>) : null}
                 </button>
               </li>
             );

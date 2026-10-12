@@ -39,6 +39,7 @@ import { generatedEligibility, pdfEligibility } from "../lib/c23-eligibility.ts"
 import { resolveIntegrationConfig } from "../lib/integration/config.ts";
 import { CRON_SWEEP_LIMIT, IMMEDIATE_DELIVERY_LIMIT, processDueOutbox } from "../lib/integration/sender.ts";
 import { readFileSync } from "node:fs";
+import { parseLearnerListQuery } from "../lib/api.ts";
 import { buildLessonUpsertedPayload } from "../lib/integration/contract.ts";
 import type { IntegrationHooks, LessonUpsertedPayloadV1 } from "../lib/integration/types.ts";
 
@@ -654,6 +655,21 @@ test("budget (learner list cards): GET /api/learners = listLearners + listLearne
   assert.equal(maxBinds(), 0);
   assert.ok(bytes <= 101 * 400, `summaries payload ${bytes} bytes (budget 400 per learner)`);
   assert.ok(statements + 1 <= FREE_PLAN_INVOCATION_LIMIT);
+});
+
+test("route GET /api/learners: `summaries=0` is the only way to skip the aggregate, and the route is wired to it", () => {
+  const q = (query: string) => parseLearnerListQuery(`https://app.example/api/learners${query}`);
+  assert.deepEqual(q(""), { archived: false, withSummaries: true });
+  assert.deepEqual(q("?status=archived"), { archived: true, withSummaries: true });
+  assert.deepEqual(q("?status=archived&summaries=0"), { archived: true, withSummaries: false });
+  assert.deepEqual(q("?summaries=0"), { archived: false, withSummaries: false });
+  assert.deepEqual(q("?summaries=1"), { archived: false, withSummaries: true });
+  assert.deepEqual(q("?summaries=false&status=active"), { archived: false, withSummaries: true }, "anything but 0 keeps the card data");
+  // app/api/learners/route.ts cannot be imported here (`@/` alias), so pin its wiring at source level, as for the Cron entry above.
+  const route = readFileSync(new URL("../app/api/learners/route.ts", import.meta.url), "utf8");
+  assert.match(route, /const \{ archived, withSummaries \} = parseLearnerListQuery\(request\.url\)/);
+  assert.match(route, /withSummaries \? listLearnerSummaries\(db, \{ archived \}\) : Promise\.resolve\(\{\}\)/);
+  assert.match(route, /return \{ learners, summaries \}/);
 });
 
 // ── createLesson assessing 22 competencies ──────────────────────────────

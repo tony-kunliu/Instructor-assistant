@@ -11,8 +11,9 @@ light + dark), navy top bar with "+ New learner", search, Mine/All/Archived coun
 one card per learner (initials, meta, 22-segment bar, Review 1-17 / 1-22 / Final Drive 23 chips,
 C23-from / licence chips). Card data from ONE set-based D1 aggregate (`listLearnerSummaries`,
 index-bounded to the requested learners; the list GET is 2 statements, 0 binds; the background
-archived fetch skips it); no migration; contract untouched. Independent review done (approve
-with fixes; fixes in the second commit). Ready to merge to `staging` on the go. D1 stays `0012`.
+archived fetch skips it, with a retry line if the Archived tab's fetch fails); no migration;
+contract untouched. Two independent reviews done (approve with fixes; fixes in commits 2 and 3;
+tests 660, qa-browser 568/568). Ready to merge to `staging` on the go. D1 stays `0012`.
 
 **Next Recommended Task:** merge `feature/ui-learner-list` to `staging` (post-merge CI green),
 then Tony's real-phone look (light and dark) and his confirmation of the extras listed in

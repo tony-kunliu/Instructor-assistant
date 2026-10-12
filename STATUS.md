@@ -24,7 +24,8 @@ closed PRs; see `TASK.md` for what is in progress.
   Tony 2026-10-12): tokens + navy top bar + learner cards; `GET /api/learners` now also returns
   `summaries` (one set-based aggregate bounded to the requested learners, list GET = 2 D1
   statements; the background archived fetch skips it with `summaries=0`); no migration, contract
-  untouched; qa-browser section 20. Independent review: approve with fixes, fixes applied.
+  untouched; qa-browser section 20. Two independent reviews (approve with fixes), all fixes
+  applied; evidence on the branch head: tests 660, qa-browser 568/568, build and Memory Guard PASS.
 - **Still open:** `scripts/check-signature-row-limits.mjs` not yet run against a deployed
   D1 (Staging only, never Production); notify-tick (lesson notifications) waits for Website
   PR #47 rework and Tony's approval of the new endpoint + secret (Production OFF); intake

@@ -2107,7 +2107,7 @@ const draw = async (page, index) => {
   // Fresh load, nothing open: "+ New learner" must not show the empty-list text under the form (the view has learners).
   await s.page.click("[data-testid=new-learner]");
   await s.page.waitForSelector("[data-testid=save-learner]");
-  check("cards 375px: + New learner with no learner open: no 'No learners here yet' text, no cards, 'Show all learners (N)' offered", (await s.page.$("[data-testid=learner-list-empty]")) === null && (await options(s.page)).length === 0 && (await s.page.textContent("[data-testid=learner-list-expand]")) === `Show all learners (${mine.length})`);
+  check("cards 375px: + New learner with no learner open: no 'No learners here yet' text, no cards, 'Show all learners (N)' offered", (await s.page.$(".learner-list .empty")) === null && !(await s.page.textContent(".card.picker")).includes("No learners here yet") && (await options(s.page)).length === 0 && (await s.page.textContent("[data-testid=learner-list-expand]")) === `Show all learners (${mine.length})`);
   await s.page.click("[data-testid=learner-list-expand]");
   check("cards 375px: Show all learners under the open form lists every card and focuses the first one", (await options(s.page)).length === mine.length && (await s.page.evaluate(() => document.activeElement?.dataset.testid === "learner-card" && document.activeElement === document.querySelector("[data-testid=learner-card]"))));
   await s.page.click("[data-testid=new-learner]");
@@ -2157,9 +2157,21 @@ const draw = async (page, index) => {
   await tab(s.page, "All");
   check("cards 375px: All shows everyone with an Instructor chip and 'name · instructor' labels", (await options(s.page)).length === api.learners.length && (await s.page.$$eval("[data-testid=learner-card]", (cs) => cs.every((c) => c.querySelector("[data-testid=card-instructor]") !== null && c.dataset.optionLabel.includes(" · ")))));
   check("cards 375px: All subline", (await s.page.textContent("[data-testid=view-subline]")) === "Everyone in the school");
+  // Opening Archived fetches that tab's summaries (exact URL, not the background `summaries=0` one). First with the
+  // network failing: cards without figures + a retry line, never "Loading…" forever; then the retry brings real data.
+  const archivedUrl = (r) => r.url().endsWith("/api/learners?status=archived");
+  const archivedMatch = (u) => u.href.endsWith("/api/learners?status=archived");
+  await s.page.route(archivedMatch, (route) => route.abort());
   await tab(s.page, "Archived");
-  await s.page.waitForFunction(() => document.querySelectorAll("[data-testid=learner-card]").length > 0);
-  check("cards 375px: the Archived tab fetched its summaries on open (no loading line left, no zeros)", (await s.page.$("[data-testid=list-loading]")) === null);
+  await s.page.waitForSelector("[data-testid=list-retry]");
+  const failed = await s.page.$$eval("[data-testid=learner-card]", (cs) => cs.map((c) => ({ name: c.querySelector(".lc-name").textContent, meta: c.querySelector(".lc-meta").textContent, bar: c.querySelector(".lc-segs") !== null })));
+  check("cards 375px: Archived with the summaries fetch failing → cards with 'Details unavailable' (no bar, no zeros) and 'Tap to retry'", failed.some((c) => c.name === "QA Card Archived") && failed.every((c) => c.meta === "Details unavailable" && !c.bar) && (await s.page.$("[data-testid=list-loading]")) === null, JSON.stringify(failed));
+  await s.page.unroute(archivedMatch);
+  const retried = s.page.waitForResponse(archivedUrl, { timeout: 10000 });
+  await s.page.click("[data-testid=list-retry]");
+  await retried;
+  await s.page.waitForFunction(() => document.querySelector("[data-testid=list-retry]") === null && document.querySelectorAll("[data-testid=learner-card] .lc-segs").length > 0);
+  check("cards 375px: retry fetched the Archived summaries (response seen, no loading or retry line left)", (await s.page.$("[data-testid=list-loading]")) === null && (await s.page.$("[data-testid=list-retry]")) === null);
   const archivedCard = await s.page.$eval(`[data-testid=learner-card][data-learner-id="${cardArchived.id}"]`, (c) => ({ meta: c.querySelector(".lc-meta").textContent, on: c.querySelectorAll(".lc-segs i.on").length, gates: [...c.querySelectorAll("[data-gate]")].map((g) => g.dataset.state) }));
   check("cards 375px: Archived tab shows the archived learner's card with real data (Manual · L plates · 1 lesson · 1.5 h, 2 of 22, all gates locked), no glance line", archivedCard.meta === "Manual · L plates · 1 lesson · 1.5 h" && archivedCard.on === 2 && archivedCard.gates.join() === "locked,locked,locked" && (await s.page.$("[data-testid=glance]")) === null, JSON.stringify(archivedCard));
   check("cards 375px: no horizontal scroll (Archived)", await noHScroll(s.page));
@@ -2169,9 +2181,9 @@ const draw = async (page, index) => {
   await s.page.click(cardSel("QA Card Open"));
   await s.page.waitForSelector(".summary");
   check("cards 375px: tapping a card opens that learner (summary, History)", (await s.page.textContent(".summary-main small")) === "QA Card Open" && (await s.page.textContent("[data-testid=history-learner]")) === "QA Card Open" && (await selectedValue(s.page)) === cardOpen.id);
-  check("cards 375px: with a learner open, only their card shows (aria-current) plus 'Show all learners (N)' and a live 'Showing 1 of N' note", (await options(s.page)).join() === "QA Card Open" && (await s.page.getAttribute(cardSel("QA Card Open"), "aria-current")) === "true" && (await s.page.textContent("[data-testid=learner-list-expand]")) === `Show all learners (${mine.length})` && (await s.page.textContent("[data-testid=list-collapsed-note]")) === `Showing 1 of ${mine.length} learners.`);
+  check("cards 375px: with a learner open, only their card shows (aria-current) plus 'Show all learners (N)' and a live 'Showing 1 of N' note", (await options(s.page)).join() === "QA Card Open" && (await s.page.getAttribute(cardSel("QA Card Open"), "aria-current")) === "true" && (await s.page.textContent("[data-testid=learner-list-expand]")) === `Show all learners (${mine.length})` && (await s.page.textContent("[data-testid=list-collapsed-note]")) === `Showing 1 of ${mine.length} learners.` && (await s.page.$eval("[data-testid=list-collapsed-note]", (e) => e.getAttribute("aria-live"))) === "polite");
   await s.page.click("[data-testid=learner-list-expand]");
-  check("cards 375px: Show all learners expands the list, the open learner stays open, marked and focused; the note goes", (await options(s.page)).length === mine.length && (await hasSummary(s.page)) && (await s.page.$$("[data-testid=learner-card][aria-current=true]")).length === 1 && (await s.page.evaluate(() => document.activeElement?.getAttribute("aria-current") === "true")) && (await s.page.$("[data-testid=list-collapsed-note]")) === null);
+  check("cards 375px: Show all learners expands the list, the open learner stays open, marked and focused; the note goes", (await options(s.page)).length === mine.length && (await hasSummary(s.page)) && (await s.page.$$("[data-testid=learner-card][aria-current=true]")).length === 1 && (await s.page.evaluate(() => document.activeElement?.getAttribute("aria-current") === "true")) && (await s.page.textContent("[data-testid=list-collapsed-note]")) === "", "live region stays mounted, text cleared");
   check("cards 375px: no horizontal scroll (learner open, list expanded)", await noHScroll(s.page));
   await shot(s.page, "20-list-375-open-expanded");
   // Reminder chip: once the licence dates are known, the C23 date appears on the card (same rule as the panel line).
@@ -2204,6 +2216,10 @@ const draw = async (page, index) => {
   check("cards 820px: no horizontal scroll, ≥44px targets", (await noHScroll(s.page)) && (await tall44(".view-tab")) && (await tall44("[data-testid=new-learner]")));
   check("cards 820px: top bar spans the full width", await s.page.evaluate(() => { const r = document.querySelector(".topbar").getBoundingClientRect(); return r.left === 0 && Math.round(r.width) === window.innerWidth; }));
   await shot(s.page, "20-list-820");
+  // 881-928px: wider than the 880px column — the bar is a rounded island aligned with the content, no horizontal scroll.
+  await s.page.setViewportSize({ width: 900, height: 1000 });
+  await s.page.waitForFunction(() => document.querySelector(".topbar").getBoundingClientRect().left > 0);
+  check("cards 900px: top bar is a rounded island the width of the content (not full-bleed, not stopping at the column edge)", await s.page.evaluate(() => { const bar = document.querySelector(".topbar").getBoundingClientRect(); const list = document.querySelector(".card.picker").getBoundingClientRect(); return bar.left > 0 && Math.abs(bar.left - list.left) < 1 && Math.abs(bar.width - list.width) < 1 && parseFloat(getComputedStyle(document.querySelector(".topbar")).borderTopLeftRadius) >= 12; }) && (await noHScroll(s.page)));
   check("cards: Tony: no page errors", s.errors.length === 0, s.errors.join("|"));
   await s.ctx.close();
 }

@@ -149,6 +149,7 @@ html, body {
 .lc-chip.next { background: var(--gold-soft); color: var(--gold-ink); }
 .lc-chip.warn { background: var(--warn-soft); color: var(--warn); }
 .list-expand { background: var(--surface-2); color: var(--text); min-height: 44px; }
+.list-retry { color: var(--warn); font-weight: 600; min-height: 44px; padding: 0; text-align: left; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition-duration: 0s !important; animation-duration: 0s !important; scroll-behavior: auto !important; }
@@ -459,9 +460,9 @@ html, body {
   .card h2 { font-size: 20px; }
   .card.picker { padding: 0 0 4px; gap: 14px; }
 }
-/* Wider than the 880px column (+ its gutters): the bar becomes a rounded island the width of the content, not a
-   full-bleed strip that stops at the column edges. */
-@media (min-width: 929px) and (min-height: 600px) {
+/* Wider than the 880px column (.app is border-box, so its outer width is 880px): the bar becomes a rounded island
+   the width of the content, not a full-bleed strip that stops at the column edges. */
+@media (min-width: 881px) and (min-height: 600px) {
   .topbar { margin: 0 0 16px; padding: 16px 24px 18px; border-radius: var(--radius-l); }
 }
 @media (min-width: 700px) and (min-height: 600px) {
