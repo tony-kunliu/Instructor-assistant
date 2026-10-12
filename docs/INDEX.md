@@ -17,6 +17,11 @@ Start with the repo root docs, in this order:
 - `docs/ECOSYSTEM_ROADMAP.md` — longer-term shared direction between this
   repo and the ACTGDS Website (`tony-kunliu/actgds.com`).
 - `docs/BACKLOG.md` — features not built yet, with where each is designed.
+- `docs/superpowers/specs/` — decided designs (learner transfer, Competency 23
+  route, learner intake). The learner intake P2 street index
+  (`public/data/streets-<release>.json`, `scripts/build-street-index.mjs`) is
+  built from G-NAF © Geoscape Australia (Open G-NAF EULA / CC BY 4.0, see
+  `README.md` "Data attribution"); rebuild yearly (BACKLOG).
 - `docs/RELEASE_B_RUNBOOK.md` — Production Integration enablement
   (Release B) preconditions, steps and rollback.
 - `docs/integrations/actgds-instructor-assistant-v1.md` — the

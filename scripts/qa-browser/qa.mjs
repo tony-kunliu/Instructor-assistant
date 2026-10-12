@@ -1789,7 +1789,135 @@ const draw = async (page, index) => {
   }
 }
 
-// ═══ 18. Competency 23 route reminders (R10): home district from the address, suggestion line, route check group ═══
+// ═══ 18. Learner intake P2: address suggestions (bundled G-NAF index, migration 0012) at 375px and tablet ═══
+{
+  const ADDRESS = "[data-testid=learner-address]";
+  const LIST = "[data-testid=address-suggestions]";
+  const OPTION = "[data-testid=address-option]";
+  const byName = async (name) => (await learnersApi()).find((l) => l.fullName === name);
+  const partsOf = (l) => JSON.stringify({ address: l?.address ?? null, suburb: l?.addressSuburb ?? null, state: l?.addressState ?? null, postcode: l?.addressPostcode ?? null });
+  const rowsInfo = (page) => page.$$eval(OPTION, (es) => es.map((e) => { const r = e.getBoundingClientRect(); return { h: Math.round(r.height), right: Math.round(r.right), left: Math.round(r.left), text: e.textContent }; }));
+  const focusedIsAddress = (page) => page.evaluate(() => document.activeElement?.dataset.testid === "learner-address");
+
+  const s = await session("tony");
+  await ready(s.page);
+  await s.page.setViewportSize({ width: 375, height: 812 });
+  check("address: viewport is 375px", (await s.page.evaluate(() => window.innerWidth)) === 375);
+  check("address: the full G-NAF EULA attribution statement is visible in the footer", /Incorporates or developed using G-NAF © Geoscape Australia licensed by the Commonwealth of Australia under the Open Geo-coded National Address File \(G-NAF\) End User Licence Agreement\./.test(await s.page.textContent("[data-testid=gnaf-attribution]")));
+  const closeOutside = await s.page.evaluate(() => true); // asserted below once the list is open
+  const indexRequests = [];
+  s.page.on("request", (r) => { if (r.url().includes("/data/streets-")) indexRequests.push(r.url()); });
+  await s.page.click("text=+ New");
+  await s.page.waitForSelector(ADDRESS);
+  check("address: the index is NOT fetched before the Address field is used (first paint unaffected)", indexRequests.length === 0, indexRequests.join(","));
+  check("address: the input is a plain text input, never readonly (iOS Scan Text)", await s.page.$eval(ADDRESS, (e) => e.type === "text" && !e.readOnly && e.getAttribute("role") === "combobox" && e.getAttribute("aria-autocomplete") === "list"));
+  const indexResponse = s.page.waitForResponse((r) => r.url().includes("/data/streets-"), { timeout: 10000 }).catch(() => null);
+  await s.page.locator(ADDRESS).pressSequentially("44 ap");
+  await settle(300);
+  check("address: nothing before 3 letters of the street ('44 ap')", (await s.page.$(LIST)) === null);
+  await s.page.locator(ADDRESS).pressSequentially("p");
+  await s.page.waitForSelector(LIST);
+  const resp = await indexResponse;
+  // The Cache-Control part proves only `next start` (next.config.ts headers); on Cloudflare the same header comes from public/_headers (Workers static assets), which this harness does not exercise.
+  check("address: the index is fetched once, on first use, from /data/streets-<release>.json; `next start` serves it with an immutable Cache-Control (Cloudflare: public/_headers, not tested here)", indexRequests.length === 1 && /\/data\/streets-[a-z]{3}\d{2}\.json$/.test(indexRequests[0]) && resp !== null && /immutable/.test(resp.headers()["cache-control"] ?? ""), `${indexRequests.join(",")} cache-control=${resp?.headers()["cache-control"]}`);
+  const rows = await rowsInfo(s.page);
+  check("address: '44 app' → listbox with at most 5 rows, each ≥ 44px tall and inside the 375px viewport", rows.length >= 3 && rows.length <= 5 && rows.every((r) => r.h >= 44 && r.left >= 0 && r.right <= 375), JSON.stringify(rows.map((r) => [r.h, r.right])));
+  check("address: rows are 'number + street' with 'suburb state postcode'; Appleford Av (Jacka ACT 2914) is offered, ACT rows before NSW", rows.some((r) => /44 Appleford Av/.test(r.text) && /Jacka ACT 2914/.test(r.text)) && rows.findIndex((r) => /ACT/.test(r.text)) < rows.findIndex((r) => /NSW/.test(r.text)), rows.map((r) => r.text).join(" | "));
+  const a11y = await s.page.evaluate(() => {
+    const input = document.querySelector("[data-testid=learner-address]");
+    const list = document.getElementById(input.getAttribute("aria-controls"));
+    return { expanded: input.getAttribute("aria-expanded"), listRole: list?.getAttribute("role"), optionRoles: [...(list?.children ?? [])].filter((c) => c.tagName === "DIV").map((c) => c.getAttribute("role")), active: input.getAttribute("aria-activedescendant") };
+  });
+  check("address: a11y: role=combobox + aria-expanded, aria-controls → role=listbox with role=option rows, nothing active before a key press", a11y.expanded === "true" && a11y.listRole === "listbox" && a11y.optionRoles.length > 0 && a11y.optionRoles.every((r) => r === "option") && a11y.active === null, JSON.stringify(a11y));
+  check("address: the × close button sits outside the listbox (a listbox holds only options)", closeOutside && (await s.page.evaluate(() => { const list = document.querySelector("[data-testid=address-suggestions]"); return list && [...list.children].every((c) => c.getAttribute("role") === "option") && document.querySelector(".address-close") !== null && !list.contains(document.querySelector(".address-close")); })));
+  await s.page.keyboard.press("ArrowDown");
+  const afterArrow = await s.page.evaluate(() => { const input = document.querySelector("[data-testid=learner-address]"); const id = input.getAttribute("aria-activedescendant"); const el = id && document.getElementById(id); return { id, selected: el?.getAttribute("aria-selected"), role: el?.getAttribute("role") }; });
+  check("address: ArrowDown sets aria-activedescendant to the first option (aria-selected=true)", Boolean(afterArrow.id) && afterArrow.selected === "true" && afterArrow.role === "option", JSON.stringify(afterArrow));
+  check("address: no horizontal scroll at 375px with the list open", await noHScroll(s.page));
+  await shot(s.page, "18-address-suggestions-375");
+  // Touch pick: the text fills in, the input keeps focus (keyboard stays open), the list closes, structured fields are stored on save.
+  await s.page.locator(`${OPTION}:has-text("Appleford")`).tap();
+  await settle(200);
+  check("address: tapping a row fills '44 Appleford Av, Jacka ACT 2914', keeps focus on the input and closes the list", (await s.page.inputValue(ADDRESS)) === "44 Appleford Av, Jacka ACT 2914" && (await focusedIsAddress(s.page)) && (await s.page.$(LIST)) === null, await s.page.inputValue(ADDRESS));
+  await s.page.fill('label:has-text("Student name") input', "QA Tony Address Pick");
+  await s.page.click("[data-testid=save-learner]");
+  await s.page.waitForSelector(".status.ok, .status.error");
+  const picked = await byName("QA Tony Address Pick");
+  check("address: saved with the picked suburb/state/postcode stored", partsOf(picked) === partsOf({ address: "44 Appleford Av, Jacka ACT 2914", addressSuburb: "Jacka", addressState: "ACT", addressPostcode: "2914" }), partsOf(picked));
+  // Edit: text changed so the suburb is gone → the form clears the parts; saved as nulls.
+  await s.page.click("[data-testid=edit-learner]");
+  await s.page.waitForSelector(ADDRESS);
+  check("address: Edit opens with the stored text", (await s.page.inputValue(ADDRESS)) === "44 Appleford Av, Jacka ACT 2914");
+  await s.page.fill(ADDRESS, "44 Appleford Av");
+  await s.page.keyboard.press("Escape");
+  check("address: Escape closes the list", (await s.page.$(LIST)) === null);
+  await s.page.click("[data-testid=save-learner]");
+  await s.page.waitForSelector(".status.ok, .status.error");
+  const cleared = await byName("QA Tony Address Pick");
+  check("address: editing the text past the suburb clears the structured fields (saved as null)", partsOf(cleared) === partsOf({ address: "44 Appleford Av" }), partsOf(cleared));
+  // Edit: pick again, then add a unit in front: the suburb is still a whole word → the parts stay.
+  await s.page.click("[data-testid=edit-learner]");
+  await s.page.waitForSelector(ADDRESS);
+  await s.page.fill(ADDRESS, "44 appleford ja");
+  await s.page.waitForSelector(LIST);
+  await s.page.keyboard.press("ArrowDown");
+  await s.page.keyboard.press("Enter");
+  check("address: keyboard: ArrowDown + Enter picks the highlighted row", (await s.page.inputValue(ADDRESS)) === "44 Appleford Av, Jacka ACT 2914" && (await s.page.$(LIST)) === null, await s.page.inputValue(ADDRESS));
+  await s.page.fill(ADDRESS, "Unit 2, 44 Appleford Av, Jacka ACT 2914");
+  await s.page.click("[data-testid=save-learner]");
+  await s.page.waitForSelector(".status.ok, .status.error");
+  const kept = await byName("QA Tony Address Pick");
+  check("address: text edited but the suburb still a whole word → parts kept on save", partsOf(kept) === partsOf({ address: "Unit 2, 44 Appleford Av, Jacka ACT 2914", addressSuburb: "Jacka", addressState: "ACT", addressPostcode: "2914" }), partsOf(kept));
+  // Free text without a pick always saves.
+  await s.page.click("text=+ New");
+  await s.page.waitForSelector(ADDRESS);
+  await s.page.locator(ADDRESS).pressSequentially("Lot 7 Unlisted Track Nowhere");
+  await settle(300);
+  check("address: an unmatched address shows no list and no warning", (await s.page.$(LIST)) === null && (await s.page.$(".status.error")) === null);
+  await s.page.fill('label:has-text("Student name") input', "QA Tony Address Free");
+  await s.page.click("[data-testid=save-learner]");
+  await s.page.waitForSelector(".status.ok, .status.error");
+  const free = await byName("QA Tony Address Free");
+  check("address: free text without a pick saves, parts null", partsOf(free) === partsOf({ address: "Lot 7 Unlisted Track Nowhere" }), partsOf(free));
+  check("address: the index was fetched exactly once for the whole session (held in memory)", indexRequests.length === 1, String(indexRequests.length));
+  check("address: Tony: no page errors", s.errors.length === 0, s.errors.join("|"));
+  await s.ctx.close();
+
+  // Index unavailable (offline before the first load / fetch fails): the field is a plain text input and saves.
+  const off = await session("tony");
+  await off.page.route("**/data/streets-*", (route) => route.abort());
+  await ready(off.page);
+  await off.page.setViewportSize({ width: 375, height: 812 });
+  await off.page.click("text=+ New");
+  await off.page.waitForSelector(ADDRESS);
+  await off.page.locator(ADDRESS).pressSequentially("44 appleford");
+  await settle(500);
+  check("address: with the index fetch failing, no list appears and the input still holds the text", (await off.page.$(LIST)) === null && (await off.page.inputValue(ADDRESS)) === "44 appleford");
+  await off.page.fill('label:has-text("Student name") input', "QA Tony Address Offline");
+  await off.page.click("[data-testid=save-learner]");
+  await off.page.waitForSelector(".status.ok, .status.error");
+  check("address: the plain text still saves when the index is unavailable", partsOf(await byName("QA Tony Address Offline")) === partsOf({ address: "44 appleford" }));
+  check("address: offline: no page errors", off.errors.length === 0, off.errors.join("|"));
+  await off.ctx.close();
+
+  // Tablet width: the list fits, rows ≥ 44px, no horizontal scroll.
+  const t = await session("tony");
+  await ready(t.page);
+  await t.page.setViewportSize({ width: 820, height: 1180 });
+  await t.page.click("text=+ New");
+  await t.page.waitForSelector(ADDRESS);
+  await t.page.locator(ADDRESS).pressSequentially("12 monaro st quean");
+  await t.page.waitForSelector(LIST);
+  const tabletRows = await rowsInfo(t.page);
+  check("address: tablet 820px: '12 monaro st quean' → Monaro St, Queanbeyan NSW 2620; rows ≥ 44px, no horizontal scroll", tabletRows.length >= 1 && tabletRows.every((r) => r.h >= 44 && r.right <= 820) && /12 Monaro St/.test(tabletRows[0].text) && /Queanbeyan NSW 2620/.test(tabletRows[0].text) && (await noHScroll(t.page)), JSON.stringify(tabletRows));
+  await shot(t.page, "18-address-suggestions-tablet-820");
+  await t.page.locator(OPTION).first().tap();
+  check("address: tablet: tap fills the row and keeps focus", (await t.page.inputValue(ADDRESS)) === "12 Monaro St, Queanbeyan NSW 2620" && (await focusedIsAddress(t.page)));
+  check("address: tablet: no page errors", t.errors.length === 0, t.errors.join("|"));
+  await t.ctx.close();
+}
+
+// ═══ 19. Competency 23 route reminders (R10): home district from the address, suggestion line, route check group ═══
 {
   const post = async (path, body, method = "POST") => { const r = await fetch(B + path, { method, headers: { "content-type": "application/json" }, body: JSON.stringify(body) }); const d = await r.json(); if (!r.ok) throw new Error(`${path} ${JSON.stringify(d)}`); return d; };
   const rng = (a, b) => Array.from({ length: b - a + 1 }, (_, i) => String(a + i));
@@ -1819,7 +1947,7 @@ const draw = async (page, index) => {
   check("route: 23-ready panel adds the 4th line with the unfamiliar centres (home Belconnen from 'Florey', not 'Gungahlin Dr')", line.tone === "plain" && line.text === "Unfamiliar town centres (home: Belconnen, from 'Florey' in the address): Civic, Gungahlin, Woden, Tuggeranong, Fyshwick, Manuka/Kingston.", line.text);
   check("route: the line comes after R2 and R3 (r2, r3, r10) and the booking link is still shown", (await s.page.$$eval("[data-testid=panel-reminders] .reminder", (els) => els.map((e) => e.dataset.rule))).join(",") === "r2,r3,r10" && (await s.page.$("[data-testid=adi-booking]")) !== null);
   check("route: no horizontal scroll at 375px (panel)", await noHScroll(s.page));
-  await shot(s.page, "18-route-panel-375");
+  await shot(s.page, "19-route-panel-375");
   await pick(s.page, "QA Tony Route Weston");
   line = await r10();
   check("route: Weston Creek has no accepted centre → plain, all 7 unfamiliar, no neighbour counts as home", line.tone === "plain" && line.text === "Home district Weston Creek (from 'Weston' in the address) has no accepted town centre: all 7 are unfamiliar by this rule.", line.text);
@@ -1850,9 +1978,9 @@ const draw = async (page, index) => {
   const centres = await s.page.$$eval("[data-testid=route-centre]", (els) => els.map((e) => ({ id: e.dataset.centre, pressed: e.getAttribute("aria-pressed"), selected: e.classList.contains("selected"), suggested: e.dataset.suggested === "true", home: e.classList.contains("home"), disabled: e.disabled })));
   check("route: 7 chips, none pressed/selected before a tap, Civic only 'suggested', Belconnen marked home (all tappable)", centres.length === 7 && centres.every((c) => c.pressed === "false" && !c.selected && !c.disabled) && centres.filter((c) => c.suggested).map((c) => c.id).join() === "civic" && centres.filter((c) => c.home).map((c) => c.id).join() === "belconnen", JSON.stringify(centres));
   const groupRem = async () => s.page.$$eval("[data-testid=route-group-reminders] .reminder", (els) => els.map((e) => ({ id: e.dataset.rule, tone: e.dataset.tone, text: e.textContent })));
-  check("route: nothing recorded yet → grey 'Route not recorded yet… Nothing is written until you do.'", JSON.stringify(await groupRem()) === JSON.stringify([{ id: "r10-centre", tone: "grey", text: "Route not recorded yet: tap the town centre or a tick after the drive. Nothing is written until you do." }]), JSON.stringify(await groupRem()));
+  check("route: nothing recorded yet → grey 'Route not recorded yet… Nothing is written until you do.'", JSON.stringify(await groupRem()) === JSON.stringify([{ id: "r10-centre", tone: "grey", text: "Route not recorded yet (Civic suggested): tap the town centre or a tick after the drive. Nothing is written until you do." }]), JSON.stringify(await groupRem()));
   check("route: no horizontal scroll at 375px (group open)", await noHScroll(s.page));
-  await shot(s.page, "18-route-group-375");
+  await shot(s.page, "19-route-group-375");
   await s.page.click("[data-testid=route-centre][data-centre=belconnen]");
   check("route: the first explicit tap (home centre) writes Location + the line, the chip is now pressed, and the amber warning names the evidence", (await comments()) === "Comp 23 route (Belconnen): none ticked." && (await s.page.$eval("[data-testid=route-centre][data-centre=belconnen]", (e) => e.getAttribute("aria-pressed"))) === "true" && (await groupRem())[0].tone === "amber" && (await groupRem())[0].text === "Belconnen is the learner's home district (from 'Florey' in the address). Competency 23 needs an unfamiliar town centre. You can still save." && (await location()) === "Belconnen", JSON.stringify(await groupRem()));
   await s.page.click("[data-testid=route-centre][data-centre=woden]");
@@ -1865,7 +1993,7 @@ const draw = async (page, index) => {
   await s.page.click("[data-testid=route-item][data-item=lights]");
   await s.page.click('.result-list li:has-text("23 Final Drive") >> text="Achieved"');
   check("route: one item unticked while 23 is Achieved → amber 'not complete', Save stays enabled", (await groupRem())[0].tone === "amber" && (await groupRem())[0].text === "Route check not complete: 2 lights. You can still save." && (await comments()).endsWith("ticked: 2 zones, stop, give way, 2 crossings, 5R/5L; not ticked: 2 lights.") && !(await s.page.isDisabled(".btn.save")), JSON.stringify(await groupRem()));
-  await shot(s.page, "18-route-amber-375");
+  await shot(s.page, "19-route-amber-375");
   await s.page.fill('input[placeholder="Enter now"]', "1060");
   // Start Lesson → End Lesson in the same minute gives finish == start (rejected), so give the drive real times.
   await s.page.click(".edit-times summary");
@@ -1946,7 +2074,7 @@ const draw = async (page, index) => {
   await s.page.waitForSelector("[data-testid=route-group]");
   await s.page.click("[data-testid=route-group] summary");
   check("route: Kingston learner → Civic highlighted, Manuka/Kingston marked home, nothing written; no horizontal scroll at 820px (group open)", (await location()) === "" && (await s.page.$$eval("[data-testid=route-centre].home", (els) => els.map((e) => e.dataset.centre).join())) === "manuka-kingston" && (await noHScroll(s.page)));
-  await shot(s.page, "18-route-group-820");
+  await shot(s.page, "19-route-group-820");
   await s.page.click("text=Discard this lesson");
   check("route: Tony: no page errors", s.errors.length === 0, s.errors.join("|"));
   await s.ctx.close();

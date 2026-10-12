@@ -7,7 +7,7 @@
 // line into `comments`; both already print on the PDF and are never sent to ACTGDS (D10).
 // Tones as in lib/rules.ts: amber = not met / looks familiar, grey = cannot check, plain = per the entered data.
 
-import { matchSuburb, type District } from "./act-suburbs.ts";
+import { matchStructured, matchSuburb, type District, type SuburbMatch } from "./act-suburbs.ts";
 import type { Reminder } from "./rules.ts";
 import { TOWN_CENTRES, townCentre, type TownCentre, type TownCentreId } from "./town-centres.ts";
 
@@ -19,9 +19,20 @@ export type HomeDistrict =
   | { kind: "outside-act"; matched: string }
   | { kind: "unknown" };
 
-/** The learner's home district from the free-text address (lib/act-suburbs.ts). `unknown` = empty or no suburb matched. */
-export function homeDistrict(address: string | null | undefined): HomeDistrict {
-  const match = matchSuburb(address);
+/** What the home-district rule reads: the free-text address, plus the structured suburb/state when a street suggestion was picked (P2). */
+export type AddressSource = string | null | undefined | { address: string | null; addressSuburb?: string | null; addressState?: string | null };
+
+/**
+ * The learner's home district (lib/act-suburbs.ts). The STRUCTURED suburb + state (migration 0012) are read first when both
+ * are set; otherwise the free-text address is matched. `unknown` = empty or no suburb matched.
+ */
+export function homeDistrict(source: AddressSource): HomeDistrict {
+  let match: SuburbMatch;
+  if (source && typeof source === "object") {
+    match = source.addressSuburb && source.addressState ? matchStructured(source.addressSuburb, source.addressState) : matchSuburb(source.address);
+  } else {
+    match = matchSuburb(source);
+  }
   if (match.kind === "district") return { kind: "district", district: match.district, townCentreId: match.district.townCentreId, matched: match.matched };
   if (match.kind === "unmapped") return { kind: "unmapped", matched: match.matched };
   if (match.kind === "outside-act") return { kind: "outside-act", matched: match.matched };
@@ -41,9 +52,9 @@ const names = (centres: readonly TownCentre[]) => centres.map((centre) => centre
 const evidence = (home: { matched: string }) => `from '${home.matched}' in the address`;
 
 /** D5: the Start Lesson panel's 4th line while 23 Final Drive is ready. */
-export function routeSuggestionReminder(address: string | null | undefined): Reminder {
+export function routeSuggestionReminder(source: AddressSource): Reminder {
   const id = "r10";
-  const home = homeDistrict(address);
+  const home = homeDistrict(source);
   if (home.kind === "unknown") return { id, tone: "grey", text: "Cannot check the home town centre: add the learner's suburb to the address." };
   if (home.kind === "unmapped") {
     return { id, tone: "grey", text: `Cannot check the home town centre: '${home.matched}' is not in the app's district table. Choose an unfamiliar town centre yourself.` };
@@ -74,7 +85,7 @@ export const ROUTE_ITEMS: readonly { id: RouteItemId; group: RouteItemGroup; lab
 /** Headings for the two groups, as the form shows them (the instrument's structure; A1 = the app's minimum reading). */
 export const ROUTE_GROUP_HEADINGS: Record<RouteItemGroup, string> = {
   assessment: "The assessment must include",
-  centre: "In the UNFAMILIAR town centre, within one zone (counts read as minimums, assumption A1)",
+  centre: "In the UNFAMILIAR town centre, within one zone (counts are minimums)",
 };
 
 export type RouteState = { townCentreId: TownCentreId; ticked: readonly RouteItemId[] };
@@ -280,7 +291,7 @@ export function routeCheckReminders(args: { state: RouteState | null; home: Home
   const out: Reminder[] = [];
   if (args.fits === false) out.push({ id: "r10-fit", tone: "grey", text: ROUTE_TOO_LONG_TEXT });
   if (!state) {
-    out.push({ id: "r10-centre", tone: "grey", text: "Route not recorded yet: tap the town centre or a tick after the drive. Nothing is written until you do." });
+    out.push({ id: "r10-centre", tone: "grey", text: `Route not recorded yet (${townCentre(defaultRouteState(home).townCentreId).name} suggested): tap the town centre or a tick after the drive. Nothing is written until you do.` });
     return out;
   }
   const name = townCentre(state.townCentreId).name;

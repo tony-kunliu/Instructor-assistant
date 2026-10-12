@@ -2,7 +2,10 @@
 //
 // Static table from general knowledge of the ACT district structure, cross-checked
 // 2026-10-11 against Wikipedia's "List of Canberra suburbs" (suburbs by district,
-// retrieved from en.wikipedia.org in the build environment). It is NOT instrument
+// retrieved from en.wikipedia.org in the build environment) and 2026-10-12 against
+// the bundled G-NAF locality list (public/data/streets-aug26.json; a test asserts
+// every ACT/NSW locality there is covered). The structured suburb/state picked
+// from a G-NAF suggestion (intake P2, migration 0012) is read before the free text. It is NOT instrument
 // text: "unfamiliar" is not defined in NI2020-703; Tony's school rule (2026-10-11)
 // is that the accepted centre of the learner's HOME district is familiar.
 //
@@ -54,7 +57,8 @@ export type DistrictId =
   | "molonglo-valley"
   | "jerrabomberra-act"
   | "majura"
-  | "hall";
+  | "hall"
+  | "rural-act";
 
 export type District = { id: DistrictId; name: string; townCentreId: TownCentreId | null; suburbs: readonly string[] };
 
@@ -95,12 +99,21 @@ export const DISTRICTS: readonly District[] = [
     townCentreId: "tuggeranong",
     suburbs: ["Banks", "Bonython", "Calwell", "Chisholm", "Conder", "Fadden", "Gilmore", "Gordon", "Gowrie", "Greenway", "Isabella Plains", "Kambah", "Macarthur", "Monash", "Oxley", "Richardson", "Theodore", "Tuggeranong", "Wanniassa"],
   },
-  { id: "weston-creek", name: "Weston Creek", townCentreId: null, suburbs: ["Chapman", "Duffy", "Fisher", "Holder", "Rivett", "Stirling", "Waramanga", "Weston"] },
-  { id: "molonglo-valley", name: "Molonglo Valley", townCentreId: null, suburbs: ["Coombs", "Denman Prospect", "Whitlam", "Wright"] },
+  // G-NAF (public/data/streets-aug26.json) also lists the district names themselves as localities ("Weston Creek", "Molonglo Valley", "Majura").
+  { id: "weston-creek", name: "Weston Creek", townCentreId: null, suburbs: ["Chapman", "Duffy", "Fisher", "Holder", "Rivett", "Stirling", "Waramanga", "Weston", "Weston Creek"] },
+  { id: "molonglo-valley", name: "Molonglo Valley", townCentreId: null, suburbs: ["Coombs", "Denman Prospect", "Molonglo Valley", "Stromlo", "Whitlam", "Wright"] },
   { id: "jerrabomberra-act", name: "Jerrabomberra (ACT)", townCentreId: null, suburbs: ["Beard", "Hume", "Oaks Estate", "Symonston"] },
-  { id: "majura", name: "Majura", townCentreId: null, suburbs: ["Pialligo"] },
+  { id: "majura", name: "Majura", townCentreId: null, suburbs: ["Majura", "Pialligo"] },
   { id: "hall", name: "Hall", townCentreId: null, suburbs: ["Hall"] },
+  // Rural ACT localities in G-NAF (no accepted centre, like Weston Creek): the rule gives all 7 centres.
+  { id: "rural-act", name: "the rural ACT", townCentreId: null, suburbs: ["Booth", "Coree", "Cotter River", "Kowen", "Paddys River", "Rendezvous Creek", "Tennent", "Tharwa", "Uriarra Village"] },
 ];
+
+/**
+ * ACT localities whose name is ALSO a NSW place (G-NAF lists "Jerrabomberra ACT 2600" next to Jerrabomberra NSW). Used only
+ * when the learner's structured address says ACT; free text keeps treating the bare name as NSW (the far likelier home).
+ */
+export const ACT_ONLY_LOCALITIES: readonly { name: string; districtId: DistrictId }[] = [{ name: "Jerrabomberra", districtId: "jerrabomberra-act" }];
 
 /** Local names that stand for a district in address text (Q2). Only unambiguous ones. */
 export const DISTRICT_ALIASES: readonly { alias: string; districtId: DistrictId }[] = [
@@ -109,10 +122,32 @@ export const DISTRICT_ALIASES: readonly { alias: string; districtId: DistrictId 
 ];
 
 /** ACT places we recognise but deliberately do not map to a district (see the header). */
-export const UNMAPPED_ACT_SUBURBS: readonly string[] = ["Fyshwick", "Russell", "Capital Hill", "Kinlyside", "Bandler", "Molonglo", "Sulman", "Canberra Airport"];
+export const UNMAPPED_ACT_SUBURBS: readonly string[] = ["Fyshwick", "Russell", "Capital Hill", "Kinlyside", "Bandler", "Molonglo", "Sulman", "Canberra Airport", "Canberra Central"];
 
 /** Nearby NSW places; an address naming one of them (or the token "NSW") is outside the ACT. */
-export const NSW_PLACES: readonly string[] = ["Queanbeyan", "Queanbeyan East", "Queanbeyan West", "Jerrabomberra", "Googong", "Karabar", "Crestwood", "Greenleigh", "Murrumbateman", "Bungendore", "Sutton", "Yass", "Gundaroo", "Royalla", "Carwoola", "Wamboin", "Burra", "Tralee", "Environa", "Goulburn", "Braidwood", "Michelago", "Williamsdale"];
+export const NSW_PLACES: readonly string[] = ["Queanbeyan", "Queanbeyan East", "Queanbeyan West", "Jerrabomberra", "Googong", "Karabar", "Crestwood", "Greenleigh", "The Ridgeway", "Murrumbateman", "Bungendore", "Sutton", "Yass", "Gundaroo", "Royalla", "Carwoola", "Wamboin", "Burra", "Tralee", "Environa", "Goulburn", "Braidwood", "Michelago", "Williamsdale"];
+
+/**
+ * Lookup by the STRUCTURED suburb + state (learner intake P2, migration 0012: set only when a G-NAF street suggestion
+ * was picked, so the suburb is a real locality name). Any state but ACT is outside the ACT. An ACT locality not in the
+ * table is "unmapped" (grey line), never a guess.
+ */
+export function matchStructured(suburb: string, state: string): SuburbMatch {
+  const name = suburb.trim();
+  if (!name) return { kind: "none" };
+  if (state.trim().toUpperCase() !== "ACT") return { kind: "outside-act", matched: name };
+  const key = name.toLowerCase().replace(/['’`]/g, "");
+  const same = (candidate: string) => candidate.toLowerCase().replace(/['’`]/g, "") === key;
+  for (const district of DISTRICTS) {
+    const hit = district.suburbs.find(same);
+    if (hit) return { kind: "district", district, matched: hit };
+  }
+  const only = ACT_ONLY_LOCALITIES.find((entry) => same(entry.name));
+  if (only) return { kind: "district", district: DISTRICTS.find((d) => d.id === only.districtId)!, matched: only.name };
+  const alias = DISTRICT_ALIASES.find((entry) => same(entry.alias));
+  if (alias) return { kind: "district", district: DISTRICTS.find((d) => d.id === alias.districtId)!, matched: alias.alias };
+  return { kind: "unmapped", matched: UNMAPPED_ACT_SUBURBS.find(same) ?? name };
+}
 
 export type SuburbMatch =
   | { kind: "district"; district: District; matched: string }

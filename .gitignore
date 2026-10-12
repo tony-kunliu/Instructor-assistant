@@ -11,6 +11,10 @@ next-env.d.ts
 
 # local database (never commit learner data)
 data/
+# ...but the bundled public street index (G-NAF, no learner data) is committed (learner intake P2)
+!public/data/
+public/data/*
+!public/data/streets-*.json
 *.sqlite
 *.sqlite-journal
 *.sqlite-wal

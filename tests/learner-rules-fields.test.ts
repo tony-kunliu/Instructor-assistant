@@ -39,6 +39,7 @@ test("edit sets, changes and clears the fields (\"\" -> null); a snapshot holds 
   assert.deepEqual(JSON.parse(rows[0].snapshot_json), {
     fullName: "QA Rules Learner", address: null, phone: null, dob: "2008-05-06", licenceNumber: null, licenceExpiry: null, eligibility: null, transmission: null, schoolWork: null,
     licenceStage: "learner", learnerLicenceIssuedOn: null, learnerLicenceFirstIssuedOn: null, hptPassedOn: null, loggedHours: null, loggedHoursOn: null,
+    addressSuburb: null, addressState: null, addressPostcode: null,
   });
   assert.deepEqual(JSON.parse(rows[1].snapshot_json), { ...JSON.parse(rows[0].snapshot_json), ...FULL });
   // A learner whose columns are NULL (as every row is right after 0009) gets a real snapshot with explicit nulls for the new keys.

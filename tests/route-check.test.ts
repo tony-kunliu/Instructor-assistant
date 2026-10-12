@@ -12,8 +12,8 @@ import type { IntegrationHooks } from "../lib/integration/types.ts";
 import { FINAL_DRIVE_23, REVIEW_1_17, REVIEW_1_22 } from "../lib/competency.ts";
 import { buildCbtaChecklistPdf } from "../lib/pdf-export.ts";
 import type { Learner, Lesson } from "../lib/types.ts";
-import { TOWN_CENTRES, townCentre, townCentreByName } from "../lib/town-centres.ts";
-import { DISTRICTS, DISTRICT_ALIASES, NSW_PLACES, UNMAPPED_ACT_SUBURBS, matchSuburb } from "../lib/act-suburbs.ts";
+import { TOWN_CENTRES, townCentre } from "../lib/town-centres.ts";
+import { ACT_ONLY_LOCALITIES, DISTRICTS, DISTRICT_ALIASES, NSW_PLACES, UNMAPPED_ACT_SUBURBS, matchStructured, matchSuburb } from "../lib/act-suburbs.ts";
 import {
   ALL_ITEM_IDS,
   applyRoute,
@@ -57,8 +57,8 @@ test("town centres: boundary streets as printed, incl. the instrument's spelling
   assert.deepEqual(townCentre("woden").streetsAsPrinted, ["Melrose Dr", "Launceston St", "Callam St", "Hindmarsh Dr"]);
   assert.deepEqual(townCentre("fyshwick").streetsAsPrinted, ["Canberra Ave", "Newcastle St", "Collie St / Tennant St", "Gladstone St", "Newcastle St", "Ipswich St"]);
   assert.deepEqual(townCentre("manuka-kingston").streetsAsPrinted, ["Canberra Ave", "Captain Cook Cres", "Murray St", "Furneaux St", "Eyre St", "Jardine St", "Giles St", "Kennedy St"]);
-  assert.equal(townCentreByName("manuka/kingston")?.id, "manuka-kingston");
-  assert.equal(townCentreByName("Manuka"), null, "only the exact short name parses");
+  assert.deepEqual(parseRouteLine("Comp 23 route (Manuka/Kingston): none ticked.")?.state.townCentreId, "manuka-kingston");
+  assert.equal(parseRouteLine("Comp 23 route (Manuka): none ticked."), null, "only the exact short name parses");
 });
 
 // ───────────────────────── §2a: suburb table shape ─────────────────────────
@@ -71,7 +71,7 @@ test("suburb table: every name is listed once across districts, unmapped and NSW
   for (const name of all) assert.ok(!name.includes("?"), `${name} is marked uncertain and must not be in the table`);
   const centreIds = new Set(TOWN_CENTRES.map((c) => c.id));
   for (const district of DISTRICTS) assert.ok(district.townCentreId === null || centreIds.has(district.townCentreId), district.name);
-  assert.deepEqual(DISTRICTS.filter((d) => d.townCentreId === null).map((d) => d.id), ["weston-creek", "molonglo-valley", "jerrabomberra-act", "majura", "hall"]);
+  assert.deepEqual(DISTRICTS.filter((d) => d.townCentreId === null).map((d) => d.id), ["weston-creek", "molonglo-valley", "jerrabomberra-act", "majura", "hall", "rural-act"]);
   assert.equal(DISTRICTS.find((d) => d.id === "belconnen")?.suburbs.length, 27);
   assert.equal(DISTRICTS.find((d) => d.id === "gungahlin")?.suburbs.length, 17);
 });
@@ -141,6 +141,49 @@ test("review 5: a suburb word followed by a street type or other text is a stree
   assert.deepEqual(homeDistrict("12 Florey St NSW"), { kind: "outside-act", matched: "NSW" });
   assert.deepEqual(homeDistrict("8 Lowe St, Queanbeyan NSW 2620"), { kind: "outside-act", matched: "Queanbeyan" });
   assert.deepEqual(homeDistrict("2 Queanbeyan Ave, Florey ACT"), { kind: "district", district: DISTRICTS.find((d) => d.id === "belconnen"), townCentreId: "belconnen", matched: "Florey" });
+});
+
+test("structured address (intake P2, migration 0012): suburb + state are read first; any state but ACT is outside; Jerrabomberra ACT is the ACT district", () => {
+  const learner = (address: string | null, addressSuburb: string | null, addressState: string | null) => ({ address, addressSuburb, addressState });
+  assert.deepEqual(homeDistrict(learner("12 Gungahlin Dr, Florey ACT 2615", "Florey", "ACT")), { kind: "district", district: DISTRICTS.find((d) => d.id === "belconnen"), townCentreId: "belconnen", matched: "Florey" });
+  assert.deepEqual(homeDistrict(learner("free text says Florey", "Queanbeyan", "NSW")), { kind: "outside-act", matched: "Queanbeyan" }, "structured parts win over the free text");
+  assert.deepEqual(homeDistrict(learner("Florey ACT", "Florey", "NSW")), { kind: "outside-act", matched: "Florey" }, "state decides: NSW is outside even for an ACT-looking suburb");
+  assert.deepEqual(homeDistrict(learner(null, "Melbourne", "VIC")), { kind: "outside-act", matched: "Melbourne" });
+  assert.deepEqual(homeDistrict(learner("1 Lanyon Dr, Jerrabomberra ACT 2600", "Jerrabomberra", "ACT")), { kind: "district", district: DISTRICTS.find((d) => d.id === "jerrabomberra-act"), townCentreId: null, matched: "Jerrabomberra" });
+  assert.deepEqual(homeDistrict(learner("1 Lanyon Dr, Jerrabomberra NSW 2619", "Jerrabomberra", "NSW")), { kind: "outside-act", matched: "Jerrabomberra" });
+  assert.equal(homeDistrict(learner("Jerrabomberra ACT", null, null)).kind, "outside-act", "free text alone still reads the bare name as the NSW suburb");
+  assert.deepEqual(homeDistrict(learner(null, "Fyshwick", "ACT")), { kind: "unmapped", matched: "Fyshwick" });
+  assert.deepEqual(homeDistrict(learner(null, "Canberra Central", "ACT")), { kind: "unmapped", matched: "Canberra Central" });
+  assert.deepEqual(homeDistrict(learner(null, "Nowhere Special", "act")), { kind: "unmapped", matched: "Nowhere Special" }, "an unknown ACT locality is grey, never a guess");
+  const matchedS = (src: Parameters<typeof homeDistrict>[0]) => { const h = homeDistrict(src); return h.kind === "district" ? h.matched : null; };
+  assert.equal(matchedS(learner(null, "o'connor", "ACT")), "O'Connor");
+  // Structured parts missing → the free text is matched as before; empty structured suburb → free text.
+  assert.equal(matchedS(learner("3 Hall St, Kaleen", null, null)), "Kaleen");
+  assert.equal(matchedS(learner("3 Hall St, Kaleen", "", "ACT")), "Kaleen");
+  assert.equal(homeDistrict(learner(null, null, null)).kind, "unknown");
+  assert.equal(homeDistrict(null).kind, "unknown");
+  // Districts without a centre from G-NAF locality names, Stromlo in the Molonglo Valley, rural localities.
+  for (const [suburb, districtId] of [["Weston Creek", "weston-creek"], ["Molonglo Valley", "molonglo-valley"], ["Stromlo", "molonglo-valley"], ["Majura", "majura"], ["Tharwa", "rural-act"], ["Uriarra Village", "rural-act"], ["Kowen", "rural-act"]] as const) {
+    const home = matchStructured(suburb, "ACT");
+    assert.equal(home.kind === "district" && home.district.id, districtId, suburb);
+    assert.equal(home.kind === "district" && home.district.townCentreId, null, suburb);
+  }
+  assert.equal(routeSuggestionReminder(learner(null, "Tharwa", "ACT")).text, "Home district the rural ACT (from 'Tharwa' in the address) has no accepted town centre: all 7 are unfamiliar by this rule.");
+  assert.equal(routeSuggestionReminder(learner("x", "Florey", "ACT")).text, "Unfamiliar town centres (home: Belconnen, from 'Florey' in the address): Civic, Gungahlin, Woden, Tuggeranong, Fyshwick, Manuka/Kingston.");
+  assert.deepEqual(ACT_ONLY_LOCALITIES.map((e) => e.name), ["Jerrabomberra"]);
+});
+
+test("every ACT and NSW locality in the bundled G-NAF index (public/data/streets-aug26.json) is covered by the table, UNMAPPED, ACT-only or NSW lists", () => {
+  const index = JSON.parse(readFileSync(new URL("../public/data/streets-aug26.json", import.meta.url), "utf8")) as { localities: [string, string, string][] };
+  const known = new Set([...DISTRICTS.flatMap((d) => d.suburbs), ...UNMAPPED_ACT_SUBURBS, ...ACT_ONLY_LOCALITIES.map((e) => e.name)].map((n) => n.toLowerCase()));
+  const nsw = new Set(NSW_PLACES.map((n) => n.toLowerCase()));
+  const missing = index.localities.filter(([name, state]) => (state === "ACT" ? !known.has(name.toLowerCase()) : !nsw.has(name.toLowerCase()))).map(([name, state]) => `${name} ${state}`);
+  assert.deepEqual(missing, [], "add the locality to lib/act-suburbs.ts");
+  for (const [name, state] of index.localities) {
+    const home = matchStructured(name, state);
+    assert.notEqual(home.kind, "none", `${name} ${state}`);
+    if (state !== "ACT") assert.equal(home.kind, "outside-act", `${name} ${state}`);
+  }
 });
 
 test("review E: the suburb must form its own segment at the end; only ACT/A.C.T./Australian Capital Territory/Australia/Canberra/NSW/postcode may follow; trailing NSW = outside", () => {
@@ -380,7 +423,8 @@ test("review 1 + 2 + C: nothing is written when 23 is ticked; only an explicit t
 
 test("routeCheckReminders: not recorded → grey; home centre → amber; incomplete + Achieved → amber; incomplete not achieved → grey; all ticked → plain", () => {
   const home = homeDistrict("12 Smith St, Florey ACT 2615");
-  assert.deepEqual(routeCheckReminders({ state: null, home, achieved23: true }), [{ id: "r10-centre", tone: "grey", text: "Route not recorded yet: tap the town centre or a tick after the drive. Nothing is written until you do." }]);
+  assert.deepEqual(routeCheckReminders({ state: null, home, achieved23: true }), [{ id: "r10-centre", tone: "grey", text: "Route not recorded yet (Civic suggested): tap the town centre or a tick after the drive. Nothing is written until you do." }]);
+  assert.match(routeCheckReminders({ state: null, home: homeDistrict("Braddon ACT"), achieved23: false })[0].text, /^Route not recorded yet \(Gungahlin suggested\)/);
   const homeCentre = routeCheckReminders({ state: { townCentreId: "belconnen", ticked: [...ALL_ITEM_IDS] }, home, achieved23: true });
   assert.deepEqual(homeCentre.map((r) => [r.id, r.tone]), [["r10-home", "amber"], ["r10-items", "plain"]]);
   assert.equal(homeCentre[0].text, "Belconnen is the learner's home district (from 'Florey' in the address). Competency 23 needs an unfamiliar town centre. You can still save.");
@@ -402,7 +446,8 @@ test("routeCheckReminders: not recorded → grey; home centre → amber; incompl
     assert.equal(routeCheckReminders({ state: { townCentreId: homeId!, ticked: [...ALL_ITEM_IDS] }, home: h, achieved23: true })[0].id, "r10-home", address);
   }
   assert.deepEqual(ROUTE_ITEMS.map((i) => i.group), ["assessment", "centre", "centre", "centre", "centre", "centre"]);
-  assert.match(ROUTE_GROUP_HEADINGS.centre, /UNFAMILIAR town centre.*assumption A1/);
+  assert.match(ROUTE_GROUP_HEADINGS.centre, /UNFAMILIAR town centre.*\(counts are minimums\)/);
+  assert.ok(!/A1|jargon/.test(ROUTE_GROUP_HEADINGS.centre));
   assert.ok(!ROUTE_GROUP_HEADINGS.assessment.toLowerCase().includes("town centre"));
 });
 
@@ -465,7 +510,7 @@ test("PDF: the route line prints through the existing Comments cell (and the cen
   const fontBytes = readFileSync(new URL("../public/fonts/NotoSansSC-Regular.otf", import.meta.url));
   const learner: Learner = {
     id: "learner-1", instructorId: "instructor-1", instructorName: "Test Instructor", instructorAdiNumber: "ADI-9", fullName: "QA Route Learner",
-    address: "12 Smith St, Florey ACT 2615", phone: null, dob: null, licenceNumber: null, licenceExpiry: null, eligibility: null, transmission: null, schoolWork: null,
+    address: "12 Smith St, Florey ACT 2615", addressSuburb: null, addressState: null, addressPostcode: null, phone: null, dob: null, licenceNumber: null, licenceExpiry: null, eligibility: null, transmission: null, schoolWork: null,
     licenceStage: "learner", learnerLicenceIssuedOn: null, learnerLicenceFirstIssuedOn: null, hptPassedOn: null, loggedHours: null, loggedHoursOn: null,
     archivedAt: null, archiveReason: null, archiveNote: null, transfers: [],
   };

@@ -70,9 +70,3 @@ export function townCentre(id: TownCentreId): TownCentre {
   if (!found) throw new Error(`Unknown town centre: ${id}`);
   return found;
 }
-
-/** The centre whose short name is exactly `name` (case-insensitive), or null. Used to parse the generated comment line. */
-export function townCentreByName(name: string): TownCentre | null {
-  const wanted = name.trim().toLowerCase();
-  return TOWN_CENTRES.find((centre) => centre.name.toLowerCase() === wanted) ?? null;
-}

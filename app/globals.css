@@ -309,6 +309,19 @@ html, body {
 /* Learner intake D18: the Eligibility box follows the licence dates while it is empty or app-generated. */
 .field small.auto-hint { font-size: 12px; color: var(--muted); }
 
+/* Learner intake D6: street suggestions listbox under the Address input (rows ≥ 44px, at most 5, in normal flow so
+   nothing is hidden behind the keyboard and the card simply grows). */
+.address-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.address-field small.address-hint { font-size: 12px; color: var(--muted); }
+.address-list { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 10px; background: #fff; overflow: hidden; box-shadow: 0 6px 18px rgba(0, 0, 0, .08); }
+.address-option { display: flex; flex-direction: column; justify-content: center; gap: 2px; min-height: 44px; padding: 8px 12px; border-top: 1px solid var(--line); cursor: pointer; touch-action: manipulation; user-select: none; -webkit-user-select: none; }
+.address-option:first-child { border-top: 0; }
+.address-list [role="listbox"] { display: flex; flex-direction: column; }
+.address-option .address-main { font-size: 16px; font-weight: 600; color: var(--ink); overflow-wrap: anywhere; }
+.address-option small { font-size: 13px; color: var(--muted); }
+.address-option.active, .address-option:hover { background: #f4efe3; }
+.address-close { font: inherit; font-size: 20px; min-height: 44px; border: 0; border-top: 1px solid var(--line); background: #fbfaf8; color: var(--muted); cursor: pointer; touch-action: manipulation; }
+
 /* R10 Competency 23 route check (reminders only): chips + six ticks + "All met". Self-contained; phone and tablet. */
 .route-group .comp-label { margin-top: 8px; }
 .route-centres .chip.suggested { border: 2px solid var(--ink); background: #fff; }
@@ -320,7 +333,7 @@ html, body {
 .route-item { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 4px 10px; border: 1px solid var(--line); border-radius: 10px; font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
 .route-item input { flex: none; width: 22px; height: 22px; margin: 0; accent-color: var(--go); }
 .route-item:has(input:disabled) { color: var(--muted); }
-.route-all { justify-self: start; }
+.route-all { justify-self: start; min-height: 44px; }
 @media (min-width: 600px) { .route-items { grid-template-columns: 1fr 1fr; } .route-all { grid-column: 1 / -1; } }
 /* ── Tablet / iPad (mobile-first: everything above is the phone layout). ──
    ≥700px wide AND ≥600px tall (so phones in landscape keep the phone layout):

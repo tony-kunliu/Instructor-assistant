@@ -253,6 +253,9 @@ test("generated value fits the 94-pt Eligibility box at 8 pt and every character
 const pdfLearner: Learner = {
   id: "learner-qa", instructorId: "instructor-1", instructorName: "QA Instructor", instructorAdiNumber: "ADI-9", fullName: "QA Eligible From",
   address: "1 QA St", phone: "0400 000 000", dob: "2008-05-06", licenceNumber: "QA1", licenceExpiry: "2030-11-15", eligibility: null,
+  addressSuburb: null,
+  addressState: null,
+  addressPostcode: null,
   transmission: "auto", schoolWork: null, licenceStage: "learner", learnerLicenceIssuedOn: null, learnerLicenceFirstIssuedOn: null, hptPassedOn: null, loggedHours: null, loggedHoursOn: null,
   archivedAt: null, archiveReason: null, archiveNote: null, transfers: [],
 };
