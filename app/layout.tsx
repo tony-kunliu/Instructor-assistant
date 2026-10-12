@@ -15,7 +15,7 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
-  themeColor: "#1d1d1f",
+  themeColor: "#0b1b2b", // the navy top bar (shared with the ACTGDS website)
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

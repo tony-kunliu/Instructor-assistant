@@ -23,6 +23,7 @@ import {
   importPaperLessons,
   listLearnerArchiveEvents,
   listLearners,
+  listLearnerSummaries,
   markTransferRecordsChecked,
   setLearnerArchived,
   transferLearner,
@@ -613,6 +614,38 @@ test("budget (migration 0011): transfer is 6 statements (actor, target, learner,
   assert.equal(checked.maxBinds(), 6);
   assert.ok(transfer.count() + MIDDLEWARE_AND_ROUTE_QUERIES <= FREE_PLAN_INVOCATION_LIMIT);
   assert.equal(Number((await raw.prepare("SELECT COUNT(*) AS n FROM integration_outbox").first<{ n: number }>())?.n), outboxBefore, "a transfer / Checked enqueues nothing for ACTGDS");
+});
+
+// ── Learner list cards (UI redesign 2026-10-12): the list GET is 2 statements, never per learner ──
+
+test("budget (learner list cards): GET /api/learners = listLearners + listLearnerSummaries = 2 statements for 100 learners with lessons, 0 binds, compact summaries payload", async (t) => {
+  const { db: raw, tony } = await setup();
+  for (let i = 0; i < 100; i++) {
+    const learner = await createLearner(raw, { fullName: `QA Budget Card ${String(i).padStart(3, "0")}`, instructorId: tony.id });
+    if (i % 3 === 0) continue; // a third have no lessons
+    const core17 = CORE_COMPETENCY_IDS.slice(0, 17);
+    await createLesson(raw, learner.id, { lessonDate: "2026-03-01", startTime: "09:00", finishTime: "10:00", startOdometer: "0", finishOdometer: "10", assessedIds: core17, achievedResults: Object.fromEntries(core17.map((id) => [id, "achieved"])), adiSignature: SIG1, learnerSignature: SIG1 });
+    if (i % 3 === 2) await createLesson(raw, learner.id, { lessonDate: "2026-03-02", startTime: "09:00", finishTime: "10:30", startOdometer: "10", finishOdometer: "25", assessedIds: [REVIEW_1_17], achievedResults: { [REVIEW_1_17]: "achieved" }, adiSignature: SIG1, learnerSignature: SIG1 });
+  }
+  const { db, count, maxBinds } = countingD1(raw);
+  // Exactly what app/api/learners/route.ts does.
+  const [learners, summaries] = await Promise.all([listLearners(db), listLearnerSummaries(db)]);
+  const statements = count();
+  assert.equal(learners.length, 101);
+  assert.equal(Object.keys(summaries).length, 101, "one summary per listed learner");
+  assert.ok(learners.every((l) => l.id in summaries));
+  for (const summary of Object.values(summaries)) {
+    assert.deepEqual(Object.keys(summary), ["lessonCount", "totalMinutes", "lastLessonDate", "achievedCount", "achievedIds", "review1_17", "review1_22", "finalDrive23", "completed"]);
+    assert.ok(Number.isInteger(summary.lessonCount) && Number.isInteger(summary.totalMinutes) && Number.isInteger(summary.achievedCount));
+  }
+  const withReview = Object.values(summaries).filter((s) => s.review1_17 === "achieved").length;
+  assert.equal(withReview, 33, "Review 1-17 done exactly for the learners assessed in a later lesson");
+  const bytes = Buffer.byteLength(JSON.stringify(summaries), "utf8");
+  t.diagnostic(`learner list GET for 101 learners: ${statements} statements, max binds ${maxBinds()}, summaries ${bytes} bytes (+${Math.round(bytes / 101)} per learner), + middleware lookup = ${statements + 1}`);
+  assert.equal(statements, 2, "learners + summaries; no per-learner query");
+  assert.equal(maxBinds(), 0);
+  assert.ok(bytes <= 101 * 400, `summaries payload ${bytes} bytes (budget 400 per learner)`);
+  assert.ok(statements + 1 <= FREE_PLAN_INVOCATION_LIMIT);
 });
 
 // ── createLesson assessing 22 competencies ──────────────────────────────
