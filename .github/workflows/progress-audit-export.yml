@@ -1,0 +1,57 @@
+name: Progress Audit Export
+
+# Manual, READ-ONLY: prints competency events (internal ids, lesson numbers,
+# competency ids, results and timestamps; no names, addresses, comments or
+# signatures) so the CBT&A progress rule change can be audited offline with
+# scripts/audit-progress.mjs. Never writes, migrates or deploys.
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 'Which database: production or staging'
+        required: true
+        default: production
+        type: choice
+        options: [production, staging]
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  CLOUDFLARE_ACCOUNT_ID: ff281f1a6f1aa8241b1d9bd1a22d485a
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.13"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Export events
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          TARGET: ${{ inputs.target }}
+        run: |
+          if [ "$TARGET" = "production" ]; then DB=instructor-assistant-db-production; else DB=instructor-assistant-db; fi
+          out=$(npx wrangler d1 execute "$DB" --remote --json --command "SELECT e.learner_id, l.lesson_no, l.record_source, e.competency_id, e.action, e.result, e.created_at FROM competency_events e LEFT JOIN lessons l ON l.id = e.lesson_id ORDER BY e.learner_id, l.lesson_no, e.created_at" 2>&1) || { echo "$out" | head -c 1500; exit 1; }
+          echo "$out" | jq -c 'if type=="array" then .[0].results else empty end' > events.json
+          echo "EVENTS_JSON_BEGIN"
+          cat events.json
+          echo
+          echo "EVENTS_JSON_END"
+          echo "rows: $(jq length events.json)" | tee -a "$GITHUB_STEP_SUMMARY"
