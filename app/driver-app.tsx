@@ -34,6 +34,8 @@ import SignaturePad from "./signature-pad.tsx";
 import { BookingLink, RulesReminders } from "./rules-reminders.tsx";
 import { finalDriveEligibilityReminder, finalDriveEligibleFromReminder, finalDriveFormReminders, finalDrivePanelReminder, learnerLicenceReminder, reviewGapReminder, type EligibilityLearner, type Reminder } from "@/lib/rules.ts";
 import { autoFillEligibility, ELIGIBILITY_DATE_KEYS, eligibilityAtSave, showsAutoHint } from "@/lib/c23-eligibility.ts";
+import { GNAF_ATTRIBUTION, partsAfterEdit, type AddressSuggestion } from "@/lib/address-suggest.ts";
+import AddressInput from "./address-input.tsx";
 
 type LessonDraft = {
   lessonDate: string;
@@ -53,6 +55,10 @@ type LessonDraft = {
 type LearnerDraft = {
   fullName: string;
   address: string;
+  /** Picked-suggestion parts (intake D7); "" when none. Cleared by the form once the text no longer holds the suburb as a whole word. */
+  addressSuburb: string;
+  addressState: string;
+  addressPostcode: string;
   phone: string;
   dob: string;
   licenceNumber: string;
@@ -103,6 +109,9 @@ const isEligibilityDateKey = (key: keyof LearnerDraft) => (ELIGIBILITY_DATE_KEYS
 const emptyLearner: LearnerDraft = {
   fullName: "",
   address: "",
+  addressSuburb: "",
+  addressState: "",
+  addressPostcode: "",
   phone: "",
   dob: "",
   licenceNumber: "",
@@ -380,7 +389,8 @@ export default function DriverApp() {
     if (!detail) return;
     const l = detail.learner;
     const opened: LearnerDraft = {
-      fullName: l.fullName, address: l.address ?? "", phone: l.phone ?? "", dob: l.dob ?? "", licenceNumber: l.licenceNumber ?? "",
+      fullName: l.fullName, address: l.address ?? "", addressSuburb: l.addressSuburb ?? "", addressState: l.addressState ?? "", addressPostcode: l.addressPostcode ?? "",
+      phone: l.phone ?? "", dob: l.dob ?? "", licenceNumber: l.licenceNumber ?? "",
       licenceExpiry: l.licenceExpiry ?? "", eligibility: l.eligibility ?? "", transmission: l.transmission ?? "", schoolWork: l.schoolWork ?? "",
       learnerLicenceIssuedOn: l.learnerLicenceIssuedOn ?? "", learnerLicenceFirstIssuedOn: l.learnerLicenceFirstIssuedOn ?? "", hptPassedOn: l.hptPassedOn ?? "",
       loggedHours: l.loggedHours === null ? "" : String(l.loggedHours), loggedHoursOn: l.loggedHoursOn ?? "",
@@ -740,6 +750,14 @@ export default function DriverApp() {
   // Only a licence-date/DOB edit refreshes an app-owned Eligibility; typing in Eligibility itself never auto-fills (so it can be cleared or rewritten).
   const learnerField = (key: keyof LearnerDraft, value: string) =>
     setLearnerDraft((current) => (isEligibilityDateKey(key) ? withAutoEligibility({ ...current, [key]: value }) : { ...current, [key]: value }));
+  // D7: typing keeps the picked suburb/state/postcode only while the suburb is still a whole word of the text.
+  const addressTextField = (text: string) =>
+    setLearnerDraft((current) => {
+      const parts = current.addressSuburb ? partsAfterEdit(text, { suburb: current.addressSuburb, state: current.addressState, postcode: current.addressPostcode }) : null;
+      return { ...current, address: text, addressSuburb: parts?.suburb ?? "", addressState: parts?.state ?? "", addressPostcode: parts?.postcode ?? "" };
+    });
+  const addressPicked = (s: AddressSuggestion) =>
+    setLearnerDraft((current) => ({ ...current, address: s.label, addressSuburb: s.suburb, addressState: s.state, addressPostcode: s.postcode }));
   // Logged hours always come with an "as of" date (server rule D19): typing hours fills it with today (editable) unless the instructor set it by hand; clearing the hours clears it.
   const [hoursOnTouched, setHoursOnTouched] = useState(false);
   const loggedHoursField = (raw: string) =>
@@ -947,7 +965,7 @@ export default function DriverApp() {
           <h2>{editingLearner ? "Edit learner" : "New learner"}</h2>
           <div className="grid">
             <label className="field full"><span>Student name *</span><input value={learnerDraft.fullName} onChange={(e) => learnerField("fullName", e.target.value)} autoComplete="off" /></label>
-            <label className="field full"><span>Address</span><input value={learnerDraft.address} onChange={(e) => learnerField("address", e.target.value)} /></label>
+            <AddressInput value={learnerDraft.address} onChange={addressTextField} onPick={addressPicked} />
             <label className="field"><span>Phone</span><input type="tel" inputMode="tel" value={learnerDraft.phone} onChange={(e) => learnerField("phone", e.target.value)} /></label>
             <label className="field"><span>DOB</span><input type="date" value={learnerDraft.dob} onChange={(e) => learnerField("dob", e.target.value)} /></label>
             <label className="field"><span>Licence number</span><input value={learnerDraft.licenceNumber} onChange={(e) => learnerField("licenceNumber", e.target.value)} autoCapitalize="characters" /></label>
@@ -1350,7 +1368,7 @@ export default function DriverApp() {
         </>
       ) : null}
 
-      <footer className="foot">ACT Golden Driving School · Internal instructor tool</footer>
+      <footer className="foot">ACT Golden Driving School · Internal instructor tool<br /><span data-testid="gnaf-attribution">{GNAF_ATTRIBUTION}</span></footer>
     </main>
   );
 }

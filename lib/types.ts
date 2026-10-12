@@ -19,6 +19,10 @@ export type Learner = {
   instructorAdiNumber: string | null;
   fullName: string;
   address: string | null;
+  /** Structured address parts (migration 0012, intake D7): set together ONLY when a street suggestion was picked; null otherwise. The free text `address` stays the record (PDF). Never sent to ACTGDS. */
+  addressSuburb: string | null;
+  addressState: string | null;
+  addressPostcode: string | null;
   phone: string | null;
   dob: string | null;
   licenceNumber: string | null;
@@ -158,6 +162,10 @@ export type CompletionSummary = {
 export type LearnerInput = {
   fullName?: unknown;
   address?: unknown;
+  /** Picked-suggestion parts (D7); all three or none. Validated by lib/address-suggest.ts#validateAddressParts. */
+  addressSuburb?: unknown;
+  addressState?: unknown;
+  addressPostcode?: unknown;
   phone?: unknown;
   dob?: unknown;
   licenceNumber?: unknown;

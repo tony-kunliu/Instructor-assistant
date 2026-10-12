@@ -7,7 +7,7 @@
 //                               accounts reference these ids.
 // None of those features exist yet.
 
-export const SCHEMA_VERSION = 11;
+export const SCHEMA_VERSION = 12;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS instructors (
@@ -211,4 +211,8 @@ CREATE TABLE IF NOT EXISTS learner_transfer_events (
   CHECK (from_instructor_id <> to_instructor_id)
 );
 CREATE INDEX IF NOT EXISTS learner_transfer_events_learner_idx ON learner_transfer_events (learner_id, at);
+
+ALTER TABLE learners ADD COLUMN address_suburb TEXT;
+ALTER TABLE learners ADD COLUMN address_state TEXT;
+ALTER TABLE learners ADD COLUMN address_postcode TEXT;
 `;

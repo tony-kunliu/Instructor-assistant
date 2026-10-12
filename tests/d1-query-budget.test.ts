@@ -493,8 +493,38 @@ test("budget (migration 0009): a learner edit and a create with all 15 fields, i
   assert.equal(noop.count(), 2);
   assert.ok(edit.maxBinds() <= 100 && create.maxBinds() <= 100, `max bound parameters edit ${edit.maxBinds()}, create ${create.maxBinds()} (D1 limit 100)`);
   assert.equal(edit.maxBinds(), 16, "the UPDATE binds 15 columns + the id");
-  assert.equal(create.maxBinds(), 16, "the INSERT binds 16 values");
+  assert.equal(create.maxBinds(), 19, "the INSERT binds 19 values (16 + the 3 address parts of migration 0012, always bound, NULL when not picked)");
   assert.equal(Number((await raw.prepare("SELECT COUNT(*) AS n FROM integration_outbox").first<{ n: number }>())?.n), outboxBefore, "a learner edit/create enqueues no ACTGDS event");
+});
+
+test("budget (migration 0012, intake P2): a learner edit and a create with all 18 fields incl. the 3 address parts keep 5 / 2 / 3 statements (edit / no-op / create); the UPDATE binds 19, the INSERT 19; the revision stays 4; nothing for ACTGDS", async (t) => {
+  const { db: raw, learner, tony } = await setup();
+  const outboxBefore = Number((await raw.prepare("SELECT COUNT(*) AS n FROM integration_outbox").first<{ n: number }>())?.n);
+  const all = {
+    fullName: "QA Budget Address", address: "44 Appleford Av, Jacka ACT 2914", addressSuburb: "Jacka", addressState: "ACT", addressPostcode: "2914",
+    phone: "0400 000 000", dob: "2008-01-02", licenceNumber: "QA1", licenceExpiry: "2027-01-02", eligibility: "Eligible", transmission: "auto", schoolWork: "QA", licenceStage: "p1",
+    learnerLicenceIssuedOn: "2025-11-15", learnerLicenceFirstIssuedOn: "2024-05-01", hptPassedOn: "2026-05-05", loggedHours: 82, loggedHoursOn: "2026-10-03",
+    actingInstructorId: tony.id,
+  };
+  const edit = countingD1(raw);
+  const result = await updateLearner(edit.db, learner.id, all, new Date("2026-10-12T02:00:00Z"));
+  assert.equal(result.changedFields.length, 18);
+  const noop = countingD1(raw);
+  assert.equal((await updateLearner(noop.db, learner.id, all, new Date("2026-10-12T02:00:00Z"))).changed, false);
+  const create = countingD1(raw);
+  await createLearner(create.db, { ...all, fullName: "QA Budget Address Created", instructorId: tony.id }, new Date("2026-10-12T02:00:00Z"));
+  const revisionBinds = 4; // learnerRevisionInsertStatement: id, edited_at, editor, learner id (the snapshot only grows)
+  t.diagnostic(`updateLearner (all 18 fields): ${edit.count()} statements, max bound params ${edit.maxBinds()}; no-op: ${noop.count()}; createLearner (all fields): ${create.count()} statements incl. instructor check, max bound params ${create.maxBinds()}; revision INSERT binds ${revisionBinds}`);
+  assert.equal(edit.count(), 5);
+  assert.equal(noop.count(), 2);
+  assert.equal(create.count(), 3);
+  assert.equal(edit.maxBinds(), 19, "the UPDATE binds 18 columns + the id");
+  assert.equal(create.maxBinds(), 19, "the INSERT binds 19 values");
+  assert.ok(edit.maxBinds() <= 100 && create.maxBinds() <= 100, "D1 limit 100 bound parameters");
+  assert.ok(edit.count() + MIDDLEWARE_AND_ROUTE_QUERIES <= FREE_PLAN_INVOCATION_LIMIT);
+  const snapshot = JSON.parse(String((await raw.prepare("SELECT snapshot_json FROM learner_revisions WHERE learner_id = ?").bind(learner.id).first<{ snapshot_json: string }>())?.snapshot_json)) as Record<string, unknown>;
+  for (const key of ["addressSuburb", "addressState", "addressPostcode"]) assert.ok(key in snapshot && snapshot[key] === null, `snapshot holds the previous (null) ${key}`);
+  assert.equal(Number((await raw.prepare("SELECT COUNT(*) AS n FROM integration_outbox").first<{ n: number }>())?.n), outboxBefore, "a learner edit/create with address parts enqueues no ACTGDS event");
 });
 
 test("budget (learner intake P1): the Eligibility auto-fill rides in the normal learner save (edit 5, create 3 statements); 'eligible from' and the PDF value add 0", async (t) => {
