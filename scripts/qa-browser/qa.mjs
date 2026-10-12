@@ -1795,7 +1795,8 @@ const draw = async (page, index) => {
   await ready(s.page);
   await s.page.setViewportSize({ width: 375, height: 812 });
   check("address: viewport is 375px", (await s.page.evaluate(() => window.innerWidth)) === 375);
-  check("address: the G-NAF attribution is visible in the footer", /G-NAF © Geoscape Australia/.test(await s.page.textContent("[data-testid=gnaf-attribution]")));
+  check("address: the full G-NAF EULA attribution statement is visible in the footer", /Incorporates or developed using G-NAF © Geoscape Australia licensed by the Commonwealth of Australia under the Open Geo-coded National Address File \(G-NAF\) End User Licence Agreement\./.test(await s.page.textContent("[data-testid=gnaf-attribution]")));
+  const closeOutside = await s.page.evaluate(() => true); // asserted below once the list is open
   const indexRequests = [];
   s.page.on("request", (r) => { if (r.url().includes("/data/streets-")) indexRequests.push(r.url()); });
   await s.page.click("text=+ New");
@@ -1809,7 +1810,8 @@ const draw = async (page, index) => {
   await s.page.locator(ADDRESS).pressSequentially("p");
   await s.page.waitForSelector(LIST);
   const resp = await indexResponse;
-  check("address: the index is fetched once, on first use, from /data/streets-<release>.json with an immutable Cache-Control", indexRequests.length === 1 && /\/data\/streets-[a-z]{3}\d{2}\.json$/.test(indexRequests[0]) && resp !== null && /immutable/.test(resp.headers()["cache-control"] ?? ""), `${indexRequests.join(",")} cache-control=${resp?.headers()["cache-control"]}`);
+  // The Cache-Control part proves only `next start` (next.config.ts headers); on Cloudflare the same header comes from public/_headers (Workers static assets), which this harness does not exercise.
+  check("address: the index is fetched once, on first use, from /data/streets-<release>.json; `next start` serves it with an immutable Cache-Control (Cloudflare: public/_headers, not tested here)", indexRequests.length === 1 && /\/data\/streets-[a-z]{3}\d{2}\.json$/.test(indexRequests[0]) && resp !== null && /immutable/.test(resp.headers()["cache-control"] ?? ""), `${indexRequests.join(",")} cache-control=${resp?.headers()["cache-control"]}`);
   const rows = await rowsInfo(s.page);
   check("address: '44 app' → listbox with at most 5 rows, each ≥ 44px tall and inside the 375px viewport", rows.length >= 3 && rows.length <= 5 && rows.every((r) => r.h >= 44 && r.left >= 0 && r.right <= 375), JSON.stringify(rows.map((r) => [r.h, r.right])));
   check("address: rows are 'number + street' with 'suburb state postcode'; Appleford Av (Jacka ACT 2914) is offered, ACT rows before NSW", rows.some((r) => /44 Appleford Av/.test(r.text) && /Jacka ACT 2914/.test(r.text)) && rows.findIndex((r) => /ACT/.test(r.text)) < rows.findIndex((r) => /NSW/.test(r.text)), rows.map((r) => r.text).join(" | "));
@@ -1819,6 +1821,7 @@ const draw = async (page, index) => {
     return { expanded: input.getAttribute("aria-expanded"), listRole: list?.getAttribute("role"), optionRoles: [...(list?.children ?? [])].filter((c) => c.tagName === "DIV").map((c) => c.getAttribute("role")), active: input.getAttribute("aria-activedescendant") };
   });
   check("address: a11y: role=combobox + aria-expanded, aria-controls → role=listbox with role=option rows, nothing active before a key press", a11y.expanded === "true" && a11y.listRole === "listbox" && a11y.optionRoles.length > 0 && a11y.optionRoles.every((r) => r === "option") && a11y.active === null, JSON.stringify(a11y));
+  check("address: the × close button sits outside the listbox (a listbox holds only options)", closeOutside && (await s.page.evaluate(() => { const list = document.querySelector("[data-testid=address-suggestions]"); return list && [...list.children].every((c) => c.getAttribute("role") === "option") && document.querySelector(".address-close") !== null && !list.contains(document.querySelector(".address-close")); })));
   await s.page.keyboard.press("ArrowDown");
   const afterArrow = await s.page.evaluate(() => { const input = document.querySelector("[data-testid=learner-address]"); const id = input.getAttribute("aria-activedescendant"); const el = id && document.getElementById(id); return { id, selected: el?.getAttribute("aria-selected"), role: el?.getAttribute("role") }; });
   check("address: ArrowDown sets aria-activedescendant to the first option (aria-selected=true)", Boolean(afterArrow.id) && afterArrow.selected === "true" && afterArrow.role === "option", JSON.stringify(afterArrow));

@@ -331,8 +331,15 @@ async function main() {
   const sortedLocalities = order.map((i) => localityList[i]);
   for (const row of streetRows) row[2] = remap.get(row[2]);
   streetRows.sort((a, b) => a[0].localeCompare(b[0]) || a[1].localeCompare(b[1]) || a[2] - b[2]);
+  // Dedupe on what the user sees: "<name> <type>" + locality + postcode (G-NAF has e.g. "EMU BANK" with no type AND
+  // "EMU" of type BANK in Belconnen; one row is enough). Sorted, so the first spelling wins.
   const unique = new Set();
-  const deduped = streetRows.filter((row) => { const k = row.join("|"); if (unique.has(k)) return false; unique.add(k); return true; });
+  const deduped = streetRows.filter((row) => {
+    const k = `${`${row[0]} ${row[1]}`.trim().toLowerCase()}|${row[2]}|${row[3] ?? sortedLocalities[row[2]][2]}`;
+    if (unique.has(k)) return false;
+    unique.add(k);
+    return true;
+  });
 
   const header = {
     source: `Geoscape G-NAF ${label} release (data.gov.au, ${PACKAGE_PAGE}), metadata modified ${modified.slice(0, 10)}`,

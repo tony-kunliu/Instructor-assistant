@@ -316,6 +316,7 @@ html, body {
 .address-list { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 10px; background: #fff; overflow: hidden; box-shadow: 0 6px 18px rgba(0, 0, 0, .08); }
 .address-option { display: flex; flex-direction: column; justify-content: center; gap: 2px; min-height: 44px; padding: 8px 12px; border-top: 1px solid var(--line); cursor: pointer; touch-action: manipulation; user-select: none; -webkit-user-select: none; }
 .address-option:first-child { border-top: 0; }
+.address-list [role="listbox"] { display: flex; flex-direction: column; }
 .address-option .address-main { font-size: 16px; font-weight: 600; color: var(--ink); overflow-wrap: anywhere; }
 .address-option small { font-size: 13px; color: var(--muted); }
 .address-option.active, .address-option:hover { background: #f4efe3; }

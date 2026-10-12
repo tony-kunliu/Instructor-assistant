@@ -8,7 +8,7 @@ lives in git log and closed PRs, not here.
 **Current Task:** learner intake **P2** (address suggestions) — Completed on
 `feature/intake-p2-address` (not pushed / not merged): migration `0012` (3 nullable address
 columns), `scripts/build-street-index.mjs` + `public/data/streets-aug26.json` (G-NAF Aug 2026,
-7,929 streets, 146 localities, 49 kB gz, attribution in footer/README), `lib/address-suggest.ts`
+7,928 streets, 146 localities, 49 kB gz, attribution in footer/README), `lib/address-suggest.ts`
 (D4 matching, D7 rules), listbox in the New/Edit learner form, qa-browser section 18. Nothing to
 ACTGDS (payload keys asserted unchanged). D8 route hook deferred: R10a not on `staging` yet
 (BACKLOG). 3c T1 (`feature/transfer-t1`, migration `0011`) is still reviewed and unmerged.

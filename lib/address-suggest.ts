@@ -7,8 +7,8 @@
 /** Which index file public/data holds; the name carries the G-NAF release (D3). tests/address-suggest.test.ts checks it exists. */
 export const STREET_INDEX_FILE = "streets-aug26.json";
 export const STREET_INDEX_URL = `/data/${STREET_INDEX_FILE}`;
-/** Attribution required by the Open G-NAF EULA / CC BY 4.0 (D1); shown in the app footer and in the data header. */
-export const GNAF_ATTRIBUTION = "Street suggestions: G-NAF © Geoscape Australia (data.gov.au, CC BY 4.0)";
+/** The full attribution statement required by the Open G-NAF EULA (D1); shown in the app footer and in the data header. */
+export const GNAF_ATTRIBUTION = "Street suggestions: Incorporates or developed using G-NAF © Geoscape Australia licensed by the Commonwealth of Australia under the Open Geo-coded National Address File (G-NAF) End User Licence Agreement.";
 
 /** Suggestions start after this many typed letters of the street (D6) and show at most MAX_SUGGESTIONS (D4). */
 export const MIN_STREET_LETTERS = 3;
@@ -44,14 +44,28 @@ export const MAX_SUBURB_LENGTH = 60;
 
 export type ParsedQuery = { number: string; words: string[]; streetLetters: number };
 
+/** Input caps (M1): longer or wordier text (a pasted paragraph) gets no suggestions instead of a slow scan. */
+export const MAX_QUERY_LENGTH = 300;
+export const MAX_QUERY_WORDS = 8;
+
 /**
- * Splits the typed text into an optional number token (the first token when it holds a digit; kept as typed) and
- * the remaining words (lower-cased; commas ignored). streetLetters counts the letters typed after the number.
+ * Splits the typed text into an optional number token (kept as typed: "44", "3/44", "44A") and the remaining
+ * words (lower-cased; commas ignored). Leading tokens without a digit ("Unit", "Flat", "Lot") are skipped up to the
+ * first digit-bearing token, so "Unit 3 44 app" and "Flat 2/44 app" still match; with no digit-bearing token the
+ * whole text is the street part. streetLetters counts the letters typed after the number.
  */
 export function parseAddressQuery(text: string): ParsedQuery {
   const tokens = text.replace(/,/g, " ").trim().split(/\s+/).filter(Boolean);
   let number = "";
-  if (tokens.length && /\d/.test(tokens[0])) number = tokens.shift()!;
+  const firstDigit = tokens.findIndex((t) => /\d/.test(t));
+  if (firstDigit >= 0) {
+    const prefix = tokens.slice(0, firstDigit + 1);
+    // "Unit 3 44": the last digit-bearing token before the street is the number; the unit tokens stay in front.
+    let end = firstDigit;
+    while (end + 1 < tokens.length && /\d/.test(tokens[end + 1])) end++;
+    number = [...prefix, ...tokens.slice(firstDigit + 1, end + 1)].join(" ");
+    tokens.splice(0, end + 1);
+  }
   const words = tokens.map((w) => w.toLowerCase());
   return { number, words, streetLetters: words.join("").replace(/[^a-z]/g, "").length };
 }
@@ -66,8 +80,11 @@ type Candidate = { suggestion: AddressSuggestion; exactPrefix: boolean; stateRan
  * MIN_STREET_LETTERS letters of the street are typed.
  */
 export function suggestAddresses(index: StreetIndex, text: string): AddressSuggestion[] {
+  if (text.length > MAX_QUERY_LENGTH) return [];
   const query = parseAddressQuery(text);
-  if (!query.words.length || query.streetLetters < MIN_STREET_LETTERS) return [];
+  if (!query.words.length || query.words.length > MAX_QUERY_WORDS || query.streetLetters < MIN_STREET_LETTERS) return [];
+  // The suburb part for each split is the same for every row: computed once (M1).
+  const suburbParts = query.words.map((_, streetCount) => query.words.slice(streetCount + 1).join(" "));
   const candidates: Candidate[] = [];
   for (const row of index.streets) {
     const [name, type, localityIndex] = row;
@@ -75,7 +92,7 @@ export function suggestAddresses(index: StreetIndex, text: string): AddressSugge
     if (!locality) continue;
     const streetWords = `${name} ${type}`.trim().toLowerCase().split(" ");
     const nameWordCount = name.split(" ").length;
-    const match = matchWords(query.words, streetWords, nameWordCount, locality[0].toLowerCase());
+    const match = matchWords(query.words, suburbParts, streetWords, nameWordCount, locality[0].toLowerCase());
     if (match === null) continue;
     const [suburb, state] = locality;
     const postcode = row.length > 3 ? (row[3] as string) : locality[2];
@@ -96,9 +113,9 @@ export function suggestAddresses(index: StreetIndex, text: string): AddressSugge
  * streetWords starting at some name word) and a suburb part (a prefix of the suburb name). Returns the start
  * word of the street match, or null.
  */
-function matchWords(typed: string[], streetWords: string[], nameWordCount: number, suburb: string): { start: number } | null {
-  for (let streetCount = typed.length; streetCount >= 1; streetCount--) {
-    const suburbPart = typed.slice(streetCount).join(" ");
+function matchWords(typed: string[], suburbParts: string[], streetWords: string[], nameWordCount: number, suburb: string): { start: number } | null {
+  for (let streetCount = Math.min(typed.length, streetWords.length); streetCount >= 1; streetCount--) {
+    const suburbPart = suburbParts[streetCount - 1];
     if (suburbPart && !suburb.startsWith(suburbPart)) continue;
     for (let start = 0; start < nameWordCount; start++) {
       if (start + streetCount > streetWords.length) break;

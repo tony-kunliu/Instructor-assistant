@@ -6,8 +6,8 @@
 // at most 5, keyboard (arrows, Enter, Escape) and touch (pointerdown is prevented so the input keeps focus and the
 // keyboard stays open). The bundled G-NAF index is fetched once, on the first focus or keystroke, and then held in
 // memory (module level) so the field keeps working offline afterwards; if the fetch fails the field is a plain input.
-import { useCallback, useEffect, useId, useRef, useState } from "react";
-import { MAX_SUGGESTIONS, STREET_INDEX_URL, suggestAddresses, type AddressSuggestion, type StreetIndex } from "@/lib/address-suggest.ts";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import { MAX_QUERY_LENGTH, MAX_SUGGESTIONS, STREET_INDEX_URL, suggestAddresses, type AddressSuggestion, type StreetIndex } from "@/lib/address-suggest.ts";
 
 let indexCache: StreetIndex | null = null;
 let indexPromise: Promise<StreetIndex | null> | null = null;
@@ -43,7 +43,7 @@ export default function AddressInput({ value, onChange, onPick, label = "Address
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(-1);
   const inputRef = useRef<HTMLInputElement>(null);
-  const suggestions = index && open ? suggestAddresses(index, value) : [];
+  const suggestions = useMemo(() => (index && open ? suggestAddresses(index, value) : []), [index, value, open]);
   const expanded = suggestions.length > 0;
   const activeIndex = active < suggestions.length ? active : -1;
 
@@ -83,6 +83,7 @@ export default function AddressInput({ value, onChange, onPick, label = "Address
         onFocus={() => { ensureIndex(); setOpen(true); }}
         onBlur={() => setOpen(false)}
         onKeyDown={onKeyDown}
+        maxLength={MAX_QUERY_LENGTH}
         autoComplete="off"
         autoCorrect="off"
         spellCheck={false}
@@ -95,10 +96,11 @@ export default function AddressInput({ value, onChange, onPick, label = "Address
         />
       </label>
       {expanded ? (
-        <div className="address-list" role="listbox" id={listId} aria-label="Street suggestions" data-testid="address-suggestions">
+        <div className="address-list">
+          <div role="listbox" id={listId} aria-label="Street suggestions" data-testid="address-suggestions">
           {suggestions.slice(0, MAX_SUGGESTIONS).map((suggestion, i) => (
             <div
-              key={suggestion.label}
+              key={`${i}-${suggestion.label}`}
               id={`${listId}-${i}`}
               role="option"
               aria-selected={i === activeIndex}
@@ -113,6 +115,8 @@ export default function AddressInput({ value, onChange, onPick, label = "Address
               <small>{suggestion.suburb} {suggestion.state} {suggestion.postcode}</small>
             </div>
           ))}
+          </div>
+          {/* Outside the listbox (m4): a listbox may only contain options. */}
           <button type="button" className="address-close" aria-label="Close suggestions" onPointerDown={(event) => event.preventDefault()} onMouseDown={(event) => event.preventDefault()} onClick={() => setOpen(false)}>×</button>
         </div>
       ) : null}

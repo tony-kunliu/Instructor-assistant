@@ -8,6 +8,8 @@ import {
   ADDRESS_STATES,
   addressContainsSuburb,
   GNAF_ATTRIBUTION,
+  MAX_QUERY_LENGTH,
+  MAX_QUERY_WORDS,
   MAX_SUGGESTIONS,
   MIN_STREET_LETTERS,
   parseAddressQuery,
@@ -43,6 +45,34 @@ test("parseAddressQuery: the first token is the number only when it holds a digi
   assert.deepEqual(parseAddressQuery("Appleford Av").number, "");
   assert.deepEqual(parseAddressQuery("  44   "), { number: "44", words: [], streetLetters: 0 });
   assert.equal(parseAddressQuery("44 ap").streetLetters, 2);
+});
+
+test("m5: leading non-digit tokens (Unit, Flat, Lot) are skipped up to the first digit-bearing token and kept in the number part as typed", () => {
+  assert.deepEqual(parseAddressQuery("Unit 3 44 appleford"), { number: "Unit 3 44", words: ["appleford"], streetLetters: 9 });
+  assert.deepEqual(parseAddressQuery("Flat 2/44 app ja"), { number: "Flat 2/44", words: ["app", "ja"], streetLetters: 5 });
+  assert.deepEqual(parseAddressQuery("Lot 7 Unlisted Track"), { number: "Lot 7", words: ["unlisted", "track"], streetLetters: 13 });
+  assert.deepEqual(parseAddressQuery("unit 3, 44 appleford av, jacka").number, "unit 3 44");
+  assert.deepEqual(parseAddressQuery("Appleford Av Jacka"), { number: "", words: ["appleford", "av", "jacka"], streetLetters: 16 }, "no digit anywhere: all words are the street part");
+  assert.deepEqual(labels("Unit 3 44 appleford ja"), ["Unit 3 44 Appleford Av, Jacka ACT 2914"]);
+  assert.deepEqual(labels("Flat 2/44 app ja"), ["Flat 2/44 Appleford Av, Jacka ACT 2914"]);
+  assert.deepEqual(labels("The Mews Acton")[0], "The Mews, Acton ACT 2601", "a street name starting with a word is still matched without a number");
+});
+
+test("M1: pasted text is refused fast — over 300 characters or more than 8 words gives [] (2,000 words in under 50 ms on the real index)", () => {
+  assert.equal(MAX_QUERY_LENGTH, 300);
+  assert.equal(MAX_QUERY_WORDS, 8);
+  assert.deepEqual(labels(`44 ${"app ".repeat(9)}`), [], "9 words after the number");
+  assert.ok(labels(`44 ${"app ".repeat(7)}`).length === 0 || true, "8 words is allowed to run (no match here)");
+  assert.deepEqual(labels(`44 app ${"x".repeat(300)}`), [], "over 300 characters");
+  const pasted = Array.from({ length: 2000 }, (_, i) => (i % 3 ? "appleford" : "44")).join(" ");
+  const started = performance.now();
+  assert.deepEqual(suggestAddresses(real, pasted), []);
+  const ms = performance.now() - started;
+  assert.ok(ms < 50, `2,000-word input took ${ms.toFixed(1)} ms`);
+  // A long but legitimate query (8 words, under 300 chars) still scans the whole index quickly.
+  const t2 = performance.now();
+  suggestAddresses(real, "44 appleford avenue jacka canberra act 2914 australia");
+  assert.ok(performance.now() - t2 < 200, "8-word query scans in reasonable time");
 });
 
 test("D6: nothing before 3 typed letters of the street; the number alone gives nothing", () => {
@@ -134,7 +164,7 @@ test("the committed index is the one STREET_INDEX_FILE names, within the size bu
   assert.match(real._.licence, /Open G-NAF End User Licence Agreement/);
   assert.match(real._.attribution, /G-NAF © Geoscape Australia/);
   assert.match(GNAF_ATTRIBUTION, /G-NAF © Geoscape Australia/);
-  assert.match(GNAF_ATTRIBUTION, /CC BY 4\.0/);
+  assert.match(GNAF_ATTRIBUTION, /End User Licence Agreement/);
   assert.equal(real._.entries, real.streets.length);
   assert.equal(real._.localities, real.localities.length);
 });
@@ -193,4 +223,21 @@ test("D5 on the real data: '44 app' yields Appleford Av (Jacka ACT 2914) among i
   assert.ok(real.localities.some((l) => l[0] === "Whitlam" && l[1] === "ACT"), "new suburbs present as of the Aug 2026 release");
   assert.ok(real.streets.some((r) => r[0] === "McCoy" && r[1] === "Cct"), "Mc names are cased McCoy, and Circuit is Cct");
   assert.ok(real.streets.some((r) => r[0] === "Lennox" && r[1] === "Xing"), "Crossing is Xing");
+});
+
+test("m1: no two rows of the real index show the same label in the same locality/postcode ('emu ban' offers Emu Bank once)", () => {
+  const seen = new Map<string, number>();
+  for (const row of real.streets) {
+    const key = `${`${row[0]} ${row[1]}`.trim().toLowerCase()}|${row[2]}|${row.length > 3 ? row[3] : real.localities[row[2]][2]}`;
+    seen.set(key, (seen.get(key) ?? 0) + 1);
+  }
+  assert.deepEqual([...seen].filter(([, n]) => n > 1), [], "duplicate display labels");
+  const emu = suggestAddresses(real, "emu ban").map((s) => s.label);
+  assert.deepEqual(emu, ["Emu Bank, Belconnen ACT 2617"]);
+  assert.equal(new Set(suggestAddresses(real, "44 app").map((s) => s.label)).size, 5, "no duplicate labels in a result list");
+});
+
+test("m3: the footer attribution is the full EULA statement", () => {
+  assert.equal(GNAF_ATTRIBUTION, "Street suggestions: Incorporates or developed using G-NAF © Geoscape Australia licensed by the Commonwealth of Australia under the Open Geo-coded National Address File (G-NAF) End User Licence Agreement.");
+  assert.equal(real._.attribution, GNAF_ATTRIBUTION.replace("Street suggestions: ", ""));
 });

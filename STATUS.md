@@ -18,7 +18,7 @@ closed PRs; see `TASK.md` for what is in progress.
   Staging D1 (apply BEFORE merging to `staging`). Then R10a route reminders. iPad layout is on
   `feature/ipad-layout` in review (signature-size fix round); needs Tony's real-iPad check.
 - `feature/intake-p2-address` (learner intake P2, migration `0012`, not pushed/merged): Address
-  suggestions from a bundled G-NAF street index (`public/data/streets-aug26.json`, 7,929 streets /
+  suggestions from a bundled G-NAF street index (`public/data/streets-aug26.json`, 7,928 streets /
   146 localities, 49 kB gz, Aug 2026 release; attribution in footer/README), custom listbox (≥44 px
   rows, ≤5), picked suburb/state/postcode stored in 3 new nullable columns, server shape check,
   free text always saves; nothing to ACTGDS. **Apply `0012` to Staging D1 BEFORE merging to
@@ -145,8 +145,8 @@ record: `tony-kunliu/actgds.com` Issue #3.
   Vietnamese, Greek, Cyrillic, kana, Hangul, Latin Ext-B, box drawing and some
   symbols print as boxes after the user confirms the warning.
 - Minor learner-edit review follow-ups are in `docs/BACKLOG.md`.
-- qa-browser §17 "phone landscape 844x390: drawing on the capped pads registers" failed once in
-  two runs (random stroke; passed on rerun, 496/496). Flaky, not a product bug; make the stroke deterministic.
+- qa-browser §17 "phone landscape 844x390: drawing on the capped pads registers" (and 932x430) failed in
+  2 of 4 runs (random mouse stroke; clean reruns 496/496). Flaky, not a product bug; make the stroke deterministic.
 - `tests/pdf-export-font-subset.test.ts` leaves a `/tmp/font-subset-*` dir (~14 MB
   out.pdf) per run; on shared machines this filled the disk (2026-10-11).
 

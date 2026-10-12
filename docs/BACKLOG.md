@@ -129,7 +129,14 @@ Long term (ecosystem, coordinated with Work on actgds.com Issue #3):
   `STREET_INDEX_FILE` in `lib/address-suggest.ts` to the new release name,
   run `npm test` (shape + real-data assertions) and commit the new
   `public/data/streets-<release>.json` (the old one is removed by the build).
-  Built 2026-10-12 from the Aug 2026 release (7,929 entries, 146 localities).
+  Built 2026-10-12 from the Aug 2026 release (7,928 entries, 146 localities).
+  Known data quirks to revisit (review 2026-10-12, not bugs): G-NAF has a
+  "Jerrabomberra ACT 2600" locality (the district) as well as Jerrabomberra NSW
+  2619, so an "… jerra" suburb prefix ranks the ACT one first (D4: ACT before
+  NSW); "Belconnen" appears twice (2615 and 2617, one row per postcode); a few
+  streets have the type inside the name with an empty type ("The Pines
+  Avenue", "The Valley Avenue", "The Causeway", "Emu Bank") and are shown as
+  named. Decide with Tony whether to hide the ACT Jerrabomberra district.
 - Learner intake D8 hook (route design R10): `homeDistrict()` should read
   `learner.addressSuburb` first when set (exact; evidence "from the picked
   suburb X") and fall back to the address-text derivation. R10a had not landed

@@ -1,0 +1,4 @@
+# Cloudflare Workers static assets (wrangler [assets]): the bundled street index carries the G-NAF release in its
+# file name (learner intake D3), so it is immutable. next.config.ts sets the same header for `next start`.
+/data/*
+  Cache-Control: public, max-age=31536000, immutable
