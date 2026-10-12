@@ -1,52 +1,42 @@
 # STATUS.md
 
-_Last updated: 2026-10-12_ (Production and Staging D1 at migration `0010`; learner 3a/3b live in Production)
+_Last updated: 2026-10-12_ (Production and Staging D1 at migration `0012`; release #14 live)
 
 This file describes **current state only**. History lives in git log and
 closed PRs; see `TASK.md` for what is in progress.
 
-## In progress
+## Current Snapshot
 
-- Released to Production 2026-10-11: CBT&A progress validity fix + Completed banner
-  (Worker `908b2c9c-9228-4608-b86b-76c9e2c14e44`, run 38153327724, no migration;
-  Production audit: 0 differences), learner 3a/3b (migration `0010`), Canberra time.
-- Merged to `staging` (Production after the next release): learner intake P1, the "Competency 23 from"
-  line (panel + form) and the PDF Eligibility auto-fill (no migration).
-- `feature/transfer-t1` (3c T1, migration `0011`, reviewed, not merged): transfer a learner to another
-  instructor (two taps, owner only or anyone when the owner is inactive; archived = restore first),
-  History line, receiver's CoP 9.1 h / 9.2 e "Checked"; nothing sent to ACTGDS. Waits for `0011` on
-  Staging D1 (apply BEFORE merging to `staging`). iPad layout (PR #61) is merged to `staging`;
-  needs Tony's real-iPad check.
-- `feature/intake-p2-address` (learner intake P2, migration `0012`, not pushed/merged): Address
-  suggestions from a bundled G-NAF street index (`public/data/streets-aug26.json`, 7,928 streets /
-  146 localities, 49 kB gz, Aug 2026 release; attribution in footer/README), custom listbox (≥44 px
-  rows, ≤5), picked suburb/state/postcode stored in 3 new nullable columns, server shape check,
-  free text always saves; nothing to ACTGDS. **Apply `0012` to Staging D1 BEFORE merging to
-  `staging`** (`Staging D1 Migrate`, `ref` = this branch). Yearly index rebuild: BACKLOG.
-- `feature/route-r10a` (R10 Competency 23 route reminders, no migration, pushed, reviewed twice, not merged):
-  Start Lesson panel line with the unfamiliar town centres (home district from the structured
-  suburb/state when a G-NAF suggestion was picked, else the free-text address; `lib/act-suburbs.ts`),
-  "Competency 23 route" group in the lesson form (7 centre chips, 6 ticks, "All met") written into
-  location + one comment line only on an explicit tap, parsed back in History Edit; nothing to ACTGDS.
-- Designs: `docs/superpowers/specs/2026-10-11-*.md` (transfer, route, intake), decided by Tony 2026-10-11.
-- `feature/ipad-layout` detail: CSS-only layout plus a fixed 640×320 signature canvas
-  (pen 5 canvas px); server signature limit 700k chars with its own "too large"
-  error (no silent fallback in History edit); qa-browser section 16.
+- **Production** (all via `Production Release`, all success): #12 run 38157600087 (`main`
+  `9dc4763`, PR #60: 3c T1 transfer, migration `0011`, intake P1, C23 line + PDF Eligibility;
+  Worker `5ea1eb27-3dc9-4d74-ba75-0bffba7219e9`); #13 run 38277936881 (`main` `98354bc`,
+  PR #64: iPad layout, intake P2 address suggestions, Operating Handbook; migration `0012`
+  applied by the release; Worker `eb9fa409-5707-4524-944d-636d133202d8`); #14 run 38287641067
+  (`main` `ae8d066`, PR #66: R10a Competency 23 route reminders, no migration; Worker
+  `690fb2c1-5387-42fb-807f-f7b2b6db39fc`). Rollback target of each run = the previous
+  run's Worker. D1 Time Travel bookmarks are only in the runs' step summaries (not in the
+  logs): not recorded here.
+- **Staging:** `0012` applied by `Staging D1 Migrate` run 38204269795 before P2 merged.
+- **Real-device / Tony checks:** iPad layout accepted on a real iPad ("iPad 可以"); route
+  reminders and the address suggestions (iOS "Scan Text" callout, list vs keyboard) tested
+  on Staging, reported OK by Tony ("测试都没问题"), not automated evidence.
+- **Still open:** `scripts/check-signature-row-limits.mjs` not yet run against a deployed
+  D1 (Staging only, never Production); notify-tick (lesson notifications) waits for Website
+  PR #47 rework and Tony's approval of the new endpoint + secret (Production OFF); intake
+  P3/P4; `docs/tasks` memory scheme + Memory Guard changes (Handbook §9); items in
+  `docs/BACKLOG.md`.
 
 ## Repository
 
-- **main:** has everything released to Production (Release B, P1b, lesson
-  ownership + revisions, learner edit Phase 1, compact PDF font, CI fix, rules reminders T1+T2);
-  `git fetch` for its head. Release B source
-  `d47350bcb65fa46d3135d1dbeec52882f7012886`; rollback baseline before
+- **main:** everything released to Production up to #14; `git fetch` for its head.
+  Release B source `d47350bcb65fa46d3135d1dbeec52882f7012886`; rollback baseline before
   Release A `8bae4e4c211a78b2e682d8b04744f102fa1a4328`.
-- **staging:** carries the same code as `main` plus date-validation and edit-form fixes (PR #39). Its HEAD moves; do not record
-  an exact SHA here.
+- **staging:** same product code as `main` (`main` also carries 3 workflow files merged
+  there directly). Its HEAD moves; do not record an exact SHA here.
 
 ## CI
 
-- Latest `staging` GitHub Actions run: **SUCCESS**. Tests: 645 on `feature/route-r10a` (2 poppler
-  tests skip without `pdftotext`; they hard-fail only with `REQUIRE_POPPLER=1`,
+- Latest `staging` GitHub Actions run: **SUCCESS**. 2 poppler tests skip without `pdftotext`; they hard-fail only with `REQUIRE_POPPLER=1`,
   set in `ci.yml` only).
 - `npm test` needs `--experimental-strip-types` (already in `package.json`).
 - **Workers Builds** runs `node scripts/check-project-memory.mjs && npm run
@@ -61,7 +51,7 @@ closed PRs; see `TASK.md` for what is in progress.
 - Workers Builds deploys every `staging` push to Worker
   `instructor-assistant`. The agent's token can read deployment metadata, not
   the commit mapping, so the live commit is inferred from push time.
-- D1 migration level: `0010`. Apply a migration to Staging D1 BEFORE merging
+- D1 migration level: `0012`. Apply a migration to Staging D1 BEFORE merging
   code that needs it to `staging`, with the manual workflow `Staging D1
   Migrate` (`staging-migrate.yml`, on `main`; inputs `ref` = a branch,
   `confirm` = `staging`).
@@ -73,13 +63,11 @@ closed PRs; see `TASK.md` for what is in progress.
   `confirm=production`); token only in GitHub Secrets; each run records the
   rollback version and a D1 Time Travel restore point. See
   `docs/RELEASE_B_RUNBOOK.md`.
-- Released 2026-10-08/09 (all on `main`, all succeeded): P1b paper import +
-  prior-instructor records, `0006` (run 37796457888, Worker
-  `96228a32-5f32-42b5-8f0d-7985e59c5d82`); lesson edit ownership + revisions,
-  `0007` (run 37806351565); learner edit Phase 1, `0008` (run 37891106278);
-  compact PDF font + CI fix (run 37907021677); rules reminders T1+T2, `0009` (run 38044255328, Worker `edde393c-40be-4974-8b3f-2d6df901361f`, PR #38); learner 3a/3b + Canberra time, `0010` (run 38106838536, Worker `792fed94-2fe1-41c6-8ff1-aaead13b7e67`, PR #50). Run 37668118567 was Release B
-  (rollback target `08ca0c75-cd97-44fa-87ec-ed0f7e6efbae`).
-- D1 migration level: `0010`. Cloudflare Access: enabled (Tony + Anna only).
+- Before #12: progress validity fix run 38153327724 (Worker
+  `908b2c9c-9228-4608-b86b-76c9e2c14e44`, no migration); `0010` run 38106838536 (Worker
+  `792fed94-2fe1-41c6-8ff1-aaead13b7e67`); `0006`-`0009` and older runs: git history of
+  this file. Release B run 37668118567 (rollback target `08ca0c75-cd97-44fa-87ec-ed0f7e6efbae`).
+- D1 migration level: `0012`. Cloudflare Access: enabled (Tony + Anna only).
 - Integration enabled: **YES**, `ACTGDS_INTEGRATION_ENV=production`, Receiver
   `https://actgds.com/api/integrations/instructor-assistant/events`,
   `ACTGDS_WEBHOOK_SECRET` set by Tony. Outbox Cron `*/5`. No backfill.
@@ -112,6 +100,10 @@ closed PRs; see `TASK.md` for what is in progress.
   MB typical, was ~14 MB); Export shows "PDF ready: <size> (compact font)".
   Full 16 MB font only for rare CJK characters. Access-gated sign-in; "Copy
   Integration ID" for manual ACTGDS CRM linking.
+- Transfer a learner to another instructor (3c T1, `0011`); iPad layout (fixed 640×320
+  signature canvas, 700k-char limit); Address suggestions from a bundled G-NAF street index
+  (`0012`, 3 nullable suburb/state/postcode columns); "Competency 23 from" + PDF Eligibility
+  auto-fill; Competency 23 route reminders (R10a). None of these sends anything to ACTGDS.
 - Working rule: `AGENTS.md` §13, standing authorizations §14 (new-endpoint/secret
   exclusion 2026-10-12), model choice §9; two-repo Operating Handbook
   `docs/OPERATING_HANDBOOK.md` approved by Tony 2026-10-12 (§16).
@@ -150,8 +142,6 @@ record: `tony-kunliu/actgds.com` Issue #3.
   Vietnamese, Greek, Cyrillic, kana, Hangul, Latin Ext-B, box drawing and some
   symbols print as boxes after the user confirms the warning.
 - Minor learner-edit review follow-ups are in `docs/BACKLOG.md`.
-- qa-browser §17 "phone landscape 844x390: drawing on the capped pads registers" (and 932x430) failed in
-  2 of 4 runs (random mouse stroke; clean reruns 496/496). Flaky, not a product bug; make the stroke deterministic.
 - `tests/pdf-export-font-subset.test.ts` leaves a `/tmp/font-subset-*` dir (~14 MB
   out.pdf) per run; on shared machines this filled the disk (2026-10-11).
 
