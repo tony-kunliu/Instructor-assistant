@@ -22,7 +22,9 @@ import {
   getLessonCompetencySelections,
   importPaperLessons,
   listLearnerArchiveEvents,
+  learnerSummariesSql,
   listLearners,
+  listLearnerSummaries,
   markTransferRecordsChecked,
   setLearnerArchived,
   transferLearner,
@@ -37,6 +39,7 @@ import { generatedEligibility, pdfEligibility } from "../lib/c23-eligibility.ts"
 import { resolveIntegrationConfig } from "../lib/integration/config.ts";
 import { CRON_SWEEP_LIMIT, IMMEDIATE_DELIVERY_LIMIT, processDueOutbox } from "../lib/integration/sender.ts";
 import { readFileSync } from "node:fs";
+import { parseLearnerListQuery } from "../lib/api.ts";
 import { buildLessonUpsertedPayload } from "../lib/integration/contract.ts";
 import type { IntegrationHooks, LessonUpsertedPayloadV1 } from "../lib/integration/types.ts";
 
@@ -613,6 +616,60 @@ test("budget (migration 0011): transfer is 6 statements (actor, target, learner,
   assert.equal(checked.maxBinds(), 6);
   assert.ok(transfer.count() + MIDDLEWARE_AND_ROUTE_QUERIES <= FREE_PLAN_INVOCATION_LIMIT);
   assert.equal(Number((await raw.prepare("SELECT COUNT(*) AS n FROM integration_outbox").first<{ n: number }>())?.n), outboxBefore, "a transfer / Checked enqueues nothing for ACTGDS");
+});
+
+// ── Learner list cards (UI redesign 2026-10-12): the list GET is 2 statements, never per learner ──
+
+test("budget (learner list cards): GET /api/learners = listLearners + listLearnerSummaries = 2 statements for 100 learners with lessons, 0 binds, compact summaries payload", async (t) => {
+  const { db: raw, tony } = await setup();
+  for (let i = 0; i < 100; i++) {
+    const learner = await createLearner(raw, { fullName: `QA Budget Card ${String(i).padStart(3, "0")}`, instructorId: tony.id });
+    if (i % 3 === 0) continue; // a third have no lessons
+    const core17 = CORE_COMPETENCY_IDS.slice(0, 17);
+    await createLesson(raw, learner.id, { lessonDate: "2026-03-01", startTime: "09:00", finishTime: "10:00", startOdometer: "0", finishOdometer: "10", assessedIds: core17, achievedResults: Object.fromEntries(core17.map((id) => [id, "achieved"])), adiSignature: SIG1, learnerSignature: SIG1 });
+    if (i % 3 === 2) await createLesson(raw, learner.id, { lessonDate: "2026-03-02", startTime: "09:00", finishTime: "10:30", startOdometer: "10", finishOdometer: "25", assessedIds: [REVIEW_1_17], achievedResults: { [REVIEW_1_17]: "achieved" }, adiSignature: SIG1, learnerSignature: SIG1 });
+  }
+  const { db, count, maxBinds } = countingD1(raw);
+  // Exactly what app/api/learners/route.ts does.
+  const [learners, summaries] = await Promise.all([listLearners(db), listLearnerSummaries(db)]);
+  const statements = count();
+  assert.equal(learners.length, 101);
+  assert.equal(Object.keys(summaries).length, 101, "one summary per listed learner");
+  assert.ok(learners.every((l) => l.id in summaries));
+  for (const summary of Object.values(summaries)) {
+    assert.deepEqual(Object.keys(summary), ["lessonCount", "totalMinutes", "lastLessonDate", "achievedCount", "achievedIds", "review1_17", "review1_22", "finalDrive23", "completed"]);
+    assert.ok(Number.isInteger(summary.lessonCount) && Number.isInteger(summary.totalMinutes) && Number.isInteger(summary.achievedCount));
+  }
+  const withReview = Object.values(summaries).filter((s) => s.review1_17 === "achieved").length;
+  assert.equal(withReview, 33, "Review 1-17 done exactly for the learners assessed in a later lesson");
+  const bytes = Buffer.byteLength(JSON.stringify(summaries), "utf8");
+  const plan = (await raw.prepare(`EXPLAIN QUERY PLAN ${learnerSummariesSql(false)}`).all<{ detail: string }>()).results.map((r) => r.detail);
+  const indexSearches = plan.filter((d) => /SEARCH (lessons|e) USING INDEX \S+ \(learner_id=\?\)/.test(d)).length;
+  t.diagnostic(`learner list GET for 101 learners: ${statements} statements, max binds ${maxBinds()}, summaries ${bytes} bytes (+${Math.round(bytes / 101)} per learner), + middleware lookup = ${statements + 1}; rows read bounded by ${indexSearches} learner_id index searches (no scan of lessons / competency_events)`);
+  assert.equal(indexSearches, 2);
+  assert.equal(statements, 2, "learners + summaries; no per-learner query");
+  // The background archived fetch (duplicate-licence check only) skips the aggregate: 1 statement.
+  const bg = countingD1(raw);
+  await listLearners(bg.db, { archived: true });
+  assert.equal(bg.count(), 1, "GET /api/learners?status=archived&summaries=0 is the learners statement alone");
+  assert.equal(maxBinds(), 0);
+  assert.ok(bytes <= 101 * 400, `summaries payload ${bytes} bytes (budget 400 per learner)`);
+  assert.ok(statements + 1 <= FREE_PLAN_INVOCATION_LIMIT);
+});
+
+test("route GET /api/learners: `summaries=0` is the only way to skip the aggregate, and the route is wired to it", () => {
+  const q = (query: string) => parseLearnerListQuery(`https://app.example/api/learners${query}`);
+  assert.deepEqual(q(""), { archived: false, withSummaries: true });
+  assert.deepEqual(q("?status=archived"), { archived: true, withSummaries: true });
+  assert.deepEqual(q("?status=archived&summaries=0"), { archived: true, withSummaries: false });
+  assert.deepEqual(q("?summaries=0"), { archived: false, withSummaries: false });
+  assert.deepEqual(q("?summaries=1"), { archived: false, withSummaries: true });
+  assert.deepEqual(q("?summaries=false&status=active"), { archived: false, withSummaries: true }, "anything but 0 keeps the card data");
+  // app/api/learners/route.ts cannot be imported here (`@/` alias), so pin its wiring at source level, as for the Cron entry above.
+  const route = readFileSync(new URL("../app/api/learners/route.ts", import.meta.url), "utf8");
+  assert.match(route, /const \{ archived, withSummaries \} = parseLearnerListQuery\(request\.url\)/);
+  assert.match(route, /withSummaries \? listLearnerSummaries\(db, \{ archived \}\) : Promise\.resolve\(\{\}\)/);
+  assert.match(route, /return \{ learners, summaries \}/);
 });
 
 // ── createLesson assessing 22 competencies ──────────────────────────────

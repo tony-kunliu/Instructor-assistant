@@ -1,5 +1,36 @@
+/* ── Shared design tokens (UI redesign approved by Tony 2026-10-12) ──
+   The ACTGDS website's colours (navy, gold, warm paper) so the two products read as one school. The top bar and the
+   learner list use these; the lesson, history, PDF and form screens still use the legacy tokens further down until they
+   are migrated (they stay light islands in dark mode on purpose: their own colours are hard-coded light). */
 :root {
-  --bg: #f4f2ee;
+  --paper: #f6f3eb;
+  --surface: #ffffff;
+  --surface-2: #efebe0;
+  --text: #0e1c2a;
+  --text-muted: #5c6773;
+  --hairline: #e2dccd;
+  --navy: #0b1b2b;
+  --on-navy: #f6f3eb;
+  --brand-gold: #b8892b;
+  --gold-ink: #7a5a14;   /* gold text on --gold-soft (readable at 12px) */
+  --gold-soft: #f3e7c6;
+  --on-gold: #0b1b2b;
+  --good: #146b3f;
+  --good-soft: #dff1e6;
+  --warn: #7e4a07;
+  --warn-soft: #fbebcf;
+  --seg-off: #e4dfd2;
+  --radius-s: 10px;
+  --radius-m: 14px;
+  --radius-l: 16px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --font-ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, "PingFang SC", sans-serif;
+  /* Legacy tokens (lesson, history, forms, PDF export UI). */
+  --bg: var(--paper);
   --card: #ffffff;
   --ink: #1d1d1f;
   --muted: #6b6b70;
@@ -11,6 +42,20 @@
   --radius: 14px;
   color-scheme: light;
 }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #09131c; --surface: #101f2d; --surface-2: #17283a; --text: #eee9dc; --text-muted: #9aa6b2; --hairline: #22364a;
+    --navy: #050d14; --on-navy: #eee9dc; --brand-gold: #d8ae55; --gold-ink: #e2bf6a; --gold-soft: #3a2f16; --on-gold: #0b1b2b;
+    --good: #5fd08e; --good-soft: #14352a; --warn: #f0b95c; --warn-soft: #3a2a10; --seg-off: #243a4e;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #09131c; --surface: #101f2d; --surface-2: #17283a; --text: #eee9dc; --text-muted: #9aa6b2; --hairline: #22364a;
+  --navy: #050d14; --on-navy: #eee9dc; --brand-gold: #d8ae55; --gold-ink: #e2bf6a; --gold-soft: #3a2f16; --on-gold: #0b1b2b;
+  --good: #5fd08e; --good-soft: #14352a; --warn: #f0b95c; --warn-soft: #3a2a10; --seg-off: #243a4e;
+  color-scheme: dark;
+}
 
 * { box-sizing: border-box; }
 
@@ -18,7 +63,7 @@ html, body {
   margin: 0;
   background: var(--bg);
   color: var(--ink);
-  font: 16px/1.4 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
+  font: 16px/1.4 var(--font-ui);
   -webkit-text-size-adjust: 100%;
   overflow-x: hidden;
 }
@@ -29,13 +74,31 @@ html, body {
   padding: calc(env(safe-area-inset-top) + 8px) 12px calc(env(safe-area-inset-bottom) + 24px);
 }
 
-.topbar { display: flex; align-items: center; gap: 10px; padding: 6px 4px 12px; }
-.signed-in-as { margin-left: auto; display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
-.signed-in-as span { font-size: 12px; color: var(--muted); font-weight: 600; }
-.signout-link { font-size: 11px; color: var(--muted); text-decoration: underline; }
-.topbar div { display: flex; flex-direction: column; }
-.topbar strong { font-size: 17px; }
-.topbar small { color: var(--gold); font-weight: 600; font-size: 12px; letter-spacing: .02em; }
+/* Navy top bar: full-bleed (the negative margins mirror .app's padding, incl. the safe area), brand + identity, then
+   the "Learners" headline with the primary + New learner button. */
+.topbar {
+  background: var(--navy);
+  color: var(--on-navy);
+  margin: calc(-1 * (env(safe-area-inset-top) + 8px)) -12px var(--space-3);
+  padding: calc(env(safe-area-inset-top) + 14px) var(--space-4) var(--space-4);
+  display: grid;
+  gap: var(--space-4);
+}
+.brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.brand img { width: 34px; height: 34px; border-radius: 10px; flex: none; }
+.brand-name { display: flex; flex-direction: column; min-width: 0; }
+.brand strong { font-size: 16px; line-height: 1.25; }
+.brand small { font-size: 12px; opacity: .72; letter-spacing: .01em; }
+.signed-in-as { margin-left: auto; display: flex; flex-direction: column; align-items: flex-end; justify-content: center; gap: 0; text-align: right; flex: none; }
+.signed-in-as span { font-size: 12px; font-weight: 600; opacity: .85; }
+/* 44px hit area from its own padding (the name above it is not part of the link). */
+.signout-link { display: inline-flex; align-items: center; min-height: 44px; padding: 0 var(--space-1); font-size: 12px; color: inherit; text-decoration: underline; text-underline-offset: 2px; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+.headline { display: flex; align-items: flex-end; justify-content: space-between; gap: var(--space-3); }
+.headline h1 { margin: 0; font-size: 28px; line-height: 1.1; font-weight: 700; letter-spacing: -.01em; }
+.headline-sub { display: block; font-size: 13px; opacity: .72; margin-top: 2px; }
+.btn.gold { background: var(--brand-gold); color: var(--on-gold); min-height: 44px; padding: 0 var(--space-4); border-radius: 12px; font-size: 14px; white-space: nowrap; flex: none; }
+.btn.gold:focus-visible, .view-tab:focus-visible, .lcard:focus-visible, .list-expand:focus-visible, .signout-link:focus-visible { outline: 2px solid var(--brand-gold); outline-offset: 2px; }
 
 .card {
   background: var(--card);
@@ -46,19 +109,51 @@ html, body {
 }
 .card h2 { margin: 0 0 12px; font-size: 18px; }
 
-.picker { display: flex; flex-direction: column; gap: 10px; }
-.picker-row { display: flex; gap: 10px; align-items: flex-end; }
-.picker-row .field { flex: 1; min-width: 0; }
-.view-tabs { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 4px; background: #efece6; border-radius: 10px; padding: 3px; }
-.view-tab { font: inherit; font-size: 13px; font-weight: 600; min-width: 0; min-height: 36px; padding: 6px 4px; border: 0; border-radius: 8px; background: transparent; color: var(--muted); cursor: pointer; touch-action: manipulation; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.view-tab.active { background: var(--card); color: var(--ink); box-shadow: 0 1px 2px rgba(0, 0, 0, .12); }
-.learner-search { width: 100%; min-width: 0; font: inherit; font-size: 17px; padding: 11px 12px; border: 1px solid var(--line); border-radius: 10px; background: #fbfaf8; color: var(--ink); -webkit-appearance: none; appearance: none; }
-.learner-search:focus { outline: 2px solid var(--gold); border-color: transparent; }
-.learner-results { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
-.learner-results button { width: 100%; display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 44px; padding: 8px 12px; font: inherit; font-weight: 600; text-align: left; color: var(--ink); background: #f7f5f1; border: 1px solid var(--line); border-radius: 10px; cursor: pointer; touch-action: manipulation; }
-.learner-results button span { min-width: 0; overflow-wrap: anywhere; }
-.learner-results small { color: var(--muted); font-weight: 500; flex-shrink: 0; }
-.learner-results .empty { font-size: 14px; }
+/* Learner list: search, segmented view tabs with counts, a one-line glance, then one card per learner. The list sits
+   directly on the paper (the section itself is not a box); each learner card is the surface. */
+.card.picker { display: flex; flex-direction: column; gap: var(--space-3); background: transparent; border: 0; padding: 0 0 var(--space-1); color: var(--text); }
+.picker > .empty { color: var(--text-muted); padding: var(--space-3) 0; }
+.search { position: relative; display: block; }
+.search svg { position: absolute; left: 14px; top: 50%; translate: 0 -50%; width: 18px; height: 18px; color: var(--text-muted); pointer-events: none; }
+.learner-search { width: 100%; min-width: 0; min-height: 48px; font: inherit; font-size: 16px; padding: 0 14px 0 42px; border: 1px solid var(--hairline); border-radius: var(--radius-m); background: var(--surface); color: var(--text); -webkit-appearance: none; appearance: none; }
+.learner-search::placeholder { color: var(--text-muted); }
+.learner-search:focus-visible { outline: 2px solid var(--brand-gold); outline-offset: 2px; border-color: transparent; }
+.view-tabs { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: var(--space-1); background: var(--surface-2); border-radius: var(--radius-m); padding: var(--space-1); }
+.view-tab { font: inherit; font-size: 14px; font-weight: 600; min-width: 0; min-height: 44px; padding: 6px 4px; border: 0; border-radius: 11px; background: transparent; color: var(--text-muted); cursor: pointer; touch-action: manipulation; white-space: nowrap; display: flex; align-items: center; justify-content: center; gap: 6px; }
+.view-tab .view-count { font-style: normal; font-size: 12px; font-variant-numeric: tabular-nums; padding: 1px 7px; border-radius: 99px; background: var(--seg-off); color: var(--text-muted); }
+.view-tab.active { background: var(--surface); color: var(--text); box-shadow: 0 1px 2px rgba(0, 0, 0, .12); }
+.view-tab.active .view-count { background: var(--gold-soft); color: var(--gold-ink); }
+.glance { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 0; font-size: 13px; color: var(--text-muted); }
+.glance b { color: var(--text); font-variant-numeric: tabular-nums; }
+.glance .warn b { color: var(--warn); }
+.learner-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 330px), 1fr)); }
+.learner-list .empty { padding: 28px var(--space-3); text-align: center; color: var(--text-muted); border: 1px dashed var(--hairline); border-radius: var(--radius-l); font-size: 14px; }
+.lcard { width: 100%; text-align: left; font: inherit; color: var(--text); display: grid; gap: var(--space-3); padding: 14px; background: var(--surface); border: 1px solid var(--hairline); border-radius: var(--radius-l); cursor: pointer; touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+.lcard:hover { border-color: var(--brand-gold); }
+.lcard.selected { border-color: var(--brand-gold); box-shadow: inset 0 0 0 1px var(--brand-gold); }
+.lc-top { display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; gap: var(--space-3); align-items: center; }
+.lc-avatar { width: 44px; height: 44px; border-radius: 50%; background: var(--navy); color: var(--brand-gold); display: grid; place-items: center; font-weight: 700; font-size: 15px; letter-spacing: .02em; }
+.lc-id { display: grid; gap: 2px; min-width: 0; }
+.lc-name { font-weight: 700; font-size: 16px; overflow-wrap: anywhere; }
+.lc-meta { font-size: 13px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.lc-chev { width: 20px; height: 20px; color: var(--text-muted); }
+.lc-prog { display: grid; gap: 6px; }
+.lc-prog-head { display: flex; justify-content: space-between; align-items: baseline; gap: var(--space-2); flex-wrap: wrap; font-size: 13px; color: var(--text-muted); }
+.lc-prog-head b { color: var(--text); font-variant-numeric: tabular-nums; }
+.lc-segs { display: grid; grid-template-columns: repeat(22, 1fr); gap: 2px; }
+.lc-segs i { display: block; height: 8px; border-radius: 2px; background: var(--seg-off); }
+.lc-segs i.on { background: var(--brand-gold); }
+.lc-gates { display: flex; flex-wrap: wrap; gap: 6px; }
+.lc-chip { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600; padding: 4px 9px; border-radius: 99px; background: var(--surface-2); color: var(--text-muted); }
+.lc-chip.done, .lc-chip.plain { background: var(--good-soft); color: var(--good); }
+.lc-chip.next { background: var(--gold-soft); color: var(--gold-ink); }
+.lc-chip.warn { background: var(--warn-soft); color: var(--warn); }
+.list-expand { background: var(--surface-2); color: var(--text); min-height: 44px; }
+.list-retry { color: var(--warn); font-weight: 600; min-height: 44px; padding: 0; text-align: left; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition-duration: 0s !important; animation-duration: 0s !important; scroll-behavior: auto !important; }
+}
 
 .lifecycle { margin-top: 12px; padding: 10px 12px; border-radius: 10px; font-size: 14px; }
 .lifecycle p { margin: 0 0 8px; }
@@ -126,7 +221,7 @@ html, body {
 .status { margin: 0 0 12px; padding: 10px 12px; border-radius: 10px; font-weight: 600; }
 .status.ok { background: #e3f3e8; color: #135c32; }
 .status.error { background: #fbe4e1; color: #8e2418; }
-.status.info { background: #efece6; }
+.status.info { background: #efece6; color: #1d1d1f; }
 .status.warn { background: #fdf0d2; color: #6b4a00; }
 
 .summary-main { display: flex; flex-direction: column; }
@@ -257,7 +352,7 @@ html, body {
 .hint.danger { color: var(--stop); }
 .empty { color: var(--muted); margin: 0; }
 
-.foot { text-align: center; color: var(--muted); font-size: 12px; margin-top: 8px; }
+.foot { text-align: center; color: var(--text-muted); font-size: 12px; margin-top: 8px; }
 
 .save-errors { margin: 16px 0 0; padding: 12px; border-radius: 12px; border: 1.5px solid var(--stop); background: #fbe4e1; color: #8e2418; }
 .save-errors strong { display: block; margin-bottom: 6px; font-size: 15px; }
@@ -348,18 +443,32 @@ html, body {
     max-width: 880px;
     padding: calc(env(safe-area-inset-top) + 16px) max(24px, env(safe-area-inset-right)) calc(env(safe-area-inset-bottom) + 32px) max(24px, env(safe-area-inset-left));
   }
-  .topbar { padding: 4px 4px 16px; gap: 12px; }
-  .topbar img { width: 40px; height: 40px; }
-  .topbar strong { font-size: 20px; }
-  .topbar small { font-size: 13px; }
+  .topbar {
+    margin: calc(-1 * (env(safe-area-inset-top) + 16px)) calc(-1 * max(24px, env(safe-area-inset-right))) 16px calc(-1 * max(24px, env(safe-area-inset-left)));
+    padding: calc(env(safe-area-inset-top) + 16px) max(24px, env(safe-area-inset-right)) 18px max(24px, env(safe-area-inset-left));
+  }
+  .brand img { width: 40px; height: 40px; }
+  .brand strong { font-size: 18px; }
+  .brand small { font-size: 13px; }
   .signed-in-as span { font-size: 14px; }
-  .signout-link { font-size: 14px; display: inline-flex; align-items: center; min-height: 44px; padding: 0 2px; }
+  .signout-link { font-size: 14px; }
+  .headline h1 { font-size: 32px; }
+  .headline-sub { font-size: 14px; }
+  .btn.gold { min-height: 48px; font-size: 15px; }
 
   .card { padding: 20px 22px; margin-bottom: 16px; }
   .card h2 { font-size: 20px; }
-  .picker { gap: 12px; }
+  .card.picker { padding: 0 0 4px; gap: 14px; }
+}
+/* Wider than the 880px column (.app is border-box, so its outer width is 880px): the bar becomes a rounded island
+   the width of the content, not a full-bleed strip that stops at the column edges. */
+@media (min-width: 881px) and (min-height: 600px) {
+  .topbar { margin: 0 0 16px; padding: 16px 24px 18px; border-radius: var(--radius-l); }
+}
+@media (min-width: 700px) and (min-height: 600px) {
   .view-tab { min-height: 44px; font-size: 15px; }
-  .learner-results button { min-height: 48px; }
+  .lc-name { font-size: 17px; }
+  .lc-meta, .lc-prog-head, .glance { font-size: 14px; }
 
   .field span { font-size: 14px; }
   .grid { gap: 14px; }

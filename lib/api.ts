@@ -14,6 +14,16 @@ export async function handle(work: () => unknown | Promise<unknown>, status = 20
   }
 }
 
+/**
+ * `GET /api/learners` query: `status=archived` selects the archived set; `summaries=0` skips the per-learner card
+ * aggregate (the client's background archived fetch for the duplicate-licence check needs only the learners).
+ * Anything else (absent, `1`, garbage) keeps the summaries, so the list can never silently lose its card data.
+ */
+export function parseLearnerListQuery(url: string): { archived: boolean; withSummaries: boolean } {
+  const params = new URL(url).searchParams;
+  return { archived: params.get("status") === "archived", withSummaries: params.get("summaries") !== "0" };
+}
+
 export async function readJson(request: Request): Promise<Record<string, unknown>> {
   try {
     const body = await request.json();

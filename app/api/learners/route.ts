@@ -1,12 +1,19 @@
-import { handle, readJsonWithDefaultInstructor } from "@/lib/api.ts";
+import { handle, parseLearnerListQuery, readJsonWithDefaultInstructor } from "@/lib/api.ts";
 import { getD1 } from "@/lib/db.ts";
-import { createLearner, listLearners } from "@/lib/repo.ts";
+import { createLearner, listLearners, listLearnerSummaries } from "@/lib/repo.ts";
 
 export const dynamic = "force-dynamic";
 
+// Two statements: the learners and their card summaries (one set-based aggregate, see lib/repo.ts#listLearnerSummaries).
+// `summaries=0` skips the aggregate (one statement): the client's background archived fetch for the duplicate-licence
+// check needs only the learners; the Archived tab fetches the summaries when it is opened.
 export function GET(request: Request) {
-  const archived = new URL(request.url).searchParams.get("status") === "archived";
-  return handle(async () => ({ learners: await listLearners(getD1(), { archived }) }));
+  const { archived, withSummaries } = parseLearnerListQuery(request.url);
+  return handle(async () => {
+    const db = getD1();
+    const [learners, summaries] = await Promise.all([listLearners(db, { archived }), withSummaries ? listLearnerSummaries(db, { archived }) : Promise.resolve({})]);
+    return { learners, summaries };
+  });
 }
 
 export async function POST(request: Request) {

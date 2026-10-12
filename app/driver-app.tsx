@@ -14,7 +14,8 @@ import {
   parseTime,
   type Totals,
 } from "@/lib/calc.ts";
-import { FINAL_DRIVE_23, REVIEW_1_17, REVIEW_1_22, invalidationNotice, type AssessmentResult, type LearnerProgress, type MilestoneInvalidation } from "@/lib/competency.ts";
+import { CORE_COMPETENCY_IDS, FINAL_DRIVE_23, REVIEW_1_17, REVIEW_1_22, invalidationNotice, type AssessmentResult, type LearnerProgress, type MilestoneInvalidation } from "@/lib/competency.ts";
+import { cardMeta, cardReminders, emptySummary, gateChips, glance, initials, lastLessonLine, listCollapsed, optionLabel, summaryFromProgress, type LearnerListSummary } from "@/lib/learner-card.ts";
 import { accessLogoutUrl } from "@/lib/access-logout.ts";
 import { ARCHIVE_REASONS, archiveReasonText, MAX_ARCHIVE_NOTE_LENGTH } from "@/lib/archive-reasons.ts";
 import { filterLearners } from "@/lib/learner-filter.ts";
@@ -83,6 +84,12 @@ type LearnerDraft = {
 type Detail = { learner: Learner; totals: Totals; lessons: Lesson[]; progress: LearnerProgress; completion: CompletionSummary | null };
 
 const byName = (a: Learner, b: Learner) => a.fullName.localeCompare(b.fullName);
+
+/** The open learner's card data from the detail just loaded (same totals/progress the panel shows), so the card never lags a save. */
+function summaryFromDetail(detail: Detail): LearnerListSummary {
+  const lastLessonDate = detail.lessons.filter((l) => l.lessonNo > 0).reduce<string | null>((latest, l) => (latest === null || l.lessonDate > latest ? l.lessonDate : latest), null);
+  return summaryFromProgress(detail.progress, detail.totals, lastLessonDate);
+}
 
 /** The form's Competency 23 inputs as the rules read them ("" = not recorded). */
 function draftEligibilityLearner(d: LearnerDraft): EligibilityLearner {
@@ -210,6 +217,28 @@ async function api<T>(url: string, init?: RequestInit): Promise<T> {
 
 export default function DriverApp() {
   const [learners, setLearners] = useState<Learner[]>([]);
+  // Per-learner card data (lessons, hours, competencies, gates) from GET /api/learners; refreshed from the detail of the open learner.
+  const [summaries, setSummaries] = useState<Record<string, LearnerListSummary>>({});
+  // With a learner open, the list shows only their card until "Show all learners" (or a search / view change) expands it.
+  const [listExpanded, setListExpanded] = useState(false);
+  // "Show all learners" moves keyboard focus to the open learner's card (or the first card) once the list has expanded.
+  const focusCardAfterExpand = useRef(false);
+  // The archived learners' card data is fetched only when the Archived tab is opened (the background archived fetch for
+  // the duplicate-licence check carries no summaries, so D1 does not aggregate every archived learner on each page load).
+  const [archivedSummariesLoaded, setArchivedSummariesLoaded] = useState(false);
+  // Set when that fetch failed: the archived cards show without details and offer a retry (never "Loading…" forever).
+  const [archivedSummariesError, setArchivedSummariesError] = useState<string | null>(null);
+  const loadArchivedSummaries = useCallback(() => {
+    setArchivedSummariesError(null);
+    api<{ learners: Learner[]; summaries: Record<string, LearnerListSummary> }>("/api/learners?status=archived")
+      .then((data) => {
+        setArchivedLearners(data.learners);
+        // The server's figures replace whatever this device held (an archived learner opened since derives the same data from its detail).
+        setSummaries((current) => ({ ...current, ...data.summaries }));
+        setArchivedSummariesLoaded(true);
+      })
+      .catch((error: Error) => setArchivedSummariesError(error.message));
+  }, []);
   const [instructors, setInstructors] = useState<Instructor[]>([]);
   const [selectedId, setSelectedId] = useState("");
   const [detail, setDetail] = useState<Detail | null>(null);
@@ -295,6 +324,7 @@ export default function DriverApp() {
       const data = await api<Detail>(`/api/learners/${encodeURIComponent(id)}`);
       if (selectedRef.current !== id) return;
       setDetail(data);
+      setSummaries((current) => ({ ...current, [id]: summaryFromDetail(data) }));
       const saved = storage.get(draftKey(id));
       setDraft(saved ? { ...freshLesson(data.totals.lastFinishOdometer), ...JSON.parse(saved) } : freshLesson(data.totals.lastFinishOdometer));
     } catch (error) {
@@ -307,11 +337,12 @@ export default function DriverApp() {
     void (async () => {
       try {
         const [learnerData, instructorData, meData] = await Promise.all([
-          api<{ learners: Learner[] }>("/api/learners"),
+          api<{ learners: Learner[]; summaries: Record<string, LearnerListSummary> }>("/api/learners"),
           api<{ instructors: Instructor[] }>("/api/instructors"),
           api<{ instructor: { id: string; fullName: string } | null }>("/api/me"),
         ]);
         setLearners(learnerData.learners);
+        setSummaries((current) => ({ ...current, ...learnerData.summaries }));
         setInstructors(instructorData.instructors);
         setSignedInAs(meData.instructor?.fullName ?? null);
         setSignedInInstructorId(meData.instructor?.id ?? null);
@@ -319,7 +350,7 @@ export default function DriverApp() {
         setView(start.view);
         setReady(true);
         // Archived learners load in the background too, so the duplicate-licence check covers them; a failure just leaves the "not checked" note.
-        void api<{ learners: Learner[] }>("/api/learners?status=archived")
+        void api<{ learners: Learner[] }>("/api/learners?status=archived&summaries=0")
           .then((data) => setArchivedLearners((current) => current ?? data.learners))
           .catch(() => undefined);
         if (start.learnerId) await loadLearner(start.learnerId);
@@ -330,6 +361,14 @@ export default function DriverApp() {
       }
     })();
   }, [loadLearner]);
+
+  // After "Show all learners": focus the open learner's card, else the first card (keyboard / screen-reader continuity).
+  useEffect(() => {
+    if (!listExpanded || !focusCardAfterExpand.current) return;
+    focusCardAfterExpand.current = false;
+    const card = document.querySelector<HTMLElement>('[data-testid="learner-card"][aria-current="true"]') ?? document.querySelector<HTMLElement>('[data-testid="learner-card"]');
+    card?.focus({ preventScroll: true });
+  }, [listExpanded]);
 
   // Keep the in-progress lesson on this device in case the page reloads mid-lesson.
   useEffect(() => {
@@ -376,6 +415,7 @@ export default function DriverApp() {
       });
       storage.set(LAST_INSTRUCTOR_KEY, learner.instructorId);
       setLearners((current) => [...current, learner].sort((a, b) => a.fullName.localeCompare(b.fullName)));
+      setSummaries((current) => ({ ...current, [learner.id]: emptySummary() }));
       setAddingLearner(false);
       setLearnerDraft(emptyLearner);
       await loadLearner(learner.id);
@@ -405,6 +445,7 @@ export default function DriverApp() {
     setEditLearnerId(l.id);
     setEditingLearner(true);
     setAddingLearner(true);
+    setListExpanded(false);
     setStatus(null);
   };
 
@@ -468,7 +509,9 @@ export default function DriverApp() {
       );
       storage.remove(draftKey(detail.learner.id));
       setSaveIssues(null);
-      setDetail({ ...detail, totals: result.totals, progress: result.progress, completion: result.completion, lessons: [result.lesson, ...detail.lessons] });
+      const next: Detail = { ...detail, totals: result.totals, progress: result.progress, completion: result.completion, lessons: [result.lesson, ...detail.lessons] };
+      setDetail(next);
+      setSummaries((current) => ({ ...current, [detail.learner.id]: summaryFromDetail(next) }));
       setDraft(freshLesson(result.totals.lastFinishOdometer));
       setStatus({ kind: "ok", text: `Lesson #${result.lesson.lessonNo} saved.` });
       window.scrollTo({ top: 0, behavior: "smooth" });
@@ -595,6 +638,7 @@ export default function DriverApp() {
   const pickLearner = (id: string) => {
     setAddingLearner(false);
     setQuery("");
+    setListExpanded(false);
     void loadLearner(id);
   };
 
@@ -611,17 +655,14 @@ export default function DriverApp() {
   const chooseView = (next: PickerView) => {
     setView(next);
     setQuery("");
+    setListExpanded(true);
     // The open learner only stays if they belong to the target view — never leave an active learner showing in Archived (or vice versa).
     const open = detail?.learner ?? [...learners, ...(archivedLearners ?? [])].find((l) => l.id === selectedId);
     if (selectionAfterViewChange(open, next, signedInInstructorId) === "clear") {
       clearSelection();
       setStatus(null);
     }
-    if (next === "archived" && archivedLearners === null) {
-      api<{ learners: Learner[] }>("/api/learners?status=archived")
-        .then((data) => setArchivedLearners(data.learners))
-        .catch((error: Error) => setStatus({ kind: "error", text: error.message }));
-    }
+    if (next === "archived" && !archivedSummariesLoaded) loadArchivedSummaries();
   };
 
   // Archive is a reversible lifecycle flag, never a delete — lessons,
@@ -732,6 +773,7 @@ export default function DriverApp() {
     setLearnerDraft({ ...emptyLearner, instructorId: instructors.some((i) => i.id === defaultInstructorId) ? defaultInstructorId : "" });
     setEditingLearner(false);
     setAddingLearner(true);
+    setListExpanded(false);
     setHoursOnTouched(false);
     setStatus(null);
   };
@@ -772,14 +814,32 @@ export default function DriverApp() {
   // No Access identity (local dev) means "My learners" has no meaning.
   const views = availableViews(signedInInstructorId);
   const activeView: PickerView = views.includes(view) ? view : "all";
+  // The list = exactly this view's members (search narrows it); the open learner is never injected into a view they don't belong to.
   const viewMembers = viewLearners(learners, archivedLearners ?? [], activeView, signedInInstructorId);
-  // Dropdown = exactly this view's members; the open learner is never injected into a view they don't belong to.
-  const selectOptions = viewMembers;
   const searchResults = filterLearners(viewMembers, { scope: "all", instructorId: signedInInstructorId, query });
   const mineCount = viewLearners(learners, [], "mine", signedInInstructorId).length;
-  const viewLabel = (v: PickerView) =>
-    v === "mine" ? `My learners (${mineCount})` : v === "all" ? `All (${learners.length})` : `Archived${archivedLearners ? ` (${archivedLearners.length})` : ""}`;
-  const optionLabel = (l: Learner) => (activeView === "mine" ? l.fullName : `${l.fullName} · ${l.instructorName}`);
+  const viewLabel = (v: PickerView) => (v === "mine" ? "Mine" : v === "all" ? "All" : "Archived");
+  const viewCount = (v: PickerView) => (v === "mine" ? mineCount : v === "all" ? learners.length : archivedLearners ? archivedLearners.length : null);
+  const viewSubline = activeView === "mine" ? "Your active learners" : activeView === "all" ? "Everyone in the school" : "Hidden from the daily list";
+  // Card data: what the list GET sent (or the detail of an opened learner); a learner added on this device starts empty.
+  // Null only for an archived learner whose summaries fetch failed: that card shows no figures rather than zeros.
+  const summaryOf = (l: Learner): LearnerListSummary | null => summaries[l.id] ?? (l.archivedAt === null ? emptySummary() : null);
+  const today = localNow().date;
+  const cardsOf = (list: readonly Learner[]) => list.map((l) => { const summary = summaryOf(l); return { learner: l, summary, reminders: summary ? cardReminders(l, summary, today) : [] }; });
+  // A compact list while a learner is open (or the learner form is open): their card, plus "Show all learners", which
+  // always works — switching learner while the edit form is open discards that form, as with the former dropdown.
+  const openCard = selectedId ? viewMembers.find((l) => l.id === selectedId) : undefined;
+  const collapsed = listCollapsed({ query, expanded: listExpanded, formOpen: addingLearner, openInView: openCard !== undefined });
+  const shownCards = cardsOf(collapsed ? (openCard ? [openCard] : []) : searchResults);
+  const hiddenCards = collapsed ? viewMembers.length - shownCards.length : 0;
+  // Archived card data arrives with the Archived tab's own fetch; until then the list shows a loading line, never zeros.
+  // If that fetch failed, the cards show without details plus a retry line.
+  const listLoading = activeView === "archived" && !archivedSummariesLoaded && archivedSummariesError === null;
+  const listDetailsFailed = activeView === "archived" && !archivedSummariesLoaded && archivedSummariesError !== null;
+  const viewGlance = glance(cardsOf(viewMembers).filter((c) => c.summary !== null).map((c) => ({ summary: c.summary as LearnerListSummary, reminders: c.reminders })));
+  const emptyListText = query.trim()
+    ? `No matching learners${activeView === "mine" ? ' — try "All"' : ""}.`
+    : activeView === "archived" ? "No archived learners." : "No learners here yet.";
   const panel = detail ? learnerPanel({ archivedAt: detail.learner.archivedAt, completed: detail.progress.completed }) : "active";
   const archivedReason = detail ? archiveReasonText(detail.learner.archiveReason, detail.learner.archiveNote) : null;
   const openArchivePanel = () => { setTransferDraft(null); setArchiveDraft({ reason: "", note: "" }); };
@@ -909,70 +969,124 @@ export default function DriverApp() {
   return (
     <main className="app">
       <header className="topbar">
-        <img src="/icon.svg" width={32} height={32} alt="" />
-        <div>
-          <strong>ACTGDS Driver</strong>
-          <small>CBT&amp;A Lesson Checklist</small>
-        </div>
-        {signedInAs ? (
-          <div className="signed-in-as">
-            <span>Signed in as {signedInAs}</span>
-            <a href={logoutUrl} className="signout-link" data-testid="signout-link">Sign out</a>
+        <div className="brand">
+          <img src="/icon.svg" width={34} height={34} alt="" />
+          <div className="brand-name">
+            <strong>ACTGDS Driver</strong>
+            <small>CBT&amp;A Lesson Checklist</small>
           </div>
-        ) : null}
+          {signedInAs ? (
+            <div className="signed-in-as">
+              <span>Signed in as {signedInAs}</span>
+              <a href={logoutUrl} className="signout-link" data-testid="signout-link">Sign out</a>
+            </div>
+          ) : null}
+        </div>
+        <div className="headline">
+          <div>
+            <h1>Learners</h1>
+            {ready ? <span className="headline-sub" data-testid="view-subline">{viewSubline}</span> : null}
+          </div>
+          {ready ? (
+            <button type="button" className="btn gold new-learner" onClick={() => (addingLearner ? closeLearnerForm() : openAddLearner())} data-testid="new-learner">
+              {addingLearner ? "Cancel" : "+ New learner"}
+            </button>
+          ) : null}
+        </div>
       </header>
 
-      <section className="card picker">
+      <section className="card picker" data-selected={selectedId}>
         {!ready ? (
           <p className="empty" data-testid="picker-loading" role="status">Loading your learners…</p>
         ) : (
           <>
+        <label className="search">
+          <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true"><circle cx="9" cy="9" r="6" /><path d="m14 14 4 4" /></svg>
+          <input
+            type="search"
+            className="learner-search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder={activeView === "archived" ? "Search archived learners…" : "Search learner name…"}
+            aria-label="Search learner name"
+            autoComplete="off"
+            autoCorrect="off"
+            enterKeyHint="search"
+          />
+        </label>
         <div className="view-tabs" role="group" aria-label="Which learners to show">
           {views.map((v) => (
             <button key={v} type="button" className={`view-tab${activeView === v ? " active" : ""}`} aria-pressed={activeView === v} onClick={() => chooseView(v)}>
               {viewLabel(v)}
+              {viewCount(v) !== null ? <em className="view-count">{viewCount(v)}</em> : null}
             </button>
           ))}
         </div>
-        <input
-          type="search"
-          className="learner-search"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder={activeView === "archived" ? "Search archived learners…" : "Search learner name…"}
-          aria-label="Search learner name"
-          autoComplete="off"
-          autoCorrect="off"
-          enterKeyHint="search"
-        />
-        {query.trim() ? (
-          <ul className="learner-results" aria-label="Matching learners">
-            {searchResults.length ? (
-              searchResults.map((l) => (
-                <li key={l.id}>
-                  <button type="button" onClick={() => pickLearner(l.id)} data-testid="learner-result">
-                    <span>{l.fullName}</span>
-                    {activeView !== "mine" ? <small>{l.instructorName}</small> : null}
-                  </button>
-                </li>
-              ))
-            ) : (
-              <li className="empty">No matching learners{activeView === "mine" ? ' — try "All"' : ""}.</li>
-            )}
-          </ul>
+        {activeView !== "archived" ? (
+          <p className="glance" data-testid="glance">
+            <span><b>{viewGlance.learning}</b> learning</span>
+            <span className={viewGlance.withReminder ? "warn" : ""}><b>{viewGlance.withReminder}</b> with a reminder</span>
+            <span><b>{viewGlance.readyForFinalDrive}</b> ready for Final Drive</span>
+          </p>
         ) : null}
-        <div className="picker-row">
-          <label className="field">
-            <span>Learner</span>
-            <select value={selectedId} onChange={(e) => pickLearner(e.target.value)} aria-label="Select learner">
-              <option value="">{selectOptions.length ? "Select learner…" : activeView === "archived" ? "No archived learners" : "No learners here yet"}</option>
-              {selectOptions.map((learner) => <option key={learner.id} value={learner.id}>{optionLabel(learner)}</option>)}
-            </select>
-          </label>
-          <button type="button" className="btn ghost" onClick={() => (addingLearner ? closeLearnerForm() : openAddLearner())}>
-            {addingLearner ? "Cancel" : "+ New"}
+        {/* Always mounted so assistive tech announces the change of text, not a new element. */}
+        <p className="sr-only" aria-live="polite" data-testid="list-collapsed-note">{collapsed && hiddenCards > 0 ? `Showing ${shownCards.length} of ${viewMembers.length} learners.` : ""}</p>
+        {listDetailsFailed ? (
+          <button type="button" className="link list-retry" onClick={loadArchivedSummaries} data-testid="list-retry">Card details unavailable. Tap to retry.</button>
+        ) : null}
+        {listLoading ? <p className="empty" data-testid="list-loading" role="status">Loading archived learners…</p> : (
+        <ul className="learner-list" data-testid="learner-list" aria-label={activeView === "archived" ? "Archived learners" : "Learners"}>
+          {shownCards.map(({ learner: l, summary: s, reminders }) => {
+            const selected = l.id === selectedId;
+            return (
+              <li key={l.id}>
+                <button
+                  type="button"
+                  className={`lcard${selected ? " selected" : ""}`}
+                  onClick={() => pickLearner(l.id)}
+                  aria-current={selected ? "true" : undefined}
+                  data-testid="learner-card"
+                  data-learner-id={l.id}
+                  data-option-label={optionLabel(l, activeView)}
+                >
+                  <span className="lc-top">
+                    <span className="lc-avatar" aria-hidden="true">{initials(l.fullName)}</span>
+                    <span className="lc-id">
+                      <span className="lc-name">{l.fullName}</span>
+                      <span className="lc-meta">{s ? cardMeta(l, s) : "Details unavailable"}</span>
+                    </span>
+                    <svg className="lc-chev" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true"><path d="m8 5 5 5-5 5" /></svg>
+                  </span>
+                  {s ? (<>
+                  <span className="lc-prog">
+                    <span className="lc-prog-head">
+                      <span>Competencies</span>
+                      <span><b data-testid="card-achieved">{s.achievedCount}</b> of 22 · {lastLessonLine(s)}</span>
+                    </span>
+                    <span className="lc-segs" role="img" aria-label={`${s.achievedCount} of 22 competencies achieved`}>
+                      {CORE_COMPETENCY_IDS.map((id) => <i key={id} className={s.achievedIds.includes(id) ? "on" : undefined} />)}
+                    </span>
+                  </span>
+                  <span className="lc-gates">
+                    {gateChips(s).map((g) => (
+                      <span key={g.id} className={`lc-chip ${g.state}`} data-gate={g.id} data-state={g.state}>{g.state === "done" ? "✓ " : ""}{g.label}</span>
+                    ))}
+                    {reminders.map((r) => <span key={r.id} className={`lc-chip ${r.tone === "amber" ? "warn" : "plain"}`} data-testid="card-reminder" data-tone={r.tone}>{r.text}</span>)}
+                    {activeView !== "mine" ? <span className="lc-chip" data-testid="card-instructor">Instructor {l.instructorName}</span> : null}
+                  </span>
+                  </>) : null}
+                </button>
+              </li>
+            );
+          })}
+          {shownCards.length === 0 && !collapsed ? <li className="empty" data-testid="learner-list-empty">{emptyListText}</li> : null}
+        </ul>
+        )}
+        {hiddenCards > 0 && !listLoading ? (
+          <button type="button" className="btn ghost block list-expand" onClick={() => { focusCardAfterExpand.current = true; setListExpanded(true); }} data-testid="learner-list-expand">
+            Show all learners ({viewMembers.length})
           </button>
-        </div>
+        ) : null}
           </>
         )}
       </section>

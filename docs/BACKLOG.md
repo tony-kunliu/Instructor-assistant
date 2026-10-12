@@ -77,6 +77,26 @@ Long term (ecosystem, coordinated with Work on actgds.com Issue #3):
 | Learner intake P1: "Competency 23 from" date + PDF Eligibility auto-fill (D17-D18) | `docs/superpowers/specs/2026-10-11-learner-intake-design.md` (branch `docs/learner-intake-design`) | **DONE** (in Production, release #12; no migration). |
 | Learner intake P2: address suggestions from the bundled G-NAF street index, structured suburb/state/postcode (D1-D10, D23) | same design | **DONE** (in Production, release #13, migration `0012` on Staging and Production): `scripts/build-street-index.mjs`, `public/data/streets-aug26.json`, listbox UI, qa-browser section 18. P3 overseas/interstate licence and P4 scan: waiting for a go. |
 
+## Learner list UI (concept approved by Tony 2026-10-12; branch `feature/ui-learner-list`)
+
+- DONE on the branch (awaiting review/merge): shared CSS tokens in `app/globals.css`
+  (website navy/gold/warm paper, light + dark), navy top bar with "+ New learner", search,
+  Mine / All / Archived with counts, glance line, one card per learner (initials, transmission ·
+  stage · lessons · hours, 22-segment bar of the achieved competencies, Review 1-17 / Review
+  1-22 / Final Drive 23 chips from `computeProgress`, "C23 from" and licence-expiry chips from
+  `lib/rules.ts`). Data: `lib/repo.ts#listLearnerSummaries`, ONE set-based statement
+  (lessons aggregate + json_group_array of assessed events per learner), 0 binds; the list GET is
+  2 statements; `tests/learner-list-summaries.test.ts`, `tests/learner-card.test.ts`, budget test,
+  qa-browser section 20 (375px light/dark, 820px two columns).
+- Extras beyond the concept for Tony to confirm (review M7-M9): global reduced-motion rule,
+  `--font-ui` stack (adds "PingFang SC"), the glance line, the "Instructor <name>" chip in All /
+  Archived, the C23-from and licence-expiry chips, the collapsed list + "Show all learners".
+- Follow-ups: migrate the lesson, history, PDF-export and form cards to the tokens (full dark
+  theme; today they stay light islands); the concept's "36 h not yet logged" chip was NOT built
+  (R1 needs each learner's lessons, not in the list payload); "Instructor <name>" chip shows
+  only in All / Archived; the list collapses to the open learner's card ("Show all learners")
+  so the lesson form stays one scroll away on a phone.
+
 ## Minor follow-ups (bundle into the next feature)
 
 - After a milestone has become invalid, every later edit of that lesson (even comment-only) repeats the 'No longer valid' message; report only when the status changed (lib/repo.ts recordedHere).
