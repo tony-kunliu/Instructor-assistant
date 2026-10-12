@@ -322,6 +322,19 @@ html, body {
 .address-option.active, .address-option:hover { background: #f4efe3; }
 .address-close { font: inherit; font-size: 20px; min-height: 44px; border: 0; border-top: 1px solid var(--line); background: #fbfaf8; color: var(--muted); cursor: pointer; touch-action: manipulation; }
 
+/* R10 Competency 23 route check (reminders only): chips + six ticks + "All met". Self-contained; phone and tablet. */
+.route-group .comp-label { margin-top: 8px; }
+.route-centres .chip.suggested { border: 2px solid var(--ink); background: #fff; }
+.route-centres .chip.home { color: var(--muted); border-style: dashed; }
+.route-centres .chip.home.selected { color: #fff; border-style: solid; }
+.route-group .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+.route-group .hint-note.signed { color: #6b4a00; }
+.route-items { display: grid; grid-template-columns: 1fr; gap: 6px; margin: 0 0 10px; }
+.route-item { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 4px 10px; border: 1px solid var(--line); border-radius: 10px; font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
+.route-item input { flex: none; width: 22px; height: 22px; margin: 0; accent-color: var(--go); }
+.route-item:has(input:disabled) { color: var(--muted); }
+.route-all { justify-self: start; min-height: 44px; }
+@media (min-width: 600px) { .route-items { grid-template-columns: 1fr 1fr; } .route-all { grid-column: 1 / -1; } }
 /* ── Tablet / iPad (mobile-first: everything above is the phone layout). ──
    ≥700px wide AND ≥600px tall (so phones in landscape keep the phone layout):
    one wider centred column, bigger touch targets and type. Signature pads

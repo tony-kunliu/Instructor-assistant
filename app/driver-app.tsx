@@ -34,6 +34,8 @@ import SignaturePad from "./signature-pad.tsx";
 import { BookingLink, RulesReminders } from "./rules-reminders.tsx";
 import { finalDriveEligibilityReminder, finalDriveEligibleFromReminder, finalDriveFormReminders, finalDrivePanelReminder, learnerLicenceReminder, reviewGapReminder, type EligibilityLearner, type Reminder } from "@/lib/rules.ts";
 import { autoFillEligibility, ELIGIBILITY_DATE_KEYS, eligibilityAtSave, showsAutoHint } from "@/lib/c23-eligibility.ts";
+import { applyRoute, homeDistrict, parseRouteComments, routeFits, routeSuggestionReminder, syncRouteWithAssessed, type RouteState } from "@/lib/route-check.ts";
+import RouteCheckGroup from "./route-check.tsx";
 import { GNAF_ATTRIBUTION, partsAfterEdit, type AddressSuggestion } from "@/lib/address-suggest.ts";
 import AddressInput from "./address-input.tsx";
 
@@ -856,6 +858,8 @@ export default function DriverApp() {
     if (detail.progress.finalDrive23.status === "ready") {
       panelReminders.push(finalDriveEligibilityReminder(detail.learner, localNow(rulesNow).date));
       panelReminders.push(finalDrivePanelReminder(rulesNow));
+      // R10 D5: the unfamiliar town centres (home district from the address), read before the lesson, never a verdict.
+      panelReminders.push(routeSuggestionReminder(detail.learner));
       showBookingLink = true;
     }
   }
@@ -886,6 +890,21 @@ export default function DriverApp() {
     }
     if (draft.assessedIds.includes(FINAL_DRIVE_23)) formReminders.push(finalDriveEligibilityReminder(detail.learner, draft.lessonDate), ...finalDriveFormReminders({ date: draft.lessonDate, startTime: draft.startTime, finishTime: draft.finishTime }));
   }
+  // R10 (D3-D9): the route check lives in the draft's own location + comments (one generated line), parsed back on every render.
+  const home = homeDistrict(detail?.learner ?? null);
+  const routeState: RouteState | null = draft ? parseRouteComments(draft.comments).state : null;
+  const editRouteState: RouteState | null = editDraft ? parseRouteComments(editDraft.comments).state : null;
+  // Only the 23 transition touches location/comments (unticking 23 removes the app's own line); nothing is written when 23 is ticked.
+  const withAssessed = (current: LessonDraft, ids: string[]): LessonDraft => {
+    const { location, comments } = syncRouteWithAssessed({ location: current.location, comments: current.comments }, current.assessedIds.includes(FINAL_DRIVE_23), ids.includes(FINAL_DRIVE_23));
+    return { ...current, assessedIds: ids, location, comments };
+  };
+  // Written only on an explicit tap in the group; all or nothing at the field limits (the group shows a grey line when refused).
+  const withRoute = (current: LessonDraft, next: RouteState): LessonDraft => {
+    const applied = applyRoute({ location: current.location, comments: current.comments }, next);
+    return applied.ok ? { ...current, location: applied.location, comments: applied.comments } : current;
+  };
+  const fitsRoute = (current: LessonDraft) => routeFits({ location: current.location, comments: current.comments });
 
   return (
     <main className="app">
@@ -1180,11 +1199,14 @@ export default function DriverApp() {
                   assessedIds={draft.assessedIds}
                   achievedResults={draft.achievedResults}
                   onChangeTaught={(ids) => setDraft((current) => (current ? { ...current, taughtIds: ids } : current))}
-                  onChangeAssessed={(ids) => setDraft((current) => (current ? { ...current, assessedIds: ids } : current))}
+                  onChangeAssessed={(ids) => setDraft((current) => (current ? withAssessed(current, ids) : current))}
                   onChangeAchieved={(results) => setDraft((current) => (current ? { ...current, achievedResults: results } : current))}
                 />
                 </div>
                 <RulesReminders reminders={formReminders} testId="form-reminders" />
+                {draft.assessedIds.includes(FINAL_DRIVE_23) ? (
+                  <RouteCheckGroup state={routeState} home={home} achieved23={draft.achievedResults[FINAL_DRIVE_23] === "achieved"} fits={fitsRoute(draft)} inHistoryEdit={false} onChange={(next) => setDraft((current) => (current ? withRoute(current, next) : current))} testId="route-group" />
+                ) : null}
 
                 <div className="grid">
                   <label className="field full"><span>Location</span><input value={draft.location} onChange={(e) => setField("location", e.target.value)} placeholder="Belconnen, Gungahlin…" /></label>
@@ -1253,10 +1275,13 @@ export default function DriverApp() {
                             assessedIds={editDraft.assessedIds}
                             achievedResults={editDraft.achievedResults}
                             onChangeTaught={(ids) => setEditFieldValue((d) => ({ ...d, taughtIds: ids }))}
-                            onChangeAssessed={(ids) => setEditFieldValue((d) => ({ ...d, assessedIds: ids }))}
+                            onChangeAssessed={(ids) => setEditFieldValue((d) => withAssessed(d, ids))}
                             onChangeAchieved={(results) => setEditFieldValue((d) => ({ ...d, achievedResults: results }))}
                           />
                           </div>
+                          {editDraft.assessedIds.includes(FINAL_DRIVE_23) ? (
+                            <RouteCheckGroup state={editRouteState} home={home} achieved23={editDraft.achievedResults[FINAL_DRIVE_23] === "achieved"} fits={fitsRoute(editDraft)} inHistoryEdit onChange={(next) => setEditFieldValue((d) => withRoute(d, next))} testId="edit-route-group" />
+                          ) : null}
 
                           <label className="field full"><span>Comments</span><textarea rows={2} value={editDraft.comments} onChange={(e) => setEditFieldValue((d) => ({ ...d, comments: e.target.value }))} /></label>
 
