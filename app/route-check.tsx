@@ -27,6 +27,7 @@ type Props = {
 export default function RouteCheckGroup({ state, home, achieved23, fits, inHistoryEdit, onChange, testId }: Props) {
   const homeNoteId = useId();
   const suggested = new Set(suggestTownCentres(home).map((centre) => centre.id));
+  // Nothing recorded yet: the first suggested centre is shown as "suggested" (never as selected / pressed) until a tap writes it.
   const shown: RouteState = state ?? defaultRouteState(home);
   const chooseCentre = (townCentreId: TownCentreId) => onChange({ townCentreId, ticked: shown.ticked });
   const toggleItem = (id: RouteItemId) => onChange({ ...shown, ticked: shown.ticked.includes(id) ? shown.ticked.filter((x) => x !== id) : [...shown.ticked, id] });
@@ -41,21 +42,24 @@ export default function RouteCheckGroup({ state, home, achieved23, fits, inHisto
       <div className="chip-row route-centres">
         {TOWN_CENTRES.map((centre) => {
           const isHome = !suggested.has(centre.id);
-          const selected = shown.townCentreId === centre.id;
+          const selected = state !== null && state.townCentreId === centre.id;
+          const isSuggested = state === null && shown.townCentreId === centre.id;
           return (
             <button
               key={centre.id}
               type="button"
-              className={`chip wide${selected ? " selected" : ""}${isHome ? " home" : ""}`}
+              className={`chip wide${selected ? " selected" : ""}${isSuggested ? " suggested" : ""}${isHome ? " home" : ""}`}
               aria-pressed={selected}
               aria-describedby={isHome ? homeNoteId : undefined}
               title={centre.official}
+              disabled={!fits}
               data-testid="route-centre"
               data-centre={centre.id}
-              data-preselected={selected && !state ? "true" : undefined}
+              data-suggested={isSuggested ? "true" : undefined}
               onClick={() => chooseCentre(centre.id)}
             >
               {centre.name}
+              {isSuggested ? <span className="sr-only"> (suggested, not recorded yet)</span> : null}
               {isHome ? <span className="sr-only"> (home district)</span> : null}
             </button>
           );

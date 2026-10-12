@@ -311,6 +311,7 @@ html, body {
 
 /* R10 Competency 23 route check (reminders only): chips + six ticks + "All met". Self-contained; phone and tablet. */
 .route-group .comp-label { margin-top: 8px; }
+.route-centres .chip.suggested { border: 2px solid var(--ink); background: #fff; }
 .route-centres .chip.home { color: var(--muted); border-style: dashed; }
 .route-centres .chip.home.selected { color: #fff; border-style: solid; }
 .route-group .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }

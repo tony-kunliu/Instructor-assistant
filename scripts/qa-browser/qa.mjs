@@ -1774,6 +1774,8 @@ const draw = async (page, index) => {
     const padH = await s.page.$eval(".sig canvas", (c) => parseFloat(getComputedStyle(c).height)); // drawing area (content box; the 1.5px border is outside the cap)
     check(`phone landscape ${w}x${h}: lesson form, no horizontal scroll, pads 640×320 undistorted and ≤60% of the screen height`, (await noHScroll(s.page)) && (await canvasFixed(s.page)) && padH <= h * 0.6 + 1, `pad ${Math.round(padH)}px`);
     await signBoth(s.page);
+    // Wait for the Signed state instead of reading it right after the strokes (was flaky: read before React re-rendered).
+    await s.page.waitForFunction(() => document.querySelectorAll(".sig-ok").length === 2, null, { timeout: 10000 }).catch(() => {});
     check(`phone landscape ${w}x${h}: drawing on the capped pads registers`, (await s.page.$$(".sig-ok")).length === 2);
     if (w === 844) await shot(s.page, "17-phone-landscape-844x390-lesson-form");
     await s.page.click("text=Discard this lesson");
@@ -1838,15 +1840,15 @@ const draw = async (page, index) => {
   check("route: ticking 23 Assessed shows the collapsed group and writes NOTHING into Location / Comments", !(await s.page.$eval("[data-testid=route-group]", (e) => e.open)) && (await location()) === "" && (await comments()) === "", `${await location()} | ${await comments()}`);
   await s.page.click("[data-testid=route-group] summary");
   check("route: new-lesson form has no signature hint (only History Edit)", (await s.page.$("[data-testid=route-signature-hint]")) === null);
-  check("route: Civic is only highlighted as preselected (data-preselected), home chip carries visually-hidden 'home district' text", (await s.page.$eval("[data-testid=route-centre][data-centre=civic]", (e) => e.dataset.preselected)) === "true" && (await s.page.$eval("[data-testid=route-centre][data-centre=belconnen]", (e) => e.textContent)) === "Belconnen (home district)" && (await s.page.$eval("[data-testid=route-centre][data-centre=belconnen] .sr-only", (e) => getComputedStyle(e).position)) === "absolute");
-  const centres = await s.page.$$eval("[data-testid=route-centre]", (els) => els.map((e) => ({ id: e.dataset.centre, selected: e.getAttribute("aria-pressed") === "true", home: e.classList.contains("home") })));
-  check("route: 7 town-centre chips, Civic selected, Belconnen marked as the home centre (still tappable)", centres.length === 7 && centres.filter((c) => c.selected).map((c) => c.id).join() === "civic" && centres.filter((c) => c.home).map((c) => c.id).join() === "belconnen", JSON.stringify(centres));
+  check("route: the suggested chip is announced as such; home chip carries visually-hidden 'home district' text", (await s.page.$eval("[data-testid=route-centre][data-centre=civic]", (e) => e.textContent)) === "Civic (suggested, not recorded yet)" && (await s.page.$eval("[data-testid=route-centre][data-centre=belconnen]", (e) => e.textContent)) === "Belconnen (home district)" && (await s.page.$eval("[data-testid=route-centre][data-centre=belconnen] .sr-only", (e) => getComputedStyle(e).position)) === "absolute");
+  const centres = await s.page.$$eval("[data-testid=route-centre]", (els) => els.map((e) => ({ id: e.dataset.centre, pressed: e.getAttribute("aria-pressed"), selected: e.classList.contains("selected"), suggested: e.dataset.suggested === "true", home: e.classList.contains("home"), disabled: e.disabled })));
+  check("route: 7 chips, none pressed/selected before a tap, Civic only 'suggested', Belconnen marked home (all tappable)", centres.length === 7 && centres.every((c) => c.pressed === "false" && !c.selected && !c.disabled) && centres.filter((c) => c.suggested).map((c) => c.id).join() === "civic" && centres.filter((c) => c.home).map((c) => c.id).join() === "belconnen", JSON.stringify(centres));
   const groupRem = async () => s.page.$$eval("[data-testid=route-group-reminders] .reminder", (els) => els.map((e) => ({ id: e.dataset.rule, tone: e.dataset.tone, text: e.textContent })));
   check("route: nothing recorded yet → grey 'Route not recorded yet… Nothing is written until you do.'", JSON.stringify(await groupRem()) === JSON.stringify([{ id: "r10-centre", tone: "grey", text: "Route not recorded yet: tap the town centre or a tick after the drive. Nothing is written until you do." }]), JSON.stringify(await groupRem()));
   check("route: no horizontal scroll at 375px (group open)", await noHScroll(s.page));
   await shot(s.page, "18-route-group-375");
   await s.page.click("[data-testid=route-centre][data-centre=belconnen]");
-  check("route: the first explicit tap (home centre) writes Location + the line and shows the amber warning with the evidence", (await comments()) === "Comp 23 route (Belconnen): none ticked." && (await groupRem())[0].tone === "amber" && (await groupRem())[0].text === "Belconnen is the learner's home district (from 'Florey' in the address). Competency 23 needs an unfamiliar town centre. You can still save." && (await location()) === "Belconnen", JSON.stringify(await groupRem()));
+  check("route: the first explicit tap (home centre) writes Location + the line, the chip is now pressed, and the amber warning names the evidence", (await comments()) === "Comp 23 route (Belconnen): none ticked." && (await s.page.$eval("[data-testid=route-centre][data-centre=belconnen]", (e) => e.getAttribute("aria-pressed"))) === "true" && (await groupRem())[0].tone === "amber" && (await groupRem())[0].text === "Belconnen is the learner's home district (from 'Florey' in the address). Competency 23 needs an unfamiliar town centre. You can still save." && (await location()) === "Belconnen", JSON.stringify(await groupRem()));
   await s.page.click("[data-testid=route-centre][data-centre=woden]");
   check("route: switching to Woden removes the amber line and rewrites Location + the comment line", (await groupRem()).every((r) => r.id !== "r10-home") && (await location()) === "Woden" && (await comments()) === "Comp 23 route (Woden): none ticked.", `${await location()} | ${await comments()}`);
   // The instructor's own comment text is kept while the group regenerates its line.
@@ -1909,7 +1911,14 @@ const draw = async (page, index) => {
   await s.page.click("text=End Lesson");
   await s.page.click(".chip-row.special >> text=/23 Final Drive/");
   await s.page.waitForSelector("[data-testid=route-group]");
-  check("route: no address → group still works, Civic only highlighted (all 7 unfamiliar, no home chip), nothing written", (await location()) === "" && (await s.page.$$eval("[data-testid=route-group] [data-testid=route-centre].home", (els) => els.length)) === 0);
+  check("route: no address → group still works, Civic only suggested (all 7 unfamiliar, no home chip), nothing written", (await location()) === "" && (await s.page.$$eval("[data-testid=route-group] [data-testid=route-centre].home", (els) => els.length)) === 0);
+  // A: a hand-typed Location is byte-identical after untick/retick of 23 while the app never wrote anything.
+  await s.page.fill('label:has-text("Location") input', "Belconnen");
+  await s.page.click(".chip-row.special >> text=/23 Final Drive/");
+  await s.page.waitForFunction(() => document.querySelector("[data-testid=route-group]") === null);
+  check("route: unticking 23 leaves a hand-typed Location 'Belconnen' untouched when the app wrote no line", (await location()) === "Belconnen" && (await comments()) === "", `${await location()} | ${await comments()}`);
+  await s.page.click(".chip-row.special >> text=/23 Final Drive/");
+  await s.page.waitForSelector("[data-testid=route-group]");
   await s.page.fill('label:has-text("Location") input', "Civic: London Cct");
   await s.page.click("[data-testid=route-group] summary");
   await s.page.click("[data-testid=route-centre][data-centre=civic]");

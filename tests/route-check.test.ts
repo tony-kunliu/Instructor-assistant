@@ -20,6 +20,7 @@ import {
   commentsWithRoute,
   defaultRouteState,
   ROUTE_GROUP_HEADINGS,
+  routeFits,
   stripCentrePrefix,
   homeDistrict,
   locationWithCentre,
@@ -142,6 +143,33 @@ test("review 5: a suburb word followed by a street type or other text is a stree
   assert.deepEqual(homeDistrict("2 Queanbeyan Ave, Florey ACT"), { kind: "district", district: DISTRICTS.find((d) => d.id === "belconnen"), townCentreId: "belconnen", matched: "Florey" });
 });
 
+test("review E: the suburb must form its own segment at the end; only ACT/A.C.T./Australian Capital Territory/Australia/Canberra/NSW/postcode may follow; trailing NSW = outside", () => {
+  const grey = [
+    "Mr Franklin", "c/- Franklin", "Franklin Post Office", "Melba Flynn", "Flynn Melba", "Kingston Capital Hill", "Parkes, Capital Territory", "Kambah Capital",
+    "Florey, South Australia", "Florey new south wales", "Florey au", "Florey, AU", "New South Florey", "Florey South", "Florey Act South", "Dunlop Australia Wales",
+    "12 Kaleen Unit 3", "Kambah Lot 5", "Casey 29131", "Casey 291", "Gungahlin ACT 2912 (Mitchell side)", "Kaleen ACT 2617 - unit at back", "Hall St", "Isabella", "Hill", "Taylor St",
+  ];
+  for (const address of grey) assert.equal(homeDistrict(address).kind, "unknown", address);
+  const ok: [string, string][] = [
+    ["5 Smith St, Kaleen, Canberra ACT 2617", "Kaleen"], ["5 Smith St, Kaleen Canberra", "Kaleen"], ["Kaleen act2617", "Kaleen"], ["Kaleen, ACT, 2617", "Kaleen"], ["Kaleen\nACT\n2617", "Kaleen"],
+    ["KALEEN ACT 2617", "Kaleen"], ["Kaleen ACT 2617 Australia", "Kaleen"], ["Kaleen, Australia", "Kaleen"], ["Unit 3, Kaleen", "Kaleen"], ["Lot 5 Kambah", "Kambah"], ["2615 Florey", "Florey"],
+    ["12 Smith St Kaleen ACT 2617.", "Kaleen"], ["Mitchell ACT, Australia 2911", "Mitchell"], ["12 Taylor ACT 2913", "Taylor"], ["12 Latham Pl, Latham", "Latham"], ["Casey 2913", "Casey"],
+    ["O Connor ACT", "O'Connor"], ["O'Connor", "O'Connor"], ["Woden Valley", "Woden Valley"], ["Canberra City ACT 2601", "Canberra City"], ["Florey Australian Capital Territory 2615", "Florey"],
+    ["Florey act act act", "Florey"], ["Florey 2615 2615", "Florey"], ["12 Smith St, Florey ACT 2615\n", "Florey"], ["  Florey  ", "Florey"], ["Hall ACT 2618", "Hall"], ["Red Hill", "Red Hill"], ["Isabella Plains", "Isabella Plains"],
+    ["12 Nsw St, Florey", "Florey"], ["Theodore ACT 2905", "Theodore"],
+  ];
+  for (const [address, expected] of ok) assert.equal(matchedOf(address), expected, address);
+  assert.equal(districtOf("Woden Valley")?.townCentreId, "woden");
+  assert.equal(districtOf("Canberra City ACT 2601")?.townCentreId, "civic");
+  assert.equal(districtOf("12 Nsw St, Florey")?.district.id, "belconnen", "a street called Nsw is not the state token");
+  for (const [address, matched] of [["Hume NSW", "NSW"], ["Florey NSW 2615", "NSW"], ["Queanbeyan ACT 2620", "Queanbeyan"], ["Sutton", "Sutton"], ["Jerrabomberra", "Jerrabomberra"], ["8 Lowe St, Queanbeyan NSW 2620", "Queanbeyan"]] as const) {
+    assert.deepEqual(homeDistrict(address), { kind: "outside-act", matched }, address);
+  }
+  assert.equal(homeDistrict("Jerrabomberra ACT").kind, "outside-act", "the NSW suburb list wins for the bare name; ACT residents of the district live in Hume/Beard/Oaks Estate/Symonston");
+  assert.deepEqual(homeDistrict("Capital Hill"), { kind: "unmapped", matched: "Capital Hill" });
+  assert.deepEqual(homeDistrict("Belco"), { kind: "district", district: DISTRICTS.find((d) => d.id === "belconnen"), townCentreId: "belconnen", matched: "Belco" });
+});
+
 test("homeDistrict: aliases ('Belco', 'Tuggers') map to the district; outside the ACT and unmapped are explicit; empty is unknown", () => {
   assert.equal(districtOf("3 Nettlefold St, Belco")?.district.id, "belconnen");
   assert.equal(districtOf("Tuggers")?.townCentreId, "tuggeranong");
@@ -215,18 +243,30 @@ test("routeLine ↔ parseRouteLine: round trip for every centre and every subset
   ]) assert.equal(parseRouteLine(altered), null, altered);
 });
 
-test("review 3: a note appended on the app's line is still the app's line; the note is kept through regeneration, never duplicated", () => {
+test("review C/F: a note appended on the app's line stays on it through regeneration; the line is regenerated IN PLACE, never moved; CRLF kept", () => {
   const woden: RouteState = { townCentreId: "woden", ticked: [] };
+  const all: RouteState = { townCentreId: "woden", ticked: [...ALL_ITEM_IDS] };
   const line = `${routeLine(woden)} Busy near Callam St.`;
   assert.deepEqual(parseRouteLine(line), { state: woden, extra: " Busy near Callam St." });
-  assert.deepEqual(parseRouteComments(`Own text.\n${line}`), { state: woden, own: "Own text.", extra: " Busy near Callam St." });
-  const all: RouteState = { townCentreId: "woden", ticked: [...ALL_ITEM_IDS] };
-  const regenerated = commentsWithRoute(`Own text.\n${line}`, all);
-  assert.equal(regenerated, `Own text.\n${routeLine(all)} Busy near Callam St.`);
+  assert.deepEqual(parseRouteLine(`${routeLine(woden)}x`), { state: woden, extra: "x" });
+  assert.deepEqual(parseRouteLine(`${routeLine(woden)} note\r`), { state: woden, extra: " note" });
+  const middle = `Before.\n${line}\nAfter.`;
+  assert.deepEqual(parseRouteComments(middle), { state: woden, own: "Before.\nAfter.", extra: " Busy near Callam St.", lineIndex: 1, eol: "\n" });
+  const regenerated = commentsWithRoute(middle, all);
+  assert.equal(regenerated, `Before.\n${routeLine(all)} Busy near Callam St.\nAfter.`, "in place: text before and after stays where it was");
   assert.equal(commentsWithRoute(regenerated!, all), regenerated, "idempotent with the note");
   assert.equal((regenerated!.match(/Comp 23 route/g) ?? []).length, 1);
-  // CRLF and leading spaces do not break recognition.
-  assert.deepEqual(parseRouteLine(`  ${routeLine(woden)}\r`), { state: woden, extra: "" });
+  // C: removing the route keeps the note on its own line, in place.
+  assert.equal(commentsWithRoute(middle, null), "Before.\nBusy near Callam St.\nAfter.");
+  assert.equal(commentsWithRoute(`Before.\n${routeLine(woden)}\nAfter.`, null), "Before.\nAfter.");
+  // F: CRLF comments stay CRLF, byte for byte outside the app's line.
+  const crlf = `Own one.\r\nOwn two.\r\n${routeLine(woden)}\r\n`;
+  assert.equal(commentsWithRoute(crlf, all), `Own one.\r\nOwn two.\r\n${routeLine(all)}\r\n`);
+  assert.deepEqual(parseRouteComments(crlf).eol, "\r\n");
+  assert.equal(commentsWithRoute("Own one.\r\nOwn two.", woden), `Own one.\r\nOwn two.\r\n${routeLine(woden)}`, "a new line is appended with the comments' own line ending");
+  // Two app lines: the last is the app's; the first stays as the instructor's text, unchanged.
+  const two = `${routeLine({ townCentreId: "civic", ticked: [] })}\n${routeLine(woden)}`;
+  assert.equal(commentsWithRoute(two, all), `${routeLine({ townCentreId: "civic", ticked: [] })}\n${routeLine(all)}`);
 });
 
 test("parseRouteComments / commentsWithRoute: the instructor's own text is never changed; regeneration is idempotent", () => {
@@ -234,7 +274,7 @@ test("parseRouteComments / commentsWithRoute: the instructor's own text is never
   const woden: RouteState = { townCentreId: "woden", ticked: ["stop", "lights"] };
   const once = commentsWithRoute(own, woden);
   assert.equal(once, `${own}\n${routeLine(woden)}`);
-  assert.deepEqual(parseRouteComments(once!), { state: woden, own, extra: "" });
+  assert.deepEqual(parseRouteComments(once!), { state: woden, own, extra: "", lineIndex: 2, eol: "\n" });
   const belco: RouteState = { townCentreId: "belconnen", ticked: [...ALL_ITEM_IDS] };
   const twice = commentsWithRoute(once!, belco);
   assert.equal(twice, `${own}\n${routeLine(belco)}`, "the earlier generated line is replaced, not stacked");
@@ -242,74 +282,98 @@ test("parseRouteComments / commentsWithRoute: the instructor's own text is never
   assert.equal(commentsWithRoute(twice!, null), own, "removing the route leaves exactly the own text");
   assert.equal(commentsWithRoute("", woden), routeLine(woden));
   assert.equal(commentsWithRoute("   ", woden), routeLine(woden));
-  const middle = `Before.\n${routeLine(woden)}\nAfter.`;
-  assert.deepEqual(parseRouteComments(middle), { state: woden, own: "Before.\nAfter.", extra: "" });
+  assert.equal(commentsWithRoute("Own.", null), "Own.", "nothing to remove: byte-identical");
   // A line whose generated part is altered is plain text: kept, and a fresh line is added once.
   const altered = "Comp 23 route (Woden): ticked: stop; not ticked: 2 zones.";
-  assert.deepEqual(parseRouteComments(altered), { state: null, own: altered, extra: "" });
+  assert.equal(parseRouteComments(altered).state, null);
   const fixed = commentsWithRoute(altered, woden);
   assert.equal(fixed, `${altered}\n${routeLine(woden)}`);
   assert.equal(commentsWithRoute(fixed!, woden), fixed, "no duplicate on regeneration");
+  for (const plain of ["Comp 23 route (woden): none ticked.", "Comp 23 route ( Woden ): none ticked.", "Comp 23 route (Woden): ticked:  stop; not ticked: 2 zones, give way, 2 lights, 2 crossings, 5R/5L."]) {
+    assert.equal(parseRouteLine(plain), null, plain);
+  }
 });
 
-test("review 4: all or nothing at the caps (comments 3000 / location 200): neither field changes when either write does not fit", () => {
+test("review B: the fit check is for the WORST case of the next tap (longest centre + longest line); refusal is visible and consistent", () => {
   const woden: RouteState = { townCentreId: "woden", ticked: [] };
-  const long = "x".repeat(MAX_COMMENTS_LENGTH - routeLine(woden).length - 1);
-  assert.equal(commentsWithRoute(long, woden)!.length, MAX_COMMENTS_LENGTH);
+  const all: RouteState = { townCentreId: "woden", ticked: [...ALL_ITEM_IDS] };
+  // Comments where the current "none ticked" line fits exactly but a tick or a longer centre would not.
+  const own = "x".repeat(MAX_COMMENTS_LENGTH - routeLine(woden).length - 1);
+  const fields = applyRoute({ location: "", comments: own }, woden);
+  assert.equal(fields.ok, true);
+  assert.equal(fields.comments.length, MAX_COMMENTS_LENGTH);
+  assert.equal(routeFits(fields), false, "a tick or All met could not be written: the whole group is refused");
+  assert.equal(applyRoute(fields, { townCentreId: "woden", ticked: ["stop"] }).ok, false);
+  assert.equal(applyRoute(fields, { townCentreId: "manuka-kingston", ticked: [] }).ok, false);
+  assert.equal(applyRoute(fields, null).ok, true, "removing the route always fits");
+  // Location: default Civic fits, a longer name would not → refused as a whole.
+  const longLocation = "y".repeat(MAX_LOCATION_LENGTH - "Civic: ".length);
+  assert.equal(applyRoute({ location: longLocation, comments: "" }, { townCentreId: "civic", ticked: [] }).ok, true);
+  assert.equal(routeFits({ location: longLocation, comments: "" }), false);
+  assert.equal(routeFits({ location: "y".repeat(MAX_LOCATION_LENGTH - "Manuka/Kingston: ".length), comments: "" }), true);
+  // All or nothing: when either write does not fit, neither field changes.
   const tooLong = "x".repeat(MAX_COMMENTS_LENGTH - 5);
-  assert.equal(commentsWithRoute(tooLong, woden), null);
-  assert.deepEqual(applyRoute({ location: "Hawker", comments: tooLong }, woden), { location: "Hawker", comments: tooLong, ok: false }, "comments too long: location untouched too");
-  const longLocation = "y".repeat(MAX_LOCATION_LENGTH - 3);
-  assert.equal(locationWithCentre(longLocation, "woden"), null);
-  assert.deepEqual(applyRoute({ location: longLocation, comments: "Own." }, woden), { location: longLocation, comments: "Own.", ok: false }, "location too long: comments untouched too");
-  assert.equal(locationWithCentre("y".repeat(193), "woden")!.length, 200);
-  assert.deepEqual(routeCheckReminders({ state: null, home: homeDistrict("Florey"), achieved23: false, fits: false })[0], { id: "r10-fit", tone: "grey", text: "Comments or location are too long to add the route line." });
-  // Removing the route always fits.
-  assert.equal(applyRoute({ location: "Woden", comments: `${"x".repeat(2990)}\n${routeLine(woden)}` }, null).ok, true);
+  assert.deepEqual(applyRoute({ location: "Hawker", comments: tooLong }, woden), { location: "Hawker", comments: tooLong, ok: false });
+  assert.deepEqual(applyRoute({ location: "y".repeat(197), comments: "Own." }, all), { location: "y".repeat(197), comments: "Own.", ok: false });
+  assert.deepEqual(routeCheckReminders({ state: null, home: homeDistrict("Florey ACT"), achieved23: false, fits: false })[0], { id: "r10-fit", tone: "grey", text: "Not saved: comments or location too long for the route line. Shorten them to record the route." });
+  assert.equal(routeFits({ location: "", comments: "" }), true);
 });
 
-test("review 3: locationWithCentre strips ANY centre prefix from the location itself, so prefixes never stack", () => {
-  assert.equal(locationWithCentre("", "woden"), "Woden");
-  assert.equal(locationWithCentre("Launceston St car park", "woden"), "Woden: Launceston St car park");
-  assert.equal(locationWithCentre("Woden: Launceston St car park", "woden"), "Woden: Launceston St car park");
-  assert.equal(locationWithCentre("Woden: Launceston St car park", "belconnen"), "Belconnen: Launceston St car park");
-  assert.equal(locationWithCentre("Civic: Belconnen: Woden: x", "tuggeranong"), "Tuggeranong: Belconnen: Woden: x", "only one prefix is stripped per write; never adds a second");
-  assert.equal(locationWithCentre("Woden", "belconnen"), "Belconnen");
-  assert.equal(locationWithCentre("Manuka/Kingston: Eyre St", "fyshwick"), "Fyshwick: Eyre St");
-  assert.equal(locationWithCentre("Woden", null), "", "unticking 23 removes the written name");
-  assert.equal(locationWithCentre("Woden: Launceston St", null), "Launceston St");
-  assert.equal(locationWithCentre("Hawker then Belconnen", null), "Hawker then Belconnen", "hand-typed text is never touched");
-  // A prefix typed without the comments line (e.g. the line was deleted by hand) still never stacks.
-  assert.deepEqual(applyRoute({ location: "Woden: Callam St", comments: "Own." }, { townCentreId: "civic", ticked: [] }), { location: "Civic: Callam St", comments: `Own.\n${routeLine({ townCentreId: "civic", ticked: [] })}`, ok: true });
-  assert.equal(stripCentrePrefix("Gungahlin: The Valley Ave"), "The Valley Ave");
+test("review A/D: a Location prefix is touched only when the app's own comments line exists, and only that centre's prefix (case-insensitive, optional space)", () => {
+  // Owned (the app's line names Woden): its prefix is replaced / removed, never stacked.
+  assert.equal(locationWithCentre("", "woden", null), "Woden");
+  assert.equal(locationWithCentre("Launceston St car park", "woden", null), "Woden: Launceston St car park");
+  assert.equal(locationWithCentre("Woden: Launceston St car park", "belconnen", "woden"), "Belconnen: Launceston St car park");
+  assert.equal(locationWithCentre("woden: Callam", "civic", "woden"), "Civic: Callam");
+  assert.equal(locationWithCentre("Woden:Callam", "civic", "woden"), "Civic: Callam");
+  assert.equal(locationWithCentre(" Woden ", "civic", "woden"), "Civic");
+  assert.equal(locationWithCentre("Woden", null, "woden"), "", "unticking 23 removes the name the app wrote");
+  assert.equal(locationWithCentre("Woden: Launceston St", null, "woden"), "Launceston St");
+  assert.equal(stripCentrePrefix("Manuka/Kingston: Eyre St", "manuka-kingston"), "Eyre St");
+  // Not owned (no app line): hand-typed text stays byte-identical on removal; on a write only this centre's own name is never doubled.
+  for (const typed of ["Belconnen", " Belconnen ", "Tuggeranong: Anketell St", "Civic: Northbourne Ave", "Woden Valley", "Hawker then Belconnen"]) {
+    assert.equal(locationWithCentre(typed, null, null), typed, typed);
+  }
+  assert.equal(locationWithCentre("Civic: Northbourne Ave", "woden", null), "Woden: Civic: Northbourne Ave", "the app does not own 'Civic:' here, so it is kept as the instructor's text");
+  assert.equal(locationWithCentre("Civic: London Cct", "civic", null), "Civic: London Cct", "same name already there: not doubled");
+  assert.equal(locationWithCentre("civic:London Cct", "civic", null), "civic:London Cct");
+  assert.equal(locationWithCentre("Belconnen: Civic", "civic", "belconnen"), "Civic");
+  // Through applyRoute / sync: legacy lessons (23 assessed, no line) keep their location on untick.
+  assert.deepEqual(syncRouteWithAssessed({ location: "Belconnen", comments: "Good lesson." }, true, false), { location: "Belconnen", comments: "Good lesson." });
+  assert.deepEqual(syncRouteWithAssessed({ location: "Tuggeranong: Anketell St", comments: "" }, true, false), { location: "Tuggeranong: Anketell St", comments: "" });
+  const woden: RouteState = { townCentreId: "woden", ticked: ["stop"] };
+  assert.deepEqual(syncRouteWithAssessed({ location: "Woden: x", comments: `Own.\n${routeLine(woden)}` }, true, false), { location: "x", comments: "Own." });
+  // A hand-typed prefix plus a later tap on the same centre: no stacking; a tap on another centre keeps the typed text (not owned).
+  assert.deepEqual(applyRoute({ location: "Civic: London Cct", comments: "" }, { townCentreId: "civic", ticked: [] }), { location: "Civic: London Cct", comments: routeLine({ townCentreId: "civic", ticked: [] }), ok: true });
+  const owned = applyRoute({ location: "Woden: Callam St", comments: `Own.\n${routeLine(woden)}` }, { townCentreId: "civic", ticked: [] });
+  assert.deepEqual(owned, { location: "Civic: Callam St", comments: `Own.\n${routeLine({ townCentreId: "civic", ticked: [] })}`, ok: true });
 });
 
-test("review 1 + 2: nothing is written when 23 is ticked; only an explicit tap writes; unticking 23 removes exactly the app's part; other chips never touch the fields", () => {
+test("review 1 + 2 + C: nothing is written when 23 is ticked; only an explicit tap writes; unticking 23 removes exactly the app's part (keeping an appended note); other chips never touch the fields", () => {
   const home = homeDistrict("12 Smith St, Florey ACT 2615");
   const empty = { location: "", comments: "" };
-  // 23 ticked (absent → present): nothing written (the UI only highlights the first suggested centre, Civic for Belconnen).
   assert.deepEqual(syncRouteWithAssessed(empty, false, true), { location: "", comments: "" });
   assert.deepEqual(defaultRouteState(home), { townCentreId: "civic", ticked: [] });
   const own = { location: "Hawker", comments: "Own text." };
   assert.deepEqual(syncRouteWithAssessed(own, false, true), own);
-  // Unrelated Assessed changes while 23 stays ticked (or stays unticked): untouched, also on a legacy lesson with 23 and no line.
   assert.deepEqual(syncRouteWithAssessed(own, true, true), own);
   assert.deepEqual(syncRouteWithAssessed(own, false, false), own);
-  const withLine = { location: "Woden: Callam St", comments: `Own text.\n${routeLine({ townCentreId: "woden", ticked: ["stop"] })} note` };
-  assert.deepEqual(syncRouteWithAssessed(withLine, true, true), withLine);
-  // An explicit tap writes (preselected centre + the tick), all or nothing.
+  const withLine = { location: "Woden: Callam St", comments: `Own text.\r\n${routeLine({ townCentreId: "woden", ticked: ["stop"] })} note\r\n` };
+  const same = syncRouteWithAssessed(withLine, true, true);
+  assert.ok(same.location === withLine.location && same.comments === withLine.comments, "byte-identical on an unrelated Assessed change");
+  // An explicit tap writes (suggested centre + the tick), all or nothing.
   const tapped = applyRoute(empty, { townCentreId: "civic", ticked: ["zones"] });
   assert.deepEqual(tapped, { location: "Civic", comments: "Comp 23 route (Civic): ticked: 2 zones; not ticked: stop, give way, 2 lights, 2 crossings, 5R/5L.", ok: true });
-  const chosen = applyRoute(tapped, { townCentreId: "woden", ticked: ["zones"] });
-  assert.equal(chosen.location, "Woden");
-  // 23 unticked (present → absent): exactly the app's line and prefix go; own text (and a note appended on the line? no: the whole app line goes) stays.
-  assert.deepEqual(syncRouteWithAssessed(withLine, true, false), { location: "Callam St", comments: "Own text." });
+  assert.equal(applyRoute(tapped, { townCentreId: "woden", ticked: ["zones"] }).location, "Woden");
+  // 23 unticked (present → absent): the app's line and ITS prefix go; the own text and the note appended on the line stay (C: on its own line).
+  assert.deepEqual(syncRouteWithAssessed(withLine, true, false), { location: "Callam St", comments: "Own text.\r\nnote\r\n" });
   assert.deepEqual(syncRouteWithAssessed(own, true, false), own, "no app line: nothing to remove");
+  // Untick then re-tick: still nothing written until a tap.
+  assert.deepEqual(syncRouteWithAssessed(syncRouteWithAssessed({ location: "Woden: x", comments: `Own.\n${routeLine({ townCentreId: "woden", ticked: [] })}` }, true, false), false, true), { location: "x", comments: "Own." });
   // Always exactly these two keys (callers spread the result over a wider draft).
   const wider = { location: "Hawker", comments: "Own.", assessedIds: ["old"] } as { location: string; comments: string };
   for (const [was, now] of [[false, true], [true, true], [true, false], [false, false]] as const) assert.deepEqual(Object.keys(syncRouteWithAssessed(wider, was, now)).sort(), ["comments", "location"]);
   assert.deepEqual(Object.keys(applyRoute(wider, { townCentreId: "woden", ticked: [] })).sort(), ["comments", "location", "ok"]);
-  // Defaults: a learner with no home centre gets Civic (first of all 7); a North Canberra learner skips Civic.
   assert.equal(defaultRouteState(homeDistrict("Weston ACT")).townCentreId, "civic");
   assert.equal(defaultRouteState(homeDistrict("Braddon ACT 2612")).townCentreId, "gungahlin");
 });
@@ -322,13 +386,22 @@ test("routeCheckReminders: not recorded → grey; home centre → amber; incompl
   assert.equal(homeCentre[0].text, "Belconnen is the learner's home district (from 'Florey' in the address). Competency 23 needs an unfamiliar town centre. You can still save.");
   const incomplete = routeCheckReminders({ state: { townCentreId: "woden", ticked: ["zones", "stop", "giveWay", "crossings"] }, home, achieved23: true });
   assert.deepEqual(incomplete, [{ id: "r10-items", tone: "amber", text: "Route check not complete: 2 lights, 5R/5L. You can still save." }]);
-  const pending = routeCheckReminders({ state: { townCentreId: "woden", ticked: [] }, home, achieved23: false });
-  assert.deepEqual(pending.map((r) => r.tone), ["grey"]);
+  assert.deepEqual(routeCheckReminders({ state: { townCentreId: "woden", ticked: [] }, home, achieved23: false }).map((r) => r.tone), ["grey"]);
   assert.deepEqual(routeCheckReminders({ state: { townCentreId: "woden", ticked: [...ALL_ITEM_IDS] }, home, achieved23: true }), [{ id: "r10-items", tone: "plain", text: "Route check: all Competency 23 route items ticked (Woden)." }]);
   for (const address of ["Weston", "Queanbeyan NSW", ""]) {
     assert.ok(routeCheckReminders({ state: { townCentreId: "woden", ticked: [] }, home: homeDistrict(address), achieved23: false }).every((r) => r.id !== "r10-home"), address);
   }
-  assert.deepEqual(ROUTE_ITEMS.map((i) => i.group), ["assessment", "centre", "centre", "centre", "centre", "centre"], "2 designated zones is an assessment-level condition, the rest are in the town centre");
+  // Dangerous direction: choosing the home centre is always amber for every district with a centre; the default never is the home centre.
+  for (const address of ["Florey ACT 2615", "Franklin ACT", "Braddon", "Kingston", "Phillip", "Kambah"]) {
+    const h = homeDistrict(address);
+    assert.equal(h.kind, "district", address);
+    const homeId = h.kind === "district" ? h.townCentreId : null;
+    assert.ok(homeId, address);
+    assert.notEqual(defaultRouteState(h).townCentreId, homeId, address);
+    assert.ok(!suggestTownCentres(h).some((c) => c.id === homeId), address);
+    assert.equal(routeCheckReminders({ state: { townCentreId: homeId!, ticked: [...ALL_ITEM_IDS] }, home: h, achieved23: true })[0].id, "r10-home", address);
+  }
+  assert.deepEqual(ROUTE_ITEMS.map((i) => i.group), ["assessment", "centre", "centre", "centre", "centre", "centre"]);
   assert.match(ROUTE_GROUP_HEADINGS.centre, /UNFAMILIAR town centre.*assumption A1/);
   assert.ok(!ROUTE_GROUP_HEADINGS.assessment.toLowerCase().includes("town centre"));
 });
@@ -369,7 +442,7 @@ test("D1: a lesson with 23 Assessed + Achieved saves with and without route data
   const stored = await getLesson(db, learner.id, lesson.id);
   assert.equal(stored.location, "Woden: Launceston St start");
   assert.equal(stored.comments, "Confident throughout.\nComp 23 route (Woden): 2 zones, stop, give way, 2 lights, 2 crossings, 5R/5L all ticked.");
-  assert.deepEqual(parseRouteComments(stored.comments ?? ""), { state, own: "Confident throughout.", extra: "" });
+  assert.deepEqual(parseRouteComments(stored.comments ?? ""), { state, own: "Confident throughout.", extra: "", lineIndex: 1, eol: "\n" });
   await Promise.all(pending);
   const rows = await listOutboxRowsForLearner(db, learner.id);
   assert.equal(rows.length, 6);
