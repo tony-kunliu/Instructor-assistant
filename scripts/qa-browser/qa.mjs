@@ -2368,6 +2368,162 @@ const draw = async (page, index) => {
   await s.ctx.close();
 }
 
+// ═══ 22. Appearance switch (System / Light / Dark) + only the form while New / Edit learner is open (Tony 2026-10-13) ═══
+{
+  const mkLearner = async (body) => (await (await fetch(`${B}/api/learners`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ instructorId: WHO.tony[0], ...body }) })).json()).learner;
+  const focus = await mkLearner({ fullName: "QA Theme Focus", transmission: "auto" });
+  await postLesson(focus.id, { lessonDate: "2026-09-22", startTime: "09:00", finishTime: "10:00", startOdometer: "900", finishOdometer: "912", taughtIds: ["1"], adiSignature: SIG, learnerSignature: SIG });
+  const LIGHT_PAPER = "rgb(246, 243, 235)", DARK_PAPER = "rgb(9, 19, 28)", SURFACE_DARK = "rgb(16, 31, 45)";
+  const html = (page) => page.evaluate(() => ({
+    theme: document.documentElement.getAttribute("data-theme"), scheme: getComputedStyle(document.documentElement).colorScheme, body: getComputedStyle(document.body).backgroundColor,
+    metas: [...document.querySelectorAll('meta[name="theme-color"]')].map((m) => `${m.getAttribute("media") ?? ""}=${m.getAttribute("content")}`).sort(),
+    stored: (() => { try { return localStorage.getItem("actgds-driver:theme"); } catch { return "blocked"; } })(),
+  }));
+  const SYSTEM_METAS = "(prefers-color-scheme: dark)=#050d14|(prefers-color-scheme: light)=#0b1b2b";
+  const pressed = (page) => page.$$eval("[data-testid=theme-switch] .theme-opt", (bs) => bs.filter((b) => b.getAttribute("aria-pressed") === "true").map((b) => b.textContent).join());
+  // WCAG contrast ratio of an element's text against its own (or the nearest painted ancestor's) background.
+  const contrast = (page, sel) => page.$eval(sel, (e) => {
+    const parse = (c) => (c.match(/[\d.]+/g) ?? []).map(Number);
+    const lum = ([r, g, b]) => { const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }; return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b); };
+    let bg = null;
+    for (let n = e; n && n !== document.documentElement; n = n.parentElement) { const c = parse(getComputedStyle(n).backgroundColor); if (c.length === 3 || (c.length === 4 && c[3] > 0)) { bg = c; break; } }
+    if (!bg) bg = parse(getComputedStyle(document.body).backgroundColor);
+    const [l1, l2] = [lum(parse(getComputedStyle(e).color)), lum(bg)].sort((a, b) => b - a);
+    return (l1 + 0.05) / (l2 + 0.05);
+  });
+  const panels = (page) => page.evaluate(() => ({
+    summary: !!document.querySelector(".card.summary"), header: !!document.querySelector("[data-testid=learner-header]"), lesson: !!document.querySelector(".card.lesson"), progress: !!document.querySelector(".card.progress"),
+    history: !!document.querySelector(".card.history"), form: !!document.querySelector("[data-testid=learner-form]"), cards: document.querySelectorAll("[data-testid=learner-card]").length, empty: !!document.querySelector(".learner-list .empty"),
+    expand: document.querySelector("[data-testid=learner-list-expand]")?.textContent ?? null, note: document.querySelector("[data-testid=list-collapsed-note]").textContent, selected: document.querySelector(".card.picker").dataset.selected,
+    phase: document.querySelector(".card.lesson")?.dataset.phase ?? null, name: document.querySelector(".summary-main small")?.textContent ?? null,
+    taught: [...document.querySelectorAll(".comp-section")].find((c) => c.querySelector(".comp-label")?.textContent === "Taught")?.querySelector('.chip-row.numbers button[aria-pressed="true"]')?.textContent ?? null,
+  }));
+
+  const s = await session("tony");
+  await s.page.setViewportSize({ width: 375, height: 812 });
+  await ready(s.page);
+  const mine = (await learnersApi()).filter((l) => l.instructorId === WHO.tony[0]).length;
+  // The control: a quiet group in the footer, three options with aria-pressed, System by default, ≥44px each.
+  const sw = await s.page.$eval("[data-testid=theme-switch]", (g) => ({ role: g.getAttribute("role"), label: g.getAttribute("aria-label"), inFoot: g.closest(".foot") !== null, opts: [...g.querySelectorAll(".theme-opt")].map((b) => ({ t: b.textContent, h: b.getBoundingClientRect().height, w: b.getBoundingClientRect().width, p: b.getAttribute("aria-pressed") })) }));
+  check("theme 375px: Appearance group in the footer — System / Light / Dark with aria-pressed, System pressed by default, every option ≥44px", sw.role === "group" && sw.label === "Appearance" && sw.inFoot && sw.opts.map((o) => o.t).join() === "System,Light,Dark" && sw.opts.map((o) => o.p).join() === "true,false,false" && sw.opts.every((o) => o.h >= 44 && o.w >= 44), JSON.stringify(sw));
+  const sys = await html(s.page);
+  check("theme 375px: System = no data-theme, light paper on a light phone, color-scheme light, both theme-color metas keep their own navy, nothing stored", sys.theme === null && sys.body === LIGHT_PAPER && sys.scheme === "light" && sys.metas.join("|") === SYSTEM_METAS && sys.stored === null, JSON.stringify(sys));
+  await s.page.click("[data-testid=theme-dark]");
+  const dark = await html(s.page);
+  check("theme 375px: Dark → html[data-theme=dark], dark paper, color-scheme dark, both metas the dark navy, remembered on this device, Dark pressed", dark.theme === "dark" && dark.body === DARK_PAPER && dark.scheme === "dark" && dark.metas.every((m) => m.endsWith("=#050d14")) && dark.stored === "dark" && (await pressed(s.page)) === "Dark", JSON.stringify(dark));
+  check("theme 375px: no horizontal scroll (dark)", await noHScroll(s.page));
+  await s.page.locator(".foot").screenshot({ path: `${OUT}/22-theme-switch-375-dark.png` });
+  // No flash: with every script bundle blocked (React never runs) the inline boot script alone must already paint Dark.
+  const bundles = (u) => u.pathname.startsWith("/_next/static/") && u.pathname.endsWith(".js");
+  await s.page.route(bundles, (route) => route.abort());
+  await s.page.goto(B, { waitUntil: "domcontentloaded" });
+  const boot = await html(s.page);
+  check("theme 375px: no flash — before any JS bundle runs, the inline boot script has already applied the stored Dark (attribute + dark paper)", boot.theme === "dark" && boot.body === DARK_PAPER && boot.scheme === "dark" && (await s.page.$(".view-tab")) === null, JSON.stringify(boot));
+  await s.page.unroute(bundles);
+  await s.page.goto(B); await ready(s.page);
+  check("theme 375px: after a normal reload Dark is still applied and the switch shows Dark pressed", (await html(s.page)).theme === "dark" && (await pressed(s.page)) === "Dark");
+  // The choice beats the phone: Light on a dark phone; System hands back to the phone and forgets the choice.
+  await s.page.emulateMedia({ colorScheme: "dark" });
+  await s.page.click("[data-testid=theme-light]");
+  const light = await html(s.page);
+  check("theme 375px: Light on a dark phone → light paper, color-scheme light, metas the light navy, stored 'light'", light.theme === "light" && light.body === LIGHT_PAPER && light.scheme === "light" && light.metas.every((m) => m.endsWith("=#0b1b2b")) && light.stored === "light" && (await pressed(s.page)) === "Light", JSON.stringify(light));
+  await s.page.click("[data-testid=theme-system]");
+  const back = await html(s.page);
+  check("theme 375px: System → attribute and stored choice removed, the dark phone shows dark again, metas back to one navy per scheme", back.theme === null && back.stored === null && back.body === DARK_PAPER && back.scheme === "dark" && back.metas.join("|") === SYSTEM_METAS && (await pressed(s.page)) === "System", JSON.stringify(back));
+  await s.page.emulateMedia({ colorScheme: "light" });
+  await s.page.locator(".foot").screenshot({ path: `${OUT}/22-theme-switch-375-light.png` });
+
+  // Only the form: open a learner, start a lesson and tap a competency, then "+ New learner".
+  await pick(s.page, "QA Theme Focus");
+  await s.page.waitForSelector(".card.lesson");
+  await s.page.click(".btn.go");
+  await s.page.waitForSelector(".timebar");
+  await s.page.click('.comp-section:has(.comp-label:text-is("Taught")) .chip-row >> text="2"');
+  const before = await panels(s.page);
+  await s.page.click("[data-testid=new-learner]");
+  await s.page.waitForSelector("[data-testid=learner-form]");
+  await s.page.waitForFunction(() => document.querySelector("[data-testid=learner-form]").getBoundingClientRect().top < 40, null, { timeout: 3000 }).catch(() => {});
+  const open = await panels(s.page);
+  const formTop = await s.page.$eval("[data-testid=learner-form]", (e) => e.getBoundingClientRect().top);
+  check("focus 375px: + New learner with a lesson running → ONLY the form: no learner header, lesson, progress or history card, no cards, no empty-state line, just 'Show all learners (N)' + a live note", before.phase === "running" && open.form && !open.summary && !open.header && !open.lesson && !open.progress && !open.history && open.cards === 0 && !open.empty && open.expand === `Show all learners (${mine})` && open.note === `${mine} learners hidden while the form is open.`, JSON.stringify(open));
+  check("focus 375px: the form's top is on screen at the top (clear of the status bar, scroll-margin), the selected learner is kept underneath, no horizontal scroll", formTop >= 0 && formTop <= 40 && open.selected === focus.id && (await noHScroll(s.page)), `top ${Math.round(formTop)}px`);
+  const readable = async (tag) => {
+    const pairs = { heading: await contrast(s.page, "[data-testid=learner-form] h2"), label: await contrast(s.page, "[data-testid=learner-form] .field span"), input: await contrast(s.page, "[data-testid=learner-form] .field input"), hint: await contrast(s.page, "[data-testid=learner-form] .hint-note"), save: await contrast(s.page, "[data-testid=save-learner]"), expand: await contrast(s.page, "[data-testid=learner-list-expand]"), opt: await contrast(s.page, ".theme-opt:not(.active)"), optActive: await contrast(s.page, ".theme-opt.active"), foot: await contrast(s.page, ".foot") };
+    check(`focus 375px ${tag}: form heading, labels, inputs, hint, Save, Show all, Appearance options and footer text all ≥4.5:1`, Object.values(pairs).every((c) => c >= 4.5), JSON.stringify(Object.fromEntries(Object.entries(pairs).map(([k, v]) => [k, Math.round(v * 10) / 10]))));
+  };
+  await readable("light");
+  await shot(s.page, "22-form-375-light");
+  await s.page.click("[data-testid=theme-dark]");
+  await settle(150);
+  const formDark = await s.page.evaluate(() => ({ body: getComputedStyle(document.body).backgroundColor, form: getComputedStyle(document.querySelector("[data-testid=learner-form]")).backgroundColor, input: getComputedStyle(document.querySelector("[data-testid=learner-form] .field input")).backgroundColor, select: getComputedStyle(document.querySelector("[data-testid=learner-form] select")).backgroundColor, scheme: getComputedStyle(document.querySelector("[data-testid=learner-form] input[type=date]")).colorScheme }));
+  check("focus 375px dark: the form, its inputs and selects switch with the tokens (no white islands), native date pickers get color-scheme dark", formDark.body === DARK_PAPER && formDark.form === SURFACE_DARK && formDark.input === SURFACE_DARK && formDark.select === SURFACE_DARK && formDark.scheme === "dark" && (await noHScroll(s.page)), JSON.stringify(formDark));
+  await readable("dark");
+  await shot(s.page, "22-form-375-dark");
+  await s.page.click("[data-testid=theme-system]");
+  // Cancel: exactly the previous view — same learner, running lesson with Taught 2, their card back.
+  await s.page.click("[data-testid=new-learner]");
+  await s.page.waitForSelector(".card.lesson");
+  const after = await panels(s.page);
+  check("focus 375px: Cancel → exactly the previous view: same learner, header + lesson + progress + history back, lesson still running with Taught 2, their card back, form gone", after.name === "QA Theme Focus" && after.selected === focus.id && after.summary && after.header && after.lesson && after.progress && after.history && after.phase === "running" && after.taught === "2" && after.cards === 1 && !after.form, JSON.stringify(after));
+  // Draft safety: reload with the form open → the running lesson (and Taught 2) is still there (per-device draft untouched).
+  await s.page.click("[data-testid=new-learner]");
+  await s.page.waitForSelector("[data-testid=learner-form]");
+  await s.page.reload(); await ready(s.page);
+  await s.page.waitForSelector(".timebar");
+  const reloaded = await panels(s.page);
+  check("focus 375px: a reload while the form was open keeps the running lesson draft (Taught 2) for the same learner", reloaded.name === "QA Theme Focus" && reloaded.phase === "running" && reloaded.taught === "2" && !reloaded.form, JSON.stringify(reloaded));
+  // Edit learner: the same "only the form" view, Cancel restores.
+  await s.page.click("[data-testid=edit-learner]");
+  await s.page.waitForSelector("[data-testid=learner-form]");
+  const edit = await panels(s.page);
+  check("focus 375px: Edit learner → only the form too (header, lesson, progress, history hidden; no cards; 'Show all learners (N)'), titled Edit learner", edit.form && !edit.summary && !edit.lesson && !edit.progress && !edit.history && edit.cards === 0 && !edit.empty && edit.expand === `Show all learners (${mine})` && (await s.page.textContent("[data-testid=learner-form] h2")) === "Edit learner", JSON.stringify(edit));
+  await s.page.click("[data-testid=cancel-edit-learner]");
+  await s.page.waitForSelector(".card.lesson");
+  const afterEdit = await panels(s.page);
+  check("focus 375px: Edit Cancel → same learner and running lesson (Taught 2) restored", afterEdit.name === "QA Theme Focus" && afterEdit.phase === "running" && afterEdit.taught === "2" && !afterEdit.form && afterEdit.cards === 1, JSON.stringify(afterEdit));
+  // Save: the new learner opens with every panel, as before.
+  await s.page.click("[data-testid=new-learner]");
+  await s.page.waitForSelector("[data-testid=learner-form]");
+  await s.page.fill("[data-testid=learner-form] input >> nth=0", "QA Theme Saved");
+  await s.page.click("[data-testid=save-learner]");
+  await s.page.waitForSelector('.status.ok:has-text("added")');
+  await s.page.waitForSelector(".card.summary");
+  const saved = await panels(s.page);
+  check("focus 375px: Save learner → form closes, the new learner opens with header, lesson (ready), progress and history, their card shown", !saved.form && saved.name === "QA Theme Saved" && saved.summary && saved.lesson && saved.progress && saved.history && saved.cards === 1 && saved.phase === "ready", JSON.stringify(saved));
+  check("focus 375px: the running lesson of the previous learner is still on this device", (await s.page.evaluate((id) => { try { return JSON.parse(localStorage.getItem(`actgds-driver:draft:${id}`) ?? "null")?.taughtIds?.join() ?? null; } catch { return "blocked"; } }, focus.id)) === "2", "draft taughtIds");
+  check("theme/focus: Tony: no page errors", s.errors.length === 0, s.errors.join("|"));
+
+  // 820px tablet: only the form, no horizontal scroll, ≥44px Appearance options, in both themes.
+  await s.page.setViewportSize({ width: 820, height: 1180 });
+  await s.page.reload(); await ready(s.page);
+  await s.page.click("[data-testid=new-learner]");
+  await s.page.waitForSelector("[data-testid=learner-form]");
+  const tall44 = (sel) => s.page.$$eval(sel, (es) => es.length > 0 && es.every((e) => e.getBoundingClientRect().height >= 44));
+  const p820 = await panels(s.page);
+  check("focus 820px: only the form (no header, lesson, progress, history or cards), no horizontal scroll, Appearance options ≥44px", p820.form && !p820.summary && !p820.lesson && !p820.progress && !p820.history && p820.cards === 0 && (await noHScroll(s.page)) && (await tall44(".theme-opt")), JSON.stringify(p820));
+  await shot(s.page, "22-form-820-light");
+  await s.page.click("[data-testid=theme-dark]");
+  await settle(150);
+  check("focus 820px dark: no horizontal scroll, dark paper", (await noHScroll(s.page)) && (await html(s.page)).body === DARK_PAPER);
+  await shot(s.page, "22-form-820-dark");
+  await s.page.click("[data-testid=theme-system]");
+  await s.ctx.close();
+
+  // Storage blocked (private window / site data off): the app loads, the switch still works for this page, nothing throws, nothing persists.
+  const ctx = await browser.newContext({ ...devices["iPhone 13"], extraHTTPHeaders: { "x-instructor-id": WHO.tony[0], "x-instructor-name": WHO.tony[1] } });
+  await ctx.addInitScript(() => { Object.defineProperty(window, "localStorage", { configurable: true, get() { throw new DOMException("blocked", "SecurityError"); } }); });
+  const page = await ctx.newPage();
+  const errors = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.goto(B); await ready(page);
+  await page.click("[data-testid=theme-dark]");
+  const blocked = await html(page);
+  check("theme 375px: with localStorage blocked the app loads, Dark still applies to this page, no page errors (nothing persists, by design)", blocked.theme === "dark" && blocked.body === DARK_PAPER && blocked.stored === "blocked" && (await pressed(page)) === "Dark" && errors.length === 0, JSON.stringify({ ...blocked, errors }));
+  await page.reload(); await ready(page);
+  check("theme 375px: blocked storage → System again after a reload (no stale choice possible)", (await html(page)).theme === null && (await pressed(page)) === "System" && errors.length === 0, errors.join("|"));
+  await ctx.close();
+}
+
 } catch (error) {
   check(`script aborted: ${String(error.message).split("\n")[0]}`, false, String(error.message).split("\n").slice(1,4).join(" ").trim());
 }

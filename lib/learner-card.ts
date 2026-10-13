@@ -125,6 +125,15 @@ export function listCollapsed(state: { query: string; expanded: boolean; formOpe
   return state.openInView || state.formOpen;
 }
 
+/**
+ * The cards a collapsed list shows: the open learner's card, or none while the learner form is open (Tony, 2026-10-13:
+ * "+ New learner" / "Edit learner" show only the form; the list keeps just "Show all learners (N)", never an empty-state
+ * line). The open learner stays selected underneath; the form's Cancel brings their card and panels back.
+ */
+export function collapsedCards<T>(state: { formOpen: boolean; openCard: T | undefined }): T[] {
+  return state.formOpen || state.openCard === undefined ? [] : [state.openCard];
+}
+
 export type Glance = { learning: number; withReminder: number; readyForFinalDrive: number };
 
 /** The one-line summary above the list: learners shown, amber reminders, Final Drive 23 gates open. */
