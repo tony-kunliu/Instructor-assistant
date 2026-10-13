@@ -222,7 +222,7 @@ test("save rule and hint: an empty box is saved as the generated value; the hint
   assert.equal(showsAutoHint("C23 from 2026-01-01", L({ dob: null })), true);
   assert.equal(showsAutoHint("Own", learner), false);
   // Only the fields the DATE depends on trigger the live refresh (hours and HPT do not move the date).
-  assert.deepEqual([...ELIGIBILITY_DATE_KEYS], ["dob", "licenceExpiry", "learnerLicenceIssuedOn", "learnerLicenceFirstIssuedOn"]);
+  assert.deepEqual([...ELIGIBILITY_DATE_KEYS], ["dob", "licenceExpiry", "learnerLicenceIssuedOn", "learnerLicenceFirstIssuedOn", "otherLicenceKind", "otherLicenceClass", "otherLicenceIssuedOn"]);
   // Reserved pattern: hand-typed text identical to a generated value is treated as generated.
   assert.equal(autoFillEligibility("C23 from 2000-01-01", learner), "C23 from 2026-11-15");
 });
@@ -255,7 +255,7 @@ const pdfLearner: Learner = {
   address: "1 QA St", phone: "0400 000 000", dob: "2008-05-06", licenceNumber: "QA1", licenceExpiry: "2030-11-15", eligibility: null,
   addressSuburb: null,
   addressState: null,
-  addressPostcode: null,
+  addressPostcode: null, otherLicenceKind: null, otherLicencePlace: null, otherLicenceNumber: null, otherLicenceClass: null, otherLicenceIssuedOn: null, otherLicenceExpiresOn: null,
   transmission: "auto", schoolWork: null, licenceStage: "learner", learnerLicenceIssuedOn: null, learnerLicenceFirstIssuedOn: null, hptPassedOn: null, loggedHours: null, loggedHoursOn: null,
   archivedAt: null, archiveReason: null, archiveNote: null, transfers: [],
 };

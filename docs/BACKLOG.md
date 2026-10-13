@@ -46,7 +46,8 @@ Medium term (new features; confirm rules with Tony before building):
    auto-filled (never overwriting Tony's text), iOS Scan Text + local parser.
    **P1 DONE (Production, release #12); P2 DONE (Production, release #13,
    migration 0012; iOS Scan Text / list-vs-keyboard reported OK by Tony on
-   Staging); P3 (overseas/interstate licence) and P4 (iOS Scan Text + local
+   Staging); P3 DONE on branch `feature/intake-p3-licence` (migration 0013,
+   strict review + Staging D1 Migrate before merge); P4 (iOS Scan Text + local
    parser) on Tony's go**:
    `docs/superpowers/specs/2026-10-11-learner-intake-design.md` (P3 additive
    columns; free options only, AI scan not planned; nothing to ACTGDS).
@@ -75,7 +76,8 @@ Long term (ecosystem, coordinated with Work on actgds.com Issue #3):
 | Competency 23 route suggestions and route check (R10) | `docs/superpowers/specs/2026-10-11-competency-23-route-design.md` | R10a **DONE** (in Production, release #14; no migration): D3-D10 (suggestion line, route group, location + comment line, parse-back in History Edit). P4 GPS counting waits for a separate approval. |
 | Learner intake: address suggestions, overseas/interstate licence, Competency 23 "eligible from", licence scan | `docs/superpowers/specs/2026-10-11-learner-intake-design.md` | Q1-Q11 decided by Tony 2026-10-11 (free options only; AI scan not planned). P1 and P2 DONE (below); P3/P4 wait for a go. |
 | Learner intake P1: "Competency 23 from" date + PDF Eligibility auto-fill (D17-D18) | `docs/superpowers/specs/2026-10-11-learner-intake-design.md` (branch `docs/learner-intake-design`) | **DONE** (in Production, release #12; no migration). |
-| Learner intake P2: address suggestions from the bundled G-NAF street index, structured suburb/state/postcode (D1-D10, D23) | same design | **DONE** (in Production, release #13, migration `0012` on Staging and Production): `scripts/build-street-index.mjs`, `public/data/streets-aug26.json`, listbox UI, qa-browser section 18. P3 overseas/interstate licence and P4 scan: waiting for a go. |
+| Learner intake P2: address suggestions from the bundled G-NAF street index, structured suburb/state/postcode (D1-D10, D23) | same design | **DONE** (in Production, release #13, migration `0012` on Staging and Production): `scripts/build-street-index.mjs`, `public/data/streets-aug26.json`, listbox UI, qa-browser section 18. |
+| Learner intake P3: overseas / interstate licence fields + school rule in R2 / "Competency 23 from" (D11-D14, D17) | same design | **DONE on branch `feature/intake-p3-licence`** (migration `0013`, six nullable columns; `lib/other-licence.ts`; qa-browser section 23). Needs the strict independent review and `Staging D1 Migrate` before merge. Follow-ups: (1) an interstate learner licence issued after the ACT licence is counted literally from its own date (spec D13 a) — confirm with Tony or count from the earlier date; (2) the D13 (e) grey line is a separate `r2-other` reminder under R2; (3) the country `<datalist>` is a bundled English list (`COUNTRIES`), free text saves; (4) spec D14 "revision labels are added" is stale: there is no learner History UI yet (learner_revisions are stored, not displayed), so no labels exist to add — update the spec when that UI is designed. Review 2026-10-13: Tony decided count from the EARLIER issued licence, keep the separate grey `r2-other` line, keep the country list. P4 scan waits for a go. |
 
 ## Learner list UI (concept approved by Tony 2026-10-12; branch `feature/ui-learner-list`)
 

@@ -24,7 +24,7 @@ function learner(id: string, over: Partial<Learner> = {}): Learner {
     address: "1 QA Street",
     addressSuburb: null,
     addressState: null,
-    addressPostcode: null,
+    addressPostcode: null, otherLicenceKind: null, otherLicencePlace: null, otherLicenceNumber: null, otherLicenceClass: null, otherLicenceIssuedOn: null, otherLicenceExpiresOn: null,
     phone: "0400 000 000",
     dob: "2008-01-01",
     licenceNumber: null,

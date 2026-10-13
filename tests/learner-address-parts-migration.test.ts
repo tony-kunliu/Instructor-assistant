@@ -20,7 +20,7 @@ function dbAfter0011(): DatabaseSync {
 }
 
 test("0012 only appends three nullable TEXT columns to learners; existing rows and other tables are untouched, new columns are NULL", () => {
-  assert.equal(SCHEMA_VERSION, 12);
+  assert.ok(SCHEMA_VERSION >= 12, "0012 is part of the schema (later additive migrations bump the version further)");
   const db = dbAfter0011();
   const tablesBefore = db.prepare("SELECT name, sql FROM sqlite_master WHERE type = 'table' ORDER BY name").all();
   const columnsBefore = db.prepare("SELECT name FROM pragma_table_info('learners') ORDER BY cid").all().map((r) => r.name as string);

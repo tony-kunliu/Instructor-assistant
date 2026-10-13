@@ -31,6 +31,7 @@ import { isPriorRecord } from "./prior-record.ts";
 import { ArchiveInputError, parseArchiveNote, parseArchiveReason } from "./archive-reasons.ts";
 import { parseTransferNote, TransferInputError } from "./learner-transfer.ts";
 import { validateAddressParts } from "./address-suggest.ts";
+import { OTHER_LICENCE_KEYS, validateOtherLicence, type OtherLicenceFields } from "./other-licence.ts";
 import { summaryFromProgress, type LearnerListSummary } from "./learner-card.ts";
 import type { CompletionSummary, Instructor, Learner, LearnerArchiveEvent, LearnerInput, LearnerTransferEvent, Lesson, LessonInput, LessonRevision, LessonRevisionSnapshot, SignatureStatus } from "./types.ts";
 
@@ -99,6 +100,12 @@ function toLearner(row: Row): Learner {
     hptPassedOn: (row.hpt_passed_on as string) ?? null,
     loggedHours: nullableNumber(row.logged_hours),
     loggedHoursOn: (row.logged_hours_on as string) ?? null,
+    otherLicenceKind: nullableString(row.other_licence_kind),
+    otherLicencePlace: nullableString(row.other_licence_place),
+    otherLicenceNumber: nullableString(row.other_licence_number),
+    otherLicenceClass: nullableString(row.other_licence_class),
+    otherLicenceIssuedOn: nullableString(row.other_licence_issued_on),
+    otherLicenceExpiresOn: nullableString(row.other_licence_expires_on),
     archivedAt: (row.archived_at as string) ?? null,
     archiveReason: nullableString(row.archive_reason),
     archiveNote: nullableString(row.archive_note),
@@ -540,11 +547,12 @@ type LearnerFields = {
   hptPassedOn: string | null;
   loggedHours: number | null;
   loggedHoursOn: string | null;
-};
+} & OtherLicenceFields;
 const LEARNER_EDIT_KEYS = [
   "fullName", "address", "phone", "dob", "licenceNumber", "licenceExpiry", "eligibility", "transmission", "schoolWork", "licenceStage",
   "learnerLicenceIssuedOn", "learnerLicenceFirstIssuedOn", "hptPassedOn", "loggedHours", "loggedHoursOn",
   "addressSuburb", "addressState", "addressPostcode",
+  ...OTHER_LICENCE_KEYS,
 ] as const satisfies readonly (keyof LearnerFields)[];
 const ADDRESS_PART_KEYS = ["address", "addressSuburb", "addressState", "addressPostcode"] as const;
 const LICENCE_STAGES = ["learner", "p1", "p2", "full"] as const;
@@ -554,6 +562,8 @@ const LEARNER_COLUMN: Record<(typeof LEARNER_EDIT_KEYS)[number], string> = {
   learnerLicenceIssuedOn: "learner_licence_issued_on", learnerLicenceFirstIssuedOn: "learner_licence_first_issued_on", hptPassedOn: "hpt_passed_on",
   loggedHours: "logged_hours", loggedHoursOn: "logged_hours_on",
   addressSuburb: "address_suburb", addressState: "address_state", addressPostcode: "address_postcode",
+  otherLicenceKind: "other_licence_kind", otherLicencePlace: "other_licence_place", otherLicenceNumber: "other_licence_number",
+  otherLicenceClass: "other_licence_class", otherLicenceIssuedOn: "other_licence_issued_on", otherLicenceExpiresOn: "other_licence_expires_on",
 };
 
 /** A real calendar date that throws a labelled error (the Competency 23 fields); `isoDate` is the non-throwing twin. */
@@ -582,7 +592,20 @@ const RULES_DATE_LABELS = [
   ["learnerLicenceFirstIssuedOn", "First learner licence issue date"],
   ["hptPassedOn", "HPT pass date"],
   ["loggedHoursOn", "Logged hours as-of date"],
+  ["otherLicenceIssuedOn", "Other licence issue date"],
+  ["otherLicenceExpiresOn", "Other licence expiry"],
 ] as const;
+
+/**
+ * Intake P3 (D12): the overseas / interstate licence fields, checked on the merged values only when one of them (or
+ * the DOB) is being changed, so an unrelated edit is never blocked by older data. Returns the normalised fields to store.
+ */
+function checkOtherLicence(merged: OtherLicenceFields & { dob: string | null }, touched: ReadonlySet<string>, today: string): OtherLicenceFields | null {
+  const result = validateOtherLicence(merged, touched, today);
+  if (result === null) return null;
+  if (!result.ok) throw new ValidationError(result.error);
+  return result.fields;
+}
 
 /**
  * Cross-field rules for the Competency 23 fields (D19), checked on the merged values (the stored learner plus the
@@ -646,6 +669,11 @@ function parseLearnerFields(input: LearnerEditInput, strict: boolean, existing?:
   }
   for (const [key, label] of RULES_DATE_LABELS) if (has(key)) out[key] = realDate(input[key], label);
   if (has("loggedHours")) out.loggedHours = wholeHours(input.loggedHours);
+  // Other licence (0013): "" -> null here; enum, place, length and date rules run together in checkOtherLicence on the merged values.
+  if (has("otherLicenceKind")) out.otherLicenceKind = text(input.otherLicenceKind, 40)?.toLowerCase() ?? null;
+  if (has("otherLicenceClass")) out.otherLicenceClass = text(input.otherLicenceClass, 40)?.toLowerCase() ?? null;
+  if (has("otherLicencePlace")) out.otherLicencePlace = text(input.otherLicencePlace, 300);
+  if (has("otherLicenceNumber")) out.otherLicenceNumber = text(input.otherLicenceNumber, 300);
   if (has("transmission")) {
     const raw = String(input.transmission ?? "").trim().toLowerCase();
     out.transmission = raw === "manual" || raw === "auto" ? raw : null;
@@ -668,6 +696,12 @@ export async function createLearner(db: D1Database, input: LearnerInput, now: Da
   );
   const parts = checkAddressParts({ address: fields.address ?? null, addressSuburb: fields.addressSuburb ?? null, addressState: fields.addressState ?? null, addressPostcode: fields.addressPostcode ?? null }, new Set(Object.keys(fields)));
   if (parts) Object.assign(fields, parts);
+  const other = checkOtherLicence(
+    { dob: fields.dob ?? null, otherLicenceKind: fields.otherLicenceKind ?? null, otherLicencePlace: fields.otherLicencePlace ?? null, otherLicenceNumber: fields.otherLicenceNumber ?? null, otherLicenceClass: fields.otherLicenceClass ?? null, otherLicenceIssuedOn: fields.otherLicenceIssuedOn ?? null, otherLicenceExpiresOn: fields.otherLicenceExpiresOn ?? null },
+    new Set(Object.keys(fields)),
+    localNow(now).date,
+  );
+  if (other) Object.assign(fields, other);
   // Instructor must already exist and be active — no free-text name, no
   // auto-creation. Reuses the same existing-and-active check as lesson
   // attribution, just made required here (an omitted/unknown/inactive id
@@ -680,8 +714,9 @@ export async function createLearner(db: D1Database, input: LearnerInput, now: Da
     .prepare(
       `INSERT INTO learners (id, instructor_id, full_name, address, phone, dob, licence_number, licence_expiry, eligibility, transmission, school_work,
          learner_licence_issued_on, learner_licence_first_issued_on, hpt_passed_on, logged_hours, logged_hours_on,
-         address_suburb, address_state, address_postcode)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         address_suburb, address_state, address_postcode,
+         other_licence_kind, other_licence_place, other_licence_number, other_licence_class, other_licence_issued_on, other_licence_expires_on)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .bind(
       id,
@@ -703,6 +738,12 @@ export async function createLearner(db: D1Database, input: LearnerInput, now: Da
       fields.addressSuburb ?? null,
       fields.addressState ?? null,
       fields.addressPostcode ?? null,
+      fields.otherLicenceKind ?? null,
+      fields.otherLicencePlace ?? null,
+      fields.otherLicenceNumber ?? null,
+      fields.otherLicenceClass ?? null,
+      fields.otherLicenceIssuedOn ?? null,
+      fields.otherLicenceExpiresOn ?? null,
     )
     .run();
   return getLearner(db, id);
@@ -747,9 +788,10 @@ export async function updateLearner(db: D1Database, id: string, input: LearnerEd
   // Only CHANGED keys trigger the cross-field rules: the form re-sends every field, and unchanged older data must never block an unrelated edit.
   checkRulesFields({ ...existing, ...fields } as Learner, new Set(changedFields), localNow(now).date);
   const parts = checkAddressParts({ ...existing, ...fields } as Learner, new Set(changedFields));
-  if (parts) {
-    // Normalised parts (trimmed, upper-case state) may differ from what was sent: store them as validated.
-    Object.assign(fields, parts);
+  const other = checkOtherLicence({ ...existing, ...fields } as Learner, new Set(changedFields), localNow(now).date);
+  if (parts || other) {
+    // Normalised values (trimmed, upper-case state / licence number) may differ from what was sent: store them as validated.
+    Object.assign(fields, parts ?? {}, other ?? {});
     changedFields = keys.filter((key) => fields[key] !== existing[key]);
     if (!changedFields.length) return { learner: existing, changed: false, changedFields: [] };
   }

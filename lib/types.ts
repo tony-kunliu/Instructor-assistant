@@ -42,6 +42,22 @@ export type Learner = {
   loggedHours: number | null;
   /** The "as of" date for loggedHours. */
   loggedHoursOn: string | null;
+  /**
+   * Overseas / interstate licence (migration 0013, intake P3 D11): all optional, null = not recorded. Read only by the
+   * Competency 23 reminders (lib/rules.ts school rule); the expiry is information only (Q4). Never sent to ACTGDS.
+   */
+  /** null = not recorded; "none" | "interstate" | "overseas" (lib/other-licence.ts). */
+  otherLicenceKind: string | null;
+  /** State/territory code other than ACT (interstate) or a country name (overseas). */
+  otherLicencePlace: string | null;
+  /** Upper-case, <= 40 characters. Not used by the duplicate-licence warning. */
+  otherLicenceNumber: string | null;
+  /** null = not recorded; "learner" | "full" | "other" (provisional, permit…: never counts). */
+  otherLicenceClass: string | null;
+  /** First issued if known, otherwise the issue date on the card (Q3). */
+  otherLicenceIssuedOn: string | null;
+  /** Information only: no rule reads it (Q4). */
+  otherLicenceExpiresOn: string | null;
   /** Lifecycle state only (reversible, never a delete): set = hidden from the daily picker. Independent of Final Drive 23 completion. */
   archivedAt: string | null;
   /** Reason preset key (lib/archive-reasons.ts) and note of the CURRENT archive (migration 0010): both null when active, when none was given, or for learners archived before 0010 (never invented). */
@@ -178,6 +194,13 @@ export type LearnerInput = {
   hptPassedOn?: unknown;
   loggedHours?: unknown;
   loggedHoursOn?: unknown;
+  /** Overseas / interstate licence (migration 0013); validated by lib/other-licence.ts#validateOtherLicence. */
+  otherLicenceKind?: unknown;
+  otherLicencePlace?: unknown;
+  otherLicenceNumber?: unknown;
+  otherLicenceClass?: unknown;
+  otherLicenceIssuedOn?: unknown;
+  otherLicenceExpiresOn?: unknown;
   /** Must be an existing, active instructor id — free-text instructor names/auto-creation are no longer accepted (see lib/repo.ts#createLearner). */
   instructorId?: unknown;
 };

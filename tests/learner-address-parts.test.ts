@@ -63,7 +63,7 @@ test("edit stores a pick, keeps it while the text still holds the suburb, and cl
   assert.deepEqual(first, {
     fullName: "QA Address Learner", address: "1 QA Street", phone: null, dob: null, licenceNumber: null, licenceExpiry: null, eligibility: null, transmission: null, schoolWork: null,
     licenceStage: "learner", learnerLicenceIssuedOn: null, learnerLicenceFirstIssuedOn: null, hptPassedOn: null, loggedHours: null, loggedHoursOn: null,
-    addressSuburb: null, addressState: null, addressPostcode: null,
+    addressSuburb: null, addressState: null, addressPostcode: null, otherLicenceKind: null, otherLicencePlace: null, otherLicenceNumber: null, otherLicenceClass: null, otherLicenceIssuedOn: null, otherLicenceExpiresOn: null,
   });
   assert.deepEqual(JSON.parse(rows[1].snapshot_json), { ...first, ...PICKED });
   assert.deepEqual(JSON.parse(rows[2].snapshot_json), { ...first, ...PICKED, address: "Unit 2, 44 Appleford Av, Jacka ACT 2914" });

@@ -24,7 +24,7 @@ const learner: Learner = {
   address: "1 Test St",
   addressSuburb: null,
   addressState: null,
-  addressPostcode: null,
+  addressPostcode: null, otherLicenceKind: null, otherLicencePlace: null, otherLicenceNumber: null, otherLicenceClass: null, otherLicenceIssuedOn: null, otherLicenceExpiresOn: null,
   phone: "0400 000 000",
   dob: "2008-01-01",
   licenceNumber: "L1",

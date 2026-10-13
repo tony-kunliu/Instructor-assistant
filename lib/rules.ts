@@ -12,6 +12,7 @@
 import { LESSON_TIME_ZONE, localNow, parseTime } from "./calc.ts";
 import { lookupActHoliday } from "./act-public-holidays.ts";
 import { CORE_COMPETENCY_IDS, REVIEW_1_17, REVIEW_1_22, type LearnerProgress } from "./competency.ts";
+import { holdsOtherLicence, otherLicenceLabel } from "./other-licence.ts";
 
 export type ReminderTone = "amber" | "grey" | "plain";
 export type Reminder = { id: string; tone: ReminderTone; text: string };
@@ -277,6 +278,62 @@ export type EligibilityLearner = {
   hptPassedOn: string | null;
   loggedHours: number | null;
   loggedHoursOn: string | null;
+  /**
+   * Overseas / interstate licence (migration 0013, intake P3 D13): all optional, absent = not recorded. Only the kind,
+   * class, issue date and place (for wording) are read; the other licence's expiry and number never are (Q4).
+   */
+  otherLicenceKind?: string | null;
+  otherLicenceClass?: string | null;
+  otherLicenceIssuedOn?: string | null;
+  otherLicencePlace?: string | null;
+};
+
+// ───────────────────────── School rule: overseas / interstate licence (intake P3, D13) ─────────────────────────
+
+/**
+ * Tony's school rule, confirmed with the authority 2026-10-11 and corrected 2026-10-12 (design §1, §9 Q1-Q5):
+ * an interstate or overseas FULL licence held this many months (issue date to the drive date) removes the
+ * 12 / 6-month learner-licence wait. Interstate LEARNER time counts towards the wait with the band's own months.
+ * Hours, HPT and age are never affected. Not in NI2020-703 or the CoP: the reminders name it as a school rule.
+ */
+export const OTHER_FULL_LICENCE_MONTHS = 12;
+export const SCHOOL_RULE_LABEL = "school rule, confirmed by Tony";
+const OVERSEAS_LEARNER_NOTE = "Overseas learner licences do not count towards the wait (school rule).";
+const OTHER_CLASS_NOTE = "Only an interstate learner licence, or an interstate or overseas full licence, counts (school rule).";
+const OTHER_INCOMPLETE_NOTE = "Add the licence type and issue date to check the school rule.";
+
+/** How the recorded other licence enters R2: counted learner time, a full licence, a note only, or details still missing. */
+type SchoolRule =
+  | { mode: "none" }
+  | { mode: "learner" | "full"; issuedOn: string; label: string }
+  | { mode: "note"; note: string }
+  | { mode: "incomplete" };
+
+function schoolRule(learner: EligibilityLearner): SchoolRule {
+  const kind = learner.otherLicenceKind ?? null;
+  if (!holdsOtherLicence(kind)) return { mode: "none" };
+  const cls = learner.otherLicenceClass ?? null;
+  if (cls === "other") return { mode: "note", note: OTHER_CLASS_NOTE };
+  if (cls === "learner" && kind === "overseas") return { mode: "note", note: OVERSEAS_LEARNER_NOTE };
+  if (cls !== "learner" && cls !== "full") return { mode: "incomplete" };
+  const issuedOn = learner.otherLicenceIssuedOn && parseIsoDate(learner.otherLicenceIssuedOn) ? learner.otherLicenceIssuedOn : null;
+  if (!issuedOn) return { mode: "incomplete" };
+  return { mode: cls, issuedOn, label: otherLicenceLabel({ otherLicenceKind: kind, otherLicenceClass: cls, otherLicencePlace: learner.otherLicencePlace ?? null }) };
+}
+
+/**
+ * D13 (e): grey "add" line shown next to R2 while the recorded interstate / overseas licence lacks the type or issue
+ * date that (a) or (b) would need. Null when nothing is recorded, the answer is "No", or the licence is fully
+ * described (including ones that never count: overseas learner, class other). Never affects R2's own verdict.
+ */
+export function otherLicenceDataReminder(learner: EligibilityLearner): Reminder | null {
+  return schoolRule(learner).mode === "incomplete" ? { id: "r2-other", tone: "grey", text: OTHER_INCOMPLETE_NOTE } : null;
+}
+
+/** The (c) / (d) sentence appended to R2's line, or "" when the other licence adds no note. */
+const schoolNoteOf = (learner: EligibilityLearner): string => {
+  const rule = schoolRule(learner);
+  return rule.mode === "note" ? ` ${rule.note}` : "";
 };
 
 const isoOf = (y: number, m: number, d: number) => `${String(y).padStart(4, "0")}-${pad(m)}-${pad(d)}`;
@@ -315,27 +372,68 @@ export const ESTIMATE_BORDERLINE_DAYS = 14;
 export const ESTIMATE_LABEL = "estimated from the licence expiry";
 
 type Condition = { key: string; met: boolean | "unknown"; text: string };
-type Evaluation = { missing: string[]; conditions: Condition[]; unclear: boolean; kind: string };
+type Evaluation = { missing: string[]; conditions: Condition[]; unclear: false | "renewed" | "school"; kind: string; school: string };
 
-/** A dated R2 condition: the day it is first met. `label` is R2's wording, `short` the "eligible from" wording. */
-type DatedCondition = { key: "held" | "age"; on: string; label: string; short: string };
+/**
+ * A dated R2 condition: the day it is first met (`on`). `label` is R2's wording, `short` the "eligible from" wording.
+ * `shownOn` (default `on`) is the date R2 prints after the label and `after` a parenthesis after it, so a wait met
+ * earlier by the school rule still shows the ACT date with "(the school rule applies from …)". `school` is the
+ * school-rule sentence R2 adds to a plain result when this condition was met through the rule.
+ */
+type DatedCondition = { key: "held" | "age"; on: string; label: string; short: string; shownOn?: string; after?: string; school?: string };
+
+/**
+ * The "held" condition with Tony's school rule applied (D13 a/b; Tony 2026-10-13: count from the EARLIER issued
+ * licence, and never before the ACT learner licence itself):
+ *   - an interstate LEARNER licence issued BEFORE the ACT licence moves the start of the wait to its own issue date
+ *     (held = min(ACT reading, interstate issue + the band's months)); one issued on or after the ACT licence
+ *     contributes nothing (no wording, no band check);
+ *   - an interstate or overseas FULL licence held OTHER_FULL_LICENCE_MONTHS removes the wait if that day comes first;
+ *   - the day is floored at `actIssue` (the ACT learner licence issue date): a Competency 23 date can never precede
+ *     the learner licence the drive is done on (review 2026-10-13, Major-2).
+ * `actHeldOn` is the plain ACT reading; `fromDate(start)` recomputes it from another start.
+ */
+function heldWithSchoolRule(rule: SchoolRule, actIssue: string, actHeldOn: string, fromDate: (start: string) => string | null, label: string, short: string): DatedCondition {
+  const act: DatedCondition = { key: "held", on: actHeldOn, label, short };
+  const floor = (date: string) => (date < actIssue ? actIssue : date);
+  if (rule.mode === "learner" && rule.issuedOn < actIssue) {
+    const counted = fromDate(rule.issuedOn) ?? actHeldOn;
+    const on = floor(counted < actHeldOn ? counted : actHeldOn);
+    return { key: "held", on, label, short: `${short} from the ${rule.label}, school rule`, after: ` (counted from the ${rule.label}, school rule)`, school: `licence time counted from the ${rule.label}` };
+  }
+  if (rule.mode === "full") {
+    const fullOn = addMonthsClamped(rule.issuedOn, OTHER_FULL_LICENCE_MONTHS);
+    if (!fullOn) return act;
+    if (fullOn < actHeldOn) {
+      const on = floor(fullOn);
+      return { key: "held", on, shownOn: actHeldOn, label, short: `${rule.label} ${OTHER_FULL_LICENCE_MONTHS} months, school rule`, after: ` (the school rule applies from ${formatDate(on)})`, school: `${rule.label} held ${OTHER_FULL_LICENCE_MONTHS} months on ${formatDate(fullOn)}` };
+    }
+    // The ACT wait ends first: the school rule changes nothing, but a still-unmet line says when it would apply.
+    return { ...act, after: ` (the school rule applies from ${formatDate(fullOn)})` };
+  }
+  return act;
+}
 
 /**
  * The dated conditions of R2 for a concrete issue date, shared by R2 (`evaluateEligibility`) and
  * `finalDriveEligibleFrom`, so both read the rule the same way. Old licence (before 1 Jan 2020): held 5½ months
  * (from the first issue date if given) and age 16 years 350 days (D12, Q5). New licence: the band is the age at
  * issue (under 25: 12 months + age 17 + 100 h; 25 or over: 6 months + 50 h); a renewed licence whose first and
- * current issue dates fall in different bands is `unclear`. `dob` must be a valid date for a new licence.
+ * current issue dates fall in different bands is `unclear: "renewed"`, an EARLIER interstate learner licence issued in
+ * a different band from the ACT licence `unclear: "school"` (D13 a). `dob` must be a valid date for a new licence.
+ * The school rule (overseas / interstate licence) only ever moves the "held" condition (heldWithSchoolRule).
  */
 function datedConditions(learner: EligibilityLearner, issue: string, dob: string | null):
   | { old: true; kind: string; dated: DatedCondition[] }
-  | { old: false; unclear: true }
+  | { old: false; unclear: "renewed" | "school"; schoolLabel?: string }
   | { old: false; unclear: false; kind: string; under25: boolean; needHours: number; dated: DatedCondition[] } {
   const firstIssued = learner.learnerLicenceFirstIssuedOn && parseIsoDate(learner.learnerLicenceFirstIssuedOn) ? learner.learnerLicenceFirstIssuedOn : null;
+  const rule = schoolRule(learner);
   if (issue < NEW_LICENCE_FROM) {
     const dated: DatedCondition[] = [];
-    const heldOn = addDaysIso(addMonthsClamped(firstIssued ?? issue, 5) ?? issue, 16);
-    if (heldOn) dated.push({ key: "held", on: heldOn, label: "licence held 5½ months", short: "licence 5½ months" });
+    const heldFrom = (start: string) => addDaysIso(addMonthsClamped(start, 5) ?? start, 16);
+    const heldOn = heldFrom(firstIssued ?? issue);
+    if (heldOn) dated.push(heldWithSchoolRule(rule, firstIssued ?? issue, heldOn, heldFrom, "licence held 5½ months", "licence 5½ months"));
     const ageOn = dob ? addDaysIso(addMonthsClamped(dob, 17 * 12) ?? dob, -15) : null;
     if (ageOn) dated.push({ key: "age", on: ageOn, label: "age 16 years 350 days", short: "age 16 years 350 days" });
     return { old: true, kind: "old licence", dated };
@@ -344,15 +442,25 @@ function datedConditions(learner: EligibilityLearner, issue: string, dob: string
     const twentyFifth = dob ? addMonthsClamped(dob, 25 * 12) : null;
     return twentyFifth ? issuedOn < twentyFifth : true;
   };
-  if (firstIssued && firstIssued !== issue && under25At(firstIssued) !== under25At(issue)) return { old: false, unclear: true };
+  if (firstIssued && firstIssued !== issue && under25At(firstIssued) !== under25At(issue)) return { old: false, unclear: "renewed" };
+  // D13 (a): the band stays the ACT licence's; an EARLIER interstate learner licence from the other band cannot be read
+  // (one issued on or after the ACT licence contributes nothing, so its band is irrelevant).
+  if (rule.mode === "learner" && rule.issuedOn < issue && under25At(rule.issuedOn) !== under25At(issue)) return { old: false, unclear: "school", schoolLabel: rule.label };
   const under25 = under25At(issue);
   const needMonths = under25 ? 12 : 6;
   const dated: DatedCondition[] = [];
   const heldOn = addMonthsClamped(issue, needMonths);
-  if (heldOn) dated.push({ key: "held", on: heldOn, label: `licence held ${needMonths} months`, short: `licence ${needMonths} months` });
+  if (heldOn) dated.push(heldWithSchoolRule(rule, issue, heldOn, (start) => addMonthsClamped(start, needMonths), `licence held ${needMonths} months`, `licence ${needMonths} months`));
   const ageOn = under25 && dob ? addMonthsClamped(dob, 17 * 12) : null;
   if (ageOn) dated.push({ key: "age", on: ageOn, label: "age 17", short: "age 17" });
   return { old: false, unclear: false, kind: under25 ? "new licence, under 25 at issue" : "new licence, 25 or over at issue", under25, needHours: under25 ? 100 : 50, dated };
+}
+
+/** The school-rule sentence for a plain R2 result (a plain result means every condition, the "held" one included, is met). */
+function schoolSentence(dated: DatedCondition[]): string {
+  const held = dated.find((c) => c.key === "held");
+  if (!held?.school) return "";
+  return `; ${SCHOOL_RULE_LABEL}: ${held.school}`;
 }
 
 /** One reading of R2 for a concrete issue date. Pure; `onDate` is the day the Competency 23 drive would happen (D13). */
@@ -363,25 +471,25 @@ function evaluateEligibility(learner: EligibilityLearner, issue: string, onDate:
   if (!dob) missing.push("date of birth");
   const isOld = issue < NEW_LICENCE_FROM;
   const dueText = (label: string, metOn: string | null) => (metOn ? `${label} on ${formatDate(metOn)}` : label);
-  const toCondition = (c: DatedCondition): Condition => ({ key: c.key, met: onDate >= c.on, text: dueText(c.label, c.on) });
+  const toCondition = (c: DatedCondition): Condition => ({ key: c.key, met: onDate >= c.on, text: `${dueText(c.label, c.shownOn ?? c.on)}${c.after ?? ""}` });
 
   if (isOld) {
     // Old licence: age at least 16 years 350 days (17th birthday minus 15 days) and held at least 5½ months (D12, Q5).
     const rule = datedConditions(learner, issue, dob);
     if (rule.old) conditions.push(...rule.dated.map(toCondition));
-    return { missing, conditions, unclear: false, kind: "old licence" };
+    return { missing, conditions, unclear: false, kind: "old licence", school: rule.old ? schoolSentence(rule.dated) : "" };
   }
 
   // New licence: HPT and logged hours are needed whatever the band.
   if (!learner.hptPassedOn || !parseIsoDate(learner.hptPassedOn)) missing.push("HPT pass date");
   if (learner.loggedHours === null) missing.push("logged hours");
   else if (!learner.loggedHoursOn || !parseIsoDate(learner.loggedHoursOn)) missing.push("logged hours as-of date");
-  if (missing.length) return { missing, conditions, unclear: false, kind: "new licence" };
-  if (!dob) return { missing, conditions, unclear: false, kind: "new licence" };
+  if (missing.length) return { missing, conditions, unclear: false, kind: "new licence", school: "" };
+  if (!dob) return { missing, conditions, unclear: false, kind: "new licence", school: "" };
 
   const rule = datedConditions(learner, issue, dob);
-  if (rule.old) return { missing, conditions, unclear: false, kind: rule.kind }; // unreachable: issue is a new licence here
-  if (rule.unclear) return { missing, conditions, unclear: true, kind: "new licence" };
+  if (rule.old) return { missing, conditions, unclear: false, kind: rule.kind, school: "" }; // unreachable: issue is a new licence here
+  if (rule.unclear) return { missing, conditions, unclear: rule.unclear, kind: "new licence", school: rule.schoolLabel ?? "" };
   const { under25, needHours } = rule;
   const hours = learner.loggedHours as number;
   const hoursOn = learner.loggedHoursOn as string;
@@ -399,7 +507,7 @@ function evaluateEligibility(learner: EligibilityLearner, issue: string, onDate:
   conditions.push({ key: "hpt", met: hpt <= onDate, text: `HPT passed on ${formatDate(hpt)}, after this date` });
   const age = rule.dated.find((c) => c.key === "age");
   if (under25 && age) conditions.push(toCondition(age));
-  return { missing, conditions, unclear: false, kind: rule.kind };
+  return { missing, conditions, unclear: false, kind: rule.kind, school: schoolSentence(rule.dated) };
 }
 
 const signatureOf = (evaluation: Evaluation) => JSON.stringify([evaluation.kind, evaluation.unclear, evaluation.conditions.map((c) => [c.key, c.met])]);
@@ -457,14 +565,19 @@ export function finalDriveEligibilityReminder(learner: EligibilityLearner, onDat
     const also = definite.length ? ` Also not yet: ${definite.map((c) => c.text).join("; ")}.` : "";
     return { id, tone: "amber", text: `Borderline, check the licence card: the ${estimateText} could be a few days out, which changes the Competency 23 result.${also}` };
   }
+  if (main.unclear === "school") {
+    return { id, tone: "grey", text: `Age band unclear: the ${main.school} and the ACT learner licence were issued in different age bands (under 25 / 25 or over); check the instrument.${estimatedNote}` };
+  }
   if (main.unclear) return { id, tone: "grey", text: `Age band unclear for a renewed licence: check the instrument (the first and current issue dates are in different age bands).${estimatedNote}` };
 
+  // D13 (c)/(d): an overseas learner licence or a class-`other` licence changes nothing; the line says so.
+  const note = schoolNoteOf(learner);
   const unmet = main.conditions.filter((condition) => condition.met === false);
   const unknown = main.conditions.filter((condition) => condition.met === "unknown");
   const suffix = estimate ? ` (${estimateText})` : "";
-  if (unmet.length) return { id, tone: "amber", text: `Competency 23 not yet: ${unmet.map((c) => c.text).join("; ")}.${suffix}` };
-  if (unknown.length) return { id, tone: "grey", text: `Cannot check Competency 23 eligibility: ${unknown.map((c) => c.text).join("; ")}.${suffix}` };
-  return { id, tone: "plain", text: `Competency 23 eligibility met per entered data (${main.kind}${estimate ? `; ${estimateText}` : ""}).` };
+  if (unmet.length) return { id, tone: "amber", text: `Competency 23 not yet: ${unmet.map((c) => c.text).join("; ")}.${suffix}${note}` };
+  if (unknown.length) return { id, tone: "grey", text: `Cannot check Competency 23 eligibility: ${unknown.map((c) => c.text).join("; ")}.${suffix}${note}` };
+  return { id, tone: "plain", text: `Competency 23 eligibility met per entered data (${main.kind}${main.school}${estimate ? `; ${estimateText}` : ""}).${note}` };
 }
 
 // ───────────────────────── "Competency 23 eligible from" (learner intake P1, D17) ─────────────────────────
@@ -496,17 +609,25 @@ export function finalDriveEligibleFrom(learner: EligibilityLearner, today?: stri
   }
   if (!dob) return { ok: false, reason: `Add date of birth ${work}` };
 
-  const readOne = (issuedOn: string) => {
+  type Reading = { rule: Extract<ReturnType<typeof datedConditions>, { dated: DatedCondition[] }>; date: string; because: string[] };
+  // null = unclear: a renewed licence, or an interstate learner licence from the other age band (D13 a; its reason is kept per reading).
+  const unclearReasons: (string | null)[] = [];
+  const readOne = (issuedOn: string): Reading | null => {
     const rule = datedConditions(learner, issuedOn, dob);
-    if (!rule.old && rule.unclear) return null;
+    if (!rule.old && rule.unclear) {
+      unclearReasons.push(rule.unclear === "school" ? `Age band unclear: the ${rule.schoolLabel} and the ACT learner licence were issued in different age bands (under 25 / 25 or over): no Competency 23 date.` : "Age band unclear for a renewed licence (the first and current issue dates are in different age bands): no Competency 23 date.");
+      return null;
+    }
+    unclearReasons.push(null);
     const date = rule.dated.reduce((latest, c) => (c.on > latest ? c.on : latest), "");
     return { rule, date, because: rule.dated.filter((c) => c.on === date).map((c) => c.short) };
   };
   const issues = estimate ? [addDaysIso(issue, -ESTIMATE_BORDERLINE_DAYS) as string, issue, addDaysIso(issue, ESTIMATE_BORDERLINE_DAYS) as string] : [issue];
   const readings = issues.map(readOne);
-  const main = readings[estimate ? 1 : 0];
-  if (!main) return { ok: false, reason: "Age band unclear for a renewed licence (the first and current issue dates are in different age bands): no Competency 23 date." };
-  const kindOf = (r: (typeof readings)[number]) => (r ? r.rule.kind : "unclear");
+  const mainIndex = estimate ? 1 : 0;
+  const main = readings[mainIndex];
+  if (!main) return { ok: false, reason: unclearReasons[mainIndex] ?? "Age band unclear: no Competency 23 date." };
+  const kindOf = (r: Reading | null) => (r ? r.rule.kind : "unclear");
   if (readings.some((r) => kindOf(r) !== main.rule.kind)) {
     return { ok: false, reason: `Borderline: the licence issue date ${ESTIMATE_LABEL} (${formatDate(issue)}) could be a few days out, which changes the licence type or age band. Add the issue date from the licence card.` };
   }
@@ -526,6 +647,10 @@ export function finalDriveEligibleFrom(learner: EligibilityLearner, today?: stri
     if (!hoursMet) plus.push(`${main.rule.needHours} h`);
     if (!upToToday(learner.hptPassedOn)) plus.push("HPT");
   }
+  // `estimated` marks that the ACT issue date itself is an estimate (the licence type, band and the floor at the ACT issue
+  // date all rest on it), even when every reading lands on the same day (e.g. the 17th birthday, or an earlier interstate
+  // licence, decides): same convention as P1 (tests/rules-eligible-from "age wins"), so the ≈ / ~ never disappears while
+  // the card's own issue date is unknown. A typed issue date gives an exact date.
   return { ok: true, date: main.date, estimated: Boolean(estimate), earliest, latest, because: main.because, plus, kind: main.rule.kind };
 }
 
