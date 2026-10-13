@@ -1,6 +1,8 @@
-// Real-browser check of the GPS Lab harness (P4-A spike) at phone widths. Chromium's geolocation is
-// emulated (context.setGeolocation) and page visibility is simulated — REAL iPhone background/lock
-// behaviour cannot be established here (see docs/GPS_PWA_FEASIBILITY.md).
+// Real-browser QA of the isolated P4 GPS recorder page (/gps) at 375 and 820 px, light and dark. SYNTHETIC DATA ONLY:
+// the page's default source replays a scripted drive through the recorder; navigator.geolocation.watchPosition is
+// replaced by a spy in every context so this script can PROVE the synthetic flow never calls it, and the one Real GPS
+// check gets a denied error back (no real position ever exists here). Nothing is uploaded; IndexedDB only. A PASS here
+// is not evidence of iPhone background-GPS behaviour (see docs/superpowers/specs/2026-10-13-gps-tracking-design.md).
 import { createRequire } from "node:module";
 import { readFileSync, writeFileSync } from "node:fs";
 
@@ -8,6 +10,7 @@ const { chromium, devices } = createRequire(import.meta.url)(`${process.env.NPM_
 const B = process.env.QA_BASE;
 const OUT = process.env.QA_OUT;
 const CHROMIUM = process.env.QA_CHROMIUM || `${process.env.PLAYWRIGHT_BROWSERS_PATH || "/opt/pw-browsers"}/chromium-1194/chrome-linux/chrome`;
+const SPEEDUP = 100; // simulated seconds per wall second
 const results = [];
 const check = (name, ok, extra = "") => results.push({ ok: Boolean(ok), line: `${ok ? "PASS" : "FAIL"}  ${name}${extra ? "  — " + extra : ""}` });
 const settle = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -17,96 +20,223 @@ const undersized = (page) =>
   page.evaluate(() => [...document.querySelectorAll("button, a[href], input, select, textarea, summary")].filter((el) => {
     const r = el.getBoundingClientRect();
     return r.width > 0 && r.height > 0 && (r.height < 43.5 || r.width < 43.5);
-  }).map((el) => `${el.tagName}"${(el.textContent || "").trim().slice(0, 16)}"`));
-const setVisibility = (page, state) =>
-  page.evaluate((s) => {
-    Object.defineProperty(document, "visibilityState", { configurable: true, get: () => s });
-    document.dispatchEvent(new Event("visibilitychange"));
-  }, state);
+  }).map((el) => `${el.tagName}"${(el.textContent || el.getAttribute("aria-label") || "").trim().slice(0, 16)}"`));
+const layoutOk = async (page, tag) => check(`${tag}: no horizontal scroll, every control ≥ 44 px`, (await noHScroll(page)) && (await undersized(page)).length === 0, (await undersized(page)).join(" | "));
+const num = async (page, sel) => Number((await page.textContent(sel)).replace(/[^\d.]/g, ""));
+const elapsedS = async (page) => { const [m, s] = (await page.textContent("[data-testid=gps-elapsed]")).split(":").map(Number); return m * 60 + s; };
+const waitElapsed = (page, s) => page.waitForFunction((target) => { const t = document.querySelector("[data-testid=gps-elapsed]")?.textContent ?? "0:00"; const [m, sec] = t.split(":").map(Number); return m * 60 + sec >= target; }, s, { timeout: 60_000 });
+const state = (page) => page.getAttribute("[data-testid=gps-state]", "data-state");
+const watchCalls = (page) => page.evaluate(() => window.__watchCalls ?? -1);
+const shot = (page, name) => page.screenshot({ path: `${OUT}/${name}.png`, fullPage: true });
+const bg = (page) => page.evaluate(() => getComputedStyle(document.body).backgroundColor);
 
-async function drive(ctx, page, n) {
-  for (let i = 0; i < n; i++) {
-    await ctx.setGeolocation({ latitude: -35.28 + i * 0.0004, longitude: 149.13 + i * 0.0004, accuracy: 9 });
-    await settle(450);
-  }
+// Every context: the spy replaces watchPosition BEFORE any page script runs. It never produces a position.
+const SPY = () => {
+  window.__watchCalls = 0;
+  const geo = navigator.geolocation;
+  if (!geo) return;
+  geo.watchPosition = (_ok, err) => { window.__watchCalls++; setTimeout(() => err?.({ code: 1, message: "User denied Geolocation (QA spy)" }), 30); return 99; };
+  geo.getCurrentPosition = (_ok, err) => { window.__watchCalls++; setTimeout(() => err?.({ code: 1, message: "User denied Geolocation (QA spy)" }), 30); };
+};
+
+async function open(width, theme) {
+  const ctx = await browser.newContext({ ...devices["iPhone 13"], viewport: { width, height: width >= 700 ? 1180 : 812 }, isMobile: width < 700, hasTouch: true, colorScheme: "light" });
+  await ctx.addInitScript(SPY);
+  if (theme === "dark") await ctx.addInitScript(() => { try { localStorage.setItem("actgds-driver:theme", "dark"); } catch {} });
+  const page = await ctx.newPage();
+  const errors = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  page.on("dialog", (d) => { errors.push(`unexpected dialog: ${d.message()}`); d.dismiss(); });
+  await page.goto(`${B}/gps?speedup=${SPEEDUP}`);
+  await page.waitForSelector("[data-testid=gps-start]");
+  return { ctx, page, errors };
 }
 
 try {
-  for (const width of [375, 390]) {
-    const W = `${width}px`;
-    const ctx = await browser.newContext({ ...devices["iPhone 13"], viewport: { width, height: 812 }, geolocation: { latitude: -35.28, longitude: 149.13, accuracy: 9 }, permissions: ["geolocation"] });
-    const page = await ctx.newPage();
-    const errors = [];
-    page.on("pageerror", (e) => errors.push(e.message));
-    await page.goto(`${B}/gps-lab`);
-    await page.waitForSelector("[data-testid=lab-start]");
-    check(`[${W}] idle: Not recording, Start offered, no overflow, hit targets ≥44`, (await page.textContent("[data-testid=lab-state]")) === "Not recording" && (await noHScroll(page)) && (await undersized(page)).length === 0, (await undersized(page)).join(" | "));
-    check(`[${W}] lab has its own manifest (installable separately)`, (await page.getAttribute('link[rel="manifest"]', "href")) === "/gps-lab/manifest.webmanifest");
-    const manifest = await (await fetch(`${B}/gps-lab/manifest.webmanifest`)).json();
-    check(`[${W}] manifest: standalone, scoped to /gps-lab`, manifest.display === "standalone" && manifest.start_url === "/gps-lab" && manifest.scope === "/gps-lab");
+  for (const [width, theme] of [[375, "light"], [375, "dark"], [820, "light"], [820, "dark"]]) {
+    const T = `[${width}px ${theme}]`;
+    const { ctx, page, errors } = await open(width, theme);
+    const prof = JSON.parse(await page.getAttribute("[data-testid=gps-source]", "data-profile"));
+    check(`${T} theme applied (${theme})`, (await page.evaluate(() => document.documentElement.dataset.theme ?? "none")) === (theme === "dark" ? "dark" : "none") && (theme === "dark" ? /^rgb\(9, 19, 28\)$/ : /^rgb\(246, 243, 235\)$/).test(await bg(page)), await bg(page));
+    check(`${T} loads with Synthetic selected, state Ready, Start enabled, no consent block, no location API touched`,
+      (await page.getAttribute("[data-testid=gps-source]", "data-source")) === "synthetic" && (await state(page)) === "idle" && (await page.isEnabled("[data-testid=gps-start]")) && (await page.$("[data-testid=gps-consent]")) === null && (await watchCalls(page)) === 0);
+    check(`${T} own manifest, noindex, footer line`, (await page.getAttribute('link[rel="manifest"]', "href")) === "/gps/manifest.webmanifest" && /noindex/.test(await page.getAttribute('meta[name="robots"]', "content")) && /nothing leaves this device/.test(await page.textContent(".gps-foot")));
+    await layoutOk(page, `${T} idle`);
+    await shot(page, `gps-${width}-${theme}-idle`);
 
-    await page.click("[data-testid=lab-start]");
-    await page.waitForSelector("[data-testid=lab-stop]");
-    await drive(ctx, page, 6);
-    const fixes = Number(await page.textContent("[data-testid=lab-fixes]"));
-    check(`[${W}] watchPosition delivers fixes while recording`, fixes >= 4, `fixes=${fixes}`);
-    check(`[${W}] live status: last-fix age shown, accuracy shown`, /s ago/.test(await page.textContent("[data-testid=lab-fix-age]")) && /9 m/.test(await page.textContent("[data-testid=lab-metrics]")));
-    const wl = await page.textContent("[data-testid=lab-wakelock]");
-    check(`[${W}] wake lock state reported (held/error/unsupported — never blank)`, ["held", "error", "unsupported", "released", "idle"].includes(wl), wl);
-    await setVisibility(page, "hidden");
-    await settle(300);
-    check(`[${W}] hidden page is detected and logged`, (await page.textContent("[data-testid=lab-vis]")) === "hidden" && /visibility hidden/.test(await page.textContent("[data-testid=lab-log]")));
-    await setVisibility(page, "visible");
-    await settle(300);
-    check(`[${W}] visible again is logged`, /visibility visible/.test(await page.textContent("[data-testid=lab-log]")));
-    check(`[${W}] recording: no overflow, hit targets ≥44`, (await noHScroll(page)) && (await undersized(page)).length === 0, (await undersized(page)).join(" | "));
-    await page.screenshot({ path: `${OUT}/gps-${width}-recording.png`, fullPage: true });
+    // ── Synthetic Start → Pause → Resume → error injection → reload → recover ──
+    await page.click("[data-testid=gps-start]");
+    await page.waitForFunction(() => Number(document.querySelector("[data-testid=gps-fixes]")?.textContent) >= 20);
+    await waitElapsed(page, 20);
+    check(`${T} Start: recording, fixes arrive, distance and elapsed count up, wake lock reported`, (await state(page)) === "recording" && (await num(page, "[data-testid=gps-fixes]")) >= 20 && (await num(page, "[data-testid=gps-distance]")) >= 0.1 && (await elapsedS(page)) >= 20 && ["held", "error", "unsupported", "released", "idle"].includes(await page.textContent("[data-testid=gps-wakelock]")), await page.textContent("[data-testid=gps-state]"));
+    check(`${T} recording: Pause and Stop offered, Start and source locked`, (await page.$("[data-testid=gps-pause]")) !== null && (await page.$("[data-testid=gps-stop]")) !== null && (await page.$("[data-testid=gps-start]")) === null && (await page.isDisabled("[data-testid=gps-source-device]")));
+    await layoutOk(page, `${T} recording`);
+    await shot(page, `gps-${width}-${theme}-recording`);
+    await page.click("[data-testid=gps-pause]");
+    await page.waitForFunction(() => document.querySelector("[data-testid=gps-state]")?.dataset.state === "paused");
+    const fixesAtPause = await num(page, "[data-testid=gps-fixes]");
+    await settle(700);
+    check(`${T} Pause: state paused, fixes stop, paused clock runs, Resume + Stop offered`, (await num(page, "[data-testid=gps-fixes]")) === fixesAtPause && (await page.textContent("[data-testid=gps-paused]")) !== "00:00" && (await page.$("[data-testid=gps-resume]")) !== null && (await page.$("[data-testid=gps-stop]")) !== null && /Paused/.test(await page.textContent("[data-testid=gps-state]")), `fixes ${fixesAtPause} → ${await num(page, "[data-testid=gps-fixes]")}`);
+    await layoutOk(page, `${T} paused`);
+    await shot(page, `gps-${width}-${theme}-paused`);
+    await page.click("[data-testid=gps-resume]");
+    await page.waitForFunction((n) => Number(document.querySelector("[data-testid=gps-fixes]")?.textContent) > n + 5, fixesAtPause);
+    check(`${T} Resume: recording again, fixes continue, log shows pause / resume_recording`, (await state(page)) === "recording" && /resume_recording/.test(await page.textContent("[data-testid=gps-log]")) && /pause/.test(await page.textContent("[data-testid=gps-log]")));
 
-    // Kill simulation: reload mid-recording without Stop. Fixes were flushed to IndexedDB on the 2s cadence.
-    await settle(2600);
+    // Injected GPS errors (synthetic test tools): plain words, recording continues.
+    await page.click("[data-testid=gps-tools] summary");
+    await page.click("[data-testid=gps-inject-denied]");
+    await page.waitForSelector("[data-testid=gps-geo-error]");
+    const deniedText = await page.textContent("[data-testid=gps-geo-error]");
+    const fixesAtError = await num(page, "[data-testid=gps-fixes]");
+    await settle(400);
+    check(`${T} injected "denied" surfaces in plain words (Settings › Location Services), stays readable after fixes resume, recording continues`, /permission was refused/.test(deniedText) && /Location Services/.test(deniedText) && /arriving again/.test(await page.textContent("[data-testid=gps-geo-error]")) && (await num(page, "[data-testid=gps-fixes]")) > fixesAtError && (await state(page)) === "recording", deniedText.slice(0, 80));
+    await page.click("[data-testid=gps-inject-unavailable]");
+    await page.waitForFunction(() => /unavailable/.test(document.querySelector("[data-testid=gps-geo-error]")?.textContent ?? ""));
+    await page.click("[data-testid=gps-inject-timeout]");
+    await page.waitForFunction(() => /No fix for 30 seconds/.test(document.querySelector("[data-testid=gps-geo-error]")?.textContent ?? ""));
+    check(`${T} injected "unavailable" and "timeout" each surface in words; geo_error events logged`, (await page.textContent("[data-testid=gps-log]")).split("geo_error").length - 1 >= 3);
+    await layoutOk(page, `${T} recording with error`);
+    await shot(page, `gps-${width}-${theme}-geo-error`);
+    // Injected storage failure: counted, nothing lost, recording continues.
+    const storeErrBefore = await num(page, "[data-testid=gps-store-errors]");
+    await page.click("[data-testid=gps-inject-store]");
+    await page.waitForFunction((n) => Number(document.querySelector("[data-testid=gps-store-errors]")?.textContent) > n, storeErrBefore, { timeout: 10_000 });
+    const fixesAtStoreErr = await num(page, "[data-testid=gps-fixes]");
+    await settle(300);
+    check(`${T} injected storage failure increments Storage errors, recording continues, store_error logged`, (await num(page, "[data-testid=gps-store-errors]")) === storeErrBefore + 1 && (await num(page, "[data-testid=gps-fixes]")) > fixesAtStoreErr && (await state(page)) === "recording");
+    check(`${T} synthetic flow so far never called navigator.geolocation.watchPosition`, (await watchCalls(page)) === 0, `calls=${await watchCalls(page)}`);
+
+    // Kill simulation: reload mid-recording without Stop; the flushed fixes are in IndexedDB.
+    await settle(300);
     await page.reload();
-    await page.waitForSelector("[data-testid=lab-interrupted]");
-    check(`[${W}] after reload mid-recording the interrupted session is offered for recovery`, true);
-    check(`[${W}] interrupted: no overflow, hit targets ≥44`, (await noHScroll(page)) && (await undersized(page)).length === 0, (await undersized(page)).join(" | "));
-    await page.click("[data-testid=lab-recover]");
-    await page.waitForSelector("[data-testid=lab-report]");
-    const recoveredText = await page.textContent("[data-testid=lab-report]");
-    check(`[${W}] recovery rebuilds a report from device-local data (recovered = yes, fixes kept)`, /Recovered\?yes/.test(recoveredText) && Number(/Fixes(\d+)/.exec(recoveredText)?.[1]) >= 4, recoveredText.slice(0, 160));
-    check(`[${W}] short test → INCONCLUSIVE (not a false verdict)`, /INCONCLUSIVE/.test(await page.textContent("[data-testid=lab-verdict]")));
-    const [dl] = await Promise.all([page.waitForEvent("download"), page.click("[data-testid=lab-download]")]);
-    const path = `${OUT}/gps-report-${width}.json`;
-    await dl.saveAs(path);
-    const json = JSON.parse(readFileSync(path, "utf8"));
-    check(`[${W}] downloaded report: schema ok, stats only (no coordinates)`, json.schema === "gps-lab-report-v1" && !/"lat"|"lon"/.test(readFileSync(path, "utf8")) && json.samples >= 4);
-    check(`[${W}] report: no overflow, hit targets ≥44`, (await noHScroll(page)) && (await undersized(page)).length === 0, (await undersized(page)).join(" | "));
-    await page.screenshot({ path: `${OUT}/gps-${width}-report.png`, fullPage: true });
+    await page.waitForSelector("[data-testid=gps-interrupted]");
+    check(`${T} reload mid-recording → interrupted recording offered; page back to Synthetic + Ready`, (await page.getAttribute("[data-testid=gps-source]", "data-source")) === "synthetic" && (await state(page)) === "idle");
+    await layoutOk(page, `${T} interrupted`);
+    await shot(page, `gps-${width}-${theme}-interrupted`);
+    await page.click("[data-testid=gps-recover]");
+    await page.waitForSelector("[data-testid=gps-results]");
+    const recText = await page.textContent("[data-testid=gps-results]");
+    check(`${T} Recover → Results card (recovered, distance > 0, paused time kept), interrupted card gone`, /recovered/.test(recText) && (await num(page, "[data-testid=gps-r-distance]")) > 0 && !/^0\.0 s/.test(await page.textContent("[data-testid=gps-r-paused]")) && (await page.$("[data-testid=gps-interrupted]")) === null, recText.slice(0, 120));
+    await page.click("[data-testid=gps-delete]");
+    await page.waitForFunction(() => document.querySelector("[data-testid=gps-results]") === null);
+    check(`${T} Delete this recording removes the results card`, true);
 
-    // Normal Start → Stop path.
-    await page.click("[data-testid=lab-start]");
-    await page.waitForSelector("[data-testid=lab-stop]");
-    await drive(ctx, page, 4);
-    await page.click("[data-testid=lab-stop]");
-    await page.waitForSelector("[data-testid=lab-report]");
-    check(`[${W}] Stop produces a report and returns to idle`, (await page.textContent("[data-testid=lab-state]")) === "Not recording" && /Fixes/.test(await page.textContent("[data-testid=lab-report]")));
-    check(`[${W}] no page errors`, errors.length === 0, errors.join("|"));
+    // ── Full synthetic drive with a clean pause between the scripted stops → results match the script ──
+    await page.click("[data-testid=gps-start]");
+    await waitElapsed(page, 160);
+    await page.click("[data-testid=gps-pause]");
+    await page.waitForFunction(() => document.querySelector("[data-testid=gps-state]")?.dataset.state === "paused");
+    const pausedAt = await elapsedS(page);
+    await settle(700);
+    await page.click("[data-testid=gps-resume]");
+    await page.waitForFunction(() => document.querySelector("[data-testid=gps-state]")?.dataset.state === "recording");
+    const resumedAt = await elapsedS(page);
+    await waitElapsed(page, 1600);
+    await page.click("[data-testid=gps-stop]");
+    await page.waitForSelector("[data-testid=gps-results]");
+    const stoppedAt = await elapsedS(page);
+    check(`${T} Stop → state stopped, Start offered again, status line keeps elapsed + km`, (await state(page)) === "stopped" && (await page.$("[data-testid=gps-start]")) !== null && /Stopped/.test(await page.textContent("[data-testid=gps-state]")) && /km/.test(await page.textContent("[data-testid=gps-distance]")));
+    const [dl] = await Promise.all([page.waitForEvent("download"), page.click("[data-testid=gps-download]")]);
+    const file = `${OUT}/gps-summary-${width}-${theme}.json`;
+    await dl.saveAs(file);
+    const raw = readFileSync(file, "utf8");
+    const s = JSON.parse(raw);
+    const pauseOverlapsStop = prof.stops.some((st) => st.toS > pausedAt - 2 && st.fromS < resumedAt + 2);
+    check(`${T} the pause (${pausedAt}s → ${resumedAt}s) fell between the scripted stops (timing sanity)`, !pauseOverlapsStop && pausedAt >= 150 && resumedAt < 400, `paused ${pausedAt} resumed ${resumedAt} stopped ${stoppedAt}`);
+    const expectedStops = prof.stops.filter((st) => st.toS <= stoppedAt && !(st.toS > pausedAt && st.fromS < resumedAt));
+    const expectedStopMs = expectedStops.reduce((a, st) => a + (st.toS - st.fromS) * 1000, 0);
+    const expectedDistance = prof.speedMps * (s.activeMs - s.stoppedMs - s.gaps.totalMs) / 1000;
+    check(`${T} results: distance ${s.distanceM} m within ±5 % of speed × moving time (${Math.round(expectedDistance)} m)`, Math.abs(s.distanceM - expectedDistance) / expectedDistance <= 0.05);
+    check(`${T} results: stops ${s.stops.count} = scripted ${expectedStops.length}, stop total ≈ ${expectedStopMs / 1000} s`, s.stops.count === expectedStops.length && Math.abs(s.stops.totalMs - expectedStopMs) <= 4000, `total ${s.stops.totalMs}`);
+    check(`${T} results: paused time > 0 (${s.pausedMs} ms, 1 pause), one gap (the 40 s outage), one jump, coverage > 95 %`, s.pausedMs >= 50_000 && s.pauses === 1 && s.gaps.count === 1 && s.gaps.maxMs >= 39_000 && s.gaps.maxMs <= 43_000 && s.jumps === 1 && s.coveragePct > 95, JSON.stringify({ paused: s.pausedMs, gaps: s.gaps, jumps: s.jumps, cov: s.coveragePct }));
+    check(`${T} results: max speed 43.2 km/h (jump never sets it), moving + stopped + gaps ≈ active`, s.maxSpeedKmh === 43.2 && Math.abs(s.movingMs + s.stoppedMs + s.gaps.totalMs - s.activeMs) <= 8000 /* start, stop, pause and jump boundary legs */, `${s.maxSpeedKmh} ${s.movingMs}+${s.stoppedMs}+${s.gaps.totalMs} vs ${s.activeMs}`);
+    check(`${T} downloaded summary JSON: schema, specialPoints empty, NO coordinates`, s.schema === "ia-gps-track-summary-v1" && Array.isArray(s.specialPoints) && s.specialPoints.length === 0 && !/"lat"|"lon"|latitude|longitude/.test(raw));
+    const card = await page.textContent("[data-testid=gps-results]");
+    check(`${T} results card wording: GPS distance (diagnostic) — the odometer stays official; moving / stopped / stops / max / coverage / paused / gaps shown`, /GPS distance \(diagnostic\) — the odometer stays official/.test(card) && /Moving/.test(card) && /Stopped/.test(card) && /Stops/.test(card) && /Max speed/.test(card) && /Coverage/.test(card) && /Paused/.test(card) && /Gaps/.test(card));
+    check(`${T} feasibility report folded below with a verdict`, (await page.$("[data-testid=gps-feasibility][open]")) === null && /INCONCLUSIVE|PWA VIABLE|FOREGROUND ONLY|NATIVE REQUIRED/.test(await page.textContent("[data-testid=gps-feasibility] summary")));
+    await layoutOk(page, `${T} results`);
+    await shot(page, `gps-${width}-${theme}-results`);
+    await page.click("[data-testid=gps-feasibility] summary");
+    await layoutOk(page, `${T} feasibility open`);
+    await shot(page, `gps-${width}-${theme}-feasibility`);
+    await page.click("[data-testid=gps-copy]");
+    await page.waitForSelector("[data-testid=gps-note]");
+    check(`${T} Copy summary JSON reports copied (or a plain fallback), never throws`, /copied|Copy failed/.test(await page.textContent("[data-testid=gps-note]")));
+
+    // Earlier recordings + Clear this device (confirm step inside the page, no window.confirm).
+    check(`${T} Earlier recordings lists the stopped session with Delete`, (await page.$$("[data-testid=gps-earlier-open]")).length >= 1 && (await page.$$("[data-testid=gps-earlier-delete]")).length >= 1);
+    await page.click("[data-testid=gps-clear-device]");
+    await page.waitForSelector("[data-testid=gps-clear-confirm]");
+    await layoutOk(page, `${T} clear confirm`);
+    await shot(page, `gps-${width}-${theme}-clear-confirm`);
+    await page.click("[data-testid=gps-clear-cancel]");
+    check(`${T} Clear: Keep cancels`, (await page.$("[data-testid=gps-clear-confirm]")) === null && (await page.$("[data-testid=gps-earlier]")) !== null);
+    await page.click("[data-testid=gps-clear-device]");
+    await page.click("[data-testid=gps-clear-confirm]");
+    await page.waitForFunction(() => document.querySelector("[data-testid=gps-earlier]") === null);
+    await page.reload();
+    await page.waitForSelector("[data-testid=gps-start]");
+    await settle(400);
+    const idbCount = await page.evaluate(() => new Promise((resolve) => { const o = indexedDB.open("ia-gps", 1); o.onsuccess = () => { const db = o.result; const r = db.transaction("meta").objectStore("meta").count(); r.onsuccess = () => resolve(r.result); r.onerror = () => resolve(-1); }; o.onerror = () => resolve(-2); }));
+    check(`${T} Clear this device empties everything (no results, no earlier, no interrupted, IndexedDB "ia-gps" meta count 0)`, (await page.$("[data-testid=gps-earlier]")) === null && (await page.$("[data-testid=gps-interrupted]")) === null && (await page.$("[data-testid=gps-results]")) === null && idbCount === 0, `idb=${idbCount}`);
+
+    // ── Real GPS mode: consent gate, not persisted, watchPosition called exactly once after consent ──
+    await page.click("[data-testid=gps-source-device]");
+    await page.waitForSelector("[data-testid=gps-consent]");
+    const consentText = await page.textContent("[data-testid=gps-consent]");
+    check(`${T} Real GPS: consent block (only on this device / nothing uploaded / Stop or Clear ends it), box off, Start disabled`, /only on this device/.test(consentText) && /Nothing is uploaded/.test(consentText) && /Stop or Clear ends it/.test(consentText) && !(await page.isChecked("[data-testid=gps-consent-box]")) && (await page.isDisabled("[data-testid=gps-start]")));
+    await layoutOk(page, `${T} consent`);
+    await shot(page, `gps-${width}-${theme}-consent`);
+    await page.click("[data-testid=gps-consent-box]");
+    check(`${T} Real GPS: ticking consent enables Start; nothing written to localStorage`, (await page.isEnabled("[data-testid=gps-start]")) && (await page.evaluate(() => Object.keys(localStorage).filter((k) => /gps|consent/i.test(k)).length)) === 0);
+    await page.reload();
+    await page.waitForSelector("[data-testid=gps-start]");
+    check(`${T} reload → back to Synthetic, consent block gone (consent never persisted)`, (await page.getAttribute("[data-testid=gps-source]", "data-source")) === "synthetic" && (await page.$("[data-testid=gps-consent]")) === null && (await watchCalls(page)) === 0);
+    await page.click("[data-testid=gps-source-device]");
+    await page.waitForSelector("[data-testid=gps-consent-box]");
+    check(`${T} re-selecting Real GPS → consent off again, Start disabled`, !(await page.isChecked("[data-testid=gps-consent-box]")) && (await page.isDisabled("[data-testid=gps-start]")));
+    await page.click("[data-testid=gps-consent-box]");
+    await page.click("[data-testid=gps-start]");
+    await page.waitForSelector("[data-testid=gps-geo-error]");
+    await settle(300);
+    check(`${T} Real GPS + consent + Start → watchPosition called exactly once (spy), denial shown in words, recording stays open`, (await watchCalls(page)) === 1 && /permission was refused/.test(await page.textContent("[data-testid=gps-geo-error]")) && (await state(page)) === "recording" && (await num(page, "[data-testid=gps-fixes]")) === 0, `calls=${await watchCalls(page)}`);
+    check(`${T} Real GPS: no Test tools (synthetic only)`, (await page.$("[data-testid=gps-tools]")) === null);
+    await layoutOk(page, `${T} device recording denied`);
+    await shot(page, `gps-${width}-${theme}-device-denied`);
+    await page.click("[data-testid=gps-stop]");
+    await page.waitForSelector("[data-testid=gps-results]");
+    check(`${T} Real GPS: Stop → results with 0 fixes, no second watchPosition call`, (await watchCalls(page)) === 1 && (await num(page, "[data-testid=gps-r-distance]")) === 0);
+    await page.click("[data-testid=gps-clear-device]");
+    await page.click("[data-testid=gps-clear-confirm]");
+    await page.waitForFunction(() => document.querySelector("[data-testid=gps-clear]") === null);
+    check(`${T} no page errors, no dialogs`, errors.length === 0, errors.join(" | "));
     await ctx.close();
   }
 
-  // Permission denied: the harness must say so, not crash.
-  // Headless Chromium leaves an ungranted prompt pending instead of denying, so force the denial the way iOS reports it.
-  const denied = await browser.newContext({ ...devices["iPhone 13"] });
-  await denied.addInitScript(() => {
-    navigator.geolocation.watchPosition = (_ok, err) => { setTimeout(() => err?.({ code: 1, message: "User denied Geolocation" }), 50); return 1; };
-  });
-  const dp = await denied.newPage();
-  await dp.goto(`${B}/gps-lab`);
-  await dp.waitForSelector("[data-testid=lab-start]");
-  await dp.click("[data-testid=lab-start]");
-  await dp.waitForSelector("[data-testid=lab-geo-error]", { timeout: 8000 }).catch(() => {});
-  check("permission not granted: GPS error surfaced, still recording-capable UI (no crash)", (await dp.$("[data-testid=lab-geo-error]")) !== null && (await dp.$("[data-testid=lab-stop]")) !== null, (await dp.textContent("body")).slice(0, 80));
-  await denied.close();
+  // Interrupted while PAUSED: the open pause closes at the last heartbeat; results still produced.
+  {
+    const { ctx, page, errors } = await open(375, "light");
+    await page.click("[data-testid=gps-start]");
+    await waitElapsed(page, 60);
+    await page.click("[data-testid=gps-pause]");
+    await page.waitForFunction(() => document.querySelector("[data-testid=gps-state]")?.dataset.state === "paused");
+    const fixes = await num(page, "[data-testid=gps-fixes]");
+    await settle(600); // heartbeats keep flushing while paused
+    await page.reload();
+    await page.waitForSelector("[data-testid=gps-recover]");
+    await page.click("[data-testid=gps-recover]");
+    await page.waitForSelector("[data-testid=gps-results]");
+    const file = `${OUT}/gps-summary-recovered-paused.json`;
+    const [dl] = await Promise.all([page.waitForEvent("download"), page.click("[data-testid=gps-download]")]);
+    await dl.saveAs(file);
+    const s = JSON.parse(readFileSync(file, "utf8"));
+    check(`[375px] interrupted while paused → recovered results: fixes kept (${s.fixes}/${fixes}), pause closed (${s.pausedMs} ms ≥ 30 s), recovered flag`, s.recovered === true && s.fixes === fixes && s.pausedMs >= 30_000 && s.pauses === 1, JSON.stringify({ fixes: s.fixes, paused: s.pausedMs }));
+    check(`[375px] interrupted-while-paused: no page errors`, errors.length === 0, errors.join(" | "));
+    await ctx.close();
+  }
 } catch (error) {
-  check(`script aborted: ${String(error.message).split("\n").slice(0, 3).join(" / ")}`, false);
+  check(`script aborted: ${String(error.stack || error.message).split("\n").slice(0, 4).join(" / ")}`, false);
 }
 
 await browser.close();

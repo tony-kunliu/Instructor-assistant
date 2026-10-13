@@ -1,14 +1,15 @@
 import type { Metadata } from "next";
-import GpsLab from "./lab.tsx";
+import GpsRecorder from "./gps.tsx";
 
-// EXPERIMENT (branch experiment/gps-pwa-feasibility): standalone measurement tool, not linked from the app.
+// P4 GPS recorder: isolated test page, not linked from the app's navigation, not indexed, own install manifest.
+// Design: docs/superpowers/specs/2026-10-13-gps-tracking-design.md.
 export const metadata: Metadata = {
-  title: "GPS Lab",
-  manifest: "/gps-lab/manifest.webmanifest",
-  appleWebApp: { capable: true, title: "GPS Lab", statusBarStyle: "black-translucent" },
+  title: "GPS recorder",
+  manifest: "/gps/manifest.webmanifest",
+  appleWebApp: { capable: true, title: "GPS recorder", statusBarStyle: "black-translucent" },
   robots: { index: false, follow: false },
 };
 
 export default function Page() {
-  return <GpsLab />;
+  return <GpsRecorder />;
 }
