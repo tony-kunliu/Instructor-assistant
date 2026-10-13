@@ -5,33 +5,32 @@ _Last updated: 2026-10-13_
 This file describes **current task only**. Completed work's detail
 lives in git log and closed PRs, not here.
 
-**Current Task:** Learner form restyle (concept screen B, approved 2026-10-12) + Tony's decision 3 (Transfer and
-Archive into the EDIT form's folded "More"), branch `feature/ui-learner-form` — **PR #83 to `staging`; independent review
-round done (L2 presentation; one Major fixed: a colleague who cannot open Edit learner keeps the page-level
-"Archive learner…" link, since Archive never had an owner gate, server included; Minors fixed with a test / QA check
-each: More locks with a note while the form holds unsaved edits, `nameIssue()` rendered once, dead `.form-actions`
-CSS removed; the optional translucent-background contrast refinement declined as not weakening any check) — merging
-agent verifies the fixes, no re-review (Handbook §2)**. Student / Address / Licence & eligibility cards (P3 group kept),
-picked-address chips, inline required-name error (server wording, server validation unchanged), sticky Save bar
-(`env(safe-area-inset-bottom)`, un-pins while a field has focus), Cancel link; "More" holds the unchanged Transfer and
-Archive panels (same handlers, `phase !== "ready"` guard, testids, confirmations); the inactive-owner rescue transfer
-keeps its page link. `lib/learner-form-view.ts` + `tests/learner-form-view.test.ts`; qa-browser section 24 (375
-light/dark New + Edit with More open, 820 two-column, More e2e transfer + archive + restore, sticky bar vs focus);
-sections 3/13/16/17/21/22 selectors updated for the move; section 23's stale theme selectors fixed. No migration,
-no dependency, contract untouched.
+**Current Task:** P4 GPS phase 1 — isolated, default-OFF GPS recorder, branch `feature/gps-p4-recorder` —
+**Completed on the branch (L2 isolated: new page + pure libraries; no D1, no migration, no API, no lesson change;
+nothing uploaded).** Design + delivered / not-done list: `docs/superpowers/specs/2026-10-13-gps-tracking-design.md`
+§8-§9. Delivered: `lib/gps` (recorder with Pause / Resume and crash recovery, pause-aware feasibility analysis
+with the PWA-vs-native verdict, pure `summarizeTrack` with 150 m trimming and no coordinates, synthetic drive +
+accelerated `syntheticDriver`, IndexedDB `ia-gps`); page `/gps` (Synthetic drive default, Real GPS only behind a
+per-session, never-persisted consent box; Start / Pause / Resume / Stop / Clear this device; Results card; folded
+feasibility report; Copy / Download summary JSON; not linked, noindex, own manifest); 43 unit tests (synthetic
+only); `scripts/qa-browser/gps.mjs` (182 checks, 375 / 820 px, light / dark, `watchPosition` spied: never called
+by the synthetic flow, once in Real GPS mode). Prior spike `experiment/gps-pwa-feasibility` reused, not merged.
+Reviewed per Handbook §2 L2 (one independent review, arranged by the coordinator).
 
-**Next Recommended Task:** independent review (one round, L2 presentation) → merge to `staging` → post-merge CI →
-Tony's real-phone look (375px: sticky bar with the iOS keyboard, More fold, date pickers) → release with P3
-(`0013`). Then, on Tony's go: (a) `docs/tasks` memory scheme; (b) intake P4 (iOS Scan Text + local parser);
-(c) `scripts/check-signature-row-limits.mjs` on Staging D1.
+**Next Recommended Task:** after the review and merge to `staging`: Tony's real-phone drive (phase 1b) on Staging
+`/gps` from the Home Screen — Real GPS, 20-30 min with a 5 min screen lock and 5 min in another app, copy the
+summary + feasibility JSON back; the verdict decides web vs native shell. Then phase 2 (lesson hook-in,
+`lesson_tracks` migration, consent record, 90-day Cron, R10 line) only on Tony's separate approval (new table =
+ALWAYS-ASK 1). PR #83 (learner form + Transfer / Archive in "More") is merged to `staging` (bc1e0cb) and awaits Tony's phone
+check + Production release. Still queued: intake P4 (iOS Scan Text + local parser), `docs/tasks` memory scheme,
+`scripts/check-signature-row-limits.mjs` on Staging D1.
 
-**Waiting on Other Repo:** ACTGDS: notify-tick waits for Website PR #47 rework and Tony's explicit
-approval of the new endpoint + secret (Production stays OFF); Work's display polish list. Nothing
-blocks this repo.
+**Waiting on Other Repo:** ACTGDS: notify-tick waits for Website PR #47 rework and Tony's explicit approval of the
+new endpoint + secret (Production stays OFF). Nothing blocks this repo.
 
-**Tony Manual Action Required:** none blocking (P3 questions answered 2026-10-13: count from the
-earlier licence; keep the separate grey line; keep the country list). Optional, still open: hide the ACT "Jerrabomberra" district in
-Address suggestions; the 30-minute tooling checklist (Dependabot, duplicate environments, plugins).
+**Tony Manual Action Required:** none for this step. Later: the phase-1b real-phone drive; approve the consent
+wording (design §6) and the `lesson_tracks` table before phase 2. Optional, still open: hide the ACT
+"Jerrabomberra" district in Address suggestions; the 30-minute tooling checklist.
 
-**CI note:** poppler tests are opt-in hard failures (`REQUIRE_POPPLER=1`, `ci.yml` only); Cloudflare
-Workers Builds skip them. Simulate the Workers Builds command locally before merging (see STATUS.md CI).
+**CI note:** poppler tests are opt-in hard failures (`REQUIRE_POPPLER=1`, `ci.yml` only); Cloudflare Workers
+Builds skip them. Simulate the Workers Builds command locally before merging (see STATUS.md CI).
