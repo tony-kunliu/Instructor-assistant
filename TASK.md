@@ -1,27 +1,30 @@
 # TASK.md
 
-_Last updated: 2026-10-12_
+_Last updated: 2026-10-13_
 
 This file describes **current task only**. Completed work's detail
 lives in git log and closed PRs, not here.
 
-**Current Task:** Learner list UI (`feature/ui-learner-list`, concept approved by Tony
-2026-10-12) — **Completed on the branch, not merged**: shared CSS tokens (website navy/gold/paper,
-light + dark), navy top bar with "+ New learner", search, Mine/All/Archived counts, glance line,
-one card per learner (initials, meta, 22-segment bar, Review 1-17 / 1-22 / Final Drive 23 chips,
-C23-from / licence chips). Card data from ONE set-based D1 aggregate (`listLearnerSummaries`,
-index-bounded to the requested learners; the list GET is 2 statements, 0 binds; the background
-archived fetch skips it, with a retry line if the Archived tab's fetch fails); no migration;
-contract untouched. Two independent reviews done (approve with fixes; fixes in commits 2 and 3;
-tests 660, qa-browser 568/568). Ready to merge to `staging` on the go. D1 stays `0012`.
+**Current Task:** Lesson record UI (`feature/ui-lesson-record`, concept approved by Tony 2026-10-12,
+his three decisions applied: number-only chips, Save only after End Lesson, Transfer/Archive left in
+place for a later task) — **Completed on the branch, not merged**: navy learner header (identity, next
+lesson number, 22-segment bar with derived totals, gate chips), lesson status block (Start Lesson →
+running timebar + End Lesson → ended), odometer block with big derived values (duration, km, total
+after save, lesson number: calculated, never typed) and the folded "Edit date / times", competency
+block (Taught / Assessed grids ≥44px, gate tags on Review 1-17 / 1-22 / 23, result rows with the
+official names), reminders + route block, Location/Comments, two signature pads (pad behaviour
+unchanged, signed = green border), sticky "Save Lesson #N" + Discard bar with safe-area padding that
+appears only once the lesson has ended and un-pins while an input has the keyboard. Legacy CSS tokens
+alias the shared tokens → full dark theme (colour only elsewhere). `lib/lesson-view.ts` + tests;
+qa-browser section 21 (375 light/dark running + ended, 820). No migration; payloads, validations,
+data-testids and server calls unchanged. D1 stays `0012`.
 
-**Next Recommended Task:** merge `feature/ui-learner-list` to `staging` (post-merge CI green),
-then Tony's real-phone look (light and dark) and his confirmation of the extras listed in
-`docs/BACKLOG.md`. After that, on Tony's go: (a) `docs/tasks`
-memory scheme + Memory Guard changes (Handbook §9); (b) intake P3; (c) run
-`scripts/check-signature-row-limits.mjs` against Staging D1; (d) fix the
-`tests/pdf-export-font-subset.test.ts` temp-dir leak; (e) migrate the remaining screens to the
-new tokens (full dark theme). P4 and 3c T2 after that.
+**Next Recommended Task:** independent review of `feature/ui-lesson-record` (L2), merge to `staging`
+(post-merge CI green), Tony's real-phone look (keyboard vs sticky bar, pads). Then, on Tony's go:
+(a) move Transfer / Archive into the learner edit form's folded "More" section + learner form
+restyle (concept screen B); (b) `docs/tasks` memory scheme + Memory Guard changes (Handbook §9);
+(c) intake P3; (d) `scripts/check-signature-row-limits.mjs` against Staging D1; (e) fix the
+`tests/pdf-export-font-subset.test.ts` temp-dir leak. P4 and 3c T2 after that.
 
 **Waiting on Other Repo:** ACTGDS: notify-tick (lesson notifications) waits for Website PR
 #47 rework and Tony's explicit approval of the new endpoint + secret (Production stays OFF);

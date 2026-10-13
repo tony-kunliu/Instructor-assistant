@@ -137,6 +137,7 @@ export default function SignaturePad({ label, value, onChange }: Props) {
       </div>
       <canvas
         ref={canvasRef}
+        className={value ? "signed" : undefined}
         width={SIGNATURE_WIDTH}
         height={SIGNATURE_HEIGHT}
         aria-label={label}

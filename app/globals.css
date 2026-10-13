@@ -1,7 +1,8 @@
 /* ── Shared design tokens (UI redesign approved by Tony 2026-10-12) ──
-   The ACTGDS website's colours (navy, gold, warm paper) so the two products read as one school. The top bar and the
-   learner list use these; the lesson, history, PDF and form screens still use the legacy tokens further down until they
-   are migrated (they stay light islands in dark mode on purpose: their own colours are hard-coded light). */
+   The ACTGDS website's colours (navy, gold, warm paper) so the two products read as one school. The top bar, the
+   learner list and the lesson record screen use these; the legacy names further down (--card, --ink, --muted, --line,
+   --gold, --go, --stop, --save) are aliases of the same tokens so the history, PDF-export and form cards switch with
+   the theme too (colour only; their layout is unchanged until they are redesigned). */
 :root {
   --paper: #f6f3eb;
   --surface: #ffffff;
@@ -19,6 +20,14 @@
   --good-soft: #dff1e6;
   --warn: #7e4a07;
   --warn-soft: #fbebcf;
+  --bad: #a3322b;
+  --bad-soft: #f8e1df;
+  --on-bad: #ffffff;
+  /* The strongest surface for a primary/stop action: navy on paper in light, cream on dark paper in dark. */
+  --strong: #0b1b2b;
+  --on-strong: #f6f3eb;
+  /* Signature pads stay light in both themes: the pen is dark and the PNG prints on white paper. */
+  --pad: #fbfaf6;
   --seg-off: #e4dfd2;
   --radius-s: 10px;
   --radius-m: 14px;
@@ -29,16 +38,16 @@
   --space-4: 16px;
   --space-5: 20px;
   --font-ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, "PingFang SC", sans-serif;
-  /* Legacy tokens (lesson, history, forms, PDF export UI). */
+  /* Legacy names (history, forms, PDF export UI) = the shared tokens. */
   --bg: var(--paper);
-  --card: #ffffff;
-  --ink: #1d1d1f;
-  --muted: #6b6b70;
-  --line: #dedbd4;
-  --gold: #c9971c;
-  --go: #1f8a4c;
-  --stop: #c0392b;
-  --save: #1d1d1f;
+  --card: var(--surface);
+  --ink: var(--text);
+  --muted: var(--text-muted);
+  --line: var(--hairline);
+  --gold: var(--brand-gold);
+  --go: var(--good);
+  --stop: var(--bad);
+  --save: var(--strong);
   --radius: 14px;
   color-scheme: light;
 }
@@ -46,14 +55,16 @@
   :root:not([data-theme="light"]) {
     --paper: #09131c; --surface: #101f2d; --surface-2: #17283a; --text: #eee9dc; --text-muted: #9aa6b2; --hairline: #22364a;
     --navy: #050d14; --on-navy: #eee9dc; --brand-gold: #d8ae55; --gold-ink: #e2bf6a; --gold-soft: #3a2f16; --on-gold: #0b1b2b;
-    --good: #5fd08e; --good-soft: #14352a; --warn: #f0b95c; --warn-soft: #3a2a10; --seg-off: #243a4e;
+    --good: #5fd08e; --good-soft: #14352a; --warn: #f0b95c; --warn-soft: #3a2a10; --bad: #f08a82; --bad-soft: #3d1a18; --on-bad: #09131c;
+    --strong: #eee9dc; --on-strong: #09131c; --pad: #eee9dc; --seg-off: #243a4e;
     color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
   --paper: #09131c; --surface: #101f2d; --surface-2: #17283a; --text: #eee9dc; --text-muted: #9aa6b2; --hairline: #22364a;
   --navy: #050d14; --on-navy: #eee9dc; --brand-gold: #d8ae55; --gold-ink: #e2bf6a; --gold-soft: #3a2f16; --on-gold: #0b1b2b;
-  --good: #5fd08e; --good-soft: #14352a; --warn: #f0b95c; --warn-soft: #3a2a10; --seg-off: #243a4e;
+  --good: #5fd08e; --good-soft: #14352a; --warn: #f0b95c; --warn-soft: #3a2a10; --bad: #f08a82; --bad-soft: #3d1a18; --on-bad: #09131c;
+  --strong: #eee9dc; --on-strong: #09131c; --pad: #eee9dc; --seg-off: #243a4e;
   color-scheme: dark;
 }
 
@@ -65,8 +76,10 @@ html, body {
   color: var(--ink);
   font: 16px/1.4 var(--font-ui);
   -webkit-text-size-adjust: 100%;
-  overflow-x: hidden;
 }
+/* On <html> only (it propagates to the viewport). On <body> it would make the body the scroll container of every
+   position: sticky element (the lesson's Save bar, the iPad ready-state lesson card), so nothing could pin. */
+html { overflow-x: hidden; }
 
 .app {
   max-width: 560px;
@@ -98,7 +111,10 @@ html, body {
 .headline h1 { margin: 0; font-size: 28px; line-height: 1.1; font-weight: 700; letter-spacing: -.01em; }
 .headline-sub { display: block; font-size: 13px; opacity: .72; margin-top: 2px; }
 .btn.gold { background: var(--brand-gold); color: var(--on-gold); min-height: 44px; padding: 0 var(--space-4); border-radius: 12px; font-size: 14px; white-space: nowrap; flex: none; }
-.btn.gold:focus-visible, .view-tab:focus-visible, .lcard:focus-visible, .list-expand:focus-visible, .signout-link:focus-visible { outline: 2px solid var(--brand-gold); outline-offset: 2px; }
+/* One visible focus style for every control (keyboard users; a programmatic focus() after a tap shows none). */
+.btn:focus-visible, .chip:focus-visible, .link:focus-visible, .view-tab:focus-visible, .lcard:focus-visible, .list-expand:focus-visible,
+.signout-link:focus-visible, summary:focus-visible, .sig canvas:focus-visible, .save-errors-go:focus-visible, .address-option:focus-visible, .route-item:focus-within,
+.field input:focus-visible, .field select:focus-visible, .field textarea:focus-visible { outline: 2px solid var(--brand-gold); outline-offset: 2px; }
 
 .card {
   background: var(--card);
@@ -155,14 +171,36 @@ html, body {
   *, *::before, *::after { transition-duration: 0s !important; animation-duration: 0s !important; scroll-behavior: auto !important; }
 }
 
+/* ── Learner summary header (lesson record redesign): the open learner's identity, 22-segment progress and the three
+   gate chips on a navy block (same vocabulary as the learner cards), then the learner's own lines and actions on the
+   surface below. DOM order and every data-testid are unchanged. ── */
+.card.summary { padding: 0; overflow: clip; color: var(--text); }
+.summary-head { background: var(--navy); color: var(--on-navy); padding: 14px 14px 16px; display: grid; gap: 12px; }
+.summary-main { display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; gap: 12px; align-items: center; }
+.summary-head .lc-avatar { background: var(--brand-gold); color: #0b1b2b; }
+.summary-id { display: grid; gap: 3px; min-width: 0; }
+.summary-main small.summary-name { display: block; font-size: 22px; line-height: 1.1; font-weight: 700; color: inherit; overflow-wrap: anywhere; }
+.summary-meta { font-size: 13px; opacity: .78; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.summary-next { font-size: 13px; font-weight: 700; padding: 6px 10px; border-radius: 99px; background: rgba(246, 243, 235, .12); white-space: nowrap; font-variant-numeric: tabular-nums; align-self: start; }
+.summary-head .lc-prog-head { color: inherit; opacity: .85; }
+.summary-head .lc-prog-head b, .summary-head .lc-prog-head [data-testid] { color: inherit; opacity: 1; }
+.summary-head .lc-segs i { background: rgba(246, 243, 235, .18); }
+.summary-head .lc-segs i.on { background: var(--brand-gold); }
+.summary-head .lc-chip { background: rgba(246, 243, 235, .12); color: var(--on-navy); }
+.summary-head .lc-chip.done { background: var(--good-soft); color: var(--good); }
+.summary-head .lc-chip.next { background: var(--gold-soft); color: var(--gold-ink); }
+.summary-body { padding: 12px 14px 14px; display: grid; gap: 4px; }
+.summary-body > .reminders { margin: 0; }
+.summary-body .meta { margin: 0; }
+
 .lifecycle { margin-top: 12px; padding: 10px 12px; border-radius: 10px; font-size: 14px; }
 .lifecycle p { margin: 0 0 8px; }
-.lifecycle.archived { background: #efece6; }
-.lifecycle.suggest { background: #e3f3e8; color: #135c32; }
+.lifecycle.archived { background: var(--surface-2); }
+.lifecycle.suggest { background: var(--good-soft); color: var(--good); }
 .form-actions { display: grid; gap: 8px; margin-top: 12px; }
 .edit-learner-btn { margin-top: 10px; }
 .archive-link { display: block; margin: 10px 0 0 auto; padding: 4px 0; font-size: 13px; }
-.lifecycle.archive-panel { background: #fff; border: 2px solid #6b6455; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12); display: grid; gap: 10px; }
+.lifecycle.archive-panel { background: var(--surface); border: 2px solid var(--text-muted); box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12); display: grid; gap: 10px; }
 .lifecycle.archive-panel p { margin: 0; overflow-wrap: anywhere; }
 .archive-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .archive-actions .btn { min-width: 0; }
@@ -187,11 +225,13 @@ html, body {
   padding: 11px 12px;
   border: 1px solid var(--line);
   border-radius: 10px;
-  background: #fbfaf8;
+  background: var(--surface);
   color: var(--ink);
   -webkit-appearance: none;
   appearance: none;
 }
+.field input::placeholder, .field textarea::placeholder { color: var(--text-muted); opacity: .8; }
+.field input:disabled { background: var(--surface-2); color: var(--text-muted); }
 .field select { background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%); background-position: calc(100% - 18px) 50%, calc(100% - 12px) 50%; background-size: 6px 6px; background-repeat: no-repeat; padding-right: 30px; }
 .field textarea { resize: vertical; }
 .field input:focus, .field select:focus, .field textarea:focus { outline: 2px solid var(--gold); border-color: transparent; }
@@ -208,55 +248,86 @@ html, body {
 }
 .btn:disabled { opacity: .45; cursor: not-allowed; }
 .btn.block { width: 100%; }
-.btn.ghost { background: #efece6; color: var(--ink); }
-.btn.primary { background: var(--ink); color: #fff; }
-.btn.huge { display: block; width: 100%; min-height: 64px; font-size: 20px; margin: 4px 0 14px; }
-.btn.go { background: var(--go); color: #fff; }
-.btn.stop { background: var(--stop); color: #fff; }
-.btn.save { background: var(--save); color: #fff; margin-top: 16px; }
+.btn.ghost { background: var(--surface-2); color: var(--ink); }
+.btn.primary { background: var(--strong); color: var(--on-strong); }
+.btn.huge { display: block; width: 100%; min-height: 64px; font-size: 20px; margin: 4px 0 14px; border-radius: 14px; }
+/* Start Lesson and Save Lesson are the screen's one primary (gold) action; End Lesson is the strong (navy) stop. */
+.btn.go { background: var(--brand-gold); color: var(--on-gold); }
+.btn.stop { background: var(--strong); color: var(--on-strong); }
+.btn.save { background: var(--brand-gold); color: var(--on-gold); margin-top: 16px; }
 
-.link { background: none; border: 0; padding: 8px 0; font: inherit; font-size: 14px; color: var(--muted); text-decoration: underline; cursor: pointer; }
-.link.danger { color: var(--stop); display: block; margin: 4px auto 0; }
+.link { background: none; border: 0; padding: 8px 0; font: inherit; font-size: 14px; color: var(--muted); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.link.danger { color: var(--bad); display: block; margin: 4px auto 0; }
 
 .status { margin: 0 0 12px; padding: 10px 12px; border-radius: 10px; font-weight: 600; }
-.status.ok { background: #e3f3e8; color: #135c32; }
-.status.error { background: #fbe4e1; color: #8e2418; }
-.status.info { background: #efece6; color: #1d1d1f; }
-.status.warn { background: #fdf0d2; color: #6b4a00; }
+.status.ok { background: var(--good-soft); color: var(--good); }
+.status.error { background: var(--bad-soft); color: var(--bad); }
+.status.info { background: var(--surface-2); color: var(--ink); }
+.status.warn { background: var(--warn-soft); color: var(--warn); }
 
-.summary-main { display: flex; flex-direction: column; }
-.summary-main small { color: var(--muted); font-weight: 600; }
-.summary-main strong { font-size: 30px; line-height: 1.1; }
-.totals { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 12px 0 8px; }
-.totals div { background: #f7f5f1; border-radius: 10px; padding: 8px 10px; }
-.totals dt { font-size: 12px; color: var(--muted); font-weight: 600; }
-.totals dd { margin: 0; font-size: 19px; font-weight: 700; }
-.totals em { font-style: normal; font-size: 13px; color: var(--muted); font-weight: 500; }
 .meta { margin: 0; font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
 .integration-id { margin-top: 4px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.integration-id code { font-size: 12px; background: #f0eee9; border-radius: 6px; padding: 2px 6px; overflow-wrap: anywhere; }
+.integration-id code { font-size: 12px; background: var(--surface-2); border-radius: 6px; padding: 2px 6px; overflow-wrap: anywhere; }
 .integration-id .link { padding: 2px 0; font-size: 12px; }
 
-.timebar { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 12px; text-align: center; }
-.timebar div { background: #f7f5f1; border-radius: 10px; padding: 8px 4px; }
-.timebar small { display: block; font-size: 12px; color: var(--muted); font-weight: 600; }
-.timebar strong { font-size: 20px; }
+/* ── Lesson record (redesign): the lesson section is a stack of blocks (status, odometer + derived values,
+   competencies, reminders/route, location/comments, signatures) with one sticky action bar at the bottom that
+   appears only once the lesson has ended. ── */
+/* Block layout on purpose: a sticky item inside a grid/flex container is confined to its own auto-sized grid area and
+   can never pin, so the blocks are spaced with margins instead of a gap. */
+.card.lesson { background: transparent; border: 0; padding: 0; display: block; }
+.card.lesson > * + * { margin-top: 12px; }
+.lblock { display: grid; gap: 12px; padding: 14px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-l); min-width: 0; }
+.lblock > .grid, .lblock > .reminders, .lblock > .start-reminders .reminders { margin-bottom: 0; }
+.card-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.card-head h2, .card-head h3 { margin: 0; font-size: 17px; font-weight: 700; }
+.card-head small { font-size: 12px; color: var(--muted); margin: 0; }
+.phase-note { margin: 0; font-size: 12px; color: var(--muted); text-align: center; }
+.lblock .btn.huge { margin: 0; }
+.start-reminders { display: grid; gap: 8px; }
+.start-reminders .reminders { margin: 0; }
 
-.odo { margin-bottom: 6px; }
+.timebar { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 0; text-align: center; }
+.timebar div { background: var(--surface-2); border-radius: 12px; padding: 10px 6px; min-width: 0; }
+.timebar small { display: block; font-size: 12px; color: var(--muted); font-weight: 600; }
+.timebar strong { font-size: 20px; line-height: 1.2; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.timebar .live strong { color: var(--gold-ink); }
+
+.grid.odo { margin: 0; }
 .hint { margin: 0 0 6px; font-size: 13px; color: var(--go); }
 .export-pdf { margin-top: 10px; }
 .export-adi-prompt .field { margin-bottom: 8px; }
 .derived { margin: 0 0 14px; font-size: 14px; color: var(--muted); }
 .derived b { color: var(--ink); }
+/* Derived values: big figures, read-only by construction (there is no input for them). */
+.stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.stat { padding: 10px 10px 8px; background: var(--surface-2); border-radius: 12px; display: grid; gap: 2px; min-width: 0; }
+.stat small { font-size: 12px; color: var(--muted); font-weight: 600; }
+.stat b { font-size: 18px; line-height: 1.15; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.stat em { font-style: normal; font-size: 12px; color: var(--muted); }
+.stat.live b { color: var(--gold-ink); }
+@media (max-width: 420px) {
+  .stats { grid-template-columns: 1fr 1fr; }
+  .stats .stat:last-child { grid-column: 1 / -1; }
+}
+.hint-note { margin: 0; font-size: 12px; color: var(--muted); }
 
-.edit-times { margin: 0 0 14px; }
-.edit-times summary { font-size: 14px; color: var(--muted); padding: 6px 0; cursor: pointer; }
-.edit-times .grid { margin-top: 8px; }
+/* Folded groups ("Edit date / times", the Competency 23 route, C23 eligibility fields). */
+details.group { border: 1px solid var(--line); border-radius: var(--radius-m); background: var(--surface); }
+details.group > summary { list-style: none; cursor: pointer; min-height: 48px; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 0 14px; font-weight: 700; font-size: 15px; color: var(--ink); }
+details.group > summary::-webkit-details-marker { display: none; }
+details.group > summary::after { content: "+"; font-size: 20px; font-weight: 700; color: var(--brand-gold); flex: none; }
+details.group[open] > summary::after { content: "–"; }
+details.group > summary small { font-weight: 500; font-size: 12px; color: var(--muted); }
+details.group .inner { padding: 0 14px 14px; display: grid; gap: 12px; }
+details.group .inner > .grid { margin: 0; }
+.edit-times { margin: 0; }
 
-.sig { margin-bottom: 12px; }
-.sig-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.sigs { display: grid; gap: 12px; }
+.sig { margin: 0; scroll-margin-bottom: 96px; }
+.sig-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; flex-wrap: wrap; }
 .sig-head strong { font-size: 15px; }
-.sig-head .link { margin-left: auto; padding: 4px 0; }
+.sig-head .link { margin-left: auto; padding: 4px 0; min-height: 44px; display: inline-flex; align-items: center; }
 .sig-ok { font-size: 13px; color: var(--go); font-weight: 600; }
 .sig-todo { font-size: 13px; color: var(--muted); }
 .sig-too-detailed { color: var(--stop); font-weight: 600; }
@@ -268,60 +339,91 @@ html, body {
   width: calc(100% - 3px);
   height: auto;
   aspect-ratio: 2 / 1; /* = SIGNATURE_WIDTH / SIGNATURE_HEIGHT in signature-pad.tsx: scaled, never distorted */
-  border: 1.5px dashed #bdb7aa;
+  border: 1.5px dashed var(--text-muted);
   border-radius: 12px;
-  background: #fff;
+  background: var(--pad);
   touch-action: none;
   -webkit-user-select: none;
   user-select: none;
 }
+.sig canvas.signed { border-style: solid; border-color: var(--good); }
 /* Phone in landscape: keep the 2:1 pad within 60% of the short screen (centred, never distorted). */
 @media (orientation: landscape) and (max-height: 599px) {
   .sig canvas { width: auto; max-width: calc(100% - 3px); max-height: 60vh; max-height: 60dvh; margin: 0 auto; }
 }
 
-.comp-section { margin-bottom: 14px; }
-.comp-label { display: block; font-size: 13px; font-weight: 600; color: var(--muted); margin-bottom: 6px; }
+/* Sticky action bar: "Save Lesson #N" + Discard, pinned above the iPhone home indicator (safe area). It exists only
+   once the lesson has ended (Tony's decision 2). While an input has the keyboard it drops back into the flow so it never
+   covers the field being typed in; the signature pads carry scroll margin so they can always be scrolled above it. */
+.lesson-actions { position: sticky; bottom: 0; z-index: 2; margin: 0 -12px; padding: 10px 12px calc(10px + env(safe-area-inset-bottom, 0px)); background: color-mix(in srgb, var(--paper) 88%, transparent); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); border-top: 1px solid var(--line); display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; }
+@supports not (background: color-mix(in srgb, red 50%, transparent)) { .lesson-actions { background: var(--paper); } }
+.lesson-actions .btn.save { margin: 0; width: 100%; min-height: 52px; font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lesson-actions .link.danger { margin: 0; min-height: 44px; padding: 0 8px; white-space: nowrap; display: inline-flex; align-items: center; }
+.card.lesson:has(.field input:focus, .field textarea:focus, .field select:focus) .lesson-actions { position: static; }
+.link.danger.lesson-discard { margin: 0 auto; min-height: 44px; display: inline-flex; align-items: center; justify-self: center; padding: 0 8px; }
+
+/* Competency picker: Taught / Assessed grids of ≥44px number chips (numbers only, Tony's decision 1), the three
+   special assessments as full-width buttons with their gate status, then one result row per assessed item. */
+.comp-section { display: grid; gap: 8px; }
+.comp-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.comp-label { display: block; font-size: 13px; font-weight: 700; color: var(--muted); letter-spacing: .04em; text-transform: uppercase; }
+.comp-head small { font-size: 12px; color: var(--muted); }
+.competency-picker { display: grid; gap: 14px; }
 .chip-row { display: flex; flex-wrap: wrap; gap: 6px; }
-.chip-row.special { margin-top: 8px; }
+.chip-row.numbers { display: grid; grid-template-columns: repeat(auto-fill, minmax(46px, 1fr)); gap: 6px; }
+.chip-row.special { display: grid; gap: 6px; margin-top: 2px; }
 .chip {
   font: inherit;
   font-weight: 700;
-  font-size: 15px;
+  font-size: 16px;
   border: 1px solid var(--line);
-  background: #fbfaf8;
+  background: var(--surface);
   color: var(--ink);
-  border-radius: 10px;
-  min-width: 40px;
-  min-height: 40px;
+  border-radius: 12px;
+  min-width: 44px;
+  min-height: 46px;
   padding: 6px 8px;
   cursor: pointer;
   touch-action: manipulation;
+  position: relative;
+  font-variant-numeric: tabular-nums;
 }
-.chip.wide { min-width: auto; padding: 8px 12px; font-size: 13px; }
-.chip.selected { background: var(--ink); color: #fff; border-color: var(--ink); }
-.chip.achieved { background: #e3f3e8; color: #135c32; border-color: #bfe4cb; }
-.chip.selected.achieved { background: var(--go); color: #fff; border-color: var(--go); }
-.chip.locked { color: var(--muted); }
-.chip:disabled { opacity: .55; cursor: not-allowed; }
-.comp-lock-hint { margin: 8px 0 0; font-size: 13px; color: var(--muted); }
+.chip.wide { min-width: auto; min-height: 48px; padding: 8px 12px; font-size: 14px; }
+.chip-row.special .chip.wide { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 0 14px; font-size: 15px; font-weight: 600; text-align: left; }
+.chip.selected { background: var(--strong); color: var(--on-strong); border-color: var(--strong); }
+.chip.achieved { background: var(--good-soft); color: var(--good); border-color: transparent; }
+.chip-row.numbers .chip.achieved::after { content: "✓"; position: absolute; top: 2px; right: 5px; font-size: 10px; }
+.chip.selected.achieved { background: var(--good); color: var(--on-bad); border-color: var(--good); }
+.chip.locked { color: var(--muted); background: var(--surface-2); border-style: dashed; }
+.chip:disabled { cursor: not-allowed; }
+.chip-row.numbers .chip:disabled:not(.achieved):not(.locked) { opacity: .55; }
+.chip.locked:disabled { opacity: .8; }
+.gate-tag { display: inline-flex; align-items: center; font-size: 12px; font-weight: 600; padding: 4px 9px; border-radius: 99px; background: var(--surface-2); color: var(--muted); white-space: nowrap; flex: none; }
+.gate-tag.done { background: var(--good-soft); color: var(--good); }
+.gate-tag.next { background: var(--gold-soft); color: var(--gold-ink); }
+.chip.selected .gate-tag { background: rgba(127, 127, 127, .25); color: inherit; }
+.chip.locked .gate-tag { background: var(--seg-off); }
+.comp-lock-hint { margin: 0; font-size: 12px; color: var(--muted); padding: 8px 10px; background: var(--surface-2); border-radius: 10px; }
 .lifecycle.completed-card { margin-top: 0; }
 
-.result-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
-.result-list li { display: flex; align-items: center; justify-content: space-between; gap: 8px; background: #f7f5f1; border-radius: 10px; padding: 8px 10px; font-weight: 600; }
-.result-buttons { display: flex; gap: 6px; }
+.result-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.result-list li { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; padding: 8px 0 8px 12px; border-left: 3px solid var(--brand-gold); font-weight: 600; }
+.result-name { display: grid; gap: 1px; min-width: 0; flex: 1 1 140px; font-weight: 700; }
+.result-name small { font-weight: 500; font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+.result-buttons { display: flex; gap: 6px; flex: none; }
 
-.btn.small { min-height: 36px; padding: 6px 10px; font-size: 13px; }
-.btn.danger { background: var(--stop); color: #fff; }
+.btn.small { min-height: 44px; padding: 6px 12px; font-size: 14px; }
+.btn.danger { background: var(--bad); color: var(--on-bad); }
+.result-buttons .btn.primary { background: var(--good); color: var(--on-bad); }
 
-.comp-summary { margin: 0 0 14px; font-size: 14px; color: var(--muted); line-height: 1.6; }
+.comp-summary { margin: 0; font-size: 13px; color: var(--muted); line-height: 1.6; }
 .comp-summary b { color: var(--ink); }
 
 .progress-count { margin: 0 0 10px; font-size: 22px; font-weight: 700; }
 .progress-grid { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
-.progress-chip { min-width: 30px; text-align: center; border-radius: 8px; padding: 4px 6px; font-size: 13px; font-weight: 700; background: #f0eee9; color: var(--muted); }
-.progress-chip.in-progress { background: #fbf1d9; color: #8a6415; }
-.progress-chip.achieved { background: #e3f3e8; color: #135c32; }
+.progress-chip { min-width: 30px; text-align: center; border-radius: 8px; padding: 4px 6px; font-size: 13px; font-weight: 700; background: var(--surface-2); color: var(--muted); }
+.progress-chip.in-progress { background: var(--gold-soft); color: var(--gold-ink); }
+.progress-chip.achieved { background: var(--good-soft); color: var(--good); }
 .review-status { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
 .review-status li { display: flex; justify-content: space-between; gap: 8px; }
 .review-status span { color: var(--muted); }
@@ -335,7 +437,7 @@ html, body {
 .history li:first-child { border-top: 0; padding-top: 0; }
 .history p { margin: 4px 0 0; overflow-wrap: anywhere; }
 .h-top { display: flex; gap: 8px; align-items: center; font-weight: 600; flex-wrap: wrap; }
-.h-no { background: var(--ink); color: #fff; border-radius: 8px; padding: 1px 8px; font-size: 13px; }
+.h-no { background: var(--strong); color: var(--on-strong); border-radius: 8px; padding: 1px 8px; font-size: 13px; }
 .h-nums { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
 .h-odo { color: var(--muted); font-size: 13px; }
 .h-edit { margin-left: auto; padding: 2px 0; }
@@ -347,24 +449,25 @@ html, body {
 .revisions del { color: var(--muted); text-decoration: line-through; }
 .rev-reason { margin: 2px 0; font-style: italic; }
 .h-edited { color: var(--muted); font-size: 12px; font-style: italic; }
-.h-editing { padding: 12px 0; }
-.h-editing h3 { margin: 0 0 10px; font-size: 16px; }
+.h-editing { padding: 12px 0; display: grid; gap: 12px; }
+.h-editing h3 { margin: 0; font-size: 16px; }
+.h-editing .grid, .h-editing .derived, .h-editing .status { margin: 0; }
+.h-editing .btn.save { margin: 0; }
 .hint.danger { color: var(--stop); }
 .empty { color: var(--muted); margin: 0; }
 
 .foot { text-align: center; color: var(--text-muted); font-size: 12px; margin-top: 8px; }
 
-.save-errors { margin: 16px 0 0; padding: 12px; border-radius: 12px; border: 1.5px solid var(--stop); background: #fbe4e1; color: #8e2418; }
+.save-errors { margin: 0; padding: 12px; border-radius: 12px; border: 1.5px solid var(--bad); background: var(--bad-soft); color: var(--bad); }
 .save-errors strong { display: block; margin-bottom: 6px; font-size: 15px; }
 .save-errors ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
 .save-errors li { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; font-size: 14px; overflow-wrap: anywhere; }
-.save-errors-go { font: inherit; font-weight: 700; font-size: 14px; min-height: 40px; padding: 6px 12px; border: 1px solid var(--stop); border-radius: 10px; background: #fff; color: var(--stop); cursor: pointer; touch-action: manipulation; }
-.save-errors + .btn.save { margin-top: 12px; }
+.save-errors-go { font: inherit; font-weight: 700; font-size: 14px; min-height: 44px; padding: 6px 12px; border: 1px solid var(--bad); border-radius: 10px; background: var(--surface); color: var(--bad); cursor: pointer; touch-action: manipulation; }
 .field-flash { outline: 3px solid var(--gold); outline-offset: 3px; border-radius: 10px; transition: outline-color .4s; }
 
 .h-prior-list { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 6px; }
-.history li.h-prior { border: 1px solid var(--line); border-radius: 8px; background: #efece6; padding: 8px 10px; font-size: 13px; overflow-wrap: break-word; }
-.h-paper { background: #efece6; color: var(--ink); border-radius: 8px; padding: 1px 8px; font-size: 12px; font-weight: 700; }
+.history li.h-prior { border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2); padding: 8px 10px; font-size: 13px; overflow-wrap: break-word; }
+.h-paper { background: var(--surface-2); color: var(--ink); border-radius: 8px; padding: 1px 8px; font-size: 12px; font-weight: 700; }
 .paper-hint { margin: -6px 0 10px; }
 .paper-import { overflow-wrap: anywhere; }
 .paper-import input[type="file"] { max-width: 100%; margin: 6px 0; }
@@ -373,11 +476,11 @@ html, body {
 .paper-import-preview { margin: 8px 0; }
 
 /* Assessment-rule reminders: display only, never block anything. */
-.reminders { margin: 0 0 12px; }
-.reminder { margin: 0 0 6px; padding: 8px 10px; border-radius: 10px; font-size: 14px; line-height: 1.35; overflow-wrap: anywhere; background: #efece6; color: var(--ink); }
-.reminder.amber { background: #fdf0d2; color: #6b4a00; }
-.reminder.grey { background: #efece6; color: var(--muted); }
-.reminder.plain { background: #e3f3e8; color: #135c32; }
+.reminders { margin: 0 0 12px; display: grid; gap: 6px; }
+.reminder { margin: 0; padding: 8px 10px; border-radius: 10px; font-size: 14px; line-height: 1.35; overflow-wrap: anywhere; background: var(--surface-2); color: var(--ink); }
+.reminder.amber { background: var(--warn-soft); color: var(--warn); }
+.reminder.grey { background: var(--surface-2); color: var(--muted); }
+.reminder.plain { background: var(--good-soft); color: var(--good); }
 .reminder.booking { background: transparent; padding: 2px 0; }
 .reminder.booking a { font-weight: 600; color: var(--ink); }
 .reminder.booking small { display: block; color: var(--muted); font-size: 13px; margin-top: 2px; }
@@ -389,12 +492,12 @@ html, body {
 
 /* Learner transfer (3c T1): inline panel, History divider, receiving-instructor reminder. Self-contained; phone and tablet. */
 .transfer-link { display: block; margin: 8px 0 0 auto; padding: 4px 0; font-size: 13px; }
-.lifecycle.transfer-panel { background: #fff; border: 2px solid #6b6455; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12); display: grid; gap: 10px; }
+.lifecycle.transfer-panel { background: var(--surface); border: 2px solid var(--text-muted); box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12); display: grid; gap: 10px; }
 .lifecycle.transfer-panel p { margin: 0; overflow-wrap: anywhere; }
 .transfer-choices { border: 0; margin: 0; padding: 0; min-width: 0; display: grid; gap: 6px; }
 .transfer-choices legend { padding: 0; margin-bottom: 4px; font-size: 13px; font-weight: 600; color: var(--muted); }
 .transfer-choice { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 10px; overflow-wrap: anywhere; }
-.transfer-choice input { flex: none; width: 20px; height: 20px; margin: 0; }
+.transfer-choice input { flex: none; width: 20px; height: 20px; margin: 0; accent-color: var(--brand-gold); }
 .transfer-panel .archive-actions .btn { white-space: normal; }
 .reminder.transfer-check { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .reminder.transfer-check span { flex: 1 1 200px; min-width: 0; }
@@ -408,25 +511,26 @@ html, body {
    nothing is hidden behind the keyboard and the card simply grows). */
 .address-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .address-field small.address-hint { font-size: 12px; color: var(--muted); }
-.address-list { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 10px; background: #fff; overflow: hidden; box-shadow: 0 6px 18px rgba(0, 0, 0, .08); }
+.address-list { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); overflow: hidden; box-shadow: 0 6px 18px rgba(0, 0, 0, .08); }
 .address-option { display: flex; flex-direction: column; justify-content: center; gap: 2px; min-height: 44px; padding: 8px 12px; border-top: 1px solid var(--line); cursor: pointer; touch-action: manipulation; user-select: none; -webkit-user-select: none; }
 .address-option:first-child { border-top: 0; }
 .address-list [role="listbox"] { display: flex; flex-direction: column; }
 .address-option .address-main { font-size: 16px; font-weight: 600; color: var(--ink); overflow-wrap: anywhere; }
 .address-option small { font-size: 13px; color: var(--muted); }
-.address-option.active, .address-option:hover { background: #f4efe3; }
-.address-close { font: inherit; font-size: 20px; min-height: 44px; border: 0; border-top: 1px solid var(--line); background: #fbfaf8; color: var(--muted); cursor: pointer; touch-action: manipulation; }
+.address-option.active, .address-option:hover { background: var(--gold-soft); }
+.address-close { font: inherit; font-size: 20px; min-height: 44px; border: 0; border-top: 1px solid var(--line); background: var(--surface-2); color: var(--muted); cursor: pointer; touch-action: manipulation; }
 
 /* R10 Competency 23 route check (reminders only): chips + six ticks + "All met". Self-contained; phone and tablet. */
 .route-group .comp-label { margin-top: 8px; }
-.route-centres .chip.suggested { border: 2px solid var(--ink); background: #fff; }
+.route-centres .chip { border-radius: 99px; min-height: 44px; }
+.route-centres .chip.suggested { border: 2px solid var(--ink); background: var(--surface); }
 .route-centres .chip.home { color: var(--muted); border-style: dashed; }
-.route-centres .chip.home.selected { color: #fff; border-style: solid; }
+.route-centres .chip.home.selected { color: var(--on-strong); border-style: solid; }
 .route-group .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
-.route-group .hint-note.signed { color: #6b4a00; }
+.route-group .hint-note.signed { color: var(--warn); }
 .route-items { display: grid; grid-template-columns: 1fr; gap: 6px; margin: 0 0 10px; }
 .route-item { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 4px 10px; border: 1px solid var(--line); border-radius: 10px; font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
-.route-item input { flex: none; width: 22px; height: 22px; margin: 0; accent-color: var(--go); }
+.route-item input { flex: none; width: 22px; height: 22px; margin: 0; accent-color: var(--brand-gold); }
 .route-item:has(input:disabled) { color: var(--muted); }
 .route-all { justify-self: start; min-height: 44px; }
 @media (min-width: 600px) { .route-items { grid-template-columns: 1fr 1fr; } .route-all { grid-column: 1 / -1; } }
@@ -459,11 +563,24 @@ html, body {
   .card { padding: 20px 22px; margin-bottom: 16px; }
   .card h2 { font-size: 20px; }
   .card.picker { padding: 0 0 4px; gap: 14px; }
+  .card.summary { padding: 0; }
+  .summary-head { padding: 20px 22px; }
+  .summary-body { padding: 16px 22px 20px; }
+  .summary-main small.summary-name { font-size: 26px; }
+  .summary-meta { font-size: 14px; }
+  .card.lesson { padding: 0; }
+  .card.lesson > * + * { margin-top: 16px; }
+  .lblock { padding: 20px 22px; }
+  .card-head h2, .card-head h3 { font-size: 18px; }
+  .lesson-actions { margin: 0 calc(-1 * max(24px, env(safe-area-inset-right))) 0 calc(-1 * max(24px, env(safe-area-inset-left))); padding-left: max(24px, env(safe-area-inset-left)); padding-right: max(24px, env(safe-area-inset-right)); }
+  /* Pads stay stacked (full width) on tablets: side by side they fall under the 300×180 tablet minimum (qa-browser 17). */
 }
 /* Wider than the 880px column (.app is border-box, so its outer width is 880px): the bar becomes a rounded island
    the width of the content, not a full-bleed strip that stops at the column edges. */
 @media (min-width: 881px) and (min-height: 600px) {
   .topbar { margin: 0 0 16px; padding: 16px 24px 18px; border-radius: var(--radius-l); }
+  .lesson-actions { margin: 0; padding-left: 0; padding-right: 0; border-top: 0; background: transparent; -webkit-backdrop-filter: none; backdrop-filter: none; }
+  .lesson-actions .btn.save { box-shadow: 0 6px 18px -8px rgba(0, 0, 0, .45); }
 }
 @media (min-width: 700px) and (min-height: 600px) {
   .view-tab { min-height: 44px; font-size: 15px; }
@@ -482,25 +599,26 @@ html, body {
 
   .status { font-size: 16px; }
   .meta, .derived, .reminder, .history li, .comp-summary { font-size: 15px; }
-  .summary-main small { font-size: 15px; }
-  .summary-main strong { font-size: 34px; }
-  .totals dt { font-size: 13px; }
-  .totals dd { font-size: 22px; }
+  .stat b { font-size: 22px; }
+  .stat small, .stat em, .hint-note, .phase-note, .card-head small, .comp-head small { font-size: 13px; }
   .timebar strong { font-size: 24px; }
 
   .chip-row { gap: 8px; }
+  .chip-row.numbers { grid-template-columns: repeat(auto-fill, minmax(52px, 1fr)); gap: 8px; }
   .chip { min-width: 48px; min-height: 48px; font-size: 17px; }
-  .chip.wide { min-height: 48px; font-size: 15px; padding: 8px 14px; }
+  .chip.wide { min-height: 52px; font-size: 15px; padding: 8px 14px; }
+  .chip-row.special .chip.wide { font-size: 16px; }
   .progress-chip { min-width: 36px; padding: 6px 8px; font-size: 15px; }
   .review-status, .comp-legend { font-size: 15px; }
-  .comp-legend summary, .rules-group summary, .archive-history summary, .edit-times summary { padding: 11px 0; font-size: 15px; }
+  .comp-legend summary, .rules-group summary, .archive-history summary { padding: 11px 0; font-size: 15px; }
+  details.group > summary { min-height: 52px; font-size: 16px; }
   .integration-id .link { font-size: 14px; }
   .rules-group .field small, .rules-group .hint-note, .reminder.booking small { font-size: 14px; }
 
   .archive-panel { padding: 16px; }
   .save-errors-go { min-height: 44px; }
   .paper-import input[type="file"] { font-size: 16px; min-height: 44px; }
-  .paper-import input[type="file"]::file-selector-button { min-height: 44px; padding: 0 14px; margin-right: 10px; font: inherit; font-weight: 600; border: 1px solid var(--line); border-radius: 10px; background: #efece6; color: var(--ink); }
+  .paper-import input[type="file"]::file-selector-button { min-height: 44px; padding: 0 14px; margin-right: 10px; font: inherit; font-weight: 600; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); color: var(--ink); }
 }
 
 @media (min-width: 1000px) and (min-height: 600px) {
