@@ -5,28 +5,25 @@ _Last updated: 2026-10-13_
 This file describes **current task only**. Completed work's detail
 lives in git log and closed PRs, not here.
 
-**Current Task:** Learner intake P3, overseas / interstate licence (design
-`docs/superpowers/specs/2026-10-11-learner-intake-design.md` D11-D14, D17 school rule), branch
-`feature/intake-p3-licence` — **Completed on the branch, review round 1 fixed, rules re-review APPROVE, Staging D1 at `0013` (run 8), merging to `staging`** (L2
-additive migration + reminder logic + derived value). Migration `0013` adds six nullable
-`learners.other_licence_*` columns (kind, place, number, class, issued_on, expires_on; no default, no
-backfill, no rebuild; rehearsed with `scripts/rehearse-0013-local.sh`, re-apply refused by design).
-`lib/other-licence.ts` (enums, labels, D12 validation with distinct errors, bundled country list);
-`lib/rules.ts`: Tony's rule as REMINDERS only — interstate LEARNER time counts from its issue date only when
-it is EARLIER than the ACT licence (grey "Age band unclear" if the bands differ; a later one contributes nothing), interstate or overseas FULL licence held 12 months
-(`OTHER_FULL_LICENCE_MONTHS`) removes the wait, overseas learner / class `other` never count (note on the
-R2 line), missing type or date → grey `otherLicenceDataReminder`; hours, HPT and age unchanged; the other
-licence's expiry is never read; the C23 date is never before the ACT licence issue date. "Competency 23
-from" and the PDF Eligibility auto-fill follow (never overwriting Tony's text). Form: collapsed group "Overseas or interstate licence" after the Competency 23
-group; "Yes" opens the details; "No" clears them (old values stay in `learner_revisions`). D1: edit 5 /
-create 3 statements, UPDATE binds 25, INSERT 25, revision 4. Nothing to ACTGDS (payload keys pinned).
-qa-browser section 23 (375 light/dark, 820, R2 wording, PDF, snapshots). Staging D1 `0013`; Production D1 `0012` until the next release.
+**Current Task:** Learner form restyle (concept screen B, approved 2026-10-12) + Tony's decision 3 (Transfer and
+Archive into the EDIT form's folded "More"), branch `feature/ui-learner-form` — **PR #83 to `staging`; independent review
+round done (L2 presentation; one Major fixed: a colleague who cannot open Edit learner keeps the page-level
+"Archive learner…" link, since Archive never had an owner gate, server included; Minors fixed with a test / QA check
+each: More locks with a note while the form holds unsaved edits, `nameIssue()` rendered once, dead `.form-actions`
+CSS removed; the optional translucent-background contrast refinement declined as not weakening any check) — merging
+agent verifies the fixes, no re-review (Handbook §2)**. Student / Address / Licence & eligibility cards (P3 group kept),
+picked-address chips, inline required-name error (server wording, server validation unchanged), sticky Save bar
+(`env(safe-area-inset-bottom)`, un-pins while a field has focus), Cancel link; "More" holds the unchanged Transfer and
+Archive panels (same handlers, `phase !== "ready"` guard, testids, confirmations); the inactive-owner rescue transfer
+keeps its page link. `lib/learner-form-view.ts` + `tests/learner-form-view.test.ts`; qa-browser section 24 (375
+light/dark New + Edit with More open, 820 two-column, More e2e transfer + archive + restore, sticky bar vs focus);
+sections 3/13/16/17/21/22 selectors updated for the move; section 23's stale theme selectors fixed. No migration,
+no dependency, contract untouched.
 
-**Next Recommended Task:** post-merge CI on `staging`; Tony's real-phone look at the new group
-(375px, iOS date pickers); then release to Production (the Production Release workflow applies `0013`). Then, on Tony's go: (a) Transfer /
-Archive into the edit form's "More" section + learner form restyle; (b) `docs/tasks` memory scheme;
-(c) intake P4 (iOS Scan Text + local parser); (d) `scripts/check-signature-row-limits.mjs` on Staging
-D1. (The font-subset temp-dir leak is fixed, PR #80.)
+**Next Recommended Task:** independent review (one round, L2 presentation) → merge to `staging` → post-merge CI →
+Tony's real-phone look (375px: sticky bar with the iOS keyboard, More fold, date pickers) → release with P3
+(`0013`). Then, on Tony's go: (a) `docs/tasks` memory scheme; (b) intake P4 (iOS Scan Text + local parser);
+(c) `scripts/check-signature-row-limits.mjs` on Staging D1.
 
 **Waiting on Other Repo:** ACTGDS: notify-tick waits for Website PR #47 rework and Tony's explicit
 approval of the new endpoint + secret (Production stays OFF); Work's display polish list. Nothing

@@ -203,7 +203,6 @@ html { overflow-x: hidden; }
 .lifecycle p { margin: 0 0 8px; }
 .lifecycle.archived { background: var(--surface-2); }
 .lifecycle.suggest { background: var(--good-soft); color: var(--good); }
-.form-actions { display: grid; gap: 8px; margin-top: 12px; }
 .edit-learner-btn { margin-top: 10px; }
 .archive-link { display: block; margin: 10px 0 0 auto; padding: 4px 0; font-size: 13px; }
 .lifecycle.archive-panel { background: var(--surface); border: 2px solid var(--text-muted); box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12); display: grid; gap: 10px; }
@@ -361,11 +360,14 @@ details.group .inner > .grid { margin: 0; }
 /* Sticky action bar: "Save Lesson #N" + Discard, pinned above the iPhone home indicator (safe area). It exists only
    once the lesson has ended (Tony's decision 2). While an input has the keyboard it drops back into the flow so it never
    covers the field being typed in; the signature pads carry scroll margin so they can always be scrolled above it. */
-.lesson-actions { position: sticky; bottom: 0; z-index: 2; margin: 0 -12px; padding: 10px 12px calc(10px + env(safe-area-inset-bottom, 0px)); background: color-mix(in srgb, var(--paper) 88%, transparent); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); border-top: 1px solid var(--line); display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; }
+.lesson-actions, .learner-actions { position: sticky; bottom: 0; z-index: 2; margin: 0 -12px; padding: 10px 12px calc(10px + env(safe-area-inset-bottom, 0px)); background: color-mix(in srgb, var(--paper) 88%, transparent); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); border-top: 1px solid var(--line); display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; }
 @supports not (background: color-mix(in srgb, red 50%, transparent)) { .lesson-actions { background: var(--paper); } }
-.lesson-actions .btn.save { margin: 0; width: 100%; min-height: 52px; font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.lesson-actions .link.danger { margin: 0; min-height: 44px; padding: 0 8px; white-space: nowrap; display: inline-flex; align-items: center; }
+.lesson-actions .btn.save, .learner-actions .btn.save { margin: 0; width: 100%; min-height: 52px; font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lesson-actions .link.danger, .learner-actions .link { margin: 0; min-height: 44px; padding: 0 8px; white-space: nowrap; display: inline-flex; align-items: center; }
+.learner-actions .link { color: var(--ink); font-weight: 600; }
 .card.lesson:has(.field input:focus, .field textarea:focus, .field select:focus) .lesson-actions { position: static; }
+/* The learner form's bar un-pins for every text control (incl. the transfer / archive notes inside More), never for a radio. */
+.card.learner-form:has(input:focus:not([type="radio"]), textarea:focus, select:focus) .learner-actions { position: static; }
 .link.danger.lesson-discard { margin: 0 auto; min-height: 44px; display: inline-flex; align-items: center; justify-self: center; padding: 0 8px; }
 
 /* Competency picker: Taught / Assessed grids of ≥44px number chips (numbers only, Tony's decision 1), the three
@@ -465,6 +467,36 @@ details.group .inner > .grid { margin: 0; }
 .foot { text-align: center; color: var(--text-muted); font-size: 12px; margin-top: 8px; }
 /* The learner form scrolls to the top when it opens (driver-app.tsx); keep it clear of the notch / status bar. */
 .learner-form { scroll-margin-top: calc(env(safe-area-inset-top, 0px) + 12px); }
+/* ── Learner form (concept screen B, approved by Tony 2026-10-12): a title block, then the Student / Address /
+   Licence & eligibility cards (the EDIT form adds a folded "More" holding the unchanged Transfer and Archive panels,
+   Tony's decision 3, 2026-10-13), then ONE primary action in a sticky bottom bar (shared with the lesson's bar above).
+   Block layout on purpose, like .card.lesson, so the bar can stick. Same fields and payloads as before. */
+.card.learner-form { background: transparent; border: 0; padding: 0; display: block; color: var(--text); }
+.card.learner-form > * + * { margin-top: 12px; }
+.form-head { display: grid; gap: 4px; padding: 2px 2px 0; }
+.form-head h2 { margin: 0; font-size: 26px; line-height: 1.1; font-weight: 700; letter-spacing: -.01em; }
+.form-sub { margin: 0; font-size: 13px; color: var(--muted); }
+.fsections { display: grid; gap: 12px; align-items: stretch; }
+.fsect > .grid, .fsect .reminders, .fsect .rules-group { margin: 0; }
+.fsect .address-field { gap: 6px; }
+/* Inside the form every tap target is ≥44px and no text is under 12px (the folded groups' summaries and the P3 hint's <small>). */
+.fsect .rules-group summary { min-height: 44px; padding: 12px 0; box-sizing: border-box; }
+.fsect .rules-group .hint-note small { font-size: 12px; }
+.req { color: var(--bad); font-weight: 700; }
+.field.invalid input { border-color: var(--bad); box-shadow: 0 0 0 2px var(--bad-soft); }
+.field .field-error { font-size: 13px; font-weight: 600; color: var(--bad); display: flex; gap: 6px; align-items: center; }
+.field .field-error::before { content: "!"; flex: none; width: 16px; height: 16px; border-radius: 50%; background: var(--bad); color: var(--on-bad); font-size: 11px; line-height: 16px; text-align: center; }
+.picked-parts { display: flex; flex-wrap: wrap; gap: 6px; }
+.picked-parts .lc-chip { font-variant-numeric: tabular-nums; }
+/* "More": a folded card; inside it the existing Transfer / Archive entry links become 44px rows, the panels keep their look. */
+details.fsect.group { border-radius: var(--radius-l); min-width: 0; }
+details.fsect.group > summary { min-height: 52px; }
+details.fsect.group > summary small { margin-left: auto; text-align: right; }
+details.fsect.group .inner > .link { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 44px; margin: 0; padding: 0 2px; font-size: 15px; font-weight: 600; color: var(--ink); text-decoration: none; text-align: left; }
+details.fsect.group .inner > .link::after { content: "›"; font-size: 20px; color: var(--muted); }
+details.fsect.group .inner > .link + .link { border-top: 1px solid var(--line); }
+details.fsect.group .inner > .lifecycle { margin-top: 0; }
+details.fsect.group .inner > .hint-note { margin: 0; }
 
 .save-errors { margin: 0; padding: 12px; border-radius: 12px; border: 1.5px solid var(--bad); background: var(--bad-soft); color: var(--bad); }
 .save-errors strong { display: block; margin-bottom: 6px; font-size: 15px; }
@@ -580,15 +612,21 @@ details.group .inner > .grid { margin: 0; }
   .card.lesson > * + * { margin-top: 16px; }
   .lblock { padding: 20px 22px; }
   .card-head h2, .card-head h3 { font-size: 18px; }
-  .lesson-actions { margin: 0 calc(-1 * max(24px, env(safe-area-inset-right))) 0 calc(-1 * max(24px, env(safe-area-inset-left))); padding-left: max(24px, env(safe-area-inset-left)); padding-right: max(24px, env(safe-area-inset-right)); }
+  .lesson-actions, .learner-actions { margin: 0 calc(-1 * max(24px, env(safe-area-inset-right))) 0 calc(-1 * max(24px, env(safe-area-inset-left))); padding-left: max(24px, env(safe-area-inset-left)); padding-right: max(24px, env(safe-area-inset-right)); }
+  .card.learner-form { padding: 0; }
+  .card.learner-form > * + * { margin-top: 16px; }
+  .fsections { grid-template-columns: 1fr 1fr; gap: 16px; }
+  .fsections > [data-testid="fsect-licence"], .fsections > details { grid-column: 1 / -1; }
+  .form-head h2 { font-size: 30px; }
+  .form-sub { font-size: 14px; }
   /* Pads stay stacked (full width) on tablets: side by side they fall under the 300×180 tablet minimum (qa-browser 17). */
 }
 /* Wider than the 880px column (.app is border-box, so its outer width is 880px): the bar becomes a rounded island
    the width of the content, not a full-bleed strip that stops at the column edges. */
 @media (min-width: 881px) and (min-height: 600px) {
   .topbar { margin: 0 0 16px; padding: 16px 24px 18px; border-radius: var(--radius-l); }
-  .lesson-actions { margin: 0; padding-left: 0; padding-right: 0; border-top: 0; background: transparent; -webkit-backdrop-filter: none; backdrop-filter: none; }
-  .lesson-actions .btn.save { box-shadow: 0 6px 18px -8px rgba(0, 0, 0, .45); }
+  .lesson-actions, .learner-actions { margin: 0; padding-left: 0; padding-right: 0; border-top: 0; background: transparent; -webkit-backdrop-filter: none; backdrop-filter: none; }
+  .lesson-actions .btn.save, .learner-actions .btn.save { box-shadow: 0 6px 18px -8px rgba(0, 0, 0, .45); }
 }
 @media (min-width: 700px) and (min-height: 600px) {
   .view-tab { min-height: 44px; font-size: 15px; }

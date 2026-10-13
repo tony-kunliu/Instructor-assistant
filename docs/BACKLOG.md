@@ -95,12 +95,29 @@ Long term (ecosystem, coordinated with Work on actgds.com Issue #3):
   Archived, the C23-from and licence-expiry chips, the collapsed list + "Show all learners".
 - Lesson record redesign (branch `feature/ui-lesson-record`, concept screen A approved 2026-10-12,
   Tony's decisions: number-only chips; Save only after End Lesson; Transfer/Archive stay where they
-  are for now): done on the branch. Follow-ups from it: (1) concept screen B — learner form in
-  Student / Address / Licence sections with Transfer and Archive folded into a "More" section of the
-  EDIT form (separate task, Tony's decision 3); (2) the History panel and the learner form got
-  colour harmonisation only (legacy tokens now alias the shared ones), their layout is unchanged;
-  (3) the progress card still repeats the header's segments/gates (kept for its legend, invalidation
-  warning and Completed banner) — fold or drop it only on Tony's say-so.
+  are for now): merged (PR #74). Follow-ups from it: (1) concept screen B — DONE on branch
+  `feature/ui-learner-form` (below); (2) the History panel got colour harmonisation only (legacy
+  tokens alias the shared ones), its layout is unchanged; (3) the progress card still repeats the
+  header's segments/gates (kept for its legend, invalidation warning and Completed banner) — fold or
+  drop it only on Tony's say-so.
+- Learner form restyle + Transfer / Archive into "More" (concept screen B, Tony's decision 3; branch
+  `feature/ui-learner-form`, L2 presentation only, 2026-10-13): Student / Address (picked
+  suburb · state · postcode chips) / Licence & eligibility cards, the P3 group kept, inline
+  required-name error (client pre-check with the server's wording; server validation unchanged),
+  sticky Save bar that un-pins while a field has focus, EDIT form's folded "More" holding the same
+  Transfer and Archive panels (handlers, guards incl. "locked while a lesson runs", testids,
+  confirmations unchanged); `lib/learner-form-view.ts`; qa-browser 24. Review (2026-10-13, one round): a
+  colleague who cannot open Edit learner keeps the page-level "Archive learner…" link (Archive never had
+  an owner gate, server included); More's rows lock with a note while the form holds unsaved edits.
+  Follow-ups to confirm with
+  Tony: (1) the non-owner rescue transfer (owner inactive) keeps its "Transfer learner…" link on the
+  learner's page, since that colleague has no Edit learner; (2) the completed card's archive
+  suggestion keeps its own inline panel (not moved); (3) a done transfer or archive closes the Edit
+  form (only possible once the form has no unsaved edits); leaving the form drops an open Transfer /
+  Archive panel (nothing sent); (4) server-side save errors still
+  show in the status line above the form, not next to the sticky Save; (5) the New form's Cancel is
+  in the bar too (the top-bar button still toggles); (6) qa-browser 23 used the removed
+  `theme-dark` / `theme-system` controls and was fixed to the one toggle in this change.
 - Appearance + "only the form" (PR #77 merged to `staging`; Tony's follow-up on branch
   `feature/ui-theme-toggle-top`, 2026-10-13): the control is now one icon button in the top bar that
   toggles Light <-> Dark (first state follows the phone). Follow-ups: (1) `app/manifest.ts`
