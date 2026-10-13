@@ -2617,12 +2617,12 @@ const draw = async (page, index) => {
   await s.page.fill("[data-testid=other-number]", "qa nsw 1");
   check("other licence: expiry left empty is fine (not required)", (await s.page.inputValue("[data-testid=other-expires]")) === "");
   await shot(s.page, "23-other-licence-edit-375-light");
-  await s.page.click("[data-testid=theme-dark]");
+  await s.page.click("[data-testid=theme-toggle]");
   await settle(150);
   const dark = await s.page.evaluate(() => ({ body: getComputedStyle(document.body).backgroundColor, select: getComputedStyle(document.querySelector("[data-testid=other-kind]")).backgroundColor, scheme: getComputedStyle(document.querySelector("[data-testid=other-issued]")).colorScheme }));
   check("other licence: dark theme: the group's selects and date inputs follow the tokens (no white islands, dark pickers)", dark.body === "rgb(9, 19, 28)" && dark.select === "rgb(16, 31, 45)" && dark.scheme === "dark" && (await noHScroll(s.page)), JSON.stringify(dark));
   await shot(s.page, "23-other-licence-edit-375-dark");
-  await s.page.click("[data-testid=theme-system]");
+  await s.page.click("[data-testid=theme-toggle]");
   const saved = await save();
   const afterSave = await stored();
   check("other licence: saved: interstate / NSW / learner / number upper-cased / issue date / no expiry; Eligibility stored as the school-rule date", /updated/.test(saved) && otherOf(afterSave) === otherOf({ otherLicenceKind: "interstate", otherLicencePlace: "NSW", otherLicenceNumber: "QA NSW 1", otherLicenceClass: "learner", otherLicenceIssuedOn: nswIssue, otherLicenceExpiresOn: null }) && afterSave.eligibility === `C23 from ${nswDue}`, `${saved} ${otherOf(afterSave)} ${afterSave.eligibility}`);
