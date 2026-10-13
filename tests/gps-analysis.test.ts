@@ -145,3 +145,17 @@ test("a recording shorter than 20 min of RECORDING time stays INCONCLUSIVE even 
   assert.equal(r.verdict.overall, "INCONCLUSIVE");
   assert.match(r.verdict.reasons.join(" "), /min recording/);
 });
+
+test("a short gap around a screen-locked PAUSE is classified foreground: hidden time that was paused does not count", () => {
+  // Locked 600-900 while paused 600-900; fixes stop at 590 and return at 915: a 25 s gap of recording time.
+  const r = analyzeSession(syntheticSession({ durationS: 30 * MIN, hidden: [{ fromS: 600, toS: 900 }], pauses: [{ fromS: 600, toS: 900 }], outages: [{ fromS: 590, toS: 915 }] }));
+  assert.equal(r.gaps.count, 1);
+  assert.equal(r.gaps.list[0].cls, "foreground");
+  assert.equal(r.gaps.list[0].hiddenOverlapMs, 0);
+  assert.equal(r.gaps.background, 0);
+  // Locked 500-900 but paused only 600-900: the 500-600 locked part still counts as hidden.
+  const part = analyzeSession(syntheticSession({ durationS: 30 * MIN, hidden: [{ fromS: 500, toS: 900 }], pauses: [{ fromS: 600, toS: 900 }], outages: [{ fromS: 505, toS: 915 }] }));
+  assert.equal(part.gaps.count, 1);
+  assert.ok(part.gaps.list[0].hiddenOverlapMs >= 90_000 && part.gaps.list[0].hiddenOverlapMs <= 100_000, `hidden ${part.gaps.list[0].hiddenOverlapMs}`);
+  assert.equal(part.gaps.list[0].cls, "background");
+});

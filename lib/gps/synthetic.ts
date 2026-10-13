@@ -2,7 +2,7 @@
 // Canberra-ish start, constant cruising speed heading north-east, with scripted stops, outages, a GPS jump and
 // missing speed values. NO real location API is involved anywhere in this file.
 import type { GeoErrorLike, GeoLike, GeoPositionLike } from "./recorder.ts";
-import type { Fix, Pause, SessionData, SessionMeta, TrackEvent, Visibility } from "./types.ts";
+import { SYNTHETIC_DRIVE_FINISHED, type Fix, type Pause, type SessionData, type SessionMeta, type TrackEvent, type Visibility } from "./types.ts";
 
 export type Outage = { fromS: number; toS: number };
 export type DriveProfile = {
@@ -182,7 +182,7 @@ export function syntheticDriver(profile: DriveProfile & { durationS: number }, o
       w.nextS += intervalS;
       if (s <= profile.durationS && !inside(s, profile.outages)) w.ok(fixAt(profile, s, simStart + s * 1000));
       if (s + intervalS <= profile.durationS) schedule();
-      else w.err({ code: 3, message: "synthetic drive finished" });
+      else w.err({ code: 3, message: SYNTHETIC_DRIVE_FINISHED }); // distinct message: the page shows a note, not an error
     }, wallDelay);
   };
 

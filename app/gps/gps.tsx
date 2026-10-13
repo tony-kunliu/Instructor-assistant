@@ -10,7 +10,7 @@ import { Recorder, describeGeoError, recoverSession, type DocLike, type GeoLike,
 import { FaultInjectingStore, IndexedDbStore } from "@/lib/gps/store.ts";
 import { summarizeTrack, type TrackSummary } from "@/lib/gps/summary.ts";
 import { DEFAULT_DRIVE, syntheticDriver, type SyntheticDriver } from "@/lib/gps/synthetic.ts";
-import type { SessionMeta } from "@/lib/gps/types.ts";
+import { SYNTHETIC_DRIVE_FINISHED, type SessionMeta } from "@/lib/gps/types.ts";
 import "./gps.css";
 
 type Source = "synthetic" | "device";
@@ -107,7 +107,7 @@ export default function GpsRecorder() {
   const [past, setPast] = useState<SessionMeta[]>([]);
   const [note, setNote] = useState<string | null>(null);
   // A location error stays readable for a few seconds after the next fix clears it (a flash is no use on the dash).
-  const [geoNotice, setGeoNotice] = useState<{ n: number; text: string; recovered: boolean; until: number } | null>(null);
+  const [geoNotice, setGeoNotice] = useState<{ n: number; text: string; recovered: boolean; note: boolean; until: number } | null>(null);
   const [wallNow, setWallNow] = useState(0);
   const [busy, setBusy] = useState(false);
   // Source + consent live only in React state: a reload always returns to Synthetic with consent off.
@@ -146,7 +146,8 @@ export default function GpsRecorder() {
     return () => window.clearInterval(tick);
   }, []);
 
-  useEffect(() => () => driverRef.current?.dispose(), []);
+  // Unmount (client-side navigation away): nothing may outlive the page — the watch, the wake lock, the intervals.
+  useEffect(() => () => { driverRef.current?.dispose(); void recRef.current?.stop(); }, []);
 
   const attach = (rec: Recorder) => {
     recRef.current = rec;
@@ -161,7 +162,7 @@ export default function GpsRecorder() {
         setGeoNotice((cur) => {
           if (!next.lastGeoError) return null;
           const recovered = next.geoError === null;
-          if (!cur || cur.n !== next.geoErrors) return { n: next.geoErrors, text: describeGeoError(next.lastGeoError) ?? "", recovered, until: recovered ? Date.now() + GEO_NOTICE_MS : Number.POSITIVE_INFINITY };
+          if (!cur || cur.n !== next.geoErrors) return { n: next.geoErrors, text: describeGeoError(next.lastGeoError) ?? "", recovered, note: next.lastGeoError.message === SYNTHETIC_DRIVE_FINISHED, until: recovered ? Date.now() + GEO_NOTICE_MS : Number.POSITIVE_INFINITY };
           if (!cur.recovered && recovered) return { ...cur, recovered: true, until: Date.now() + GEO_NOTICE_MS };
           return cur;
         });
@@ -290,7 +291,7 @@ export default function GpsRecorder() {
           <div><dt>Unsaved / flushed</dt><dd data-testid="gps-unsaved">{snap?.unflushed ?? 0} / {Math.max(0, (snap?.samples ?? 0) - (snap?.unflushed ?? 0))}</dd></div>
           <div><dt>Storage errors</dt><dd data-testid="gps-store-errors">{snap?.storeErrors ?? 0}</dd></div>
         </dl>
-        {geoErrorText ? <p className={`status ${geoNotice?.recovered ? "info" : "warn"} gps-geo-error`} data-testid="gps-geo-error" data-recovered={geoNotice?.recovered ? "1" : "0"}>{geoErrorText}</p> : null}
+        {geoErrorText && geoNotice?.note ? <p className="status info" data-testid="gps-drive-finished">{geoNotice.text}</p> : geoErrorText ? <p className={`status ${geoNotice?.recovered ? "info" : "warn"} gps-geo-error`} data-testid="gps-geo-error" data-recovered={geoNotice?.recovered ? "1" : "0"}>{geoErrorText}</p> : null}
         {active && source === "synthetic" && driverRef.current ? (
           <details className="group gps-tools" data-testid="gps-tools">
             <summary>Test tools <small>synthetic only</small></summary>

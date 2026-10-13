@@ -3,7 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { FLUSH_MS, HEARTBEAT_MS, Recorder, describeGeoError, findInterrupted, recoverSession, type DocLike, type GeoErrorLike, type GeoPositionLike, type LifecycleType, type RecorderDeps } from "../lib/gps/recorder.ts";
 import { MemoryStore } from "../lib/gps/store.ts";
-import type { Visibility } from "../lib/gps/types.ts";
+import { SYNTHETIC_DRIVE_FINISHED, type Visibility } from "../lib/gps/types.ts";
 
 function harness(opts: { wakeLock?: "ok" | "none" | "deny"; geo?: boolean; store?: MemoryStore } = {}) {
   let now = Date.UTC(2026, 9, 1);
@@ -285,4 +285,66 @@ test("live snapshot: running distance follows the fixes, geo errors keep code an
   assert.match(describeGeoError({ code: 2, message: "" })!, /unavailable/);
   assert.match(describeGeoError({ code: 3, message: "" })!, /30 seconds/);
   assert.equal(describeGeoError(null), null);
+});
+
+// ── Review round 1 (Minors): races around awaited browser calls ──────────────────────────────────────────────────
+
+test("a wake lock granted after Pause/Stop (or a double visibility flip) is released at once, never held or orphaned", async () => {
+  // Deferred request: the grant arrives only when the test says so.
+  const grants: ((s: { release(): Promise<void>; onrelease(cb: () => void): void }) => void)[] = [];
+  const made: { released: boolean }[] = [];
+  const make = () => { const s = { released: false }; made.push(s); return { release: async () => { s.released = true; }, onrelease: () => {} }; };
+  const h = harness({ wakeLock: "none" });
+  h.rec.deps.wakeLock = { request: () => new Promise((resolve) => grants.push(resolve)) };
+  h.rec.wakeLockState = "idle";
+  const until = async (ok: () => boolean) => { for (let i = 0; i < 50 && !ok(); i++) await Promise.resolve(); assert.ok(ok(), "condition not reached"); };
+  const starting = h.rec.start(); // awaits the first grant
+  await until(() => grants.length === 1);
+  await h.rec.pause(); // paused before the grant arrives
+  grants[0](make());
+  await starting;
+  assert.equal(made.length, 1);
+  assert.ok(made[0].released, "late grant released");
+  assert.equal(h.rec.sentinel, null);
+  assert.notEqual(h.rec.wakeLockState, "held");
+  const resuming = h.rec.resume(); // requests again (resume awaits the grant)
+  await until(() => grants.length === 2);
+  await h.setVis("hidden"); await h.setVis("visible"); // a second request while the first is pending
+  await until(() => grants.length === 3);
+  grants[1](make()); await until(() => h.rec.sentinel !== null);
+  grants[2](make()); await until(() => made.length === 3 && made[2].released);
+  await resuming;
+  assert.equal(h.rec.sentinel !== null, true, "exactly one held");
+  assert.deepEqual(made.slice(1).map((m) => m.released), [false, true], "the second grant is released, not orphaned");
+  await h.rec.stop();
+  assert.ok(made.every((m) => m.released));
+});
+
+test("stop() racing start()'s first write: start installs nothing (no watch, timers, listeners) and the session is closed", async () => {
+  const store = new MemoryStore();
+  const releases: (() => void)[] = [];
+  const inner = store.putMeta.bind(store);
+  store.putMeta = async (meta) => { await new Promise<void>((r) => { releases.push(r); }); return inner(meta); };
+  const h = harness({ store });
+  const until = async (ok: () => boolean) => { for (let i = 0; i < 50 && !ok(); i++) await Promise.resolve(); assert.ok(ok(), "condition not reached"); };
+  const starting = h.rec.start();
+  await until(() => releases.length === 1); // start() is waiting on its first write
+  const stopping = h.rec.stop();
+  await until(() => releases.length === 2); // stop() got as far as its own write: the session is already "stopped"
+  releases[0](); // now start()'s write completes
+  await starting;
+  releases[1]();
+  await stopping;
+  assert.equal(h.rec.state, "stopped");
+  assert.equal(h.rec.watchId, null);
+  assert.equal(h.rec.timers.length, 0);
+  assert.equal(h.rec.offs.length, 0);
+  h.fix();
+  assert.equal(h.rec.snapshot().samples, 0, "no watch was installed");
+  assert.ok((await store.load("s1"))!.meta.stoppedAt, "closed on the device");
+});
+
+test("the synthetic driver's end-of-script message is described as a neutral note, not a location failure", () => {
+  assert.match(describeGeoError({ code: 3, message: SYNTHETIC_DRIVE_FINISHED })!, /synthetic drive has finished/);
+  assert.match(describeGeoError({ code: 3, message: "Timeout expired" })!, /No fix for 30 seconds/);
 });

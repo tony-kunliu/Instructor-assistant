@@ -90,6 +90,9 @@ export function hiddenPeriods(events: TrackEvent[], startVisibility: Visibility,
 }
 
 const overlap = (a: Period, b: Period) => Math.max(0, Math.min(a.to, b.to) - Math.max(a.from, b.from));
+/** Pairwise intersections of two period lists. */
+const intersect = (a: Period[], b: Period[]): Period[] =>
+  a.flatMap((p) => b.map((q) => ({ from: Math.max(p.from, q.from), to: Math.min(p.to, q.to) })).filter((r) => r.to > r.from));
 const overlapWith = (p: Period, list: Period[]) => list.reduce((sum, q) => sum + overlap(p, q), 0);
 
 /**
@@ -102,7 +105,8 @@ export function detectGaps(times: number[], start: number, end: number, hidden: 
   const push = (from: number, to: number, kind: Gap["kind"]) => {
     const ms = to - from - overlapWith({ from, to }, paused);
     if (ms <= gapMs) return;
-    const hiddenOverlapMs = Math.min(ms, overlapWith({ from, to }, hidden));
+    // Hidden time that was also paused is not recording time either: it must not make the gap "background".
+    const hiddenOverlapMs = Math.min(ms, overlapWith({ from, to }, hidden) - overlapWith({ from, to }, intersect(hidden, paused)));
     gaps.push({ from, to, ms, kind, cls: hiddenOverlapMs >= ms / 2 ? "background" : "foreground", hiddenOverlapMs, jsSuspended: overlapWith({ from, to }, suspended) > 0 });
   };
   if (!times.length) {

@@ -63,3 +63,6 @@ export type SessionMeta = {
 };
 
 export type SessionData = { meta: SessionMeta; samples: Fix[]; events: TrackEvent[] };
+
+/** The synthetic driver's end-of-script "error" message (code 3): a note for the page, not a location failure. */
+export const SYNTHETIC_DRIVE_FINISHED = "synthetic drive finished";

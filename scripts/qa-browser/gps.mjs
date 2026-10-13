@@ -35,7 +35,9 @@ const SPY = () => {
   window.__watchCalls = 0;
   const geo = navigator.geolocation;
   if (!geo) return;
+  window.__clearCalls = 0;
   geo.watchPosition = (_ok, err) => { window.__watchCalls++; setTimeout(() => err?.({ code: 1, message: "User denied Geolocation (QA spy)" }), 30); return 99; };
+  geo.clearWatch = () => { window.__clearCalls++; };
   geo.getCurrentPosition = (_ok, err) => { window.__watchCalls++; setTimeout(() => err?.({ code: 1, message: "User denied Geolocation (QA spy)" }), 30); };
 };
 
@@ -146,8 +148,12 @@ try {
     check(`${T} the pause (${pausedAt}s → ${resumedAt}s) fell between the scripted stops (timing sanity)`, !pauseOverlapsStop && pausedAt >= 150 && resumedAt < 400, `paused ${pausedAt} resumed ${resumedAt} stopped ${stoppedAt}`);
     const expectedStops = prof.stops.filter((st) => st.toS <= stoppedAt && !(st.toS > pausedAt && st.fromS < resumedAt));
     const expectedStopMs = expectedStops.reduce((a, st) => a + (st.toS - st.fromS) * 1000, 0);
-    const expectedDistance = prof.speedMps * (s.activeMs - s.stoppedMs - s.gaps.totalMs) / 1000;
-    check(`${T} results: distance ${s.distanceM} m within ±5 % of speed × moving time (${Math.round(expectedDistance)} m)`, Math.abs(s.distanceM - expectedDistance) / expectedDistance <= 0.05);
+    // Expected distance from the GENERATOR only (speed × seconds the scripted car moved while the recorder watched):
+    // recorded [0, stoppedAt) minus the pause [pausedAt, resumedAt), minus scripted stops and the signal-loss window.
+    const inWindow = (sec, w) => w.some((o) => sec >= o.fromS && sec < o.toS);
+    let expectedDistance = 0;
+    for (let sec = 0; sec < stoppedAt; sec++) if (!(sec >= pausedAt && sec < resumedAt) && !inWindow(sec, prof.stops) && !inWindow(sec, prof.outages)) expectedDistance += prof.speedMps;
+    check(`${T} results: distance ${s.distanceM} m within ±5 % of the script's speed × moving seconds (${Math.round(expectedDistance)} m)`, Math.abs(s.distanceM - expectedDistance) / expectedDistance <= 0.05);
     check(`${T} results: stops ${s.stops.count} = scripted ${expectedStops.length}, stop total ≈ ${expectedStopMs / 1000} s`, s.stops.count === expectedStops.length && Math.abs(s.stops.totalMs - expectedStopMs) <= 4000, `total ${s.stops.totalMs}`);
     check(`${T} results: paused time > 0 (${s.pausedMs} ms, 1 pause), one gap (the 40 s outage), one jump, coverage > 95 %`, s.pausedMs >= 50_000 && s.pauses === 1 && s.gaps.count === 1 && s.gaps.maxMs >= 39_000 && s.gaps.maxMs <= 43_000 && s.jumps === 1 && s.coveragePct > 95, JSON.stringify({ paused: s.pausedMs, gaps: s.gaps, jumps: s.jumps, cov: s.coveragePct }));
     check(`${T} results: max speed 43.2 km/h (jump never sets it), moving + stopped + gaps ≈ active`, s.maxSpeedKmh === 43.2 && Math.abs(s.movingMs + s.stoppedMs + s.gaps.totalMs - s.activeMs) <= 8000 /* start, stop, pause and jump boundary legs */, `${s.maxSpeedKmh} ${s.movingMs}+${s.stoppedMs}+${s.gaps.totalMs} vs ${s.activeMs}`);
@@ -207,10 +213,37 @@ try {
     await page.click("[data-testid=gps-stop]");
     await page.waitForSelector("[data-testid=gps-results]");
     check(`${T} Real GPS: Stop → results with 0 fixes, no second watchPosition call`, (await watchCalls(page)) === 1 && (await num(page, "[data-testid=gps-r-distance]")) === 0);
+    // Client-side navigation away while a device-mode recording is open: the page's unmount stops it (watch cleared,
+    // session closed), so coming back shows no interrupted recording and no extra watch.
+    await page.click("[data-testid=gps-start]");
+    await page.waitForSelector("[data-testid=gps-stop]");
+    const clearsBefore = await page.evaluate(() => window.__clearCalls);
+    await page.evaluate(() => window.next.router.push("/"));
+    await page.waitForFunction(() => document.querySelector("[data-testid=gps-state]") === null);
+    await page.evaluate(() => window.next.router.push("/gps"));
+    await page.waitForSelector("[data-testid=gps-start]");
+    await settle(400);
+    check(`${T} Real GPS: navigating away unmounts and stops the recorder (watch cleared, no interrupted session on return, watchPosition still 2 calls total)`, (await page.evaluate(() => window.__clearCalls)) === clearsBefore + 1 && (await page.$("[data-testid=gps-interrupted]")) === null && (await watchCalls(page)) === 2 && (await state(page)) === "idle", `clears ${clearsBefore}→${await page.evaluate(() => window.__clearCalls)} calls=${await watchCalls(page)}`);
     await page.click("[data-testid=gps-clear-device]");
     await page.click("[data-testid=gps-clear-confirm]");
     await page.waitForFunction(() => document.querySelector("[data-testid=gps-clear]") === null);
     check(`${T} no page errors, no dialogs`, errors.length === 0, errors.join(" | "));
+    await ctx.close();
+  }
+
+  // End of the synthetic script: a neutral note, not a location error; the recording stays open until Stop.
+  {
+    const ctx = await browser.newContext({ ...devices["iPhone 13"], viewport: { width: 375, height: 812 } });
+    await ctx.addInitScript(SPY);
+    const page = await ctx.newPage();
+    await page.goto(`${B}/gps?speedup=600`);
+    await page.waitForSelector("[data-testid=gps-start]");
+    await page.click("[data-testid=gps-start]");
+    await page.waitForSelector("[data-testid=gps-drive-finished]", { timeout: 20_000 });
+    check("[375px] synthetic drive finished → neutral note ('synthetic drive has finished … Stop'), no GPS error text, still recording", /synthetic drive has finished/.test(await page.textContent("[data-testid=gps-drive-finished]")) && (await page.$("[data-testid=gps-geo-error]")) === null && (await state(page)) === "recording" && (await page.$eval("[data-testid=gps-drive-finished]", (el) => el.className.includes("info"))));
+    await page.click("[data-testid=gps-stop]");
+    await page.waitForSelector("[data-testid=gps-results]");
+    check("[375px] finished drive → results for the whole script (≈ 26 min moving, 4 stops)", /^4 ·/.test(await page.textContent("[data-testid=gps-r-stops]")) && (await num(page, "[data-testid=gps-r-distance]")) > 19);
     await ctx.close();
   }
 

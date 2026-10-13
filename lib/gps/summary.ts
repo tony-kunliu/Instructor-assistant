@@ -1,6 +1,6 @@
 // Pure track summary: what a lesson would keep from a recording (numbers only). No I/O, no coordinates in the
 // output — the only coordinate-bearing field is `specialPoints`, reserved and always EMPTY in this step.
-// Design: docs/superpowers/specs/2026-10-13-gps-tracking-design.md (Tony's decisions §11: 150 m start/end
+// Design: docs/superpowers/specs/2026-10-13-gps-tracking-design.md (Tony's decisions §7: 150 m start/end
 // trimming on by default; GPS distance is diagnostic, the odometer stays official).
 import { detectGaps, GAP_MS, GOOD_ACCURACY_M, haversineM, hiddenPeriods, MAX_PLAUSIBLE_MS, pausedPeriods, suspensionPeriods, type Period } from "./analysis.ts";
 import type { Fix, SessionData } from "./types.ts";

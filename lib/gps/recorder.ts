@@ -4,7 +4,7 @@
 // synthetic driver on the page (no location API touched) and against real APIs on the phone.
 import { analyzeSession, GAP_MS, GOOD_ACCURACY_M, haversineM, MAX_PLAUSIBLE_MS, type Report } from "./analysis.ts";
 import type { SampleStore } from "./store.ts";
-import type { EventType, Fix, Pause, SessionEnv, SessionMeta, TrackEvent, Visibility } from "./types.ts";
+import { SYNTHETIC_DRIVE_FINISHED, type EventType, type Fix, type Pause, type SessionEnv, type SessionMeta, type TrackEvent, type Visibility } from "./types.ts";
 
 export type GeoPositionLike = { timestamp: number; coords: { latitude: number; longitude: number; accuracy: number; speed: number | null; heading: number | null } };
 export type GeoErrorLike = { code: number; message: string };
@@ -158,6 +158,7 @@ export class Recorder {
     this.pendingSamples = [];
     this.pendingEvents = [];
     await this.#putMeta();
+    if (this.state !== "recording") return; // stop() raced the first write: nothing to install
     this.event("start");
 
     this.offs.push(deps.doc.onVisibility(() => this.#onVisibility()));
@@ -285,6 +286,12 @@ export class Recorder {
     if (!wakeLock || this.state !== "recording" || this.sentinel) return;
     try {
       const sentinel = await wakeLock.request();
+      // Pause / Stop, or a second visibility flip, may have run while we awaited: never keep a lock we no longer want
+      // and never orphan a second sentinel.
+      if (this.state !== "recording" || this.sentinel) {
+        try { await sentinel.release(); } catch { /* already released */ }
+        return;
+      }
       this.sentinel = sentinel;
       this.wakeLockState = "held";
       this.event("wakelock", "acquired");
@@ -376,6 +383,7 @@ export async function recoverSession(store: SampleStore, id: string, now: number
 /** Plain words for a geolocation error, iPhone first (codes per the Geolocation API). */
 export function describeGeoError(e: GeoErrorLike | null): string | null {
   if (!e) return null;
+  if (e.message === SYNTHETIC_DRIVE_FINISHED) return "The synthetic drive has finished. Tap Stop to see the results.";
   switch (e.code) {
     case 1: return "Location permission was refused. Check Settings › Privacy & Security › Location Services › Safari (or the Home Screen app) and allow While Using.";
     case 2: return "Location is unavailable right now (no GPS signal, or Location Services is off). Recording continues and picks up when fixes return.";
