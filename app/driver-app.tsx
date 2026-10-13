@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   decimalHours,
   distanceKm,
@@ -16,6 +16,7 @@ import {
 } from "@/lib/calc.ts";
 import { CORE_COMPETENCY_IDS, FINAL_DRIVE_23, REVIEW_1_17, REVIEW_1_22, invalidationNotice, type AssessmentResult, type LearnerProgress, type MilestoneInvalidation } from "@/lib/competency.ts";
 import { cardMeta, cardReminders, emptySummary, gateChips, glance, initials, lastLessonLine, listCollapsed, optionLabel, summaryFromProgress, type LearnerListSummary } from "@/lib/learner-card.ts";
+import { derivedStats, learnerHeaderMeta, lessonDateLine, lessonPhase, odometerCarriedNote, showsSaveBar } from "@/lib/lesson-view.ts";
 import { accessLogoutUrl } from "@/lib/access-logout.ts";
 import { ARCHIVE_REASONS, archiveReasonText, MAX_ARCHIVE_NOTE_LENGTH } from "@/lib/archive-reasons.ts";
 import { filterLearners } from "@/lib/learner-filter.ts";
@@ -255,6 +256,14 @@ export default function DriverApp() {
   const [saving, setSaving] = useState(false);
   const [clock, setClock] = useState(() => localNow().time);
   const finishOdoRef = useRef<HTMLInputElement>(null);
+  // End Lesson focuses the finish odometer (keyboard up, as before). Done in a layout effect of the commit that enables
+  // the input — not on a timer — so the focus scroll happens with the End Lesson tap itself and nothing moves afterwards.
+  const focusFinishOdo = useRef(false);
+  useLayoutEffect(() => {
+    if (!focusFinishOdo.current || finishOdoRef.current?.disabled !== false) return;
+    focusFinishOdo.current = false;
+    finishOdoRef.current.focus();
+  });
   // Latest requested learner — lets a slow /api/learners/:id response be dropped if the selection changed meanwhile (e.g. a view switch).
   const selectedRef = useRef("");
 
@@ -392,8 +401,8 @@ export default function DriverApp() {
   };
 
   const endLesson = () => {
+    focusFinishOdo.current = true;
     setDraft((current) => (current ? { ...current, finishTime: localNow().time } : current));
-    window.setTimeout(() => finishOdoRef.current?.focus(), 50);
   };
 
   const discardLesson = () => {
@@ -784,8 +793,10 @@ export default function DriverApp() {
   const startedMinutes = draft ? parseTime(draft.startTime) : null;
   const nowMinutes = parseTime(clock);
   const elapsed = startedMinutes !== null && nowMinutes !== null && nowMinutes >= startedMinutes ? nowMinutes - startedMinutes : null;
-  const phase: "ready" | "running" | "ended" = !draft?.startTime ? "ready" : !draft.finishTime ? "running" : "ended";
+  const phase = lessonPhase(draft);
   const lessonNo = nextLessonNo(totals);
+  // Big-figure derived values for the odometer block (lib/lesson-view.ts): calculated, never typed.
+  const stats = derivedStats({ totals, liveDuration, liveKm });
   // Prior-instructor records (spec §12) are shown as compact cards, never as editable lessons.
   const history = splitPriorRecords(detail?.lessons ?? []);
   const shownSaveIssues = draft ? currentIssues(saveIssues, draft, "new") : [];
@@ -1168,20 +1179,36 @@ export default function DriverApp() {
       {detail && draft && !addingLearner ? (
         <>
           <section className="card summary">
-            <div className="summary-main">
-              <small>{detail.learner.fullName}</small>
-              <strong data-testid="lesson-no">{panel === "completed" ? "CBT&A Completed" : `Lesson #${lessonNo}`}</strong>
+            {/* Learner header (redesign): identity, the next lesson number, the 22-segment progress bar with the derived totals and
+                the three gate chips — the same figures and statuses as before, from the same progress/totals. */}
+            <div className="summary-head" data-testid="learner-header">
+              <div className="summary-main">
+                <span className="lc-avatar" aria-hidden="true">{initials(detail.learner.fullName)}</span>
+                <div className="summary-id">
+                  <small className="summary-name">{detail.learner.fullName}</small>
+                  <span className="summary-meta">{learnerHeaderMeta(detail.learner)}</span>
+                </div>
+                <strong className="summary-next" data-testid="lesson-no">{panel === "completed" ? "CBT&A Completed" : `Lesson #${lessonNo}`}</strong>
+              </div>
+              <div className="lc-prog">
+                <div className="lc-prog-head">
+                  <span>Competencies achieved</span>
+                  <span>
+                    <b data-testid="header-achieved">{detail.progress.achievedCount}</b> of 22 · {totals.lessonCount} {totals.lessonCount === 1 ? "lesson" : "lessons"} ·{" "}
+                    <span data-testid="total-hours">{formatMinutes(totals.totalMinutes)} ({decimalHours(totals.totalMinutes)} h)</span> · <span data-testid="total-km">{totals.totalKm} km</span>
+                  </span>
+                </div>
+                <span className="lc-segs" role="img" aria-label={`${detail.progress.achievedCount} of 22 competencies achieved`}>
+                  {CORE_COMPETENCY_IDS.map((id) => <i key={id} className={detail.progress.competencies[id]?.achieved ? "on" : undefined} />)}
+                </span>
+              </div>
+              <div className="lc-gates" data-testid="header-gates">
+                {gateChips(summaryFromDetail(detail)).map((g) => (
+                  <span key={g.id} className={`lc-chip ${g.state}`} data-gate={g.id} data-state={g.state}>{g.state === "done" ? "✓ " : ""}{g.label}</span>
+                ))}
+              </div>
             </div>
-            <dl className="totals">
-              <div><dt>Hours so far</dt><dd data-testid="total-hours">{formatMinutes(totals.totalMinutes)} <em>({decimalHours(totals.totalMinutes)} h)</em></dd></div>
-              <div><dt>Km so far</dt><dd data-testid="total-km">{totals.totalKm} km</dd></div>
-            </dl>
-            <p className="meta">
-              {[detail.learner.transmission === "manual" ? "Manual" : detail.learner.transmission === "auto" ? "Auto" : null,
-                detail.learner.licenceNumber ? `Licence ${detail.learner.licenceNumber}` : null,
-                detail.learner.licenceExpiry ? `exp ${detail.learner.licenceExpiry}` : null,
-                `ADI ${detail.learner.instructorName}`].filter(Boolean).join(" · ")}
-            </p>
+            <div className="summary-body">
             {licenceReminder ? <RulesReminders reminders={[licenceReminder]} testId="licence-reminder" /> : null}
             {eligibleFromLine ? <RulesReminders reminders={[eligibleFromLine]} testId="c23-from" /> : null}
             <RulesReminders reminders={learnerChecks} testId="learner-checks" />
@@ -1243,6 +1270,7 @@ export default function DriverApp() {
                 </button>
               )
             ) : null}
+            </div>
           </section>
 
           <CompetencyProgressCard progress={detail.progress} completion={detail.completion} invalidated={invalidation} />
@@ -1265,85 +1293,119 @@ export default function DriverApp() {
           ) : null}
 
           {panel !== "active" ? null : (
-          <section className="card lesson">
-            {phase === "ready" ? (
-              <>
-                {panelReminders.length || showBookingLink ? (
-                  <div className="start-reminders" data-testid="start-reminders">
-                    <RulesReminders reminders={panelReminders} testId="panel-reminders" />
-                    {showBookingLink ? <BookingLink /> : null}
+          <section className="card lesson" data-phase={phase}>
+            {/* Lesson status: Start Lesson → running timebar + End Lesson → ended. One primary action per state. */}
+            <div className="lblock lesson-status" data-testid="lesson-status">
+              <div className="card-head"><h2>Lesson #{lessonNo}</h2><small data-testid="lesson-date">{lessonDateLine(draft.lessonDate)}</small></div>
+              {phase === "ready" ? (
+                <>
+                  {panelReminders.length || showBookingLink ? (
+                    <div className="start-reminders" data-testid="start-reminders">
+                      <RulesReminders reminders={panelReminders} testId="panel-reminders" />
+                      {showBookingLink ? <BookingLink /> : null}
+                    </div>
+                  ) : null}
+                  <button type="button" className="btn huge go" onClick={startLesson}>Start Lesson</button>
+                  <p className="phase-note">Date and start time are taken from the clock. Competencies and signatures appear after you start.</p>
+                </>
+              ) : (
+                <div className="timebar">
+                  <div><small>Started</small><strong>{draft.startTime}</strong></div>
+                  <div className={phase === "running" ? "live" : undefined}>
+                    <small>{phase === "running" ? "Elapsed" : "Duration"}</small>
+                    <strong data-testid="duration">{phase === "running" ? (elapsed !== null ? formatMinutes(elapsed) : "—") : liveDuration !== null ? formatMinutes(liveDuration) : "—"}</strong>
                   </div>
-                ) : null}
-                <button type="button" className="btn huge go" onClick={startLesson}>Start Lesson</button>
-              </>
-            ) : (
-              <div className="timebar">
-                <div><small>Started</small><strong>{draft.startTime}</strong></div>
-                <div>
-                  <small>{phase === "running" ? "Elapsed" : "Duration"}</small>
-                  <strong data-testid="duration">{phase === "running" ? (elapsed !== null ? formatMinutes(elapsed) : "—") : liveDuration !== null ? formatMinutes(liveDuration) : "—"}</strong>
+                  <div><small>Finished</small><strong>{draft.finishTime || "—"}</strong></div>
                 </div>
-                <div><small>Finished</small><strong>{draft.finishTime || "—"}</strong></div>
-              </div>
-            )}
-            {phase === "running" ? <button type="button" className="btn huge stop" onClick={endLesson}>End Lesson</button> : null}
-
-            <div className="grid odo">
-              <label className="field"><span>Start odometer (km)</span>
-                <input id="lesson-field-start-odometer" type="text" inputMode="numeric" pattern="[0-9]*" value={draft.startOdometer} onChange={(e) => setField("startOdometer", e.target.value.replace(/\D/g, ""))} placeholder="e.g. 45210" />
-              </label>
-              <label className="field"><span>Finish odometer (km)</span>
-                <input id="lesson-field-finish-odometer" ref={finishOdoRef} type="text" inputMode="numeric" pattern="[0-9]*" value={draft.finishOdometer} onChange={(e) => setField("finishOdometer", e.target.value.replace(/\D/g, ""))} disabled={phase !== "ended"} placeholder={phase === "ended" ? "Enter now" : "After End Lesson"} />
-              </label>
+              )}
+              {phase === "running" ? (
+                <>
+                  <button type="button" className="btn huge stop" onClick={endLesson}>End Lesson</button>
+                  <p className="phase-note">Finish odometer unlocks after End Lesson.</p>
+                </>
+              ) : null}
             </div>
-            {totals.lastFinishOdometer !== null && draft.startOdometer === String(totals.lastFinishOdometer) ? (
-              <p className="hint">Start odometer carried from Lesson #{totals.lessonCount}.</p>
-            ) : null}
-            <p className="derived" data-testid="lesson-km">
-              This lesson: <b>{liveDuration !== null ? formatMinutes(liveDuration) : "—"}</b> · <b>{liveKm !== null ? `${liveKm} km` : "—"}</b>
-              {liveDuration !== null && liveKm !== null ? <> → total <b>{formatMinutes(totals.totalMinutes + liveDuration)}</b> · <b>{totals.totalKm + liveKm} km</b></> : null}
-            </p>
+
+            {/* Odometer + derived values: duration, km, totals and the lesson number are calculated, never typed. */}
+            <div className="lblock odo-block" data-testid="odometer-block">
+              <div className="card-head"><h3>Odometer</h3>{odometerCarriedNote(totals, draft.startOdometer) ? <small className="hint">{odometerCarriedNote(totals, draft.startOdometer)}</small> : null}</div>
+              <div className="grid odo">
+                <label className="field"><span>Start odometer (km)</span>
+                  <input id="lesson-field-start-odometer" type="text" inputMode="numeric" pattern="[0-9]*" value={draft.startOdometer} onChange={(e) => setField("startOdometer", e.target.value.replace(/\D/g, ""))} placeholder="e.g. 45210" />
+                </label>
+                <label className="field"><span>Finish odometer (km)</span>
+                  <input id="lesson-field-finish-odometer" ref={finishOdoRef} type="text" inputMode="numeric" pattern="[0-9]*" value={draft.finishOdometer} onChange={(e) => setField("finishOdometer", e.target.value.replace(/\D/g, ""))} disabled={phase !== "ended"} placeholder={phase === "ended" ? "Enter now" : "After End Lesson"} />
+                </label>
+              </div>
+              <div className="stats" aria-label="Derived values" data-testid="lesson-km">
+                <div className="stat live"><small>This lesson</small><b data-testid="stat-duration">{stats.thisLesson.duration}</b><em data-testid="stat-km">{stats.thisLesson.km}</em></div>
+                <div className="stat"><small>Total after save</small><b data-testid="stat-total">{stats.totalAfter.duration}</b><em>{stats.totalAfter.decimalHours} h · {stats.totalAfter.km}</em></div>
+                <div className="stat"><small>Lesson number</small><b>#{stats.lessonNo}</b><em>calculated</em></div>
+              </div>
+              <p className="hint-note">Duration, km, totals and lesson number are always calculated, never typed.</p>
+              {phase !== "ready" ? (
+                <details className="edit-times group">
+                  <summary>Edit date / times <small>only if the clock was wrong</small></summary>
+                  <div className="inner">
+                    <div className="grid">
+                      <label className="field full"><span>Date</span><input id="lesson-field-date" type="date" value={draft.lessonDate} onChange={(e) => setField("lessonDate", e.target.value)} /></label>
+                      <label className="field"><span>Start time</span><input id="lesson-field-times" type="time" value={draft.startTime} onChange={(e) => setField("startTime", e.target.value)} /></label>
+                      <label className="field"><span>Finish time</span><input type="time" value={draft.finishTime} onChange={(e) => setField("finishTime", e.target.value)} /></label>
+                    </div>
+                  </div>
+                </details>
+              ) : null}
+            </div>
 
             {phase !== "ready" ? (
               <>
-                <div id="lesson-field-competency">
-                <CompetencyPicker
-                  progress={detail.progress}
-                  taughtIds={draft.taughtIds}
-                  assessedIds={draft.assessedIds}
-                  achievedResults={draft.achievedResults}
-                  onChangeTaught={(ids) => setDraft((current) => (current ? { ...current, taughtIds: ids } : current))}
-                  onChangeAssessed={(ids) => setDraft((current) => (current ? withAssessed(current, ids) : current))}
-                  onChangeAchieved={(results) => setDraft((current) => (current ? { ...current, achievedResults: results } : current))}
-                />
+                <div className="lblock" id="lesson-field-competency" data-testid="competency-block">
+                  <div className="card-head"><h3>Competencies</h3><small>Tap a number · official CBT&amp;A list</small></div>
+                  <CompetencyPicker
+                    progress={detail.progress}
+                    taughtIds={draft.taughtIds}
+                    assessedIds={draft.assessedIds}
+                    achievedResults={draft.achievedResults}
+                    onChangeTaught={(ids) => setDraft((current) => (current ? { ...current, taughtIds: ids } : current))}
+                    onChangeAssessed={(ids) => setDraft((current) => (current ? withAssessed(current, ids) : current))}
+                    onChangeAchieved={(results) => setDraft((current) => (current ? { ...current, achievedResults: results } : current))}
+                  />
                 </div>
-                <RulesReminders reminders={formReminders} testId="form-reminders" />
-                {draft.assessedIds.includes(FINAL_DRIVE_23) ? (
-                  <RouteCheckGroup state={routeState} home={home} achieved23={draft.achievedResults[FINAL_DRIVE_23] === "achieved"} fits={fitsRoute(draft)} inHistoryEdit={false} onChange={(next) => setDraft((current) => (current ? withRoute(current, next) : current))} testId="route-group" />
+                {formReminders.length || draft.assessedIds.includes(FINAL_DRIVE_23) ? (
+                  <div className="lblock" data-testid="reminders-block">
+                    <RulesReminders reminders={formReminders} testId="form-reminders" />
+                    {draft.assessedIds.includes(FINAL_DRIVE_23) ? (
+                      <RouteCheckGroup state={routeState} home={home} achieved23={draft.achievedResults[FINAL_DRIVE_23] === "achieved"} fits={fitsRoute(draft)} inHistoryEdit={false} onChange={(next) => setDraft((current) => (current ? withRoute(current, next) : current))} testId="route-group" />
+                    ) : null}
+                  </div>
                 ) : null}
 
-                <div className="grid">
-                  <label className="field full"><span>Location</span><input value={draft.location} onChange={(e) => setField("location", e.target.value)} placeholder="Belconnen, Gungahlin…" /></label>
-                  <label className="field full"><span>Comments</span><textarea rows={2} value={draft.comments} onChange={(e) => setField("comments", e.target.value)} /></label>
+                <div className="lblock" data-testid="notes-block">
+                  <div className="grid">
+                    <label className="field full"><span>Location</span><input value={draft.location} onChange={(e) => setField("location", e.target.value)} placeholder="Belconnen, Gungahlin…" /></label>
+                    <label className="field full"><span>Comments</span><textarea rows={2} value={draft.comments} onChange={(e) => setField("comments", e.target.value)} /></label>
+                  </div>
                 </div>
 
-                <details className="edit-times">
-                  <summary>Edit date / times</summary>
-                  <div className="grid">
-                    <label className="field full"><span>Date</span><input id="lesson-field-date" type="date" value={draft.lessonDate} onChange={(e) => setField("lessonDate", e.target.value)} /></label>
-                    <label className="field"><span>Start time</span><input id="lesson-field-times" type="time" value={draft.startTime} onChange={(e) => setField("startTime", e.target.value)} /></label>
-                    <label className="field"><span>Finish time</span><input type="time" value={draft.finishTime} onChange={(e) => setField("finishTime", e.target.value)} /></label>
+                <div className="lblock" data-testid="signatures-block">
+                  <div className="card-head"><h3>Signatures</h3><small>both required to save</small></div>
+                  <div className="sigs">
+                    <div id="lesson-field-adi-signature"><SignaturePad label="ADI signature" value={draft.adiSignature} onChange={(value) => setField("adiSignature", value)} /></div>
+                    <div id="lesson-field-learner-signature"><SignaturePad label="Learner signature" value={draft.learnerSignature} onChange={(value) => setField("learnerSignature", value)} /></div>
                   </div>
-                </details>
-
-                <div id="lesson-field-adi-signature"><SignaturePad label="ADI signature" value={draft.adiSignature} onChange={(value) => setField("adiSignature", value)} /></div>
-                <div id="lesson-field-learner-signature"><SignaturePad label="Learner signature" value={draft.learnerSignature} onChange={(value) => setField("learnerSignature", value)} /></div>
+                </div>
 
                 <SaveErrorSummary issues={shownSaveIssues} prefix="lesson" attempt={saveAttempt} />
-                <button type="button" className="btn huge save" disabled={saving || phase !== "ended"} onClick={() => void saveLesson()}>
-                  {saving ? "Saving…" : phase !== "ended" ? "Save (tap End Lesson first)" : `Save Lesson #${lessonNo}`}
-                </button>
-                <button type="button" className="link danger" onClick={discardLesson}>Discard this lesson</button>
+                {showsSaveBar(phase) ? (
+                  <div className="lesson-actions" data-testid="lesson-actions">
+                    <button type="button" className="btn save" disabled={saving} onClick={() => void saveLesson()}>
+                      {saving ? "Saving…" : `Save Lesson #${lessonNo}`}
+                    </button>
+                    <button type="button" className="link danger" onClick={discardLesson}>Discard this lesson</button>
+                  </div>
+                ) : (
+                  <button type="button" className="link danger lesson-discard" onClick={discardLesson}>Discard this lesson</button>
+                )}
               </>
             ) : null}
           </section>

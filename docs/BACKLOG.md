@@ -1,6 +1,6 @@
 # Backlog
 
-_Last updated: 2026-10-12. Not an authorization: every item still needs Tony's
+_Last updated: 2026-10-13. Not an authorization: every item still needs Tony's
 go-ahead and ends with a stop (AGENTS.md §11). The longer-term two-repo
 direction is in `docs/ECOSYSTEM_ROADMAP.md` (P1–P6)._
 
@@ -91,8 +91,15 @@ Long term (ecosystem, coordinated with Work on actgds.com Issue #3):
 - Extras beyond the concept for Tony to confirm (review M7-M9): global reduced-motion rule,
   `--font-ui` stack (adds "PingFang SC"), the glance line, the "Instructor <name>" chip in All /
   Archived, the C23-from and licence-expiry chips, the collapsed list + "Show all learners".
-- Follow-ups: migrate the lesson, history, PDF-export and form cards to the tokens (full dark
-  theme; today they stay light islands); the concept's "36 h not yet logged" chip was NOT built
+- Lesson record redesign (branch `feature/ui-lesson-record`, concept screen A approved 2026-10-12,
+  Tony's decisions: number-only chips; Save only after End Lesson; Transfer/Archive stay where they
+  are for now): done on the branch. Follow-ups from it: (1) concept screen B — learner form in
+  Student / Address / Licence sections with Transfer and Archive folded into a "More" section of the
+  EDIT form (separate task, Tony's decision 3); (2) the History panel and the learner form got
+  colour harmonisation only (legacy tokens now alias the shared ones), their layout is unchanged;
+  (3) the progress card still repeats the header's segments/gates (kept for its legend, invalidation
+  warning and Completed banner) — fold or drop it only on Tony's say-so.
+- Follow-ups: the concept's "36 h not yet logged" chip was NOT built
   (R1 needs each learner's lessons, not in the list payload); "Instructor <name>" chip shows
   only in All / Archived; the list collapses to the open learner's card ("Show all learners")
   so the lesson form stays one scroll away on a phone.

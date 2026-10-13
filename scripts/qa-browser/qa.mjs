@@ -50,7 +50,7 @@ const shot = (page, name) => page.screenshot({ path: `${OUT}/${name}.png`, fullP
 async function signBoth(page) {
   for (const canvas of await page.$$(".sig canvas")) {
     await canvas.scrollIntoViewIfNeeded();
-    // End Lesson focuses the finish-odometer input 50 ms later (app behaviour), which scrolls the page after the canvas was
+    // End Lesson focuses the finish-odometer input (app behaviour), which can scroll the page after the canvas was
     // positioned: draw only once the canvas box has been still for two consecutive reads, or the strokes land beside it.
     let b = await canvas.boundingBox();
     for (let i = 0, still = 0; i < 60 && still < 2; i++) { await settle(60); const n = await canvas.boundingBox(); still = n && b && n.x === b.x && n.y === b.y ? still + 1 : 0; b = n; }
@@ -1612,6 +1612,10 @@ const draw = async (page, index) => {
     check(`iPad ${tag}: learner panel, no horizontal scroll`, await noHScroll(page));
     check(`iPad ${tag}: Start Lesson ≥44px and visible`, await tall(page, ".btn.go"));
     check(`iPad ${tag}: Edit learner ≥44px and visible`, await tall(page, "[data-testid=edit-learner]"));
+    // Measure at scroll 0 (tall() scrolled): in two columns the ready-state lesson card is sticky (position: sticky now
+    // works, body no longer has overflow-x: hidden), so after a scroll it sits at the viewport top, not in its grid row.
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await settle(200);
     const picker = await box(page, ".card.picker"), lesson = await box(page, ".card.lesson"), hist = await box(page, ".card.history"), progress = await box(page, ".card.progress");
     if (twoCol) {
       check(`iPad ${tag}: two columns — lesson card right of the picker, both at the top`, lesson.x >= picker.right && Math.abs(lesson.y - picker.y) < 4, JSON.stringify({ picker, lesson }));
@@ -1659,7 +1663,7 @@ const draw = async (page, index) => {
       await page.click(".btn.go");
       await page.click("text=End Lesson");
       await page.waitForSelector(".sig canvas");
-      await settle(); // End Lesson focuses the finish odometer after 50ms (may scroll); draw after that
+      await settle(); // End Lesson focuses the finish odometer (may scroll); draw after that
       await signBoth(page);
     }
     if (w === 820) {
@@ -2221,6 +2225,146 @@ const draw = async (page, index) => {
   await s.page.waitForFunction(() => document.querySelector(".topbar").getBoundingClientRect().left > 0);
   check("cards 900px: top bar is a rounded island the width of the content (not full-bleed, not stopping at the column edge)", await s.page.evaluate(() => { const bar = document.querySelector(".topbar").getBoundingClientRect(); const list = document.querySelector(".card.picker").getBoundingClientRect(); return bar.left > 0 && Math.abs(bar.left - list.left) < 1 && Math.abs(bar.width - list.width) < 1 && parseFloat(getComputedStyle(document.querySelector(".topbar")).borderTopLeftRadius) >= 12; }) && (await noHScroll(s.page)));
   check("cards: Tony: no page errors", s.errors.length === 0, s.errors.join("|"));
+  await s.ctx.close();
+}
+
+// ═══ 21. Lesson record (UI redesign 2026-10-12): learner header, Start → running → End, Save only after End, derived values, chips, signatures, sticky bar, dark ═══
+{
+  // Dedicated learner: one 90-minute lesson with 1-17 achieved → Review 1-17 ready, 18/20/21 locked, next lesson #2, odometer carried (715).
+  const mkLearner = async (body) => (await (await fetch(`${B}/api/learners`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ instructorId: WHO.tony[0], ...body }) })).json()).learner;
+  const rec = await mkLearner({ fullName: "QA Lesson Record", transmission: "auto", licenceNumber: "LR12345", licenceExpiry: "2027-03-14" });
+  await postLesson(rec.id, { lessonDate: "2026-09-22", startTime: "09:00", finishTime: "10:30", startOdometer: "700", finishOdometer: "715", assessedIds: Array.from({ length: 17 }, (_, i) => String(i + 1)), achievedResults: Object.fromEntries(Array.from({ length: 17 }, (_, i) => [String(i + 1), "achieved"])), adiSignature: SIG, learnerSignature: SIG });
+  const rgb = (page, sel, prop = "backgroundColor") => page.$eval(sel, (e, p) => getComputedStyle(e)[p], prop);
+  const barState = (page) => page.$eval("[data-testid=lesson-actions]", (e) => { const r = e.getBoundingClientRect(); return { position: getComputedStyle(e).position, bottom: r.bottom, inner: window.innerHeight, h: r.height }; });
+  const minFont = (page, scope) => page.evaluate((s) => Math.min(...[...document.querySelectorAll(`${s} *`)].filter((e) => e.textContent.trim() && !e.children.length && getComputedStyle(e).display !== "none").map((e) => parseFloat(getComputedStyle(e).fontSize))), scope);
+  const noLightIslands = (page) => page.$$eval(".card.summary, .card.progress, .card.history, .lblock, .summary-head, .summary-body", (es) => es.length > 0 && es.every((e) => { const c = getComputedStyle(e).backgroundColor; return c !== "rgb(255, 255, 255)" && c !== "rgba(0, 0, 0, 0)" || e.classList.contains("summary-body"); }));
+
+  const s = await session("tony");
+  await s.page.setViewportSize({ width: 375, height: 812 });
+  await ready(s.page);
+  await pick(s.page, "QA Lesson Record");
+  await s.page.waitForSelector(".card.lesson");
+  // Header: identity, next lesson number, derived totals, 22 segments (17 lit), gate chips next/locked/locked — same figures as before.
+  const header = await s.page.$eval(".card.summary", (c) => ({
+    bg: getComputedStyle(c.querySelector(".summary-head")).backgroundColor, name: c.querySelector(".summary-main small").textContent, meta: c.querySelector(".summary-meta").textContent,
+    lessonNo: c.querySelector("[data-testid=lesson-no]").textContent, hours: c.querySelector("[data-testid=total-hours]").textContent, km: c.querySelector("[data-testid=total-km]").textContent,
+    achieved: c.querySelector("[data-testid=header-achieved]").textContent, on: c.querySelectorAll(".lc-segs i.on").length, segs: c.querySelectorAll(".lc-segs i").length,
+    gates: [...c.querySelectorAll("[data-testid=header-gates] [data-gate]")].map((g) => g.dataset.state), initials: c.querySelector(".lc-avatar").textContent,
+    editLearner: c.querySelector("[data-testid=edit-learner]") !== null, transfer: c.querySelector("[data-testid=transfer-open]") !== null, archive: c.querySelector(".archive-link") !== null, integration: c.textContent.includes("Integration ID"),
+  }));
+  check("lesson 375px: navy learner header with name, meta (Auto · Licence · exp Canberra date · ADI), Lesson #2, initials", header.bg === "rgb(11, 27, 43)" && header.name === "QA Lesson Record" && header.meta === "Auto · Licence LR12345 · exp 14 Mar 2027 · ADI Tony" && header.lessonNo === "Lesson #2" && header.initials === "QL", JSON.stringify(header));
+  check("lesson 375px: header totals are the derived ones (1h 30m, 15 km), 17 of 22 segments lit, gates next/locked/locked", header.hours.startsWith("1h 30m") && header.km === "15 km" && header.achieved === "17" && header.on === 17 && header.segs === 22 && header.gates.join() === "next,locked,locked", JSON.stringify(header));
+  check("lesson 375px: Edit learner, Transfer, Archive and the Integration ID stay in the header card (Transfer/Archive move later, separate task)", header.editLearner && header.transfer && header.archive && header.integration);
+  // Ready: one primary action (Start Lesson), no Save anywhere, no competencies yet, finish odometer locked, derived values dashed.
+  const readyState = await s.page.evaluate(() => ({
+    go: document.querySelector(".btn.go")?.getBoundingClientRect().height ?? 0, save: document.querySelector(".btn.save") !== null, bar: document.querySelector("[data-testid=lesson-actions]") !== null,
+    chips: document.querySelectorAll(".chip").length, finishDisabled: document.getElementById("lesson-field-finish-odometer").disabled, startValue: document.getElementById("lesson-field-start-odometer").value,
+    dur: document.querySelector("[data-testid=stat-duration]").textContent, km: document.querySelector("[data-testid=stat-km]").textContent, total: document.querySelector("[data-testid=stat-total]").textContent,
+    carried: document.querySelector("[data-testid=odometer-block] .card-head small")?.textContent ?? "", lessonNo: document.querySelector("[data-testid=lesson-status] h2").textContent, dateLine: document.querySelector("[data-testid=lesson-date]").textContent,
+  }));
+  check("lesson 375px READY: Start Lesson ≥44px, NO Save button or action bar, no competency chips, finish odometer locked", readyState.go >= 44 && !readyState.save && !readyState.bar && readyState.chips === 0 && readyState.finishDisabled, JSON.stringify(readyState));
+  check("lesson 375px READY: odometer carried (715, 'Start carried from Lesson #1'), derived values dashed, total after save = today's total, 'Lesson #2' + weekday date line", readyState.startValue === "715" && readyState.carried === "Start carried from Lesson #1" && readyState.dur === "—" && readyState.km === "—" && readyState.total === "1h 30m" && readyState.lessonNo === "Lesson #2" && /^(Mon|Tue|Wed|Thu|Fri|Sat|Sun) \d{1,2} [A-Z][a-z]{2} \d{4}$/.test(readyState.dateLine), JSON.stringify(readyState));
+  check("lesson 375px READY: no horizontal scroll", await noHScroll(s.page));
+
+  // Running: timebar with a live Elapsed cell, End Lesson, competencies, still NO Save (Tony's decision 2), Discard still offered.
+  await s.page.click(".btn.go");
+  await s.page.waitForSelector(".timebar");
+  const running = await s.page.evaluate(() => ({
+    live: document.querySelector(".timebar .live small")?.textContent, end: [...document.querySelectorAll(".btn.stop")].some((b) => b.textContent === "End Lesson"),
+    save: document.querySelector(".btn.save") !== null, bar: document.querySelector("[data-testid=lesson-actions]") !== null, saveText: [...document.querySelectorAll("button")].some((b) => /Save/.test(b.textContent)),
+    numberChips: document.querySelectorAll(".chip-row.numbers .chip").length, chipsTall: [...document.querySelectorAll(".chip")].every((c) => c.getBoundingClientRect().height >= 44), chipsNumbersOnly: [...document.querySelectorAll(".chip-row.numbers .chip")].every((c) => /^\d{1,2}$/.test(c.textContent)),
+    specials: [...document.querySelectorAll(".chip-row.special .chip.wide")].map((b) => `${b.querySelector("span").textContent}:${b.querySelector(".gate-tag").dataset.state}:${b.disabled ? "disabled" : "enabled"}`),
+    locked18: document.querySelector('.comp-section:has(.comp-label) .chip-row.numbers .chip[data-locked]') !== null, discard: [...document.querySelectorAll("button")].some((b) => b.textContent === "Discard this lesson"), finishDisabled: document.getElementById("lesson-field-finish-odometer").disabled,
+  }));
+  check("lesson 375px RUNNING: live 'Elapsed' cell, End Lesson offered, finish odometer still locked", running.live === "Elapsed" && running.end && running.finishDisabled, JSON.stringify(running));
+  check("lesson 375px RUNNING: Save is NOT shown before End Lesson (no greyed-out Save, no action bar), Discard still available", !running.save && !running.bar && !running.saveText && running.discard, JSON.stringify(running));
+  check("lesson 375px RUNNING: 2 × 22 number-only chips ≥44px, specials read Review 1-17 ready / Review 1-22 locked / 23 Final Drive locked, 18 carries the lock", running.numberChips === 44 && running.chipsTall && running.chipsNumbersOnly && running.specials.join("|") === "Review 1-17:next:enabled|Review 1-22:locked:disabled|23 Final Drive:locked:disabled" && running.locked18, JSON.stringify(running));
+  await s.page.click('.comp-section:has(.comp-label:text-is("Taught")) .chip-row >> text="18"'); // 18 can be Taught before Review 1-17 (3 is already achieved → disabled)
+  check("lesson 375px RUNNING: no horizontal scroll", await noHScroll(s.page));
+  await shot(s.page, "21-lesson-375-running-light");
+  await s.page.emulateMedia({ colorScheme: "dark" });
+  await settle(200);
+  check("lesson 375px RUNNING dark: no horizontal scroll, header/blocks switch with the tokens", (await noHScroll(s.page)) && (await rgb(s.page, ".summary-head")) === "rgb(5, 13, 20)" && (await rgb(s.page, ".lblock")) === "rgb(16, 31, 45)");
+  await shot(s.page, "21-lesson-375-running-dark");
+  await s.page.emulateMedia({ colorScheme: "light" });
+  // Data safety: a reload mid-lesson keeps the running lesson and its selections (per-device draft, as before).
+  await s.page.reload(); await ready(s.page);
+  await s.page.waitForSelector(".timebar");
+  check("lesson 375px RUNNING: reload keeps the lesson running with Taught 18 still selected (draft kept on this device)", (await s.page.$eval(".card.lesson", (e) => e.dataset.phase)) === "running" && (await s.page.getAttribute('.comp-section:has(.comp-label:text-is("Taught")) .chip-row >> text="18"', "aria-pressed")) === "true");
+
+  // Ended: Save Lesson #2 appears in a sticky bar pinned to the bottom (safe-area padding), finish odometer unlocked + focused.
+  await s.page.click("text=End Lesson");
+  await s.page.waitForSelector("[data-testid=lesson-actions]");
+  const focused = await s.page.waitForFunction(() => document.activeElement?.id === "lesson-field-finish-odometer", null, { timeout: 3000 }).then(() => true, () => false);
+  check("lesson 375px ENDED: finish odometer unlocked and focused (unchanged End Lesson behaviour)", focused && !(await s.page.locator("#lesson-field-finish-odometer").isDisabled()));
+  check("lesson 375px ENDED: while an input has focus (keyboard) the action bar drops into the flow (never covers the field)", (await barState(s.page)).position === "static");
+  await s.page.evaluate(() => document.activeElement?.blur());
+  // With the lesson section's top on screen (and its bottom far below), the bar must sit exactly at the viewport bottom.
+  await s.page.evaluate(() => document.querySelector(".card.lesson").scrollIntoView({ block: "start" }));
+  await settle(150);
+  const bar = await barState(s.page);
+  check("lesson 375px ENDED: 'Save Lesson #2' in a sticky bar pinned to the viewport bottom, ≥44px, with the Discard link beside it", bar.position === "sticky" && Math.abs(bar.bottom - bar.inner) < 1 && (await s.page.textContent(".btn.save")) === "Save Lesson #2" && (await s.page.locator(".btn.save").boundingBox()).height >= 44 && (await s.page.textContent("[data-testid=lesson-actions] .link.danger")) === "Discard this lesson", JSON.stringify(bar));
+  check("lesson 375px ENDED: the action bar reserves the iPhone safe area (env(safe-area-inset-bottom) in its padding rule)", await s.page.evaluate(() => [...document.styleSheets].flatMap((sh) => { try { return [...sh.cssRules]; } catch { return []; } }).some((r) => r.selectorText === ".lesson-actions" && r.cssText.includes("safe-area-inset-bottom"))));
+  await s.page.focus("textarea");
+  check("lesson 375px ENDED: focusing Comments (keyboard) un-pins the bar; blurring pins it again", (await barState(s.page)).position === "static" && (await s.page.evaluate(() => { document.activeElement?.blur(); return true; })) && (await barState(s.page)).position === "sticky");
+  // Derived values follow the inputs: 715 → 730 and 09:00 → 10:30 give 15 km, 1h 30m, total 3h; nothing is typed for them.
+  await s.page.fill("#lesson-field-finish-odometer", "730");
+  await s.page.click(".edit-times summary");
+  await s.page.fill('.edit-times input[type="time"] >> nth=0', "09:00");
+  await s.page.fill('.edit-times input[type="time"] >> nth=1', "10:30");
+  const derived = await s.page.evaluate(() => ({ dur: document.querySelector("[data-testid=stat-duration]").textContent, km: document.querySelector("[data-testid=stat-km]").textContent, total: document.querySelector("[data-testid=stat-total]").textContent, timebar: document.querySelector("[data-testid=duration]").textContent, inputs: document.querySelectorAll("[data-testid=odometer-block] input").length, headerHours: document.querySelector("[data-testid=total-hours]").textContent }));
+  check("lesson 375px ENDED: derived values (1h 30m, 15 km, total after save 3h) with only the 2 odometer + 3 date/time inputs; header totals unchanged until save", derived.dur === "1h 30m" && derived.km === "15 km" && derived.total === "3h" && derived.timebar === "1h 30m" && derived.inputs === 5 && derived.headerHours.startsWith("1h 30m"), JSON.stringify(derived));
+  // Gates and results: Review 1-17 (ready) can be assessed, its result row shows the official name; 18 stays locked, 19 is free.
+  await s.page.click(".chip-row.special >> text=/Review 1-17/");
+  await s.page.waitForSelector(".result-list li");
+  const row = await s.page.$eval(".result-list li", (li) => ({ name: li.querySelector(".result-name").firstChild.textContent, full: li.querySelector(".result-name small").textContent, buttons: [...li.querySelectorAll(".result-buttons .btn")].map((b) => `${b.textContent}:${Math.round(b.getBoundingClientRect().height)}`) }));
+  check("lesson 375px ENDED: result row 'Review 1-17' with the official name and Achieved / Not achieved ≥44px", row.name === "Review 1-17" && row.full === "The student demonstrates Competencies 1 to 17" && row.buttons.every((b) => Number(b.split(":")[1]) >= 44) && row.buttons.map((b) => b.split(":")[0]).join() === "Achieved,Not achieved", JSON.stringify(row));
+  await s.page.click('.result-list li:has-text("Review 1-17") >> text="Achieved"');
+  check("lesson 375px ENDED: Achieved pressed; reminders block shows the Review 1-17 36 h line; 18 locked, 19 free", (await s.page.getAttribute('.result-list li >> text="Achieved"', "aria-pressed")) === "true" && (await s.page.$("[data-testid=reminders-block] [data-testid=form-reminders] .reminder[data-rule^=r1]")) !== null && (await s.page.locator('.comp-section:has(.comp-label:text-is("Assessed")) .chip-row.numbers >> button:text-is("18")').isDisabled()) && !(await s.page.locator('.comp-section:has(.comp-label:text-is("Assessed")) .chip-row.numbers >> button:text-is("19")').isDisabled()));
+  await signBoth(s.page);
+  check("lesson 375px ENDED: both pads signed (green solid border via canvas.signed, 'Signed ✓'), fixed 640×320", (await s.page.$$eval(".sig canvas.signed", (cs) => cs.length)) === 2 && (await s.page.$$(".sig-ok")).length === 2 && (await s.page.$$eval(".sig canvas", (cs) => cs.every((c) => c.width === 640 && c.height === 320))));
+  check("lesson 375px ENDED: no horizontal scroll, no text under 12px in the lesson or header", (await noHScroll(s.page)) && (await minFont(s.page, ".card.lesson")) >= 12 && (await minFont(s.page, ".card.summary")) >= 12, `${await minFont(s.page, ".card.lesson")} / ${await minFont(s.page, ".card.summary")}`);
+  await s.page.evaluate(() => window.scrollTo(0, 0));
+  await shot(s.page, "21-lesson-375-ended-light");
+  await s.page.emulateMedia({ colorScheme: "dark" });
+  await settle(200);
+  const dark = await s.page.evaluate(() => ({
+    body: getComputedStyle(document.body).backgroundColor, head: getComputedStyle(document.querySelector(".summary-head")).backgroundColor, block: getComputedStyle(document.querySelector(".lblock")).backgroundColor,
+    chip: getComputedStyle(document.querySelector(".chip-row.numbers .chip:not(.achieved):not(.selected)")).color, input: getComputedStyle(document.getElementById("lesson-field-finish-odometer")).backgroundColor, inputText: getComputedStyle(document.getElementById("lesson-field-finish-odometer")).color,
+    pad: getComputedStyle(document.querySelector(".sig canvas")).backgroundColor, save: getComputedStyle(document.querySelector(".btn.save")).backgroundColor, progress: getComputedStyle(document.querySelector(".card.progress")).backgroundColor, history: getComputedStyle(document.querySelector(".card.history")).backgroundColor,
+  }));
+  check("lesson 375px ENDED dark: paper, header, blocks, chips, inputs, progress and history all switch; pads stay light for the pen", dark.body === "rgb(9, 19, 28)" && dark.head === "rgb(5, 13, 20)" && dark.block === "rgb(16, 31, 45)" && dark.chip === "rgb(238, 233, 220)" && dark.input === "rgb(16, 31, 45)" && dark.inputText === "rgb(238, 233, 220)" && dark.pad === "rgb(238, 233, 220)" && dark.save === "rgb(216, 174, 85)" && dark.progress === "rgb(16, 31, 45)" && dark.history === "rgb(16, 31, 45)", JSON.stringify(dark));
+  check("lesson 375px ENDED dark: no light islands among the open learner's cards and blocks", await noLightIslands(s.page));
+  check("lesson 375px ENDED dark: no horizontal scroll", await noHScroll(s.page));
+  await shot(s.page, "21-lesson-375-ended-dark");
+  await s.page.emulateMedia({ colorScheme: "light" });
+  // Save: the same POST as before (status line, header totals 3h / 30 km, fresh ready lesson #3, no action bar).
+  await s.page.click(".btn.save");
+  await s.page.waitForSelector('.status:has-text("saved")');
+  check("lesson 375px: Save Lesson posts as before — 'Lesson #2 saved', header totals 3h · 30 km, Lesson #3 ready, Save gone", (await s.page.textContent(".status")).includes("Lesson #2 saved") && (await s.page.textContent("[data-testid=total-hours]")).startsWith("3h") && (await s.page.textContent("[data-testid=total-km]")) === "30 km" && (await s.page.textContent("[data-testid=lesson-no]")) === "Lesson #3" && (await s.page.$("[data-testid=lesson-actions]")) === null && (await s.page.$(".btn.go")) !== null);
+  check("lesson 375px: header gate chip Review 1-17 now done (progress recomputed from the saved lesson)", (await s.page.$$eval("[data-testid=header-gates] [data-gate]", (gs) => gs.map((g) => g.dataset.state))).join() === "done,locked,locked");
+  check("lesson: Tony: no page errors", s.errors.length === 0, s.errors.join("|"));
+
+  // 820px tablet: two pads side by side, chips ≥44px, sticky bar, no horizontal scroll.
+  await s.page.setViewportSize({ width: 820, height: 1180 });
+  await s.page.reload(); await ready(s.page);
+  await s.page.waitForSelector(".card.lesson");
+  await s.page.click(".btn.go");
+  await s.page.click("text=End Lesson");
+  await s.page.waitForSelector("[data-testid=lesson-actions]");
+  await s.page.waitForFunction(() => document.activeElement?.id === "lesson-field-finish-odometer", null, { timeout: 3000 }).catch(() => {});
+  await s.page.evaluate(() => document.activeElement?.blur());
+  await s.page.evaluate(() => document.querySelector(".card.lesson").scrollIntoView({ block: "start" }));
+  await settle(200);
+  const pads = await s.page.$$eval(".sig canvas", (cs) => cs.map((c) => { const r = c.getBoundingClientRect(); return { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height) }; }));
+  check("lesson 820px: the two signature pads stay stacked and full width (each ≥300×180, the tablet minimum of section 17)", pads.length === 2 && pads[1].y > pads[0].y + pads[0].h - 1 && pads.every((p) => p.w >= 300 && p.h >= 180), JSON.stringify(pads));
+  const bar820 = await barState(s.page);
+  check("lesson 820px: chips ≥44px, sticky Save bar pinned to the viewport bottom, no horizontal scroll", (await s.page.$$eval(".chip", (cs) => cs.length > 0 && cs.every((c) => c.getBoundingClientRect().height >= 44))) && bar820.position === "sticky" && Math.abs(bar820.bottom - bar820.inner) < 1 && (await noHScroll(s.page)), JSON.stringify(bar820));
+  await s.page.evaluate(() => window.scrollTo(0, 0));
+  await shot(s.page, "21-lesson-820-ended");
+  await s.page.click("text=Discard this lesson");
+  await s.page.waitForSelector(".btn.go");
+  check("lesson 820px: Discard returns to the ready state (Start Lesson, no bar)", (await s.page.$("[data-testid=lesson-actions]")) === null);
   await s.ctx.close();
 }
 

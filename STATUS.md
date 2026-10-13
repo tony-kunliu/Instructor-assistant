@@ -1,6 +1,6 @@
 # STATUS.md
 
-_Last updated: 2026-10-12_ (Production and Staging D1 at migration `0012`; release #14 live)
+_Last updated: 2026-10-13_ (Production and Staging D1 at migration `0012`; release #14 live)
 
 This file describes **current state only**. History lives in git log and
 closed PRs; see `TASK.md` for what is in progress.
@@ -20,12 +20,13 @@ closed PRs; see `TASK.md` for what is in progress.
 - **Real-device / Tony checks:** iPad layout accepted on a real iPad ("iPad 可以"); route
   reminders and the address suggestions (iOS "Scan Text" callout, list vs keyboard) tested
   on Staging, reported OK by Tony ("测试都没问题"), not automated evidence.
-- **On a branch, not merged:** `feature/ui-learner-list` (learner list redesign approved by
-  Tony 2026-10-12): tokens + navy top bar + learner cards; `GET /api/learners` now also returns
-  `summaries` (one set-based aggregate bounded to the requested learners, list GET = 2 D1
-  statements; the background archived fetch skips it with `summaries=0`); no migration, contract
-  untouched; qa-browser section 20. Two independent reviews (approve with fixes), all fixes
-  applied; evidence on the branch head: tests 660, qa-browser 568/568, build and Memory Guard PASS.
+- **Merged to `staging` (PR #73):** learner list redesign (tokens, navy top bar, learner cards,
+  `GET /api/learners` `summaries`; no migration, contract untouched; qa-browser section 20).
+- **On a branch, not merged:** `feature/ui-lesson-record` (lesson record redesign, concept approved
+  by Tony 2026-10-12): navy learner header (progress bar + gate chips), Start → running → End, Save
+  only after End (sticky bar with safe area), derived-values block, ≥44px number-only competency
+  chips, result rows with official names, two pads in one block; legacy CSS tokens now alias the
+  shared ones (full dark theme, colour only). No migration, no payload change; qa-browser section 21.
 - **Still open:** `scripts/check-signature-row-limits.mjs` not yet run against a deployed
   D1 (Staging only, never Production); notify-tick (lesson notifications) waits for Website
   PR #47 rework and Tony's approval of the new endpoint + secret (Production OFF); intake
@@ -150,9 +151,10 @@ record: `tony-kunliu/actgds.com` Issue #3.
 - Minor learner-edit review follow-ups are in `docs/BACKLOG.md`.
 - `tests/pdf-export-font-subset.test.ts` leaves a `/tmp/font-subset-*` dir (~14 MB
   out.pdf) per run; on shared machines this filled the disk (2026-10-11).
-- Dark theme (branch `feature/ui-learner-list`) covers only the top bar, learner list and
-  footer; the lesson, history and form cards keep their light colours (readable, by design)
-  until they are migrated to the shared tokens.
+- Dark theme on `staging` covers only the top bar, learner list and footer; the lesson, history
+  and form cards keep their light colours until `feature/ui-lesson-record` lands (it aliases the
+  legacy tokens to the shared ones; the learner form / History / archive / transfer panels are
+  then colour-harmonised only, their layout is unchanged).
 
 ## Next
 
