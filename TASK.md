@@ -21,8 +21,9 @@ Reviewed per Handbook §2 L2 (one independent review, arranged by the coordinato
 `/gps` from the Home Screen — Real GPS, 20-30 min with a 5 min screen lock and 5 min in another app, copy the
 summary + feasibility JSON back; the verdict decides web vs native shell. Then phase 2 (lesson hook-in,
 `lesson_tracks` migration, consent record, 90-day Cron, R10 line) only on Tony's separate approval (new table =
-ALWAYS-ASK 1). Still queued: intake P4 (iOS Scan Text + local parser), `docs/tasks` memory scheme, Transfer /
-Archive into the edit form, `scripts/check-signature-row-limits.mjs` on Staging D1.
+ALWAYS-ASK 1). PR #83 (learner form + Transfer / Archive in "More") is merged to `staging` (bc1e0cb) and awaits Tony's phone
+check + Production release. Still queued: intake P4 (iOS Scan Text + local parser), `docs/tasks` memory scheme,
+`scripts/check-signature-row-limits.mjs` on Staging D1.
 
 **Waiting on Other Repo:** ACTGDS: notify-tick waits for Website PR #47 rework and Tony's explicit approval of the
 new endpoint + secret (Production stays OFF). Nothing blocks this repo.

@@ -46,6 +46,13 @@ const pick = async (page, label) => {
   await page.click(cardSel(label));
 };
 const settle = (ms = 400) => new Promise((r) => setTimeout(r, ms));
+// Transfer and Archive live in the Edit learner form's folded "More" (concept screen B, Tony's decision 3, 2026-10-13):
+// open the form (owner only), then the fold. closeForm() leaves the form so the learner's page (cards, header) is back.
+const openMore = async (page) => {
+  if ((await page.$("[data-testid=learner-more]")) === null) { await page.click("[data-testid=edit-learner]"); await page.waitForSelector("[data-testid=learner-more]"); }
+  if (!(await page.$eval("[data-testid=learner-more]", (e) => e.open))) await page.click("[data-testid=learner-more] > summary");
+};
+const closeForm = async (page) => { if (await page.$("[data-testid=cancel-edit-learner]")) { await page.click("[data-testid=cancel-edit-learner]"); await page.waitForSelector("[data-testid=learner-form]", { state: "detached" }); } };
 const shot = (page, name) => page.screenshot({ path: `${OUT}/${name}.png`, fullPage: true });
 async function signBoth(page) {
   for (const canvas of await page.$$(".sig canvas")) {
@@ -164,13 +171,17 @@ try {
   await s.page.fill(".learner-search", "");
 
   await pick(s.page, "QA Tony Bravo");
-  await s.page.waitForSelector(".archive-link");
-  check("active non-completed learner: Start Lesson present, plain Archive link, no suggestion", (await s.page.$("text=Start Lesson")) !== null && (await s.page.$("[data-testid=archive-suggestion]")) === null);
+  await s.page.waitForSelector("[data-testid=edit-learner]");
+  check("active non-completed learner: Start Lesson present, no archive suggestion; Archive sits in Edit learner > More (not on the page)", (await s.page.$("text=Start Lesson")) !== null && (await s.page.$("[data-testid=archive-suggestion]")) === null && (await s.page.$(".archive-link")) === null);
+  await openMore(s.page);
   await s.page.click(".archive-link");
   await s.page.waitForSelector("[data-testid=archive-panel]");
   check("archive panel has a visible border (easy to tell apart from the box it sits in)", (await s.page.$eval("[data-testid=archive-panel]", (e) => { const c = getComputedStyle(e); return parseFloat(c.borderTopWidth) >= 2 && c.borderTopStyle === "solid"; })));
   await s.page.click("[data-testid=archive-cancel]"); await settle();
-  check("cancelling the archive panel keeps the learner active", (await options(s.page)).includes("QA Tony Bravo") && (await s.page.$("[data-testid=archive-panel]")) === null);
+  const panelGone = (await s.page.$("[data-testid=archive-panel]")) === null;
+  await closeForm(s.page);
+  check("cancelling the archive panel keeps the learner active", (await options(s.page)).includes("QA Tony Bravo") && panelGone);
+  await openMore(s.page);
   await s.page.click(".archive-link");
   await s.page.click("[data-testid=archive-confirm]");
   await s.page.waitForSelector('.status:has-text("archived")');
@@ -705,6 +716,8 @@ const draw = async (page, index) => {
   await a.page.waitForSelector("[data-testid=history-row]");
   check("ownership: Anna sees Tony's lesson in History but NO Edit button", (await a.page.$$(".history .h-edit")).length === 0 && (await a.page.$("[data-testid=history-readonly]")) !== null);
   check("ownership: read-only label names the recorder", (await a.page.textContent("[data-testid=history-readonly]")).includes("Recorded by Tony"));
+  // Archive has no owner gate (server included): Anna, who has no Edit learner for Tony's learner, keeps the page-level link.
+  check("ownership: Anna (not the owner) has no Edit learner but still sees 'Archive learner…' on the page, as before the form restyle", (await a.page.$("[data-testid=edit-learner]")) === null && (await a.page.$(".archive-link")) !== null && (await a.page.$("[data-testid=learner-more]")) === null);
   const rejected = await fetch(`${B}/api/learners/${revLearner.id}/lessons/${lessonId}`, {
     method: "PATCH", headers: { "content-type": "application/json", "x-instructor-id": WHO.anna[0], "x-instructor-name": "Anna" },
     body: JSON.stringify({ lessonDate: "2026-09-21", startTime: "09:00", finishTime: "10:00", startOdometer: "2000", finishOdometer: "2020", taughtIds: ["1"], location: "QA Anna Hack", adiSignature: SIG, learnerSignature: SIG }),
@@ -1254,6 +1267,7 @@ const draw = async (page, index) => {
 
   // Cancel changes nothing, even after choosing a reason and typing a note.
   await pick(s.page, "QA Tony Archive Reason");
+  await openMore(s.page);
   await s.page.click(".archive-link");
   await s.page.waitForSelector("[data-testid=archive-panel]");
   check("archive reason: panel defaults to 'Choose a reason (optional)'", (await s.page.$eval("[data-testid=archive-reason-select]", (e) => e.selectedOptions[0].textContent)) === "Choose a reason (optional)");
@@ -1264,11 +1278,14 @@ const draw = async (page, index) => {
   await s.page.fill("[data-testid=archive-note]", "QA moved to Sydney");
   await s.page.click("[data-testid=archive-cancel]"); await settle();
   const afterCancel = await learnerById(withReason.id);
-  check("archive reason: Cancel changes nothing (still active, panel closed, still listed)", afterCancel.archivedAt === null && (await s.page.$("[data-testid=archive-panel]")) === null && (await options(s.page)).includes("QA Tony Archive Reason"), JSON.stringify(afterCancel));
+  const cancelPanelGone = (await s.page.$("[data-testid=archive-panel]")) === null;
+  await closeForm(s.page);
+  check("archive reason: Cancel changes nothing (still active, panel closed, still listed)", afterCancel.archivedAt === null && cancelPanelGone && (await options(s.page)).includes("QA Tony Archive Reason"), JSON.stringify(afterCancel));
   const historyNow = async (id) => (await (await fetch(`${B}/api/learners/${id}/archive-history`)).json()).events;
   check("archive reason: Cancel writes no history event", (await historyNow(withReason.id)).length === 0);
 
   // Archive with a reason and note: shown in the banner and in History.
+  await openMore(s.page);
   await s.page.click(".archive-link");
   await s.page.selectOption("[data-testid=archive-reason-select]", "moved_away");
   await s.page.fill("[data-testid=archive-note]", "  QA moved to Sydney  ");
@@ -1294,6 +1311,7 @@ const draw = async (page, index) => {
   await s.page.waitForSelector('.status:has-text("restored")');
   const restoredHist = await historyNow(withReason.id);
   check("archive reason: restore adds a 'restored' history event", restoredHist.length === 2 && restoredHist[0].action === "restored" && restoredHist[0].reason === null, JSON.stringify(restoredHist));
+  await openMore(s.page);
   await s.page.click(".archive-link");
   await s.page.click("[data-testid=archive-confirm]");
   await s.page.waitForSelector('.status:has-text("archived")');
@@ -1310,6 +1328,7 @@ const draw = async (page, index) => {
   // Archive without choosing a reason still works (plain confirm).
   await tab(s.page, "Mine");
   await pick(s.page, "QA Tony Archive Plain");
+  await openMore(s.page);
   await s.page.click(".archive-link");
   await s.page.click("[data-testid=archive-confirm]");
   await s.page.waitForSelector('.status:has-text("archived")');
@@ -1477,8 +1496,10 @@ const draw = async (page, index) => {
   await ready(s.page);
   await s.page.setViewportSize({ width: 375, height: 812 });
   await pick(s.page, "QA Tony Transfer Move");
+  await s.page.waitForSelector("[data-testid=edit-learner]");
+  check("transfer: no 'check the records' reminder before any transfer; the owner's Transfer sits in Edit learner > More, not on the page", (await s.page.$("[data-testid=transfer-check]")) === null && (await s.page.$("[data-testid=transfer-open]")) === null);
+  await openMore(s.page);
   await s.page.waitForSelector("[data-testid=transfer-open]");
-  check("transfer: no 'check the records' reminder before any transfer", (await s.page.$("[data-testid=transfer-check]")) === null);
   await s.page.click("[data-testid=transfer-open]");
   await s.page.waitForSelector("[data-testid=transfer-panel]");
   const choices = await s.page.$$eval("[data-testid=transfer-choice]", (els) => els.map((e) => ({ checked: e.checked, label: e.closest("label").textContent.trim() })));
@@ -1491,6 +1512,7 @@ const draw = async (page, index) => {
   await s.page.click("[data-testid=transfer-open]");
   await s.page.click("[data-testid=transfer-confirm]");
   await s.page.waitForSelector('.status:has-text("Transferred to Anna")');
+  check("transfer: a done transfer closes the Edit learner form (the learner's page is back)", (await s.page.$("[data-testid=learner-form]")) === null);
   const moved = (await learnersApi()).find((l) => l.id === moving.id);
   check("transfer: two taps moved the learner to Anna (one event, by Tony)", moved.instructorId === WHO.anna[0] && moved.transfers.length === 1 && moved.transfers[0].byInstructorId === WHO.tony[0], JSON.stringify(moved.transfers));
   check("transfer: Tony's view switches to All and the learner stays open", (await activeTab(s.page)).startsWith("All") && (await s.page.textContent(".summary-main small")) === "QA Tony Transfer Move");
@@ -1523,7 +1545,10 @@ const draw = async (page, index) => {
   const reminder = (await a.page.textContent("[data-testid=transfer-check] span")).trim();
   check("transfer: receiver sees the CoP 9.1 h / 9.2 e reminder (amber)", reminder === "Check the records from Tony. If any is not filled out correctly, or is false, misleading or incomplete, tell ADI Audit as soon as possible (CoP 9.1 h, 9.2 e)." && (await a.page.$("[data-testid=transfer-check] .reminder.amber")) !== null, reminder);
   check("transfer: Anna sees 'Recorded by Tony' (no Edit) on Tony's lesson", ((await a.page.textContent("[data-testid=history-readonly]")) ?? "").trim() === "Recorded by Tony" && (await a.page.$("[data-testid=history-row] .h-edit")) === null);
-  check("transfer: Anna can now edit the learner and transfer back", (await a.page.$("[data-testid=edit-learner]")) !== null && (await a.page.$("[data-testid=transfer-open]")) !== null);
+  await openMore(a.page);
+  const annaTransfer = (await a.page.$("[data-testid=transfer-open]")) !== null;
+  await closeForm(a.page);
+  check("transfer: Anna can now edit the learner and transfer back (from Edit learner > More)", (await a.page.$("[data-testid=edit-learner]")) !== null && annaTransfer);
   check("transfer: Start Lesson is not blocked by the reminder", (await a.page.$("text=Start Lesson")) !== null);
   check("transfer: no horizontal scroll at tablet width 768px (reminder + History)", await noHScroll(a.page));
   await shot(a.page, "16-transfer-receiver-768");
@@ -1536,11 +1561,13 @@ const draw = async (page, index) => {
   await a.page.waitForSelector("[data-testid=history-transfer]");
   check("transfer: after reload the reminder stays hidden", (await a.page.$("[data-testid=transfer-check]")) === null);
   await a.page.setViewportSize({ width: 1024, height: 768 });
+  await openMore(a.page);
   await a.page.click("[data-testid=transfer-open]");
   await a.page.waitForSelector("[data-testid=transfer-panel]");
-  check("transfer: no horizontal scroll at tablet landscape 1024px (transfer panel)", await noHScroll(a.page));
+  check("transfer: no horizontal scroll at tablet landscape 1024px (transfer panel inside More)", await noHScroll(a.page));
   await shot(a.page, "16-transfer-panel-1024");
   await a.page.click("[data-testid=transfer-cancel]");
+  await closeForm(a.page);
   const tonyTry = await api(`/api/learners/${moving.id}/transfer`, { toInstructorId: WHO.tony[0] }, { "x-instructor-id": WHO.tony[0] });
   check("transfer: API refuses Tony, who is no longer the owner (400, 'only they can transfer')", tonyTry.status === 400 && tonyTry.body.error === "This learner belongs to Anna; only they can transfer them.", JSON.stringify(tonyTry));
   const sameTry = await api(`/api/learners/${moving.id}/transfer`, { toInstructorId: WHO.anna[0] }, { "x-instructor-id": WHO.anna[0] });
@@ -1704,9 +1731,10 @@ const draw = async (page, index) => {
     await shot(page, `17-ipad-${tag}-history-edit`);
     await page.click(".h-editing >> text=Cancel");
 
+    await openMore(page);
     await page.click(".archive-link");
     await page.waitForSelector("[data-testid=archive-panel]");
-    check(`iPad ${tag}: archive panel, no horizontal scroll, buttons ≥44px`, (await noHScroll(page)) && (await tall(page, "[data-testid=archive-confirm]")) && (await tall(page, "[data-testid=archive-cancel]")));
+    check(`iPad ${tag}: archive panel (inside Edit learner > More), no horizontal scroll, buttons ≥44px`, (await noHScroll(page)) && (await tall(page, "[data-testid=archive-confirm]")) && (await tall(page, "[data-testid=archive-cancel]")));
     await shot(page, `17-ipad-${tag}-archive-panel`);
     await page.click("[data-testid=archive-cancel]");
 
@@ -1715,6 +1743,7 @@ const draw = async (page, index) => {
     check(`iPad ${tag}: transfer panel, no horizontal scroll, choice + Cancel/Transfer ≥44px`, (await noHScroll(page)) && (await tall(page, "[data-testid=transfer-choice] >> xpath=ancestor::label")) && (await tall(page, "[data-testid=transfer-cancel]")) && (await tall(page, "[data-testid=transfer-confirm]")));
     if (w === 820 || w === 1180) await shot(page, `17-ipad-${tag}-transfer-panel`);
     await page.click("[data-testid=transfer-cancel]");
+    await closeForm(page);
 
     await page.click("text=+ New");
     await page.waitForSelector("[data-testid=save-learner]");
@@ -2254,7 +2283,7 @@ const draw = async (page, index) => {
   }));
   check("lesson 375px: navy learner header with name, meta (Auto · Licence · exp Canberra date · ADI), Lesson #2, initials", header.bg === "rgb(11, 27, 43)" && header.name === "QA Lesson Record" && header.meta === "Auto · Licence LR12345 · exp 14 Mar 2027 · ADI Tony" && header.lessonNo === "Lesson #2" && header.initials === "QL", JSON.stringify(header));
   check("lesson 375px: header totals are the derived ones (1h 30m, 15 km), 17 of 22 segments lit, gates next/locked/locked", header.hours.startsWith("1h 30m") && header.km === "15 km" && header.achieved === "17" && header.on === 17 && header.segs === 22 && header.gates.join() === "next,locked,locked", JSON.stringify(header));
-  check("lesson 375px: Edit learner, Transfer, Archive and the Integration ID stay in the header card (Transfer/Archive move later, separate task)", header.editLearner && header.transfer && header.archive && header.integration);
+  check("lesson 375px: Edit learner and the Integration ID stay in the header card; Transfer and Archive moved into Edit learner > More (Tony's decision 3)", header.editLearner && !header.transfer && !header.archive && header.integration);
   // Ready: one primary action (Start Lesson), no Save anywhere, no competencies yet, finish odometer locked, derived values dashed.
   const readyState = await s.page.evaluate(() => ({
     go: document.querySelector(".btn.go")?.getBoundingClientRect().height ?? 0, save: document.querySelector(".btn.save") !== null, bar: document.querySelector("[data-testid=lesson-actions]") !== null,
@@ -2304,7 +2333,7 @@ const draw = async (page, index) => {
   await settle(150);
   const bar = await barState(s.page);
   check("lesson 375px ENDED: 'Save Lesson #2' in a sticky bar pinned to the viewport bottom, ≥44px, with the Discard link beside it", bar.position === "sticky" && Math.abs(bar.bottom - bar.inner) < 1 && (await s.page.textContent(".btn.save")) === "Save Lesson #2" && (await s.page.locator(".btn.save").boundingBox()).height >= 44 && (await s.page.textContent("[data-testid=lesson-actions] .link.danger")) === "Discard this lesson", JSON.stringify(bar));
-  check("lesson 375px ENDED: the action bar reserves the iPhone safe area (env(safe-area-inset-bottom) in its padding rule)", await s.page.evaluate(() => [...document.styleSheets].flatMap((sh) => { try { return [...sh.cssRules]; } catch { return []; } }).some((r) => r.selectorText === ".lesson-actions" && r.cssText.includes("safe-area-inset-bottom"))));
+  check("lesson 375px ENDED: the action bar reserves the iPhone safe area (env(safe-area-inset-bottom) in its padding rule)", await s.page.evaluate(() => [...document.styleSheets].flatMap((sh) => { try { return [...sh.cssRules]; } catch { return []; } }).some((r) => (r.selectorText ?? "").split(",").map((x) => x.trim()).includes(".lesson-actions") && r.cssText.includes("safe-area-inset-bottom"))));
   await s.page.focus("textarea");
   check("lesson 375px ENDED: focusing Comments (keyboard) un-pins the bar; blurring pins it again", (await barState(s.page)).position === "static" && (await s.page.evaluate(() => { document.activeElement?.blur(); return true; })) && (await barState(s.page)).position === "sticky");
   // Derived values follow the inputs: 715 → 730 and 09:00 → 10:30 give 15 km, 1h 30m, total 3h; nothing is typed for them.
@@ -2388,7 +2417,8 @@ const draw = async (page, index) => {
   });
   // WCAG contrast ratio of an element's text against its own (or the nearest painted ancestor's) background.
   const contrast = (page, sel) => page.$eval(sel, (e) => {
-    const parse = (c) => (c.match(/[\d.]+/g) ?? []).map(Number);
+    // color-mix() backgrounds compute to `color(srgb r g b / a)` with 0–1 channels; rgb()/rgba() use 0–255.
+    const parse = (c) => { const n = (c.match(/[\d.]+/g) ?? []).map(Number); return c.startsWith("color(srgb") ? n.map((v, i) => (i < 3 ? Math.round(v * 255) : v)) : n; };
     const lum = ([r, g, b]) => { const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }; return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b); };
     let bg = null;
     for (let n = e; n && n !== document.documentElement; n = n.parentElement) { const c = parse(getComputedStyle(n).backgroundColor); if (c.length === 3 || (c.length === 4 && c[3] > 0)) { bg = c; break; } }
@@ -2479,8 +2509,8 @@ const draw = async (page, index) => {
   await shot(s.page, "22-form-375-light");
   await s.page.click("[data-testid=theme-toggle]");
   await settle(150);
-  const formDark = await s.page.evaluate(() => ({ body: getComputedStyle(document.body).backgroundColor, form: getComputedStyle(document.querySelector("[data-testid=learner-form]")).backgroundColor, input: getComputedStyle(document.querySelector("[data-testid=learner-form] .field input")).backgroundColor, select: getComputedStyle(document.querySelector("[data-testid=learner-form] select")).backgroundColor, scheme: getComputedStyle(document.querySelector("[data-testid=learner-form] input[type=date]")).colorScheme }));
-  check("focus 375px dark: the form, its inputs and selects switch with the tokens (no white islands), native date pickers get color-scheme dark", formDark.body === DARK_PAPER && formDark.form === SURFACE_DARK && formDark.input === SURFACE_DARK && formDark.select === SURFACE_DARK && formDark.scheme === "dark" && (await noHScroll(s.page)), JSON.stringify(formDark));
+  const formDark = await s.page.evaluate(() => ({ body: getComputedStyle(document.body).backgroundColor, form: getComputedStyle(document.querySelector("[data-testid=learner-form] .fsect")).backgroundColor, input: getComputedStyle(document.querySelector("[data-testid=learner-form] .field input")).backgroundColor, select: getComputedStyle(document.querySelector("[data-testid=learner-form] select")).backgroundColor, scheme: getComputedStyle(document.querySelector("[data-testid=learner-form] input[type=date]")).colorScheme }));
+  check("focus 375px dark: the form's cards, inputs and selects switch with the tokens (no white islands), native date pickers get color-scheme dark", formDark.body === DARK_PAPER && formDark.form === SURFACE_DARK && formDark.input === SURFACE_DARK && formDark.select === SURFACE_DARK && formDark.scheme === "dark" && (await noHScroll(s.page)), JSON.stringify(formDark));
   await readable("dark");
   await shot(s.page, "22-form-375-dark");
   await s.page.click("[data-testid=theme-toggle]");
@@ -2623,6 +2653,7 @@ const draw = async (page, index) => {
   check("other licence: dark theme: the group's selects and date inputs follow the tokens (no white islands, dark pickers)", dark.body === "rgb(9, 19, 28)" && dark.select === "rgb(16, 31, 45)" && dark.scheme === "dark" && (await noHScroll(s.page)), JSON.stringify(dark));
   await shot(s.page, "23-other-licence-edit-375-dark");
   await s.page.click("[data-testid=theme-toggle]");
+  await settle(150);
   const saved = await save();
   const afterSave = await stored();
   check("other licence: saved: interstate / NSW / learner / number upper-cased / issue date / no expiry; Eligibility stored as the school-rule date", /updated/.test(saved) && otherOf(afterSave) === otherOf({ otherLicenceKind: "interstate", otherLicencePlace: "NSW", otherLicenceNumber: "QA NSW 1", otherLicenceClass: "learner", otherLicenceIssuedOn: nswIssue, otherLicenceExpiresOn: null }) && afterSave.eligibility === `C23 from ${nswDue}`, `${saved} ${otherOf(afterSave)} ${afterSave.eligibility}`);
@@ -2738,6 +2769,206 @@ const draw = async (page, index) => {
   const created = (await learnersApi()).find((l) => l.fullName === "QA Tony Other Licence New");
   check("other licence: New learner saved with the interstate full licence and the school-rule Eligibility", otherOf(created) === otherOf({ otherLicenceKind: "interstate", otherLicencePlace: "VIC", otherLicenceNumber: null, otherLicenceClass: "full", otherLicenceIssuedOn: nswIssue, otherLicenceExpiresOn: null }) && created?.eligibility === `C23 from ${nswDue}`, `${otherOf(created ?? {})} ${created?.eligibility}`);
   check("other licence: Tony (New form): no page errors", s.errors.length === 0, s.errors.join("|"));
+  await s.ctx.close();
+}
+
+
+// ═══ 24. Learner form (concept screen B, 2026-10-12; Tony's decision 3, 2026-10-13): Student / Address / Licence cards, the Edit form's folded More with Transfer + Archive, sticky Save bar, required name, both themes, 375 / 820 ═══
+{
+  const post = async (path, body) => { const r = await fetch(B + path, { method: "POST", headers: { "content-type": "application/json", "x-instructor-id": WHO.tony[0] }, body: JSON.stringify(body) }); const d = await r.json(); if (!r.ok) throw new Error(`${path} ${JSON.stringify(d)}`); return d; };
+  const restyle = (await post("/api/learners", { fullName: "QA Tony Form Restyle", instructorId: WHO.tony[0], address: "44 Appleford Av, Jacka ACT 2914", addressSuburb: "Jacka", addressState: "ACT", addressPostcode: "2914", transmission: "auto", licenceNumber: "QAFORM1" })).learner;
+  const mover = (await post("/api/learners", { fullName: "QA Tony Form Transfer", instructorId: WHO.tony[0] })).learner;
+  const DARK_PAPER = "rgb(9, 19, 28)", SURFACE_DARK = "rgb(16, 31, 45)", SURFACE_LIGHT = "rgb(255, 255, 255)";
+  const F = "[data-testid=learner-form]";
+  // The form as the instructor meets it: cards in order, the fold, the bar, visible control sizes and text sizes.
+  const formState = (page) => page.evaluate(() => {
+    const form = document.querySelector("[data-testid=learner-form]");
+    // checkVisibility() also sees content-visibility (the content of a closed <details> keeps client rects in Chromium ≥131).
+    const vis = (e) => (typeof e.checkVisibility === "function" ? e.checkVisibility() : e.getClientRects().length > 0) && getComputedStyle(e).visibility !== "hidden";
+    const controls = [...form.querySelectorAll("input:not([type=radio]), select, .btn, summary, .link")].filter(vis).map((e) => ({ tag: e.tagName, h: Math.round(e.getBoundingClientRect().height), id: e.dataset.testid ?? e.className }));
+    const texts = [...form.querySelectorAll("*")].filter((e) => vis(e) && [...e.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim())).map((e) => parseFloat(getComputedStyle(e).fontSize));
+    const bar = form.querySelector("[data-testid=learner-actions]");
+    const more = form.querySelector("[data-testid=learner-more]");
+    return {
+      h2: form.querySelector("h2")?.textContent ?? null, sub: form.querySelector(".form-sub")?.textContent ?? null,
+      cards: [...form.querySelectorAll(".fsect h3, .fsect > summary")].map((e) => e.textContent.trim().split(/\s{2,}|More/)[0].trim() || "More"),
+      cardBg: getComputedStyle(form.querySelector(".fsect")).backgroundColor, formBg: getComputedStyle(form).backgroundColor,
+      moreOpen: more ? more.open : null, moreSummary: more?.querySelector("summary")?.textContent.replace(/\s+/g, " ").trim() ?? null,
+      transferVisible: !!form.querySelector("[data-testid=transfer-open]") && vis(form.querySelector("[data-testid=transfer-open]")), archiveVisible: !!form.querySelector(".archive-link") && vis(form.querySelector(".archive-link")),
+      transferDisabled: form.querySelector("[data-testid=transfer-open]")?.disabled ?? null, archiveDisabled: form.querySelector(".archive-link")?.disabled ?? null, lockedNote: form.querySelector("[data-testid=more-locked-note]")?.textContent ?? null,
+      bar: bar ? { position: getComputedStyle(bar).position, top: Math.round(bar.getBoundingClientRect().top), bottom: Math.round(bar.getBoundingClientRect().bottom), padBottom: getComputedStyle(bar).paddingBottom, save: bar.querySelector("[data-testid=save-learner]")?.textContent, cancel: bar.querySelector(".link")?.dataset.testid ?? null, saveH: Math.round(bar.querySelector("[data-testid=save-learner]").getBoundingClientRect().height), cancelH: Math.round(bar.querySelector(".link").getBoundingClientRect().height) } : null,
+      shortControls: controls.filter((c) => c.h < 44), smallText: texts.filter((px) => px < 12).length, totalText: texts.length,
+      chips: [...form.querySelectorAll("[data-testid=address-parts] .lc-chip")].map((c) => c.textContent),
+      instructor: [...form.querySelectorAll("label.field > span")].some((sp) => sp.textContent.startsWith("Instructor") && sp.parentElement.querySelector("select")), stage: !!form.querySelector("[data-testid=edit-licence-stage]"),
+      formHeight: form.getBoundingClientRect().height, inner: window.innerHeight, scrollY: window.scrollY,
+      nameError: form.querySelector("[data-testid=learner-name-error]")?.textContent ?? null, nameInvalid: form.querySelector("[data-testid=learner-name]")?.getAttribute("aria-invalid") ?? null, nameDescribed: form.querySelector("[data-testid=learner-name]")?.getAttribute("aria-describedby") ?? null,
+      focused: document.activeElement?.dataset.testid ?? document.activeElement?.tagName ?? null,
+    };
+  });
+  const contrast = (page, sel) => page.$eval(sel, (e) => {
+    // color-mix() backgrounds compute to `color(srgb r g b / a)` with 0–1 channels; rgb()/rgba() use 0–255.
+    const parse = (c) => { const n = (c.match(/[\d.]+/g) ?? []).map(Number); return c.startsWith("color(srgb") ? n.map((v, i) => (i < 3 ? Math.round(v * 255) : v)) : n; };
+    const lum = ([r, g, b]) => { const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }; return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b); };
+    let bg = null;
+    for (let n = e; n && n !== document.documentElement; n = n.parentElement) { const c = parse(getComputedStyle(n).backgroundColor); if (c.length === 3 || (c.length === 4 && c[3] > 0)) { bg = c; break; } }
+    if (!bg) bg = parse(getComputedStyle(document.body).backgroundColor);
+    const [l1, l2] = [lum(parse(getComputedStyle(e).color)), lum(bg)].sort((a, b) => b - a);
+    return (l1 + 0.05) / (l2 + 0.05);
+  });
+
+  const s = await session("tony");
+  await ready(s.page);
+  await s.page.setViewportSize({ width: 375, height: 812 });
+  const writes = [];
+  s.page.on("request", (r) => { if (r.url().includes("/api/learners") && r.method() !== "GET") writes.push(`${r.method()} ${new URL(r.url()).pathname}`); });
+  await pick(s.page, "QA Tony Form Restyle");
+  await s.page.click("[data-testid=edit-learner]");
+  await s.page.waitForSelector("[data-testid=learner-more]");
+  await s.page.waitForFunction(() => document.querySelector("[data-testid=learner-form]").getBoundingClientRect().top < 40, null, { timeout: 3000 }).catch(() => {});
+  const edit0 = await formState(s.page);
+  check("form 375px Edit: 'Edit learner' title + subline", edit0.h2 === "Edit learner" && edit0.sub === "Only the name is required. Transfer and Archive are under More.", JSON.stringify({ h2: edit0.h2, sub: edit0.sub }));
+  check("form 375px Edit: the Student / Address / Licence & eligibility cards, then a folded More", edit0.cards.join("|") === "Student|Address|Licence & eligibility|More", JSON.stringify(edit0.cards));
+  check("form 375px Edit: More is collapsed by default and names what it holds (Transfer · Archive); Transfer and Archive are not visible until it opens", edit0.moreOpen === false && /^More\s+Transfer · Archive · rarely needed$/.test(edit0.moreSummary) && !edit0.transferVisible && !edit0.archiveVisible, JSON.stringify({ more: edit0.moreSummary, open: edit0.moreOpen, t: edit0.transferVisible, a: edit0.archiveVisible }));
+  check("form 375px Edit: cards on the paper (the form itself is transparent, each card a white surface), Licence stage shown and no Instructor select (Edit)", edit0.formBg === "rgba(0, 0, 0, 0)" && edit0.cardBg === SURFACE_LIGHT && edit0.stage && !edit0.instructor, JSON.stringify({ formBg: edit0.formBg, cardBg: edit0.cardBg }));
+  check("form 375px Edit: the form is taller than the screen and the Save bar is sticky at the bottom of the viewport (safe-area padding), 'Save changes' + a Cancel link, both ≥44px", edit0.formHeight > edit0.inner && edit0.bar?.position === "sticky" && edit0.bar.bottom <= edit0.inner + 1 && edit0.bar.bottom >= edit0.inner - 1 && edit0.bar.save === "Save changes" && edit0.bar.cancel === "cancel-edit-learner" && edit0.bar.saveH >= 44 && edit0.bar.cancelH >= 44, JSON.stringify(edit0.bar));
+  check("form 375px Edit: every visible control ≥44px tall, no text under 12px, no horizontal scroll", edit0.shortControls.length === 0 && edit0.smallText === 0 && edit0.totalText > 20 && (await noHScroll(s.page)), JSON.stringify({ short: edit0.shortControls, small: edit0.smallText }));
+  check("form 375px Edit: the picked suburb / state / postcode show as chips under the Address", edit0.chips.join("|") === "Suburb · Jacka|State · ACT|Postcode · 2914", edit0.chips.join("|"));
+  const addr = "[data-testid=learner-address]";
+  await s.page.fill(addr, "44 Appleford Av");
+  await s.page.keyboard.press("Escape");
+  check("form 375px Edit: editing the text past the suburb empties the chips (—), as the saved parts would be", (await formState(s.page)).chips.join("|") === "Suburb · —|State · —|Postcode · —");
+  await s.page.fill(addr, "44 Appleford Av, Jacka ACT 2914");
+  await s.page.keyboard.press("Escape");
+  // The bar gives way to the keyboard: while a field has focus it is not pinned (same pattern as the lesson's Save bar).
+  await s.page.focus("[data-testid=learner-name]");
+  const focusedBar = (await formState(s.page)).bar;
+  await s.page.evaluate(() => document.activeElement.blur());
+  const blurredBar = (await formState(s.page)).bar;
+  check("form 375px Edit: the Save bar un-pins while a field has focus (keyboard open) and pins again on blur", focusedBar.position === "static" && blurredBar.position === "sticky", JSON.stringify({ focusedBar: focusedBar.position, blurredBar: blurredBar.position }));
+  // Required name: inline, with the server's own wording, before anything is sent; cleared by typing.
+  await s.page.fill("[data-testid=learner-name]", "");
+  writes.length = 0;
+  await s.page.click("[data-testid=save-learner]");
+  await settle(200);
+  const nameErr = await formState(s.page);
+  check("form 375px Edit: Save with an empty name → inline 'Student name is required.' under the field (aria-invalid + aria-describedby, focus moved to the input), nothing sent, no top-of-page error, form still open", nameErr.nameError === "Student name is required." && nameErr.nameInvalid === "true" && nameErr.nameDescribed === "learner-name-error" && nameErr.focused === "learner-name" && writes.length === 0 && (await s.page.$(".status.error")) === null && (await s.page.$(F)) !== null, JSON.stringify({ err: nameErr.nameError, inv: nameErr.nameInvalid, focused: nameErr.focused, writes }));
+  check("form 375px Edit: the error reads in red with ≥4.5:1 contrast and no horizontal scroll", (await contrast(s.page, "[data-testid=learner-name-error]")) >= 4.5 && (await noHScroll(s.page)), String(await contrast(s.page, "[data-testid=learner-name-error]")));
+  await s.page.type("[data-testid=learner-name]", "Q");
+  const typed = await formState(s.page);
+  check("form 375px Edit: typing clears the inline error at once", typed.nameError === null && typed.nameInvalid === null, JSON.stringify({ err: typed.nameError, inv: typed.nameInvalid }));
+  await s.page.fill("[data-testid=learner-name]", "QA Tony Form Restyle");
+  // More while the form holds unsaved edits: a done transfer / archive would close the form and drop them, so both rows wait.
+  await s.page.fill("[data-testid=learner-name]", "QA Tony Form Restyle Edited");
+  await s.page.click("[data-testid=learner-more] > summary");
+  const dirtyMore = await formState(s.page);
+  check("form 375px Edit: with unsaved edits, More's Transfer and Archive are disabled and say 'Save or cancel your changes to this learner first.'", dirtyMore.moreOpen === true && dirtyMore.transferDisabled === true && dirtyMore.archiveDisabled === true && dirtyMore.lockedNote === "Save or cancel your changes to this learner first.", JSON.stringify({ t: dirtyMore.transferDisabled, a: dirtyMore.archiveDisabled, note: dirtyMore.lockedNote }));
+  // Back to a clean form (the address and name edits above were never meant to be saved): Cancel, reopen Edit learner.
+  await s.page.click("[data-testid=cancel-edit-learner]");
+  await s.page.waitForSelector(F, { state: "detached" });
+  await s.page.click("[data-testid=edit-learner]");
+  await s.page.waitForSelector("[data-testid=learner-more]");
+  // More: opened → the two existing entry rows (≥44px), both enabled while no lesson is running and nothing is unsaved. Screenshots in both themes.
+  await s.page.click("[data-testid=learner-more] > summary");
+  const moreOpen = await formState(s.page);
+  check("form 375px Edit: More opens to 'Transfer learner…' and 'Archive learner…' rows (≥44px, enabled, no lock note); Save bar still sticky; no horizontal scroll", moreOpen.moreOpen === true && moreOpen.transferVisible && moreOpen.archiveVisible && moreOpen.transferDisabled === false && moreOpen.archiveDisabled === false && moreOpen.lockedNote === null && moreOpen.shortControls.length === 0 && moreOpen.bar.position === "sticky" && (await noHScroll(s.page)), JSON.stringify({ short: moreOpen.shortControls, locked: moreOpen.lockedNote }));
+  await shot(s.page, "24-form-edit-more-375-light");
+  await s.page.click("[data-testid=theme-toggle]");
+  await settle(150);
+  const darkEdit = await s.page.evaluate(() => ({ body: getComputedStyle(document.body).backgroundColor, card: getComputedStyle(document.querySelector("[data-testid=learner-form] .fsect")).backgroundColor, more: getComputedStyle(document.querySelector("[data-testid=learner-more]")).backgroundColor, input: getComputedStyle(document.querySelector("[data-testid=learner-name]")).backgroundColor, scheme: getComputedStyle(document.querySelector("[data-testid=learner-form] input[type=date]")).colorScheme, bar: getComputedStyle(document.querySelector("[data-testid=learner-actions]")).borderTopColor }));
+  const darkPairs = { h2: await contrast(s.page, `${F} h2`), sub: await contrast(s.page, `${F} .form-sub`), head: await contrast(s.page, `${F} .fsect h3`), label: await contrast(s.page, `${F} .field span`), input: await contrast(s.page, `${F} .field input`), more: await contrast(s.page, "[data-testid=learner-more] > summary"), row: await contrast(s.page, "[data-testid=transfer-open]"), save: await contrast(s.page, "[data-testid=save-learner]"), cancel: await contrast(s.page, "[data-testid=cancel-edit-learner]") };
+  check("form 375px Edit dark: paper, cards, the More card, inputs and date pickers follow the tokens (no white islands); title, subline, card titles, labels, input text, More, rows, Save and Cancel all ≥4.5:1", darkEdit.body === DARK_PAPER && darkEdit.card === SURFACE_DARK && darkEdit.more === SURFACE_DARK && darkEdit.input === SURFACE_DARK && darkEdit.scheme === "dark" && Object.values(darkPairs).every((c) => c >= 4.5) && (await noHScroll(s.page)), JSON.stringify({ darkEdit, darkPairs: Object.fromEntries(Object.entries(darkPairs).map(([k, v]) => [k, Math.round(v * 10) / 10])) }));
+  await shot(s.page, "24-form-edit-more-375-dark");
+  await s.page.click("[data-testid=theme-toggle]");
+  await settle(150);
+  const lightPairs = { h2: await contrast(s.page, `${F} h2`), sub: await contrast(s.page, `${F} .form-sub`), head: await contrast(s.page, `${F} .fsect h3`), small: await contrast(s.page, `${F} .card-head small`), label: await contrast(s.page, `${F} .field span`), more: await contrast(s.page, "[data-testid=learner-more] > summary"), row: await contrast(s.page, "[data-testid=transfer-open]"), save: await contrast(s.page, "[data-testid=save-learner]"), cancel: await contrast(s.page, "[data-testid=cancel-edit-learner]") };
+  check("form 375px Edit light: the same texts ≥4.5:1", Object.values(lightPairs).every((c) => c >= 4.5), JSON.stringify(Object.fromEntries(Object.entries(lightPairs).map(([k, v]) => [k, Math.round(v * 10) / 10]))));
+  // Cancel keeps the learner and their data: the page is back unchanged, nothing was sent.
+  writes.length = 0;
+  await s.page.click("[data-testid=cancel-edit-learner]");
+  await s.page.waitForSelector(".card.lesson");
+  check("form 375px Edit: Cancel → the learner's page is back (header, Start Lesson), nothing was sent; Transfer / Archive are not on the page (owner)", (await s.page.textContent(".summary-main small")) === "QA Tony Form Restyle" && writes.length === 0 && (await s.page.$("[data-testid=transfer-open]")) === null && (await s.page.$(".archive-link")) === null && (await s.page.$("text=Start Lesson")) !== null);
+  // Guard kept: while a lesson is running the rows inside More are locked (as the links were before) and the note says why.
+  await s.page.click(".btn.go");
+  await s.page.waitForSelector(".timebar");
+  await openMore(s.page);
+  const locked = await formState(s.page);
+  check("form 375px Edit: with a lesson running, Transfer and Archive inside More are disabled and a note says to save or discard the lesson first (same guard as before)", locked.transferDisabled === true && locked.archiveDisabled === true && locked.lockedNote === "Save or discard the current lesson first.", JSON.stringify({ t: locked.transferDisabled, a: locked.archiveDisabled, note: locked.lockedNote }));
+  await s.page.click("[data-testid=cancel-edit-learner]");
+  await s.page.waitForSelector(".timebar");
+  check("form 375px Edit: Cancel with a lesson running keeps the running lesson and the learner (draft untouched)", (await s.page.$(".card.lesson[data-phase=running]")) !== null && (await s.page.textContent(".summary-main small")) === "QA Tony Form Restyle");
+  await s.page.click(".lesson-discard");
+  await s.page.waitForSelector(".btn.go");
+  // Transfer end to end from inside More (Tony → Anna): the panel, its guard and confirmation are the same; the form closes when done.
+  await pick(s.page, "QA Tony Form Transfer");
+  await s.page.waitForSelector("[data-testid=edit-learner]");
+  await openMore(s.page);
+  await s.page.click("[data-testid=transfer-open]");
+  await s.page.waitForSelector("[data-testid=transfer-panel]");
+  check("form 375px More: Transfer learner… opens the same transfer panel (Anna preselected, 'Transfer to Anna'), inside the form, no horizontal scroll", (await s.page.textContent("[data-testid=transfer-confirm]")).trim() === "Transfer to Anna" && (await s.page.$(`${F} [data-testid=transfer-panel]`)) !== null && (await noHScroll(s.page)));
+  await s.page.click("[data-testid=transfer-confirm]");
+  await s.page.waitForSelector('.status:has-text("Transferred to Anna")');
+  const movedNow = (await learnersApi()).find((l) => l.id === mover.id);
+  check("form 375px More: the transfer went through (owner Anna, one event by Tony); the form closed, the learner stays open under All with the History line", movedNow.instructorId === WHO.anna[0] && movedNow.transfers.length === 1 && (await s.page.$(F)) === null && (await activeTab(s.page)).startsWith("All") && (await s.page.textContent(".summary-main small")) === "QA Tony Form Transfer" && (await s.page.$("[data-testid=history-transfer]")) !== null, JSON.stringify(movedNow.transfers));
+  check("form 375px More: Tony (no longer the owner) has no Edit learner and no Transfer anywhere", (await s.page.$("[data-testid=edit-learner]")) === null && (await s.page.$("[data-testid=transfer-open]")) === null);
+  // Archive end to end from inside More, then the restore path from the Archived tab (unchanged banner + Restore learner).
+  await tab(s.page, "Mine");
+  await pick(s.page, "QA Tony Form Restyle");
+  await openMore(s.page);
+  await s.page.click(".archive-link");
+  await s.page.waitForSelector("[data-testid=archive-panel]");
+  await s.page.selectOption("[data-testid=archive-reason-select]", "stopped");
+  await s.page.fill("[data-testid=archive-note]", "QA from More");
+  const noteBar = (await formState(s.page)).bar;
+  check("form 375px More: Archive learner… opens the same archive panel inside the form (reason + note); typing the note un-pins the Save bar (keyboard)", (await s.page.$(`${F} [data-testid=archive-panel]`)) !== null && noteBar.position === "static");
+  await s.page.click("[data-testid=archive-confirm]");
+  await s.page.waitForSelector('.status:has-text("archived")');
+  const archivedNow = (await learnersApi("?status=archived")).find((l) => l.id === restyle.id);
+  check("form 375px More: archived with the reason and note; the form closed, the selection cleared, the learner left My learners", Boolean(archivedNow?.archivedAt) && archivedNow.archiveReason === "stopped" && archivedNow.archiveNote === "QA from More" && (await s.page.$(F)) === null && !(await hasSummary(s.page)) && !(await options(s.page)).includes("QA Tony Form Restyle"), JSON.stringify(archivedNow && [archivedNow.archiveReason, archivedNow.archiveNote]));
+  await tab(s.page, "Archived");
+  await s.page.waitForFunction(() => document.querySelectorAll("[data-testid=learner-card]").length > 0);
+  await pick(s.page, "QA Tony Form Restyle · Tony");
+  await s.page.waitForSelector("[data-testid=archived-banner]");
+  await s.page.click("[data-testid=edit-learner]");
+  await s.page.waitForSelector(F);
+  check("form 375px Edit (archived learner): the form has no More (nothing to transfer or archive); Restore stays in the archived banner", (await s.page.$("[data-testid=learner-more]")) === null && (await s.page.$("[data-testid=transfer-open]")) === null && (await s.page.$(".archive-link")) === null);
+  await s.page.click("[data-testid=cancel-edit-learner]");
+  await s.page.waitForSelector("[data-testid=archived-banner]");
+  await s.page.click("text=Restore learner");
+  await s.page.waitForSelector('.status:has-text("restored")');
+  check("form 375px: restore from the archived banner still works (back in My learners with Start Lesson)", (await activeTab(s.page)).startsWith("Mine") && (await s.page.$("text=Start Lesson")) !== null && (await learnersApi()).some((l) => l.id === restyle.id && l.archivedAt === null));
+  // New learner form: the same three cards, no More, Instructor select, 'Save learner', empty chips; both themes.
+  await s.page.click("[data-testid=new-learner]");
+  await s.page.waitForSelector(F);
+  const fresh = await formState(s.page);
+  check("form 375px New: title + subline, Student / Address / Licence & eligibility cards, NO More, Instructor select (no Licence stage), 'Save learner' + Cancel in the sticky bar, empty chips, every control ≥44px, no text under 12px", fresh.h2 === "New learner" && fresh.sub === "Only the name and instructor are required. Everything else can wait." && fresh.cards.join("|") === "Student|Address|Licence & eligibility" && fresh.moreOpen === null && fresh.instructor && !fresh.stage && fresh.bar?.save === "Save learner" && fresh.bar.cancel === "cancel-new-learner" && fresh.bar.position === "sticky" && fresh.chips.join("|") === "Suburb · —|State · —|Postcode · —" && fresh.shortControls.length === 0 && fresh.smallText === 0 && (await noHScroll(s.page)), JSON.stringify({ cards: fresh.cards, bar: fresh.bar, short: fresh.shortControls }));
+  writes.length = 0;
+  await s.page.click("[data-testid=save-learner]");
+  await settle(200);
+  const freshErr = await formState(s.page);
+  check("form 375px New: Save with no name → the inline error, focus on the name, nothing sent", freshErr.nameError === "Student name is required." && freshErr.focused === "learner-name" && writes.length === 0, JSON.stringify({ err: freshErr.nameError, writes }));
+  await shot(s.page, "24-form-new-375-light");
+  await s.page.click("[data-testid=theme-toggle]");
+  await settle(150);
+  check("form 375px New dark: cards and inputs on the dark tokens, error still ≥4.5:1, no horizontal scroll", (await s.page.evaluate(() => getComputedStyle(document.querySelector("[data-testid=learner-form] .fsect")).backgroundColor)) === SURFACE_DARK && (await contrast(s.page, "[data-testid=learner-name-error]")) >= 4.5 && (await noHScroll(s.page)));
+  await shot(s.page, "24-form-new-375-dark");
+  await s.page.click("[data-testid=theme-toggle]");
+  await settle(150);
+  await s.page.click("[data-testid=cancel-new-learner]");
+  check("form 375px New: the bar's Cancel closes the form, nothing sent, the open learner is back", (await s.page.$(F)) === null && writes.length === 0 && (await s.page.textContent(".summary-main small")) === "QA Tony Form Restyle");
+  check("form 375px: Tony: no page errors", s.errors.length === 0, s.errors.join("|"));
+
+  // 820px tablet: Student and Address side by side, Licence & eligibility and More full width, sticky bar, no horizontal scroll.
+  await s.page.setViewportSize({ width: 820, height: 1180 });
+  await s.page.reload(); await ready(s.page);
+  await pick(s.page, "QA Tony Form Restyle");
+  await openMore(s.page);
+  const box = (sel) => s.page.$eval(sel, (e) => { const r = e.getBoundingClientRect(); return { x: Math.round(r.x), right: Math.round(r.right), width: Math.round(r.width), top: Math.round(r.top) }; });
+  const [stu, adr, lic, mor, frm] = await Promise.all([box("[data-testid=fsect-student]"), box("[data-testid=fsect-address]"), box("[data-testid=fsect-licence]"), box("[data-testid=learner-more]"), box(F)]);
+  const t820 = await formState(s.page);
+  check("form 820px Edit: Student and Address side by side on one row, Licence & eligibility and the open More full width, every control ≥44px, Save bar sticky, no horizontal scroll", stu.top === adr.top && stu.right <= adr.x && lic.width >= frm.width - 2 && mor.width >= frm.width - 2 && t820.moreOpen === true && t820.shortControls.length === 0 && t820.bar.position === "sticky" && (await noHScroll(s.page)), JSON.stringify({ stu, adr, lic, mor, frm, short: t820.shortControls }));
+  await shot(s.page, "24-form-edit-more-820");
+  await s.page.click("[data-testid=cancel-edit-learner]");
+  check("form 820px: Tony: no page errors", s.errors.length === 0, s.errors.join("|"));
   await s.ctx.close();
 }
 
