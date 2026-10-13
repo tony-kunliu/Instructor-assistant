@@ -6,7 +6,7 @@ This file describes **current task only**. Completed work's detail
 lives in git log and closed PRs, not here.
 
 **Current Task:** P4 GPS phase 1 — isolated, default-OFF GPS recorder, branch `feature/gps-p4-recorder` —
-**Completed on the branch (L2 isolated: new page + pure libraries; no D1, no migration, no API, no lesson change;
+**Merged to `staging` (PR #84, 62923cf) and deployed to Staging by Workers Builds (L2 isolated: new page + pure libraries; no D1, no migration, no API, no lesson change;
 nothing uploaded).** Design + delivered / not-done list: `docs/superpowers/specs/2026-10-13-gps-tracking-design.md`
 §8-§9. Delivered: `lib/gps` (recorder with Pause / Resume and crash recovery, pause-aware feasibility analysis
 with the PWA-vs-native verdict, pure `summarizeTrack` with 150 m trimming and no coordinates, synthetic drive +
@@ -15,9 +15,9 @@ per-session, never-persisted consent box; Start / Pause / Resume / Stop / Clear 
 feasibility report; Copy / Download summary JSON; not linked, noindex, own manifest); 43 unit tests (synthetic
 only); `scripts/qa-browser/gps.mjs` (182 checks, 375 / 820 px, light / dark, `watchPosition` spied: never called
 by the synthetic flow, once in Real GPS mode). Prior spike `experiment/gps-pwa-feasibility` reused, not merged.
-Reviewed per Handbook §2 L2 (one independent review, arranged by the coordinator).
+Reviewed per Handbook §2 L2: one independent review (PASS, 7 Minors fixed with a test / QA check each, verified by the merging agent).
 
-**Next Recommended Task:** after the review and merge to `staging`: Tony's real-phone drive (phase 1b) on Staging
+**Next Recommended Task:** Tony's real-phone drive (phase 1b) on Staging
 `/gps` from the Home Screen — Real GPS, 20-30 min with a 5 min screen lock and 5 min in another app, copy the
 summary + feasibility JSON back; the verdict decides web vs native shell. Then phase 2 (lesson hook-in,
 `lesson_tracks` migration, consent record, 90-day Cron, R10 line) only on Tony's separate approval (new table =

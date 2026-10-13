@@ -25,12 +25,12 @@ closed PRs; see `TASK.md` for what is in progress.
   restyle (concept B cards, sticky Save bar, inline required-name error) + Transfer and Archive in the
   EDIT form's folded "More" (same panels, handlers, guards). qa-browser 24; no migration, payload or
   rule change. Non-owners keep the page-level Transfer / Archive links; More locks on unsaved edits.
-- **On branch `feature/gps-p4-recorder` (L2, isolated; one independent review arranged by the coordinator):**
-  P4 GPS phase 1 = `lib/gps` (recorder with Pause/Resume, pause-aware feasibility analysis, pure `summarizeTrack`,
-  synthetic driver, IndexedDB `ia-gps`) + page `/gps` (synthetic drive default, Real GPS behind a per-session
-  consent box, nothing uploaded, not linked, noindex) + 43 tests + `scripts/qa-browser/gps.mjs`. No D1, no API,
-  no lesson change. Design + what is / is not done: `docs/superpowers/specs/2026-10-13-gps-tracking-design.md`
-  §9. A synthetic PASS is not iPhone background-GPS evidence; the real-phone drive (phase 1b) is Tony's.
+- **Merged to `staging` (PR #84, 62923cf; L2 isolated + privacy review, 7 Minors fixed):** P4 GPS phase 1 =
+  `lib/gps` (recorder with Pause/Resume, pause-aware analysis, pure `summarizeTrack`, synthetic driver,
+  IndexedDB `ia-gps`) + page `/gps` (synthetic default, Real GPS behind a per-session consent box, nothing
+  uploaded, not linked, noindex); 47 tests; qa-browser `gps.mjs`. Deployed to Staging by Workers Builds.
+  No D1/API/lesson change. Design: `docs/superpowers/specs/2026-10-13-gps-tracking-design.md`. A synthetic
+  PASS is not iPhone background-GPS evidence; phase 1b (Tony's real drive on Staging `/gps`) is next.
 - **Still open:** `scripts/check-signature-row-limits.mjs` not yet run against a deployed
   D1 (Staging only, never Production); notify-tick (lesson notifications) waits for Website
   PR #47 rework and Tony's approval of the new endpoint + secret (Production OFF); intake
