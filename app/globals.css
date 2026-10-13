@@ -106,6 +106,12 @@ html { overflow-x: hidden; }
 .signed-in-as span { font-size: 12px; font-weight: 600; opacity: .85; }
 /* 44px hit area from its own padding (the name above it is not part of the link). */
 .signout-link { display: inline-flex; align-items: center; min-height: 44px; padding: 0 var(--space-1); font-size: 12px; color: inherit; text-decoration: underline; text-underline-offset: 2px; }
+/* Appearance toggle (lib/theme.ts): one small icon button at the end of the brand row — a 44px hit area around a 32px
+   disc, moon on the light theme / sun on the dark one, on-navy colour so it reads in both themes. */
+.theme-toggle { flex: none; width: 44px; height: 44px; margin: -5px 0 -5px var(--space-2); padding: 0; border: 0; background: transparent; color: inherit; display: grid; place-items: center; cursor: pointer; touch-action: manipulation; -webkit-tap-highlight-color: transparent; border-radius: 50%; }
+.theme-toggle::before { content: ""; grid-area: 1 / 1; width: 32px; height: 32px; border-radius: 50%; background: rgba(246, 243, 235, .12); }
+.theme-toggle svg { grid-area: 1 / 1; width: 20px; height: 20px; }
+.theme-toggle:focus-visible { outline: 2px solid var(--brand-gold); outline-offset: 2px; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 .headline { display: flex; align-items: flex-end; justify-content: space-between; gap: var(--space-3); }
 .headline h1 { margin: 0; font-size: 28px; line-height: 1.1; font-weight: 700; letter-spacing: -.01em; }
@@ -457,6 +463,8 @@ details.group .inner > .grid { margin: 0; }
 .empty { color: var(--muted); margin: 0; }
 
 .foot { text-align: center; color: var(--text-muted); font-size: 12px; margin-top: 8px; }
+/* The learner form scrolls to the top when it opens (driver-app.tsx); keep it clear of the notch / status bar. */
+.learner-form { scroll-margin-top: calc(env(safe-area-inset-top, 0px) + 12px); }
 
 .save-errors { margin: 0; padding: 12px; border-radius: 12px; border: 1.5px solid var(--bad); background: var(--bad-soft); color: var(--bad); }
 .save-errors strong { display: block; margin-bottom: 6px; font-size: 15px; }

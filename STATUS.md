@@ -20,13 +20,18 @@ closed PRs; see `TASK.md` for what is in progress.
 - **Real-device / Tony checks:** iPad layout accepted on a real iPad ("iPad 可以"); route
   reminders and the address suggestions (iOS "Scan Text" callout, list vs keyboard) tested
   on Staging, reported OK by Tony ("测试都没问题"), not automated evidence.
-- **Merged to `staging` (PR #73):** learner list redesign (tokens, navy top bar, learner cards,
-  `GET /api/learners` `summaries`; no migration, contract untouched; qa-browser section 20).
-- **On a branch, not merged:** `feature/ui-lesson-record` (lesson record redesign, concept approved
-  by Tony 2026-10-12): navy learner header (progress bar + gate chips), Start → running → End, Save
-  only after End (sticky bar with safe area), derived-values block, ≥44px number-only competency
-  chips, result rows with official names, two pads in one block; legacy CSS tokens now alias the
-  shared ones (full dark theme, colour only). No migration, no payload change; qa-browser section 21.
+- **Merged to `staging` (PRs #73, #74):** learner list redesign (tokens, navy top bar, learner cards,
+  `GET /api/learners` `summaries`; qa-browser section 20) and lesson record redesign (navy learner
+  header, Start → running → End, Save only after End in a sticky bar, derived-values block, ≥44px
+  number-only chips, full dark theme via the shared tokens; qa-browser section 21). No migration,
+  contract untouched. Not yet on `main` / Production.
+- **Merged to `staging` (PR #77):** "+ New learner" / "Edit learner" show only the form (open
+  learner's card and panels hidden, state and lesson draft kept) + the first appearance control.
+- **On a branch, not merged:** `feature/ui-theme-toggle-top` (Tony's decision after Staging,
+  2026-10-13): the footer System / Light / Dark group is replaced by ONE small icon button in the
+  top bar (moon / sun) that toggles Light <-> Dark; first state follows the phone, a tap stores the
+  explicit choice (`lib/theme.ts`, boot script and theme-color metas unchanged; old stored
+  "system" still read). Presentation only; qa-browser section 22 updated.
 - **Still open:** `scripts/check-signature-row-limits.mjs` not yet run against a deployed
   D1 (Staging only, never Production); notify-tick (lesson notifications) waits for Website
   PR #47 rework and Tony's approval of the new endpoint + secret (Production OFF); intake
@@ -151,10 +156,8 @@ record: `tony-kunliu/actgds.com` Issue #3.
 - Minor learner-edit review follow-ups are in `docs/BACKLOG.md`.
 - `tests/pdf-export-font-subset.test.ts` leaves a `/tmp/font-subset-*` dir (~14 MB
   out.pdf) per run; on shared machines this filled the disk (2026-10-11).
-- Dark theme on `staging` covers only the top bar, learner list and footer; the lesson, history
-  and form cards keep their light colours until `feature/ui-lesson-record` lands (it aliases the
-  legacy tokens to the shared ones; the learner form / History / archive / transfer panels are
-  then colour-harmonised only, their layout is unchanged).
+- `app/manifest.ts` still carries the pre-redesign `background_color` / `theme_color`
+  (`#f4f2ee` / `#1d1d1f`), not the shared tokens (affects the installed-PWA splash only).
 
 ## Next
 

@@ -15,7 +15,7 @@ import {
   type Totals,
 } from "@/lib/calc.ts";
 import { CORE_COMPETENCY_IDS, FINAL_DRIVE_23, REVIEW_1_17, REVIEW_1_22, invalidationNotice, type AssessmentResult, type LearnerProgress, type MilestoneInvalidation } from "@/lib/competency.ts";
-import { cardMeta, cardReminders, emptySummary, gateChips, glance, initials, lastLessonLine, listCollapsed, optionLabel, summaryFromProgress, type LearnerListSummary } from "@/lib/learner-card.ts";
+import { cardMeta, cardReminders, collapsedCards, emptySummary, gateChips, glance, initials, lastLessonLine, listCollapsed, optionLabel, summaryFromProgress, type LearnerListSummary } from "@/lib/learner-card.ts";
 import { derivedStats, learnerHeaderMeta, lessonDateLine, lessonPhase, odometerCarriedNote, showsSaveBar } from "@/lib/lesson-view.ts";
 import { accessLogoutUrl } from "@/lib/access-logout.ts";
 import { ARCHIVE_REASONS, archiveReasonText, MAX_ARCHIVE_NOTE_LENGTH } from "@/lib/archive-reasons.ts";
@@ -40,6 +40,7 @@ import { applyRoute, homeDistrict, parseRouteComments, routeFits, routeSuggestio
 import RouteCheckGroup from "./route-check.tsx";
 import { GNAF_ATTRIBUTION, partsAfterEdit, type AddressSuggestion } from "@/lib/address-suggest.ts";
 import AddressInput from "./address-input.tsx";
+import ThemeToggle from "./theme-switch.tsx";
 
 type LessonDraft = {
   lessonDate: string;
@@ -378,6 +379,13 @@ export default function DriverApp() {
     const card = document.querySelector<HTMLElement>('[data-testid="learner-card"][aria-current="true"]') ?? document.querySelector<HTMLElement>('[data-testid="learner-card"]');
     card?.focus({ preventScroll: true });
   }, [listExpanded]);
+
+  // "+ New learner" / "Edit learner" show only the form (the open learner's panels are hidden, their data untouched):
+  // bring the form's top on screen so the instructor is not left looking at the collapsed list above it.
+  const learnerFormRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (addingLearner) learnerFormRef.current?.scrollIntoView({ block: "start" });
+  }, [addingLearner, editingLearner]);
 
   // Keep the in-progress lesson on this device in case the page reloads mid-lesson.
   useEffect(() => {
@@ -841,7 +849,7 @@ export default function DriverApp() {
   // always works — switching learner while the edit form is open discards that form, as with the former dropdown.
   const openCard = selectedId ? viewMembers.find((l) => l.id === selectedId) : undefined;
   const collapsed = listCollapsed({ query, expanded: listExpanded, formOpen: addingLearner, openInView: openCard !== undefined });
-  const shownCards = cardsOf(collapsed ? (openCard ? [openCard] : []) : searchResults);
+  const shownCards = cardsOf(collapsed ? collapsedCards({ formOpen: addingLearner, openCard }) : searchResults);
   const hiddenCards = collapsed ? viewMembers.length - shownCards.length : 0;
   // Archived card data arrives with the Archived tab's own fetch; until then the list shows a loading line, never zeros.
   // If that fetch failed, the cards show without details plus a retry line.
@@ -992,6 +1000,7 @@ export default function DriverApp() {
               <a href={logoutUrl} className="signout-link" data-testid="signout-link">Sign out</a>
             </div>
           ) : null}
+          <ThemeToggle />
         </div>
         <div className="headline">
           <div>
@@ -1041,7 +1050,7 @@ export default function DriverApp() {
           </p>
         ) : null}
         {/* Always mounted so assistive tech announces the change of text, not a new element. */}
-        <p className="sr-only" aria-live="polite" data-testid="list-collapsed-note">{collapsed && hiddenCards > 0 ? `Showing ${shownCards.length} of ${viewMembers.length} learners.` : ""}</p>
+        <p className="sr-only" aria-live="polite" data-testid="list-collapsed-note">{collapsed && hiddenCards > 0 ? (shownCards.length ? `Showing ${shownCards.length} of ${viewMembers.length} learners.` : `${viewMembers.length} learners hidden while the form is open.`) : ""}</p>
         {listDetailsFailed ? (
           <button type="button" className="link list-retry" onClick={loadArchivedSummaries} data-testid="list-retry">Card details unavailable. Tap to retry.</button>
         ) : null}
@@ -1105,7 +1114,7 @@ export default function DriverApp() {
       {status ? <p className={`status ${status.kind}`} role="status">{status.text}</p> : null}
 
       {addingLearner ? (
-        <section className="card learner-form">
+        <section className="card learner-form" ref={learnerFormRef} data-testid="learner-form">
           <h2>{editingLearner ? "Edit learner" : "New learner"}</h2>
           <div className="grid">
             <label className="field full"><span>Student name *</span><input value={learnerDraft.fullName} onChange={(e) => learnerField("fullName", e.target.value)} autoComplete="off" /></label>
@@ -1176,6 +1185,8 @@ export default function DriverApp() {
         </section>
       ) : null}
 
+      {/* While the learner form is open only the form shows; the open learner's detail, draft and running lesson are kept in state (and the
+          draft on this device), so Cancel returns to exactly the same view. */}
       {detail && draft && !addingLearner ? (
         <>
           <section className="card summary">
