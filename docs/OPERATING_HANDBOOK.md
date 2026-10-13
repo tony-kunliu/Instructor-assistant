@@ -58,6 +58,21 @@ the reviewer. Stance: adversarial (hunt defects, §7). Output: a visible GitHub 
 changes) that cites the reviewed SHA and the independently derived tier. A re-review is required after any
 non-trivial fix; "fixed as suggested" is a claim, not evidence.
 
+**Review proportionality (IA, decided by Tony 2026-10-13, §14.11; same quality bar, less repeated cost):**
+- **L1:** no independent review required (author checks + CI).
+- **L2, presentation only** (CSS, layout, markup, wording; no change to data, rules, queries, API shape,
+  payloads, permissions or ownership): **one** independent review round. If it finds only Minor items, the
+  author fixes them with a test or QA check per item, and the merging agent verifies the fix diff against the
+  review list; no second reviewer.
+- **L2 that adds or changes a derived value, query, API shape or D1 usage:** one independent review, plus a
+  re-review of the fix commit when any Major/Critical finding or any non-trivial fix is involved.
+- **L3, the ALWAYS-ASK list (§4) and anything touching CBT&A events, validity rules, signatures, PDF legal
+  content, identity/ownership/transfer, middleware, workflows or `AGENTS.md`:** unchanged — full independent
+  review (cross-model by default) and a re-review after any non-trivial fix.
+- Any Blocker/Critical/Major finding on any tier, a review that cannot settle the tier, or a doubt about
+  tier means the stricter row applies. Minor-only fixes never need a re-review; the merging agent states in
+  its report which rule it applied. This section does not change Website rules; the Website adopts its own.
+
 ## 3. Standing authorizations (what agents may do alone)
 
 **IA (in force, `AGENTS.md` §14, verified):**
@@ -335,6 +350,10 @@ is affected · [ ] report ≤ 15 lines with the exact rollback evidence.
    the new HMAC key is set by Tony in both dashboards; Production stays OFF until a separate decision.
 10. **Website `staging`→`main` autonomy limited to L1/L2** with independent tier derivation; PR #46 must
     first apply the H1 fix (tier limit on items 1 and 3; L3 never merges to `main` without Tony).
+11. **IA review proportionality (2026-10-13):** keep the strict independent review for L3, the ALWAYS-ASK
+    list and anything that adds or changes data, rules, queries or API shape; for presentation-only L2 use one
+    review round and no re-review when only Minor items remain (§2 "Review proportionality"). Tony's reason:
+    same quality where it matters, fewer repeated review rounds.
 
 Follow-up tasks created by these decisions: (a) Codex: PR #46 H1–H5/M1–M5 fixes incl. M3 wording, then
 the read-only Sites release capability audit; (b) Claude: `docs/tasks/` scheme + Memory Guard changes;
