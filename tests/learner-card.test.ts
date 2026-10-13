@@ -7,6 +7,7 @@ import { CORE_COMPETENCY_IDS, computeProgress, FINAL_DRIVE_23, REVIEW_1_17, REVI
 import {
   cardMeta,
   cardReminders,
+  collapsedCards,
   emptySummary,
   gateChips,
   glance,
@@ -135,6 +136,14 @@ test("listCollapsed: only the open card (or nothing, under the form) until a sea
   assert.equal(listCollapsed({ ...base, formOpen: true, expanded: true }), false, "Show all learners works with the form open");
   assert.equal(listCollapsed({ ...base, openInView: true, expanded: true }), false);
   assert.equal(listCollapsed({ ...base, query: "   " }), false, "blank query is no query");
+});
+
+test("collapsedCards: the open learner's card alone; nothing at all while the learner form is open (Tony 2026-10-13: only the form)", () => {
+  const open = learner();
+  assert.deepEqual(collapsedCards({ formOpen: false, openCard: open }), [open], "learner open, no form: their card");
+  assert.deepEqual(collapsedCards({ formOpen: true, openCard: open }), [], "New learner / Edit learner: the card goes with the panels");
+  assert.deepEqual(collapsedCards({ formOpen: true, openCard: undefined }), [], "form with nothing open: still no empty-state card");
+  assert.deepEqual(collapsedCards({ formOpen: false, openCard: undefined }), []);
 });
 
 test("glance counts: learners in view, amber reminders only, Final Drive 23 ready", () => {

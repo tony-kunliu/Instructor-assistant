@@ -99,6 +99,11 @@ Long term (ecosystem, coordinated with Work on actgds.com Issue #3):
   colour harmonisation only (legacy tokens now alias the shared ones), their layout is unchanged;
   (3) the progress card still repeats the header's segments/gates (kept for its legend, invalidation
   warning and Completed banner) — fold or drop it only on Tony's say-so.
+- Appearance switch + "only the form" (branch `feature/ui-theme-switch-new-learner`, Tony's Staging
+  findings 2026-10-13): done on the branch (qa-browser section 22). Follow-ups: (1) `app/manifest.ts`
+  `background_color` / `theme_color` still pre-redesign (PWA splash only); (2) the switch lives in the
+  footer — move it into the top bar only if Tony finds the footer too far on a long lesson page;
+  (3) the "Appearance" label is English only, like the rest of the UI.
 - Follow-ups: the concept's "36 h not yet logged" chip was NOT built
   (R1 needs each learner's lessons, not in the list payload); "Instructor <name>" chip shows
   only in All / Archived; the list collapses to the open learner's card ("Show all learners")

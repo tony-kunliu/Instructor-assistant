@@ -457,6 +457,15 @@ details.group .inner > .grid { margin: 0; }
 .empty { color: var(--muted); margin: 0; }
 
 .foot { text-align: center; color: var(--text-muted); font-size: 12px; margin-top: 8px; }
+/* Appearance: System / Light / Dark (lib/theme.ts). A quiet segmented group in the footer: ≥44px targets, the pressed
+   option in the strong colour, everything from the tokens so it reads in both themes. */
+.theme-switch { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: var(--space-2); margin: 0 0 var(--space-3); }
+.theme-switch-label { font-size: 12px; font-weight: 600; color: var(--text-muted); margin-right: var(--space-1); }
+.theme-opt { font: inherit; font-size: 13px; font-weight: 600; min-height: 44px; min-width: 64px; padding: 0 var(--space-3); border: 1px solid var(--hairline); border-radius: 99px; background: var(--surface); color: var(--text-muted); cursor: pointer; touch-action: manipulation; }
+.theme-opt.active { background: var(--strong); color: var(--on-strong); border-color: var(--strong); }
+.theme-opt:focus-visible { outline: 2px solid var(--brand-gold); outline-offset: 2px; }
+/* The learner form scrolls to the top when it opens (driver-app.tsx); keep it clear of the notch / status bar. */
+.learner-form { scroll-margin-top: calc(env(safe-area-inset-top, 0px) + 12px); }
 
 .save-errors { margin: 0; padding: 12px; border-radius: 12px; border: 1.5px solid var(--bad); background: var(--bad-soft); color: var(--bad); }
 .save-errors strong { display: block; margin-bottom: 6px; font-size: 15px; }
