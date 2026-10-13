@@ -56,7 +56,11 @@ export type Snapshot = {
   lastSpeed: number | null;
   visibility: Visibility;
   wakeLock: WakeLockState;
+  /** The current error (cleared by the next fix). */
   geoError: GeoErrorLike | null;
+  /** The most recent error of this session, kept after fixes resume so the page can still show it, and how many so far. */
+  lastGeoError: GeoErrorLike | null;
+  geoErrors: number;
   storeErrors: number;
   unflushed: number;
 };
@@ -82,6 +86,8 @@ export class Recorder {
   sentinel: WakeLockSentinelLike | null = null;
   wakeLockState: WakeLockState;
   geoError: GeoErrorLike | null = null;
+  lastGeoError: GeoErrorLike | null = null;
+  geoErrors = 0;
   storeErrors = 0;
   timers: unknown[] = [];
   offs: (() => void)[] = [];
@@ -115,6 +121,8 @@ export class Recorder {
       visibility: this.deps.doc.visibility(),
       wakeLock: this.wakeLockState,
       geoError: this.geoError,
+      lastGeoError: this.lastGeoError,
+      geoErrors: this.geoErrors,
       storeErrors: this.storeErrors,
       unflushed: this.pendingSamples.length + this.pendingEvents.length,
     };
@@ -145,6 +153,8 @@ export class Recorder {
     this.distanceM = 0;
     this.lastFix = null;
     this.geoError = null;
+    this.lastGeoError = null;
+    this.geoErrors = 0;
     this.pendingSamples = [];
     this.pendingEvents = [];
     await this.#putMeta();
@@ -251,6 +261,8 @@ export class Recorder {
   #onGeoError(e: GeoErrorLike) {
     if (!this.active) return;
     this.geoError = { code: e.code, message: e.message };
+    this.lastGeoError = this.geoError;
+    this.geoErrors++;
     this.event("geo_error", `${e.code}: ${e.message}`);
   }
 

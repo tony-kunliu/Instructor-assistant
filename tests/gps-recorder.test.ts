@@ -276,6 +276,11 @@ test("live snapshot: running distance follows the fixes, geo errors keep code an
   assert.ok(s.distanceM >= 105 && s.distanceM <= 118, `distance ${s.distanceM}`);
   h.err(1);
   assert.deepEqual(h.rec.snapshot().geoError, { code: 1, message: "err1" });
+  h.fix(-35.278, 149.13);
+  const after = h.rec.snapshot();
+  assert.equal(after.geoError, null, "cleared by the fix");
+  assert.deepEqual(after.lastGeoError, { code: 1, message: "err1" }, "kept for the page after fixes resume");
+  assert.equal(after.geoErrors, 1);
   assert.match(describeGeoError({ code: 1, message: "" })!, /Location Services/);
   assert.match(describeGeoError({ code: 2, message: "" })!, /unavailable/);
   assert.match(describeGeoError({ code: 3, message: "" })!, /30 seconds/);
