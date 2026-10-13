@@ -58,9 +58,13 @@ Long term (ecosystem, coordinated with Work on actgds.com Issue #3):
    (`AGENTS.md` §14 exclusion; Production stays OFF). IA-side caller spec only
    once the Website confirms the endpoint (Handbook §14 follow-up d).
 8. P3 bookings into Today's Lessons (Cal.com).
-9. P4 GPS tracking, then P5 drive intelligence. New storage = new
-   infrastructure: needs Tony's separate approval; design first. Revisit when
-   Tony is back in Australia with real learner data.
+9. P4 GPS tracking, then P5 drive intelligence. Design + Tony's decisions
+   (2026-10-13): `docs/superpowers/specs/2026-10-13-gps-tracking-design.md`.
+   Phase 1 (isolated `/gps` recorder, `lib/gps`, synthetic closed loop, nothing
+   uploaded) DONE on `feature/gps-p4-recorder`. Next: phase 1b = Tony's
+   real-phone drive on Staging (web vs native verdict), then phase 2 (lesson
+   hook-in, `lesson_tracks` table = new storage, needs Tony's separate
+   approval; consent record; 90-day Cron; R10 suggestion line).
 10. P6 driving journey across licence stages and both systems.
 
 ## Designed, waiting for a go
@@ -190,5 +194,6 @@ Long term (ecosystem, coordinated with Work on actgds.com Issue #3):
 ## Ecosystem phases (see the roadmap)
 
 - P1 Student Account: ACTGDS side ("My Driving"); is live in Production.
-- P2 Lesson notification emails, P3 Cal.com booking into Today's Lessons, P4 GPS
-  tracking, P5 Drive intelligence, P6 Driving journey: not started.
+- P4 GPS tracking: phase 1 (isolated recorder) on a branch; see item 9.
+- P2 Lesson notification emails, P3 Cal.com booking into Today's Lessons,
+  P5 Drive intelligence, P6 Driving journey: not started.
