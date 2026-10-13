@@ -154,8 +154,6 @@ record: `tony-kunliu/actgds.com` Issue #3.
   Vietnamese, Greek, Cyrillic, kana, Hangul, Latin Ext-B, box drawing and some
   symbols print as boxes after the user confirms the warning.
 - Minor learner-edit review follow-ups are in `docs/BACKLOG.md`.
-- `tests/pdf-export-font-subset.test.ts` leaves a `/tmp/font-subset-*` dir (~14 MB
-  out.pdf) per run; on shared machines this filled the disk (2026-10-11).
 - `app/manifest.ts` still carries the pre-redesign `background_color` / `theme_color`
   (`#f4f2ee` / `#1d1d1f`), not the shared tokens (affects the installed-PWA splash only).
 
