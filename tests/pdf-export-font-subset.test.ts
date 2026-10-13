@@ -5,7 +5,7 @@
 import { test, type TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { PDFDocument, PDFName, PDFRawStream, decodePDFRawStream } from "pdf-lib";
@@ -22,7 +22,7 @@ const learner: Learner = {
   address: "1 Test St", phone: "0400 000 000", dob: "2008-01-01", licenceNumber: "L1", licenceExpiry: "2030-01-01", eligibility: "Eligible",
   addressSuburb: null,
   addressState: null,
-  addressPostcode: null,
+  addressPostcode: null, otherLicenceKind: null, otherLicencePlace: null, otherLicenceNumber: null, otherLicenceClass: null, otherLicenceIssuedOn: null, otherLicenceExpiresOn: null,
   transmission: "manual", schoolWork: null, licenceStage: "learner", learnerLicenceIssuedOn: null, learnerLicenceFirstIssuedOn: null, hptPassedOn: null, loggedHours: null, loggedHoursOn: null, archivedAt: null, archiveReason: null, archiveNote: null, transfers: [],
 };
 
@@ -47,12 +47,15 @@ function noPoppler(t: TestContext): void {
 }
 
 function pdftotext(bytes: Uint8Array, args: string[]): string | null {
-  const file = path.join(mkdtempSync(path.join(os.tmpdir(), "font-subset-")), "out.pdf");
-  writeFileSync(file, bytes);
-  try {
-    const out = execFileSync("pdftotext", [...args, file, "-"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], maxBuffer: 64 << 20 });
-    return out.split("\n").filter((line) => !line.startsWith("<meta ")).join("\n"); // -bbox prints the creation timestamp
-  } catch { return null; } // null: poppler not installed
+  const dir = mkdtempSync(path.join(os.tmpdir(), "font-subset-"));
+  try { // the whole-font PDF is ~14 MB: remove the dir on every path (pdftotext missing/failing, write error); callers assert after it is gone
+    const file = path.join(dir, "out.pdf");
+    writeFileSync(file, bytes);
+    try {
+      const out = execFileSync("pdftotext", [...args, file, "-"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], maxBuffer: 64 << 20 });
+      return out.split("\n").filter((line) => !line.startsWith("<meta ")).join("\n"); // -bbox prints the creation timestamp
+    } catch { return null; } // null: poppler not installed
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 }
 
 const SHAPES: Record<string, { learner: Learner; lessons: Lesson[] }> = {

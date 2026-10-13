@@ -510,7 +510,7 @@ test("PDF: the route line prints through the existing Comments cell (and the cen
   const fontBytes = readFileSync(new URL("../public/fonts/NotoSansSC-Regular.otf", import.meta.url));
   const learner: Learner = {
     id: "learner-1", instructorId: "instructor-1", instructorName: "Test Instructor", instructorAdiNumber: "ADI-9", fullName: "QA Route Learner",
-    address: "12 Smith St, Florey ACT 2615", addressSuburb: null, addressState: null, addressPostcode: null, phone: null, dob: null, licenceNumber: null, licenceExpiry: null, eligibility: null, transmission: null, schoolWork: null,
+    address: "12 Smith St, Florey ACT 2615", addressSuburb: null, addressState: null, addressPostcode: null, otherLicenceKind: null, otherLicencePlace: null, otherLicenceNumber: null, otherLicenceClass: null, otherLicenceIssuedOn: null, otherLicenceExpiresOn: null, phone: null, dob: null, licenceNumber: null, licenceExpiry: null, eligibility: null, transmission: null, schoolWork: null,
     licenceStage: "learner", learnerLicenceIssuedOn: null, learnerLicenceFirstIssuedOn: null, hptPassedOn: null, loggedHours: null, loggedHoursOn: null,
     archivedAt: null, archiveReason: null, archiveNote: null, transfers: [],
   };

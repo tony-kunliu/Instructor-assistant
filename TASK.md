@@ -5,39 +5,36 @@ _Last updated: 2026-10-13_
 This file describes **current task only**. Completed work's detail
 lives in git log and closed PRs, not here.
 
-**Current Task:** Appearance toggle in the top bar (Tony's decision 2026-10-13 after testing PR #77 on
-Staging), branch `feature/ui-theme-toggle-top` — **Completed on the branch, not merged** (presentation
-only, L1): the footer System / Light / Dark group is gone; one small icon button at the end of the top
-bar's brand row (44px hit area around a 32px disc, moon on light / sun on dark, accessible name
-"Switch to dark theme" / "Switch to light theme", gold focus ring, beside "Signed in as / Sign out"
-without crowding at 375px). First state = the phone's appearance (and it follows the phone until a
-tap); a tap switches to the opposite and stores the explicit choice in localStorage (try/catch, works
-with storage blocked; old stored "system" / "light" / "dark" still read). The no-flash boot script in
-`app/layout.tsx` and the theme-color meta sync are unchanged. `lib/theme.ts` (`effectiveTheme`,
-`toggledTheme`, `toggleLabel`) + `tests/theme.test.ts`; qa-browser section 22 rewritten (toggle
-state/aria/icon, persistence, no-flash with JS bundles blocked, legacy "system", phone flip, storage
-blocked, top bar geometry at 375/820, contrast ≥4.5:1 in both themes). The PR #77 "only the form"
-behaviour is unchanged. No migration; payloads, validations, data-testids and server calls unchanged.
-D1 stays `0012`.
+**Current Task:** Learner intake P3, overseas / interstate licence (design
+`docs/superpowers/specs/2026-10-11-learner-intake-design.md` D11-D14, D17 school rule), branch
+`feature/intake-p3-licence` — **Completed on the branch, review round 1 fixed, rules re-review APPROVE, Staging D1 at `0013` (run 8), merging to `staging`** (L2
+additive migration + reminder logic + derived value). Migration `0013` adds six nullable
+`learners.other_licence_*` columns (kind, place, number, class, issued_on, expires_on; no default, no
+backfill, no rebuild; rehearsed with `scripts/rehearse-0013-local.sh`, re-apply refused by design).
+`lib/other-licence.ts` (enums, labels, D12 validation with distinct errors, bundled country list);
+`lib/rules.ts`: Tony's rule as REMINDERS only — interstate LEARNER time counts from its issue date only when
+it is EARLIER than the ACT licence (grey "Age band unclear" if the bands differ; a later one contributes nothing), interstate or overseas FULL licence held 12 months
+(`OTHER_FULL_LICENCE_MONTHS`) removes the wait, overseas learner / class `other` never count (note on the
+R2 line), missing type or date → grey `otherLicenceDataReminder`; hours, HPT and age unchanged; the other
+licence's expiry is never read; the C23 date is never before the ACT licence issue date. "Competency 23
+from" and the PDF Eligibility auto-fill follow (never overwriting Tony's text). Form: collapsed group "Overseas or interstate licence" after the Competency 23
+group; "Yes" opens the details; "No" clears them (old values stay in `learner_revisions`). D1: edit 5 /
+create 3 statements, UPDATE binds 25, INSERT 25, revision 4. Nothing to ACTGDS (payload keys pinned).
+qa-browser section 23 (375 light/dark, 820, R2 wording, PDF, snapshots). Staging D1 `0013`; Production D1 `0012` until the next release.
 
-**Next Recommended Task:** merge `feature/ui-theme-toggle-top` to `staging` (L1: author checks + CI,
-no independent review), Tony's real-phone look (toggle position in the bar, no flash on a cold start,
-iOS status-bar colour). Then, on Tony's go: (a) move Transfer / Archive into the learner edit form's
-folded "More" section + learner form restyle (concept screen B); (b) `docs/tasks` memory scheme +
-Memory Guard changes (Handbook §9); (c) intake P3; (d) `scripts/check-signature-row-limits.mjs`
-against Staging D1; (e) fix the `tests/pdf-export-font-subset.test.ts` temp-dir leak. P4 and 3c T2
-after that.
+**Next Recommended Task:** post-merge CI on `staging`; Tony's real-phone look at the new group
+(375px, iOS date pickers); then release to Production (the Production Release workflow applies `0013`). Then, on Tony's go: (a) Transfer /
+Archive into the edit form's "More" section + learner form restyle; (b) `docs/tasks` memory scheme;
+(c) intake P4 (iOS Scan Text + local parser); (d) `scripts/check-signature-row-limits.mjs` on Staging
+D1. (The font-subset temp-dir leak is fixed, PR #80.)
 
-**Waiting on Other Repo:** ACTGDS: notify-tick (lesson notifications) waits for Website PR
-#47 rework and Tony's explicit approval of the new endpoint + secret (Production stays OFF);
-Work's display polish list. Nothing blocks this repo.
+**Waiting on Other Repo:** ACTGDS: notify-tick waits for Website PR #47 rework and Tony's explicit
+approval of the new endpoint + secret (Production stays OFF); Work's display polish list. Nothing
+blocks this repo.
 
-**Tony Manual Action Required:** none blocking. Optional: (1) answer whether to hide the
-ACT "Jerrabomberra" district in Address suggestions (BACKLOG); (2) the 30-minute tooling
-checklist, not done yet: GitHub Dependabot alerts + push protection, merge the duplicate
-GitHub environments, claude.ai plugins (Security Guidance, claude-security, Cloudflare
-read-only).
+**Tony Manual Action Required:** none blocking (P3 questions answered 2026-10-13: count from the
+earlier licence; keep the separate grey line; keep the country list). Optional, still open: hide the ACT "Jerrabomberra" district in
+Address suggestions; the 30-minute tooling checklist (Dependabot, duplicate environments, plugins).
 
-**CI note:** poppler tests are opt-in hard failures (`REQUIRE_POPPLER=1`,
-`ci.yml` only); Cloudflare Workers Builds skip them. Simulate the Workers
-Builds command locally before merging (see STATUS.md CI).
+**CI note:** poppler tests are opt-in hard failures (`REQUIRE_POPPLER=1`, `ci.yml` only); Cloudflare
+Workers Builds skip them. Simulate the Workers Builds command locally before merging (see STATUS.md CI).

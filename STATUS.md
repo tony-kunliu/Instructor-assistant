@@ -20,22 +20,21 @@ closed PRs; see `TASK.md` for what is in progress.
 - **Real-device / Tony checks:** iPad layout accepted on a real iPad ("iPad 可以"); route
   reminders and the address suggestions (iOS "Scan Text" callout, list vs keyboard) tested
   on Staging, reported OK by Tony ("测试都没问题"), not automated evidence.
-- **Merged to `staging` (PRs #73, #74):** learner list redesign (tokens, navy top bar, learner cards,
-  `GET /api/learners` `summaries`; qa-browser section 20) and lesson record redesign (navy learner
-  header, Start → running → End, Save only after End in a sticky bar, derived-values block, ≥44px
-  number-only chips, full dark theme via the shared tokens; qa-browser section 21). No migration,
-  contract untouched. Not yet on `main` / Production.
-- **Merged to `staging` (PR #77):** "+ New learner" / "Edit learner" show only the form (open
-  learner's card and panels hidden, state and lesson draft kept) + the first appearance control.
-- **On a branch, not merged:** `feature/ui-theme-toggle-top` (Tony's decision after Staging,
-  2026-10-13): the footer System / Light / Dark group is replaced by ONE small icon button in the
-  top bar (moon / sun) that toggles Light <-> Dark; first state follows the phone, a tap stores the
-  explicit choice (`lib/theme.ts`, boot script and theme-color metas unchanged; old stored
-  "system" still read). Presentation only; qa-browser section 22 updated.
+- **Merged to `staging` (PRs #73, #74, #77, #78, #80):** learner list redesign (tokens, navy top bar,
+  cards, `GET /api/learners` `summaries`; qa-browser 20), lesson record redesign (navy header, Start →
+  End, Save after End, ≥44px chips, dark theme; qa-browser 21), "only the form" while New / Edit
+  learner is open + ONE light/dark toggle button in the top bar (qa-browser 22), font-subset temp-dir
+  leak fixed in the PDF test. Released to Production in #15/#16 except the leak fix. Contract untouched.
+- **On a branch, reviewed, merging (L2 data + rules, strict path done):** `feature/intake-p3-licence` =
+  learner intake P3, overseas / interstate licence: migration `0013` (6 nullable
+  `learners.other_licence_*` columns, additive), `lib/other-licence.ts`, school rule in `lib/rules.ts`
+  (R2 + "Competency 23 from"), collapsed form group, revisions, qa-browser 23. Review round 1 fixed
+  (earlier licence counts; C23 date floored at the ACT issue); rules re-review APPROVE. Staging D1
+  Migrate run 8 applied `0013` to Staging (2026-10-13) BEFORE the merge; Production D1 still `0012`.
 - **Still open:** `scripts/check-signature-row-limits.mjs` not yet run against a deployed
   D1 (Staging only, never Production); notify-tick (lesson notifications) waits for Website
   PR #47 rework and Tony's approval of the new endpoint + secret (Production OFF); intake
-  P3/P4; `docs/tasks` memory scheme + Memory Guard changes (Handbook §9); items in
+  P4; `docs/tasks` memory scheme + Memory Guard changes (Handbook §9); items in
   `docs/BACKLOG.md`.
 
 ## Repository
@@ -116,6 +115,9 @@ closed PRs; see `TASK.md` for what is in progress.
   signature canvas, 700k-char limit); Address suggestions from a bundled G-NAF street index
   (`0012`, 3 nullable suburb/state/postcode columns); "Competency 23 from" + PDF Eligibility
   auto-fill; Competency 23 route reminders (R10a). None of these sends anything to ACTGDS.
+  On the branch only: overseas / interstate licence fields (`0013`) feeding the Competency 23
+  reminders (Tony's school rule: interstate learner time counts; interstate or overseas FULL
+  licence held 12 months removes the wait; overseas learner does not count; expiry not read).
 - Working rule: `AGENTS.md` §13, standing authorizations §14 (new-endpoint/secret
   exclusion 2026-10-12), model choice §9; two-repo Operating Handbook
   `docs/OPERATING_HANDBOOK.md` approved by Tony 2026-10-12 (§16).
@@ -154,8 +156,6 @@ record: `tony-kunliu/actgds.com` Issue #3.
   Vietnamese, Greek, Cyrillic, kana, Hangul, Latin Ext-B, box drawing and some
   symbols print as boxes after the user confirms the warning.
 - Minor learner-edit review follow-ups are in `docs/BACKLOG.md`.
-- `tests/pdf-export-font-subset.test.ts` leaves a `/tmp/font-subset-*` dir (~14 MB
-  out.pdf) per run; on shared machines this filled the disk (2026-10-11).
 - `app/manifest.ts` still carries the pre-redesign `background_color` / `theme_color`
   (`#f4f2ee` / `#1d1d1f`), not the shared tokens (affects the installed-PWA splash only).
 

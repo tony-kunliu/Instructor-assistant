@@ -38,8 +38,10 @@ export function pdfEligibility(learner: EligibilityLearner & { eligibility: stri
 /**
  * The learner fields the "C23 from" DATE depends on. Only an edit of one of these refreshes an app-owned Eligibility
  * in the form (hours and HPT do not change the date), so opening Edit and saving untouched sends no change.
+ * The other licence's kind, type and issue date move the date under the school rule (intake P3, D13/D17); its place,
+ * number and expiry never do.
  */
-export const ELIGIBILITY_DATE_KEYS = ["dob", "licenceExpiry", "learnerLicenceIssuedOn", "learnerLicenceFirstIssuedOn"] as const;
+export const ELIGIBILITY_DATE_KEYS = ["dob", "licenceExpiry", "learnerLicenceIssuedOn", "learnerLicenceFirstIssuedOn", "otherLicenceKind", "otherLicenceClass", "otherLicenceIssuedOn"] as const;
 
 /** Value sent on save (D18): an empty/blank box gets the generated value (if computable); anything else is sent as is. */
 export function eligibilityAtSave(current: string, learner: EligibilityLearner): string {
