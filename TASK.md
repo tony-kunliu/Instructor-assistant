@@ -1,33 +1,40 @@
 # TASK.md
 
-_Last updated: 2026-10-12_
+_Last updated: 2026-10-13_
 
 This file describes **current task only**. Completed work's detail
 lives in git log and closed PRs, not here.
 
-**Current Task:** R10a Competency 23 route reminders — **Completed** on `feature/route-r10a`
-(pushed, not merged; no migration, 0 new D1 statements; two independent reviews, all findings
-fixed; `origin/staging` merged in incl. intake P2 / migration `0012`): unfamiliar town-centre
-suggestion line on the Start Lesson panel (home district from the structured suburb/state, else the
-address text), route check group when 23 is Assessed (centre chips + 6 official ticks + "All met")
-written into location + one generated comment line only on an explicit tap, parsed back in History
-Edit; reminders only; nothing to ACTGDS (contract hash unchanged). Intake P2 and 3c T1 as below.
+**Current Task:** Lesson record UI (`feature/ui-lesson-record`, concept approved by Tony 2026-10-12,
+his three decisions applied: number-only chips, Save only after End Lesson, Transfer/Archive left in
+place for a later task) — **Completed on the branch, not merged**: navy learner header (identity, next
+lesson number, 22-segment bar with derived totals, gate chips), lesson status block (Start Lesson →
+running timebar + End Lesson → ended), odometer block with big derived values (duration, km, total
+after save, lesson number: calculated, never typed) and the folded "Edit date / times", competency
+block (Taught / Assessed grids ≥44px, gate tags on Review 1-17 / 1-22 / 23, result rows with the
+official names), reminders + route block, Location/Comments, two signature pads (pad behaviour
+unchanged, signed = green border), sticky "Save Lesson #N" + Discard bar with safe-area padding that
+appears only once the lesson has ended and un-pins while an input has the keyboard. Legacy CSS tokens
+alias the shared tokens → full dark theme (colour only elsewhere). `lib/lesson-view.ts` + tests;
+qa-browser section 21 (375 light/dark running + ended, 820). No migration; payloads, validations,
+data-testids and server calls unchanged. D1 stays `0012`.
 
-**Next Recommended Task:** merge `feature/route-r10a` to `staging` under §14 (no migration; `0012`
-must already be on Staging D1 since P2 is merged). Then P3 (overseas/interstate licence) or T2
-(apply `0011` to Staging D1 BEFORE merging T1), on Tony's go.
+**Next Recommended Task:** independent review of `feature/ui-lesson-record` (L2), merge to `staging`
+(post-merge CI green), Tony's real-phone look (keyboard vs sticky bar, pads). Then, on Tony's go:
+(a) move Transfer / Archive into the learner edit form's folded "More" section + learner form
+restyle (concept screen B); (b) `docs/tasks` memory scheme + Memory Guard changes (Handbook §9);
+(c) intake P3; (d) `scripts/check-signature-row-limits.mjs` against Staging D1; (e) fix the
+`tests/pdf-export-font-subset.test.ts` temp-dir leak. P4 and 3c T2 after that.
 
-**Waiting on Other Repo:** ACTGDS: Work's display polish (list sent) and lesson
-notification activation decisions. My Driving is live. Nothing blocks this repo.
+**Waiting on Other Repo:** ACTGDS: notify-tick (lesson notifications) waits for Website PR
+#47 rework and Tony's explicit approval of the new endpoint + secret (Production stays OFF);
+Work's display polish list. Nothing blocks this repo.
 
-**Tony Manual Action Required:** R10a: none (no real-device-only behaviour). After P2 is on Staging, on the real iPhone: tap the Address
-field, confirm iOS "Scan Text" still appears in the callout, type `44 app` and check the list is
-not hidden behind the keyboard (Access identity and iOS keyboard cannot be simulated). After T1 is
-on Staging, one real-login transfer and transfer-back of a `QA …` learner.
-
-**Docs in flight:** `docs/operating-handbook` branch — Operating Handbook v2
-(`docs/OPERATING_HANDBOOK.md`, approved by Tony 2026-10-12; §14 records his 10 decisions and
-the follow-up tasks: docs/tasks memory scheme, cross-model review, notify caller spec). Docs only.
+**Tony Manual Action Required:** none blocking. Optional: (1) answer whether to hide the
+ACT "Jerrabomberra" district in Address suggestions (BACKLOG); (2) the 30-minute tooling
+checklist, not done yet: GitHub Dependabot alerts + push protection, merge the duplicate
+GitHub environments, claude.ai plugins (Security Guidance, claude-security, Cloudflare
+read-only).
 
 **CI note:** poppler tests are opt-in hard failures (`REQUIRE_POPPLER=1`,
 `ci.yml` only); Cloudflare Workers Builds skip them. Simulate the Workers

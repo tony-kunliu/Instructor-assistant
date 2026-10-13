@@ -36,7 +36,10 @@ export default function SaveErrorSummary({ issues, prefix, attempt }: Props) {
     if (attempt === 0 || !element) return;
     const anchor = (element.nextElementSibling as HTMLElement | null) ?? element;
     const top = element.getBoundingClientRect().top;
-    const bottom = anchor.getBoundingClientRect().bottom;
+    // A sticky action bar (the lesson form's Save bar) is always on screen itself but can cover the summary's bottom:
+    // measure the summary plus the bar's height instead, so the whole summary ends up above the bar.
+    const stickyAnchor = anchor !== element && getComputedStyle(anchor).position === "sticky";
+    const bottom = stickyAnchor ? element.getBoundingClientRect().bottom + anchor.getBoundingClientRect().height : anchor.getBoundingClientRect().bottom;
     const margin = 8;
     if (top < margin) window.scrollBy({ top: top - margin });
     else if (bottom > window.innerHeight - margin) window.scrollBy({ top: Math.min(bottom - window.innerHeight + margin, top - margin) });
