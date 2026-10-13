@@ -34,7 +34,8 @@ import SaveErrorSummary from "./save-error-summary.tsx";
 import PaperImportPanel from "./paper-import-panel.tsx";
 import SignaturePad from "./signature-pad.tsx";
 import { BookingLink, RulesReminders } from "./rules-reminders.tsx";
-import { finalDriveEligibilityReminder, finalDriveEligibleFromReminder, finalDriveFormReminders, finalDrivePanelReminder, learnerLicenceReminder, reviewGapReminder, type EligibilityLearner, type Reminder } from "@/lib/rules.ts";
+import { finalDriveEligibilityReminder, finalDriveEligibleFromReminder, finalDriveFormReminders, finalDrivePanelReminder, learnerLicenceReminder, otherLicenceDataReminder, reviewGapReminder, type EligibilityLearner, type Reminder } from "@/lib/rules.ts";
+import { COUNTRIES, holdsOtherLicence, INTERSTATE_PLACES, MAX_OTHER_NUMBER_LENGTH, MAX_OTHER_PLACE_LENGTH, OTHER_LICENCE_CLASS_LABELS, OTHER_LICENCE_CLASSES, OTHER_LICENCE_HINT, OTHER_LICENCE_KIND_LABELS, OTHER_LICENCE_KINDS } from "@/lib/other-licence.ts";
 import { autoFillEligibility, ELIGIBILITY_DATE_KEYS, eligibilityAtSave, showsAutoHint } from "@/lib/c23-eligibility.ts";
 import { applyRoute, homeDistrict, parseRouteComments, routeFits, routeSuggestionReminder, syncRouteWithAssessed, type RouteState } from "@/lib/route-check.ts";
 import RouteCheckGroup from "./route-check.tsx";
@@ -74,6 +75,13 @@ type LearnerDraft = {
   hptPassedOn: string;
   loggedHours: string;
   loggedHoursOn: string;
+  /** Overseas / interstate licence group (migration 0013, intake P3 D11); "" = not recorded. Details cleared when the kind is not interstate / overseas. */
+  otherLicenceKind: string;
+  otherLicencePlace: string;
+  otherLicenceNumber: string;
+  otherLicenceClass: string;
+  otherLicenceIssuedOn: string;
+  otherLicenceExpiresOn: string;
   eligibility: string;
   transmission: string;
   schoolWork: string;
@@ -100,7 +108,14 @@ function draftEligibilityLearner(d: LearnerDraft): EligibilityLearner {
     dob: date(d.dob), licenceExpiry: date(d.licenceExpiry), learnerLicenceIssuedOn: date(d.learnerLicenceIssuedOn),
     learnerLicenceFirstIssuedOn: date(d.learnerLicenceFirstIssuedOn), hptPassedOn: date(d.hptPassedOn),
     loggedHours: /^\d+$/.test(d.loggedHours) ? Number(d.loggedHours) : null, loggedHoursOn: date(d.loggedHoursOn),
+    otherLicenceKind: date(d.otherLicenceKind), otherLicenceClass: date(d.otherLicenceClass), otherLicenceIssuedOn: date(d.otherLicenceIssuedOn), otherLicencePlace: date(d.otherLicencePlace.trim()),
   };
+}
+
+/** D12: the answer "No" (or not recorded) clears the detail fields; switching interstate ↔ overseas clears the place (a state is not a country). */
+function withOtherLicenceKind(d: LearnerDraft, kind: string): LearnerDraft {
+  if (!holdsOtherLicence(kind)) return { ...d, otherLicenceKind: kind, otherLicencePlace: "", otherLicenceNumber: "", otherLicenceClass: "", otherLicenceIssuedOn: "", otherLicenceExpiresOn: "" };
+  return { ...d, otherLicenceKind: kind, otherLicencePlace: kind === d.otherLicenceKind ? d.otherLicencePlace : "" };
 }
 
 /** D18: after a licence-date/DOB edit, an empty or app-generated Eligibility follows the dates ("C23 from …"); the instructor's own text is never touched. */
@@ -132,6 +147,12 @@ const emptyLearner: LearnerDraft = {
   hptPassedOn: "",
   loggedHours: "",
   loggedHoursOn: "",
+  otherLicenceKind: "",
+  otherLicencePlace: "",
+  otherLicenceNumber: "",
+  otherLicenceClass: "",
+  otherLicenceIssuedOn: "",
+  otherLicenceExpiresOn: "",
   eligibility: "",
   transmission: "",
   schoolWork: "",
@@ -453,6 +474,8 @@ export default function DriverApp() {
       licenceExpiry: l.licenceExpiry ?? "", eligibility: l.eligibility ?? "", transmission: l.transmission ?? "", schoolWork: l.schoolWork ?? "",
       learnerLicenceIssuedOn: l.learnerLicenceIssuedOn ?? "", learnerLicenceFirstIssuedOn: l.learnerLicenceFirstIssuedOn ?? "", hptPassedOn: l.hptPassedOn ?? "",
       loggedHours: l.loggedHours === null ? "" : String(l.loggedHours), loggedHoursOn: l.loggedHoursOn ?? "",
+      otherLicenceKind: l.otherLicenceKind ?? "", otherLicencePlace: l.otherLicencePlace ?? "", otherLicenceNumber: l.otherLicenceNumber ?? "",
+      otherLicenceClass: l.otherLicenceClass ?? "", otherLicenceIssuedOn: l.otherLicenceIssuedOn ?? "", otherLicenceExpiresOn: l.otherLicenceExpiresOn ?? "",
       licenceStage: l.licenceStage, instructorId: l.instructorId,
     };
     // Opened as stored (no auto-fill yet): an untouched save must send no change. The panel and PDF show the live value anyway.
@@ -813,6 +836,8 @@ export default function DriverApp() {
   // Only a licence-date/DOB edit refreshes an app-owned Eligibility; typing in Eligibility itself never auto-fills (so it can be cleared or rewritten).
   const learnerField = (key: keyof LearnerDraft, value: string) =>
     setLearnerDraft((current) => (isEligibilityDateKey(key) ? withAutoEligibility({ ...current, [key]: value }) : { ...current, [key]: value }));
+  // Intake P3 D12: "No" clears the other licence's details (old values stay in the revision history); the kind moves the C23 date, so the auto-fill follows.
+  const otherLicenceKindField = (kind: string) => setLearnerDraft((current) => withAutoEligibility(withOtherLicenceKind(current, kind)));
   // D7: typing keeps the picked suburb/state/postcode only while the suburb is still a whole word of the text.
   const addressTextField = (text: string) =>
     setLearnerDraft((current) => {
@@ -928,6 +953,9 @@ export default function DriverApp() {
   // Learner intake D18: "Competency 23 from …" on the panel, learner stage only, not once CBT&A is completed.
   const eligibleFromLine: Reminder | null = detail && detail.learner.licenceStage === "learner" && panel !== "completed" ? finalDriveEligibleFromReminder(detail.learner, localNow(rulesNow).date) : null;
   const formEligibleFromLine: Reminder | null = addingLearner ? finalDriveEligibleFromReminder(draftEligibilityLearner(learnerDraft), localNow(rulesNow).date) : null;
+  // Intake P3 D13 (e): grey "add the type and issue date" while the recorded interstate / overseas licence cannot be read yet (form, panel, lesson form).
+  const formOtherLicenceLine: Reminder | null = addingLearner ? otherLicenceDataReminder(draftEligibilityLearner(learnerDraft)) : null;
+  const panelOtherLicenceLine: Reminder | null = detail ? otherLicenceDataReminder(detail.learner) : null;
   const panelReminders: Reminder[] = [];
   let showBookingLink = false;
   if (detail && phase === "ready" && panel === "active") {
@@ -936,6 +964,7 @@ export default function DriverApp() {
     if (next) panelReminders.push(next);
     if (detail.progress.finalDrive23.status === "ready") {
       panelReminders.push(finalDriveEligibilityReminder(detail.learner, localNow(rulesNow).date));
+      if (panelOtherLicenceLine) panelReminders.push(panelOtherLicenceLine);
       panelReminders.push(finalDrivePanelReminder(rulesNow));
       // R10 D5: the unfamiliar town centres (home district from the address), read before the lesson, never a verdict.
       panelReminders.push(routeSuggestionReminder(detail.learner));
@@ -967,7 +996,11 @@ export default function DriverApp() {
       const r = reviewGapReminder({ review, progress: detail.progress, lessons: lessonRefs, moment: { kind: "draft", date: draft.lessonDate, startTime: draft.startTime }, where: "form" });
       if (r) formReminders.push(r);
     }
-    if (draft.assessedIds.includes(FINAL_DRIVE_23)) formReminders.push(finalDriveEligibilityReminder(detail.learner, draft.lessonDate), ...finalDriveFormReminders({ date: draft.lessonDate, startTime: draft.startTime, finishTime: draft.finishTime }));
+    if (draft.assessedIds.includes(FINAL_DRIVE_23)) {
+      formReminders.push(finalDriveEligibilityReminder(detail.learner, draft.lessonDate));
+      if (panelOtherLicenceLine) formReminders.push(panelOtherLicenceLine);
+      formReminders.push(...finalDriveFormReminders({ date: draft.lessonDate, startTime: draft.startTime, finishTime: draft.finishTime }));
+    }
   }
   // R10 (D3-D9): the route check lives in the draft's own location + comments (one generated line), parsed back on every render.
   const home = homeDistrict(detail?.learner ?? null);
@@ -1155,6 +1188,54 @@ export default function DriverApp() {
                 <label className="field"><span>Hours as of</span>
                   <input type="date" value={learnerDraft.loggedHoursOn} onChange={(e) => { setHoursOnTouched(true); learnerField("loggedHoursOn", e.target.value); }} max={localNow().date} data-testid="c23-hours-on" />
                 </label>
+              </div>
+            </details>
+            {/* Intake P3 (migration 0013, D11): collapsed group; "Yes" opens the details. Reminder input only: nothing here blocks a save. */}
+            <details className="full rules-group" key={editingLearner ? "edit-other" : "new-other"} data-testid="other-licence-group">
+              <summary>Overseas or interstate licence</summary>
+              <p className="hint-note">{OTHER_LICENCE_HINT} Optional; a reminder only, nothing here blocks a save or goes to the website.</p>
+              <div className="grid">
+                <label className="field full"><span>Holds an overseas or interstate licence?</span>
+                  <select value={learnerDraft.otherLicenceKind} onChange={(e) => otherLicenceKindField(e.target.value)} data-testid="other-kind">
+                    <option value="">—</option>
+                    {OTHER_LICENCE_KINDS.map((kind) => <option key={kind} value={kind}>{OTHER_LICENCE_KIND_LABELS[kind]}</option>)}
+                  </select>
+                </label>
+                {holdsOtherLicence(learnerDraft.otherLicenceKind) ? (
+                  <>
+                    <label className="field"><span>{learnerDraft.otherLicenceKind === "interstate" ? "State or territory" : "Country"}</span>
+                      {learnerDraft.otherLicenceKind === "interstate" ? (
+                        <select value={learnerDraft.otherLicencePlace} onChange={(e) => learnerField("otherLicencePlace", e.target.value)} data-testid="other-place">
+                          <option value="">—</option>
+                          {INTERSTATE_PLACES.map((place) => <option key={place} value={place}>{place}</option>)}
+                        </select>
+                      ) : (
+                        <>
+                          <input value={learnerDraft.otherLicencePlace} onChange={(e) => learnerField("otherLicencePlace", e.target.value)} list="other-licence-countries" maxLength={MAX_OTHER_PLACE_LENGTH} autoComplete="off" placeholder="Any country" data-testid="other-place" />
+                          <datalist id="other-licence-countries">{COUNTRIES.map((country) => <option key={country} value={country} />)}</datalist>
+                        </>
+                      )}
+                    </label>
+                    <label className="field"><span>Licence type</span>
+                      <select value={learnerDraft.otherLicenceClass} onChange={(e) => learnerField("otherLicenceClass", e.target.value)} data-testid="other-class">
+                        <option value="">—</option>
+                        {OTHER_LICENCE_CLASSES.map((cls) => <option key={cls} value={cls}>{OTHER_LICENCE_CLASS_LABELS[cls]}</option>)}
+                      </select>
+                    </label>
+                    <label className="field full"><span>Licence number</span>
+                      <input value={learnerDraft.otherLicenceNumber} onChange={(e) => learnerField("otherLicenceNumber", e.target.value)} maxLength={MAX_OTHER_NUMBER_LENGTH} autoCapitalize="characters" autoComplete="off" data-testid="other-number" />
+                    </label>
+                    <label className="field"><span>First issued</span>
+                      <input type="date" value={learnerDraft.otherLicenceIssuedOn} onChange={(e) => learnerField("otherLicenceIssuedOn", e.target.value)} max={localNow().date} data-testid="other-issued" />
+                      <small>If known, otherwise the issue date on the card.</small>
+                    </label>
+                    <label className="field"><span>Expiry</span>
+                      <input type="date" value={learnerDraft.otherLicenceExpiresOn} onChange={(e) => learnerField("otherLicenceExpiresOn", e.target.value)} data-testid="other-expires" />
+                      <small>Information only; not needed for the rule.</small>
+                    </label>
+                    {formOtherLicenceLine ? <div className="full"><RulesReminders reminders={[formOtherLicenceLine]} testId="other-licence-note" /></div> : null}
+                  </>
+                ) : null}
               </div>
             </details>
             {editingLearner ? (

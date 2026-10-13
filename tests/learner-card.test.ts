@@ -21,7 +21,7 @@ import {
 import type { Learner } from "../lib/types.ts";
 
 const learner = (over: Partial<Learner> = {}): Learner => ({
-  id: "l1", instructorId: "tony", instructorName: "Tony", instructorAdiNumber: null, fullName: "Alex Chen", address: null, addressSuburb: null, addressState: null, addressPostcode: null,
+  id: "l1", instructorId: "tony", instructorName: "Tony", instructorAdiNumber: null, fullName: "Alex Chen", address: null, addressSuburb: null, addressState: null, addressPostcode: null, otherLicenceKind: null, otherLicencePlace: null, otherLicenceNumber: null, otherLicenceClass: null, otherLicenceIssuedOn: null, otherLicenceExpiresOn: null,
   phone: null, dob: null, licenceNumber: null, licenceExpiry: null, eligibility: null, transmission: null, schoolWork: null, licenceStage: "learner",
   learnerLicenceIssuedOn: null, learnerLicenceFirstIssuedOn: null, hptPassedOn: null, loggedHours: null, loggedHoursOn: null,
   archivedAt: null, archiveReason: null, archiveNote: null, transfers: [], ...over,

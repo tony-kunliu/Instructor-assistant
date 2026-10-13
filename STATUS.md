@@ -20,20 +20,21 @@ closed PRs; see `TASK.md` for what is in progress.
 - **Real-device / Tony checks:** iPad layout accepted on a real iPad ("iPad 可以"); route
   reminders and the address suggestions (iOS "Scan Text" callout, list vs keyboard) tested
   on Staging, reported OK by Tony ("测试都没问题"), not automated evidence.
-- **Merged to `staging` (PRs #73, #74):** learner list redesign (tokens, navy top bar, learner cards,
-  `GET /api/learners` `summaries`; qa-browser section 20) and lesson record redesign (navy learner
-  header, Start → running → End, Save only after End in a sticky bar, derived-values block, ≥44px
-  number-only chips, full dark theme via the shared tokens; qa-browser section 21). No migration,
-  contract untouched. Not yet on `main` / Production.
-- **On a branch, not merged:** `feature/ui-theme-switch-new-learner` (Tony's two Staging findings,
-  2026-10-13): Appearance switch System / Light / Dark in the footer (`lib/theme.ts`, inline boot
-  script in `app/layout.tsx`, localStorage, theme-color metas in sync) and "+ New learner" / "Edit
-  learner" showing only the form (open learner's card and panels hidden, state and lesson draft
-  kept; form scrolls to the top). Presentation only; qa-browser section 22.
+- **Merged to `staging` (PRs #73, #74, #77):** learner list redesign (tokens, navy top bar, cards,
+  `GET /api/learners` `summaries`; qa-browser 20), lesson record redesign (navy header, Start →
+  End, Save after End, ≥44px chips, dark theme; qa-browser 21), Appearance switch + "only the
+  form" while New / Edit learner is open (qa-browser 22). No migration, contract untouched. Not
+  yet on `main` / Production.
+- **On a branch, not merged (needs strict independent review, L2 data + rules):**
+  `feature/intake-p3-licence` = learner intake P3, overseas / interstate licence: migration
+  `0013` (6 nullable `learners.other_licence_*` columns, additive), `lib/other-licence.ts`,
+  school rule in `lib/rules.ts` (R2 + "Competency 23 from"), collapsed form group, revisions,
+  qa-browser 23. Staging D1 is still at `0012`: apply `0013` with `Staging D1 Migrate` BEFORE
+  merging.
 - **Still open:** `scripts/check-signature-row-limits.mjs` not yet run against a deployed
   D1 (Staging only, never Production); notify-tick (lesson notifications) waits for Website
   PR #47 rework and Tony's approval of the new endpoint + secret (Production OFF); intake
-  P3/P4; `docs/tasks` memory scheme + Memory Guard changes (Handbook §9); items in
+  P4; `docs/tasks` memory scheme + Memory Guard changes (Handbook §9); items in
   `docs/BACKLOG.md`.
 
 ## Repository
@@ -114,6 +115,9 @@ closed PRs; see `TASK.md` for what is in progress.
   signature canvas, 700k-char limit); Address suggestions from a bundled G-NAF street index
   (`0012`, 3 nullable suburb/state/postcode columns); "Competency 23 from" + PDF Eligibility
   auto-fill; Competency 23 route reminders (R10a). None of these sends anything to ACTGDS.
+  On the branch only: overseas / interstate licence fields (`0013`) feeding the Competency 23
+  reminders (Tony's school rule: interstate learner time counts; interstate or overseas FULL
+  licence held 12 months removes the wait; overseas learner does not count; expiry not read).
 - Working rule: `AGENTS.md` §13, standing authorizations §14 (new-endpoint/secret
   exclusion 2026-10-12), model choice §9; two-repo Operating Handbook
   `docs/OPERATING_HANDBOOK.md` approved by Tony 2026-10-12 (§16).

@@ -2524,6 +2524,198 @@ const draw = async (page, index) => {
   await ctx.close();
 }
 
+// ═══ 23. Learner intake P3: overseas / interstate licence (migration 0013) — fields at 375/820, R2 school rule, Eligibility auto-fill, PDF, revisions ═══
+{
+  const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Australia/Sydney" }).format(new Date());
+  const addDays = (d, n) => new Date(Date.parse(`${d}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
+  const firstOf = (back, years = 0) => { const [y, m] = today.split("-").map(Number); const t = y * 12 + (m - 1) - back + years * 12; return `${Math.floor(t / 12)}-${String((t % 12) + 1).padStart(2, "0")}-01`; };
+  const nice = (iso) => { const [y, m, d] = iso.split("-").map(Number); return `${d} ${MON[m - 1]} ${y}`; };
+  const post = async (path, body) => { const r = await fetch(B + path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }); const d = await r.json(); if (!r.ok) throw new Error(`${path} ${JSON.stringify(d)}`); return d; };
+  const patch = async (id, body) => { const r = await fetch(`${B}/api/learners/${id}`, { method: "PATCH", headers: { "content-type": "application/json", "x-instructor-id": WHO.tony[0] }, body: JSON.stringify(body) }); return { status: r.status, body: await r.json() }; };
+  const rng = (a, b) => Array.from({ length: b - a + 1 }, (_, i) => String(a + i));
+  const doneBy = (ids) => ({ assessedIds: ids, achievedResults: Object.fromEntries(ids.map((id) => [id, "achieved"])) });
+  // Under 25 (18 at the ACT issue, already 17); ACT licence issued 1 month ago → ACT 12 months in 11 months; hours and HPT met; ACT licence current.
+  const dob = addDays(firstOf(0, -18), -40);
+  const actIssue = firstOf(1);
+  const actDue = firstOf(1, 1);
+  const nswIssue = firstOf(13); // 13 months ago → 12 months reached 1 month ago: the school rule makes the learner eligible today
+  const nswDue = firstOf(13, 1);
+  const learner = (await post("/api/learners", { fullName: "QA Tony Other Licence", instructorId: WHO.tony[0], dob, learnerLicenceIssuedOn: actIssue, licenceExpiry: firstOf(0, 5), hptPassedOn: today, loggedHours: 100, loggedHoursOn: today })).learner;
+  let odo = 7000;
+  for (const step of [doneBy(rng(1, 17)), doneBy(["review-1-17"]), doneBy(rng(18, 22)), doneBy(["review-1-22"])]) {
+    const start = odo; odo += 12;
+    await post(`/api/learners/${learner.id}/lessons`, { lessonDate: "2026-09-20", startTime: "09:00", finishTime: "10:00", startOdometer: String(start), finishOdometer: String(odo), adiSignature: SIG, learnerSignature: SIG, ...step });
+  }
+  const stored = async () => (await (await fetch(`${B}/api/learners/${learner.id}`)).json()).learner;
+  const otherOf = (l) => JSON.stringify({ kind: l.otherLicenceKind, place: l.otherLicencePlace, number: l.otherLicenceNumber, cls: l.otherLicenceClass, issued: l.otherLicenceIssuedOn, expires: l.otherLicenceExpiresOn });
+  const G = "[data-testid=other-licence-group]";
+  const s = await session("tony");
+  await ready(s.page);
+  await s.page.setViewportSize({ width: 375, height: 812 });
+  await pick(s.page, "QA Tony Other Licence");
+  const line = async (sel) => s.page.$eval(sel, (e) => ({ tone: e.dataset.tone, text: e.textContent }));
+  const r2 = () => line("[data-testid=panel-reminders] .reminder[data-rule=r2]");
+  const hasOtherLine = (root) => s.page.$(`${root} .reminder[data-rule=r2-other]`).then((e) => e !== null);
+  await s.page.waitForSelector("[data-testid=panel-reminders] .reminder[data-rule=r2]");
+  const before = await r2();
+  check("other licence: with nothing recorded the panel R2 is the plain ACT wait (amber, 12 months from the ACT issue), no school-rule line", before.tone === "amber" && before.text === `Competency 23 not yet: licence held 12 months on ${nice(actDue)}.` && !(await hasOtherLine("[data-testid=panel-reminders]")), before.text);
+  check("other licence: the 'Competency 23 from' line is the ACT date", (await line("[data-testid=c23-from] .reminder")).text === `Competency 23 from ${nice(actDue)} (licence 12 months).`);
+
+  const openEdit = async () => { await s.page.click("[data-testid=edit-learner]"); await s.page.waitForSelector(G); };
+  const expandOther = async () => { if (!(await s.page.$eval(G, (e) => e.open))) await s.page.click(`${G} summary`); };
+  const save = async () => { await s.page.click("[data-testid=save-learner]"); await s.page.waitForSelector(".status.ok, .status.error"); return s.page.textContent(".status"); };
+  const elig = () => s.page.inputValue("[data-testid=learner-eligibility]");
+  const visible = (ids) => Promise.all(ids.map((id) => s.page.isVisible(`[data-testid=${id}]`)));
+  const DETAILS = ["other-place", "other-class", "other-number", "other-issued", "other-expires"];
+  await openEdit();
+  check("other licence: the Edit learner group 'Overseas or interstate licence' is collapsed by default, after the Competency 23 group", (await s.page.$eval(G, (e) => e.open)) === false && !(await s.page.isVisible("[data-testid=other-kind]")) && (await s.page.$eval(G, (e) => e.previousElementSibling?.dataset.testid)) === "c23-group");
+  await expandOther();
+  check("other licence: opened → Tony's one-line hint and ONLY the yes/no question (progressive disclosure: no detail fields yet)", /Interstate learner time counts towards the wait; an interstate or overseas full licence held 12 months removes it; overseas learner licences do not count\./.test(await s.page.textContent(`${G} .hint-note`)) && (await s.page.isVisible("[data-testid=other-kind]")) && (await visible(DETAILS)).every((v) => !v));
+  check("other licence: the question offers —, No, Yes interstate, Yes overseas", (await s.page.$$eval("[data-testid=other-kind] option", (os) => os.map((o) => `${o.value}=${o.textContent}`).join("|"))) === "=—|none=No|interstate=Yes, interstate|overseas=Yes, overseas");
+  await s.page.selectOption("[data-testid=other-kind]", "interstate");
+  check("other licence: 'Yes, interstate' shows state, type, number, first issued, expiry; the state list has no ACT", (await visible(DETAILS)).every(Boolean) && (await s.page.$$eval("[data-testid=other-place] option", (os) => os.map((o) => o.value).join(","))) === ",NSW,VIC,QLD,SA,WA,TAS,NT");
+  const heights = await s.page.$$eval(`${G} select, ${G} input`, (es) => es.map((e) => Math.round(e.getBoundingClientRect().height)));
+  check("other licence: every new control is ≥ 44px tall at 375px, no horizontal scroll", heights.length === 6 && heights.every((h) => h >= 44) && (await noHScroll(s.page)), heights.join(","));
+  const a11y = await s.page.$$eval(`${G} label.field`, (ls) => ls.map((l) => { const c = l.querySelector("input, select"); return Boolean(l.querySelector("span")?.textContent) && Boolean(c) && (l.contains(c)); }));
+  check("other licence: each control sits inside its <label> with a visible text label (accessible name), the issue date cannot be after today", a11y.length === 6 && a11y.every(Boolean) && (await s.page.getAttribute("[data-testid=other-issued]", "max")) === today);
+  const needMore = await line("[data-testid=other-licence-note] .reminder");
+  check("other licence: D13 (e): interstate without type/date → grey 'Add the licence type and issue date to check the school rule.' inside the group", needMore.tone === "grey" && needMore.text === "Add the licence type and issue date to check the school rule.", needMore.text);
+  await s.page.selectOption("[data-testid=other-place]", "NSW");
+  await s.page.selectOption("[data-testid=other-class]", "learner");
+  check("other licence: type alone is not enough (still grey)", (await s.page.$("[data-testid=other-licence-note]")) !== null);
+  await s.page.fill("[data-testid=other-issued]", nswIssue);
+  check("other licence: with the issue date the grey line disappears", (await s.page.$("[data-testid=other-licence-note]")) === null);
+  const formLine = await line("[data-testid=c23-from-form] .reminder");
+  check("other licence: (a) interstate LEARNER: the live 'Competency 23 from' moves to NSW issue + 12 months, named as the school rule; plain (date passed, hours/HPT met)", formLine.tone === "plain" && formLine.text === `Competency 23 from ${nice(nswDue)} (licence 12 months from the NSW learner licence, school rule).`, formLine.text);
+  check("other licence: the Eligibility box follows (auto-filled 'C23 from <NSW date>', app-owned)", (await elig()) === `C23 from ${nswDue}` && (await s.page.isVisible("[data-testid=eligibility-auto]")), await elig());
+  await s.page.fill("[data-testid=other-number]", "qa nsw 1");
+  check("other licence: expiry left empty is fine (not required)", (await s.page.inputValue("[data-testid=other-expires]")) === "");
+  await shot(s.page, "23-other-licence-edit-375-light");
+  await s.page.click("[data-testid=theme-dark]");
+  await settle(150);
+  const dark = await s.page.evaluate(() => ({ body: getComputedStyle(document.body).backgroundColor, select: getComputedStyle(document.querySelector("[data-testid=other-kind]")).backgroundColor, scheme: getComputedStyle(document.querySelector("[data-testid=other-issued]")).colorScheme }));
+  check("other licence: dark theme: the group's selects and date inputs follow the tokens (no white islands, dark pickers)", dark.body === "rgb(9, 19, 28)" && dark.select === "rgb(16, 31, 45)" && dark.scheme === "dark" && (await noHScroll(s.page)), JSON.stringify(dark));
+  await shot(s.page, "23-other-licence-edit-375-dark");
+  await s.page.click("[data-testid=theme-system]");
+  const saved = await save();
+  const afterSave = await stored();
+  check("other licence: saved: interstate / NSW / learner / number upper-cased / issue date / no expiry; Eligibility stored as the school-rule date", /updated/.test(saved) && otherOf(afterSave) === otherOf({ otherLicenceKind: "interstate", otherLicencePlace: "NSW", otherLicenceNumber: "QA NSW 1", otherLicenceClass: "learner", otherLicenceIssuedOn: nswIssue, otherLicenceExpiresOn: null }) && afterSave.eligibility === `C23 from ${nswDue}`, `${saved} ${otherOf(afterSave)} ${afterSave.eligibility}`);
+  await s.page.waitForSelector("[data-testid=panel-reminders] .reminder[data-rule=r2]");
+  const met = await r2();
+  check("other licence: panel R2 is now PLAIN, naming the school rule and Tony: eligibility met, licence time counted from the NSW learner licence", met.tone === "plain" && met.text === "Competency 23 eligibility met per entered data (new licence, under 25 at issue; school rule, confirmed by Tony: licence time counted from the NSW learner licence).", met.text);
+  check("other licence: the panel 'Competency 23 from' line is plain with the NSW date", (await line("[data-testid=c23-from] .reminder")).tone === "plain" && (await noHScroll(s.page)));
+  await shot(s.page, "23-other-licence-panel-375");
+  // Lesson form: 23 Final Drive ticked → the same R2 line in the form reminders.
+  await s.page.click("text=Start Lesson");
+  await s.page.click("text=End Lesson");
+  await s.page.click(".chip-row.special >> text=/23 Final Drive/");
+  await s.page.waitForSelector("[data-testid=form-reminders] .reminder[data-rule=r2]");
+  check("other licence: the lesson form (23 ticked) shows the same school-rule R2 line, no grey add-line", (await line("[data-testid=form-reminders] .reminder[data-rule=r2]")).text === met.text && !(await hasOtherLine("[data-testid=form-reminders]")));
+  await s.page.click("text=Discard this lesson");
+  // PDF: nothing new prints; the existing Eligibility box carries the school-rule date (D15/D18).
+  await s.page.click("text=/Export.*PDF/i");
+  if (await s.page.$(".export-adi-prompt input")) await s.page.fill(".export-adi-prompt input", "QA-ADI-1");
+  const [dl] = await Promise.all([s.page.waitForEvent("download", { timeout: 60000 }), s.page.click(".export-adi-prompt .btn.primary").catch(() => {})]);
+  const otherPdf = `${OUT}/qa-other-licence.pdf`;
+  await dl.saveAs(otherPdf);
+  const { execFileSync: run } = await import("node:child_process");
+  const pdfText = run("pdftotext", ["-layout", otherPdf, "-"], { encoding: "utf8" }).replace(/\s+/g, " ");
+  check("other licence: the PDF Eligibility box prints 'C23 from <NSW date>' and NO other-licence field (no NSW / interstate / QA NSW 1 anywhere)", pdfText.includes(`C23 from ${nswDue}`) && !/NSW|interstate|overseas|school rule/i.test(pdfText), pdfText.match(/C23 from[^ ]*/)?.[0] ?? "no C23 line");
+  // Tony's own Eligibility text is never overwritten by the school rule.
+  await openEdit();
+  await s.page.fill("[data-testid=learner-eligibility]", "QA Tony's own words");
+  await expandOther();
+  await s.page.selectOption("[data-testid=other-class]", "full");
+  check("other licence: own Eligibility text stays when the licence type changes", (await elig()) === "QA Tony's own words" && !(await s.page.isVisible("[data-testid=eligibility-auto]")));
+  await s.page.click("[data-testid=cancel-edit-learner]");
+  // Switch to overseas FULL: the place becomes a free-text country (datalist), the state is cleared.
+  await openEdit(); await expandOther();
+  await s.page.selectOption("[data-testid=other-kind]", "overseas");
+  const placeTag = await s.page.$eval("[data-testid=other-place]", (e) => ({ tag: e.tagName, list: e.getAttribute("list"), value: e.value, options: document.getElementById(e.getAttribute("list") ?? "")?.children.length ?? 0 }));
+  check("other licence: 'Yes, overseas' turns the place into a country text input with a bundled country list; the NSW value is cleared (a state is not a country)", placeTag.tag === "INPUT" && placeTag.list === "other-licence-countries" && placeTag.value === "" && placeTag.options > 150, JSON.stringify(placeTag));
+  await s.page.fill("[data-testid=other-place]", "Germany");
+  await s.page.selectOption("[data-testid=other-class]", "full");
+  const fullLine = await line("[data-testid=c23-from-form] .reminder");
+  check("other licence: (b) overseas FULL held 12 months → 'full licence from Germany 12 months, school rule' (the wait is removed)", fullLine.text === `Competency 23 from ${nice(nswDue)} (full licence from Germany 12 months, school rule).`, fullLine.text);
+  await save();
+  check("other licence: overseas full saved (number kept, state replaced by the country)", otherOf(await stored()) === otherOf({ otherLicenceKind: "overseas", otherLicencePlace: "Germany", otherLicenceNumber: "QA NSW 1", otherLicenceClass: "full", otherLicenceIssuedOn: nswIssue, otherLicenceExpiresOn: null }), otherOf(await stored()));
+  const fullMet = await r2();
+  check("other licence: panel R2 plain with 'full licence from Germany held 12 months on <date>'", fullMet.tone === "plain" && fullMet.text === `Competency 23 eligibility met per entered data (new licence, under 25 at issue; school rule, confirmed by Tony: full licence from Germany held 12 months on ${nice(nswDue)}).`, fullMet.text);
+  // (c) overseas LEARNER does not count: the ACT wait is back with the note.
+  await openEdit(); await expandOther();
+  await s.page.selectOption("[data-testid=other-class]", "learner");
+  check("other licence: (c) overseas LEARNER → the live date goes back to the ACT wait and the Eligibility box follows", (await line("[data-testid=c23-from-form] .reminder")).text === `Competency 23 from ${nice(actDue)} (licence 12 months).` && (await elig()) === `C23 from ${actDue}`);
+  await save();
+  const ovLearner = await r2();
+  check("other licence: panel R2 amber with the 'Overseas learner licences do not count towards the wait (school rule).' note", ovLearner.tone === "amber" && ovLearner.text === `Competency 23 not yet: licence held 12 months on ${nice(actDue)}. Overseas learner licences do not count towards the wait (school rule).`, ovLearner.text);
+  // (e) on the panel and in the lesson form: type missing (set through the API, as an older record might be).
+  const partial = await patch(learner.id, { otherLicenceClass: "" });
+  check("other licence: clearing the type through the API is accepted (reminder input, never blocking)", partial.status === 200 && partial.body.learner.otherLicenceClass === null, JSON.stringify(partial.body).slice(0, 120));
+  await s.page.reload(); await ready(s.page);
+  await s.page.waitForSelector("[data-testid=panel-reminders] .reminder[data-rule=r2-other]");
+  check("other licence: (e) the panel adds the grey 'Add the licence type and issue date to check the school rule.' under R2", (await line("[data-testid=panel-reminders] .reminder[data-rule=r2-other]")).tone === "grey" && (await r2()).text === `Competency 23 not yet: licence held 12 months on ${nice(actDue)}.`);
+  // Server validation: distinct, clear errors; nothing stored.
+  const bad = [
+    [{ otherLicenceKind: "interstate", otherLicencePlace: "ACT", otherLicenceClass: "learner" }, /Interstate licence state must be one of NSW, VIC, QLD, SA, WA, TAS, NT/],
+    [{ otherLicenceKind: "overseas", otherLicenceClass: "full", otherLicenceIssuedOn: addDays(today, 1) }, /Other licence issue date cannot be in the future/],
+    [{ otherLicenceKind: "overseas", otherLicenceClass: "full", otherLicenceIssuedOn: nswIssue, otherLicenceExpiresOn: addDays(nswIssue, -1) }, /Other licence expiry cannot be before its issue date/],
+    [{ otherLicenceKind: "overseas", otherLicenceClass: "provisional" }, /Other licence type must be Learner, Full or Other/],
+    [{ otherLicenceKind: "none", otherLicencePlace: "Germany" }, /sent with "No"/],
+  ];
+  const results = [];
+  for (const [body, re] of bad) { const r = await patch(learner.id, body); results.push(r.status === 400 && re.test(String(r.body.error ?? r.body.message ?? JSON.stringify(r.body)))); }
+  check("other licence: PATCH validation: ACT as interstate, future issue, expiry before issue, bad type, details with 'No' → five distinct 400 messages", results.every(Boolean), results.join(","));
+  check("other licence: the rejected edits changed nothing", (await stored()).otherLicencePlace === "Germany" && (await stored()).otherLicenceClass === null);
+  // "No" clears the details in the form and in D1; the old values stay only in learner_revisions (History snapshots).
+  await openEdit(); await expandOther();
+  await s.page.selectOption("[data-testid=other-kind]", "none");
+  check("other licence: 'No' hides the detail fields", (await visible(DETAILS)).every((v) => !v));
+  await save();
+  const none = await stored();
+  check("other licence: 'No' is stored as kind none with every detail null; the ACT-wait Eligibility is kept", otherOf(none) === otherOf({ otherLicenceKind: "none", otherLicencePlace: null, otherLicenceNumber: null, otherLicenceClass: null, otherLicenceIssuedOn: null, otherLicenceExpiresOn: null }) && none.eligibility === `C23 from ${actDue}`, `${otherOf(none)} ${none.eligibility}`);
+  // The QA app runs on wrangler's local D1 (initOpenNextCloudflareForDev + `wrangler d1 migrations apply --local` in run.sh): read that sqlite file, read-only.
+  const { DatabaseSync } = await import("node:sqlite");
+  const { readdirSync } = await import("node:fs");
+  const d1Dir = ".wrangler/state/v3/d1/miniflare-D1DatabaseObject";
+  const qaDb = new DatabaseSync(`${d1Dir}/${readdirSync(d1Dir).find((f) => f.endsWith(".sqlite") && f !== "metadata.sqlite")}`, { readOnly: true });
+  const snaps = qaDb.prepare("SELECT snapshot_json FROM learner_revisions WHERE learner_id = ? ORDER BY revision_no").all(learner.id).map((r) => JSON.parse(r.snapshot_json));
+  qaDb.close();
+  const kinds = snaps.map((snap) => `${snap.otherLicenceKind ?? "null"}/${snap.otherLicencePlace ?? "null"}/${snap.otherLicenceClass ?? "null"}`).join(" → ");
+  check("other licence: History (learner_revisions) snapshots carry the new keys through every edit: null → interstate/NSW/learner → overseas/Germany/full → overseas/Germany/learner → overseas/Germany/null", snaps.length >= 5 && snaps.every((snap) => "otherLicenceKind" in snap && "otherLicenceExpiresOn" in snap) && kinds.startsWith("null/null/null → interstate/NSW/learner → overseas/Germany/full → overseas/Germany/learner → overseas/Germany/null"), kinds);
+  check("other licence: Tony: no page errors", s.errors.length === 0, s.errors.join("|"));
+
+  // Tablet width: the group open inside the Edit form, no horizontal scroll, controls ≥ 44px.
+  await s.page.setViewportSize({ width: 820, height: 1180 });
+  await openEdit(); await expandOther();
+  await s.page.selectOption("[data-testid=other-kind]", "interstate");
+  const h820 = await s.page.$$eval(`${G} select, ${G} input`, (es) => es.map((e) => Math.round(e.getBoundingClientRect().height)));
+  check("other licence: 820px: group open with the details, no horizontal scroll, controls ≥ 44px", h820.length === 6 && h820.every((h) => h >= 44) && (await noHScroll(s.page)), h820.join(","));
+  await shot(s.page, "23-other-licence-edit-820");
+  await s.page.click("[data-testid=cancel-edit-learner]");
+  // New learner form: the same group, collapsed, saves with "Yes, interstate" + type + date and the school-rule Eligibility.
+  await s.page.setViewportSize({ width: 375, height: 812 });
+  await s.page.click("text=+ New");
+  await s.page.waitForSelector(G);
+  check("other licence: the New learner form has the group too, collapsed", (await s.page.$eval(G, (e) => e.open)) === false);
+  await s.page.fill('label:has-text("Student name") input', "QA Tony Other Licence New");
+  await s.page.fill('label:has-text("DOB") input', dob);
+  await s.page.click("[data-testid=c23-group] summary");
+  await s.page.fill("[data-testid=c23-issued]", actIssue);
+  await expandOther();
+  await s.page.selectOption("[data-testid=other-kind]", "interstate");
+  await s.page.selectOption("[data-testid=other-place]", "VIC");
+  await s.page.selectOption("[data-testid=other-class]", "full");
+  await s.page.fill("[data-testid=other-issued]", nswIssue);
+  check("other licence: New form live line: 'full VIC licence 12 months, school rule' (plus 100 h and HPT still to come)", (await line("[data-testid=c23-from-form] .reminder")).text === `Competency 23 from ${nice(nswDue)} (full VIC licence 12 months, school rule; plus 100 h and HPT).`, (await line("[data-testid=c23-from-form] .reminder")).text);
+  await shot(s.page, "23-other-licence-new-375");
+  await save();
+  const created = (await learnersApi()).find((l) => l.fullName === "QA Tony Other Licence New");
+  check("other licence: New learner saved with the interstate full licence and the school-rule Eligibility", otherOf(created) === otherOf({ otherLicenceKind: "interstate", otherLicencePlace: "VIC", otherLicenceNumber: null, otherLicenceClass: "full", otherLicenceIssuedOn: nswIssue, otherLicenceExpiresOn: null }) && created?.eligibility === `C23 from ${nswDue}`, `${otherOf(created ?? {})} ${created?.eligibility}`);
+  check("other licence: Tony (New form): no page errors", s.errors.length === 0, s.errors.join("|"));
+  await s.ctx.close();
+}
+
 } catch (error) {
   check(`script aborted: ${String(error.message).split("\n")[0]}`, false, String(error.message).split("\n").slice(1,4).join(" ").trim());
 }

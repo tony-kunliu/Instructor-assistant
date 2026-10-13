@@ -34,7 +34,7 @@ import {
 import { PAPER_CSV_COLUMNS } from "../lib/paper-import.ts";
 import { jsonInsertStatement } from "../lib/d1-json-insert.ts";
 import { CORE_COMPETENCY_IDS, REVIEW_1_17, REVIEW_1_22 } from "../lib/competency.ts";
-import { finalDriveEligibleFromReminder, finalDriveFormReminders, finalDrivePanelReminder, learnerLicenceReminder, reviewGapReminder } from "../lib/rules.ts";
+import { finalDriveEligibilityReminder, finalDriveEligibleFromReminder, finalDriveFormReminders, finalDrivePanelReminder, learnerLicenceReminder, otherLicenceDataReminder, reviewGapReminder } from "../lib/rules.ts";
 import { generatedEligibility, pdfEligibility } from "../lib/c23-eligibility.ts";
 import { resolveIntegrationConfig } from "../lib/integration/config.ts";
 import { CRON_SWEEP_LIMIT, IMMEDIATE_DELIVERY_LIMIT, processDueOutbox } from "../lib/integration/sender.ts";
@@ -496,7 +496,7 @@ test("budget (migration 0009): a learner edit and a create with all 15 fields, i
   assert.equal(noop.count(), 2);
   assert.ok(edit.maxBinds() <= 100 && create.maxBinds() <= 100, `max bound parameters edit ${edit.maxBinds()}, create ${create.maxBinds()} (D1 limit 100)`);
   assert.equal(edit.maxBinds(), 16, "the UPDATE binds 15 columns + the id");
-  assert.equal(create.maxBinds(), 19, "the INSERT binds 19 values (16 + the 3 address parts of migration 0012, always bound, NULL when not picked)");
+  assert.equal(create.maxBinds(), 25, "the INSERT binds 25 values (16 + the 3 address parts of migration 0012 + the 6 other-licence columns of 0013, always bound, NULL when not recorded)");
   assert.equal(Number((await raw.prepare("SELECT COUNT(*) AS n FROM integration_outbox").first<{ n: number }>())?.n), outboxBefore, "a learner edit/create enqueues no ACTGDS event");
 });
 
@@ -522,12 +522,51 @@ test("budget (migration 0012, intake P2): a learner edit and a create with all 1
   assert.equal(noop.count(), 2);
   assert.equal(create.count(), 3);
   assert.equal(edit.maxBinds(), 19, "the UPDATE binds 18 columns + the id");
-  assert.equal(create.maxBinds(), 19, "the INSERT binds 19 values");
+  assert.equal(create.maxBinds(), 25, "the INSERT binds 25 values (every learner column, 0013 included)");
   assert.ok(edit.maxBinds() <= 100 && create.maxBinds() <= 100, "D1 limit 100 bound parameters");
   assert.ok(edit.count() + MIDDLEWARE_AND_ROUTE_QUERIES <= FREE_PLAN_INVOCATION_LIMIT);
   const snapshot = JSON.parse(String((await raw.prepare("SELECT snapshot_json FROM learner_revisions WHERE learner_id = ?").bind(learner.id).first<{ snapshot_json: string }>())?.snapshot_json)) as Record<string, unknown>;
   for (const key of ["addressSuburb", "addressState", "addressPostcode"]) assert.ok(key in snapshot && snapshot[key] === null, `snapshot holds the previous (null) ${key}`);
   assert.equal(Number((await raw.prepare("SELECT COUNT(*) AS n FROM integration_outbox").first<{ n: number }>())?.n), outboxBefore, "a learner edit/create with address parts enqueues no ACTGDS event");
+});
+
+test("budget (migration 0013, intake P3): a learner edit and a create with all 24 fields incl. the 6 other-licence fields keep 5 / 2 / 3 statements (edit / no-op / create); the UPDATE binds 25, the INSERT 25; the revision stays 4 and holds the new keys; the reminders add 0; nothing for ACTGDS", async (t) => {
+  const { db: raw, learner, tony } = await setup();
+  const outboxBefore = Number((await raw.prepare("SELECT COUNT(*) AS n FROM integration_outbox").first<{ n: number }>())?.n);
+  const all = {
+    fullName: "QA Budget Other Licence", address: "44 Appleford Av, Jacka ACT 2914", addressSuburb: "Jacka", addressState: "ACT", addressPostcode: "2914",
+    phone: "0400 000 000", dob: "2008-01-02", licenceNumber: "QA1", licenceExpiry: "2027-01-02", eligibility: "Eligible", transmission: "auto", schoolWork: "QA", licenceStage: "p1",
+    learnerLicenceIssuedOn: "2025-11-15", learnerLicenceFirstIssuedOn: "2024-05-01", hptPassedOn: "2026-05-05", loggedHours: 82, loggedHoursOn: "2026-10-03",
+    otherLicenceKind: "interstate", otherLicencePlace: "NSW", otherLicenceNumber: "QA NSW 1", otherLicenceClass: "learner", otherLicenceIssuedOn: "2024-01-10", otherLicenceExpiresOn: "2029-01-10",
+    actingInstructorId: tony.id,
+  };
+  const edit = countingD1(raw);
+  const result = await updateLearner(edit.db, learner.id, all, new Date("2026-10-13T02:00:00Z"));
+  assert.equal(result.changedFields.length, 24);
+  const noop = countingD1(raw);
+  assert.equal((await updateLearner(noop.db, learner.id, all, new Date("2026-10-13T02:00:00Z"))).changed, false);
+  const create = countingD1(raw);
+  await createLearner(create.db, { ...all, fullName: "QA Budget Other Licence Created", instructorId: tony.id }, new Date("2026-10-13T02:00:00Z"));
+  const read = countingD1(raw);
+  const stored = (await getLearner(read.db, learner.id))!;
+  const reads = read.count();
+  finalDriveEligibilityReminder(stored, "2026-10-13");
+  otherLicenceDataReminder(stored);
+  finalDriveEligibleFromReminder(stored, "2026-10-13");
+  pdfEligibility(stored);
+  t.diagnostic(`updateLearner (all 24 fields): ${edit.count()} statements, max bound params ${edit.maxBinds()}; no-op: ${noop.count()}; createLearner (all fields): ${create.count()} statements incl. instructor check, max bound params ${create.maxBinds()}; revision INSERT binds 4; R2 + school-rule line + eligible-from + PDF value: ${read.count() - reads} extra statements`);
+  assert.equal(edit.count(), 5);
+  assert.equal(noop.count(), 2);
+  assert.equal(create.count(), 3);
+  assert.equal(edit.maxBinds(), 25, "the UPDATE binds 24 columns + the id");
+  assert.equal(create.maxBinds(), 25, "the INSERT binds 25 values");
+  assert.ok(edit.maxBinds() <= 100 && create.maxBinds() <= 100, "D1 limit 100 bound parameters");
+  assert.ok(edit.count() + MIDDLEWARE_AND_ROUTE_QUERIES <= FREE_PLAN_INVOCATION_LIMIT);
+  assert.equal(read.count(), reads, "the reminders and the PDF value must not touch D1");
+  const snapshot = JSON.parse(String((await raw.prepare("SELECT snapshot_json FROM learner_revisions WHERE learner_id = ?").bind(learner.id).first<{ snapshot_json: string }>())?.snapshot_json)) as Record<string, unknown>;
+  for (const key of ["otherLicenceKind", "otherLicencePlace", "otherLicenceNumber", "otherLicenceClass", "otherLicenceIssuedOn", "otherLicenceExpiresOn"]) assert.ok(key in snapshot && snapshot[key] === null, `snapshot holds the previous (null) ${key}`);
+  assert.equal(Object.keys(snapshot).length, 24, "the snapshot json_object has every editable key");
+  assert.equal(Number((await raw.prepare("SELECT COUNT(*) AS n FROM integration_outbox").first<{ n: number }>())?.n), outboxBefore, "a learner edit/create with an other licence enqueues no ACTGDS event");
 });
 
 test("budget (learner intake P1): the Eligibility auto-fill rides in the normal learner save (edit 5, create 3 statements); 'eligible from' and the PDF value add 0", async (t) => {

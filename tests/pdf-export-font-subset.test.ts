@@ -22,7 +22,7 @@ const learner: Learner = {
   address: "1 Test St", phone: "0400 000 000", dob: "2008-01-01", licenceNumber: "L1", licenceExpiry: "2030-01-01", eligibility: "Eligible",
   addressSuburb: null,
   addressState: null,
-  addressPostcode: null,
+  addressPostcode: null, otherLicenceKind: null, otherLicencePlace: null, otherLicenceNumber: null, otherLicenceClass: null, otherLicenceIssuedOn: null, otherLicenceExpiresOn: null,
   transmission: "manual", schoolWork: null, licenceStage: "learner", learnerLicenceIssuedOn: null, learnerLicenceFirstIssuedOn: null, hptPassedOn: null, loggedHours: null, loggedHoursOn: null, archivedAt: null, archiveReason: null, archiveNote: null, transfers: [],
 };
 

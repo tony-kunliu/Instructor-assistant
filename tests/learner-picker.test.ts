@@ -17,7 +17,7 @@ function learner(id: string, fullName: string, instructorId: string, archivedAt:
     address: null,
     addressSuburb: null,
     addressState: null,
-    addressPostcode: null,
+    addressPostcode: null, otherLicenceKind: null, otherLicencePlace: null, otherLicenceNumber: null, otherLicenceClass: null, otherLicenceIssuedOn: null, otherLicenceExpiresOn: null,
     phone: null,
     dob: null,
     licenceNumber: null,
