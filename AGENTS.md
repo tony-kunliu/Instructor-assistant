@@ -237,7 +237,7 @@ of them at any time by saying so; this section is then updated.
 
 1. **Merge to `staging` and apply Staging D1 migrations** once typecheck,
    `npm test`, build, `qa-browser` (for UI changes), Memory Guard and an
-   independent code review all pass.
+   independent code review (its depth follows the risk tier; see `docs/OPERATING_HANDBOOK.md` §2 "Review proportionality", decided by Tony 2026-10-13) all pass.
 2. **Post on `tony-kunliu/actgds.com` Issue #3** for informational and
    coordination messages. Any contract change (§10) still needs Tony's
    explicit approval first.
