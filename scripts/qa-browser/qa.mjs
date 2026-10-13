@@ -2368,7 +2368,7 @@ const draw = async (page, index) => {
   await s.ctx.close();
 }
 
-// ═══ 22. Appearance switch (System / Light / Dark) + only the form while New / Edit learner is open (Tony 2026-10-13) ═══
+// ═══ 22. Appearance toggle (one icon button Light <-> Dark in the top bar) + only the form while New / Edit learner is open (Tony 2026-10-13) ═══
 {
   const mkLearner = async (body) => (await (await fetch(`${B}/api/learners`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ instructorId: WHO.tony[0], ...body }) })).json()).learner;
   const focus = await mkLearner({ fullName: "QA Theme Focus", transmission: "auto" });
@@ -2380,7 +2380,12 @@ const draw = async (page, index) => {
     stored: (() => { try { return localStorage.getItem("actgds-driver:theme"); } catch { return "blocked"; } })(),
   }));
   const SYSTEM_METAS = "(prefers-color-scheme: dark)=#050d14|(prefers-color-scheme: light)=#0b1b2b";
-  const pressed = (page) => page.$$eval("[data-testid=theme-switch] .theme-opt", (bs) => bs.filter((b) => b.getAttribute("aria-pressed") === "true").map((b) => b.textContent).join());
+  // The toggle as the user meets it: accessible name (the action), icon, effective state, geometry inside the top bar.
+  const toggle = (page) => page.$eval("[data-testid=theme-toggle]", (b) => {
+    const r = b.getBoundingClientRect(); const bar = b.closest(".topbar")?.getBoundingClientRect(); const who = document.querySelector(".signed-in-as")?.getBoundingClientRect();
+    const disc = getComputedStyle(b, "::before"); const svg = b.querySelector("svg").getBoundingClientRect();
+    return { label: b.getAttribute("aria-label"), icon: b.querySelector("svg").dataset.icon, effective: b.dataset.effective, w: r.width, h: r.height, disc: parseFloat(disc.width), svg: svg.width, inBar: !!bar, right: r.right, left: r.left, whoRight: who ? who.right : null, overlap: who ? r.left < who.right - 0.5 : false, top: r.top, barTop: bar?.top ?? null, barBottom: bar?.bottom ?? null };
+  });
   // WCAG contrast ratio of an element's text against its own (or the nearest painted ancestor's) background.
   const contrast = (page, sel) => page.$eval(sel, (e) => {
     const parse = (c) => (c.match(/[\d.]+/g) ?? []).map(Number);
@@ -2403,16 +2408,18 @@ const draw = async (page, index) => {
   await s.page.setViewportSize({ width: 375, height: 812 });
   await ready(s.page);
   const mine = (await learnersApi()).filter((l) => l.instructorId === WHO.tony[0]).length;
-  // The control: a quiet group in the footer, three options with aria-pressed, System by default, ≥44px each.
-  const sw = await s.page.$eval("[data-testid=theme-switch]", (g) => ({ role: g.getAttribute("role"), label: g.getAttribute("aria-label"), inFoot: g.closest(".foot") !== null, opts: [...g.querySelectorAll(".theme-opt")].map((b) => ({ t: b.textContent, h: b.getBoundingClientRect().height, w: b.getBoundingClientRect().width, p: b.getAttribute("aria-pressed") })) }));
-  check("theme 375px: Appearance group in the footer — System / Light / Dark with aria-pressed, System pressed by default, every option ≥44px", sw.role === "group" && sw.label === "Appearance" && sw.inFoot && sw.opts.map((o) => o.t).join() === "System,Light,Dark" && sw.opts.map((o) => o.p).join() === "true,false,false" && sw.opts.every((o) => o.h >= 44 && o.w >= 44), JSON.stringify(sw));
+  // The control: one small icon button at the end of the brand row (a 44px hit area around a 32px disc), moon on the light theme.
+  const t0 = await toggle(s.page);
+  check("theme 375px: one icon button in the top bar — 'Switch to dark theme' with a moon on a light phone, 44px hit area around a 32px disc (≤24px icon), beside Sign out without overlapping it, inside the viewport", t0.label === "Switch to dark theme" && t0.icon === "moon" && t0.effective === "light" && t0.w >= 44 && t0.h >= 44 && Math.round(t0.disc) === 32 && t0.svg <= 24 && t0.inBar && !t0.overlap && t0.whoRight !== null && t0.right <= 375 && t0.top >= t0.barTop && (await s.page.$$("[data-testid=theme-toggle]")).length === 1 && (await s.page.$(".theme-switch, .theme-opt")) === null, JSON.stringify(t0));
+  check("theme 375px: the toggle reads in both the light-phone bar (on-navy icon) and has a visible gold focus ring", (await s.page.$eval("[data-testid=theme-toggle]", (b) => getComputedStyle(b).color)) === "rgb(246, 243, 235)" && (await s.page.evaluate(() => { const b = document.querySelector("[data-testid=theme-toggle]"); b.focus(); const cs = getComputedStyle(b); return cs.outlineStyle !== "none" ? true : [...document.styleSheets].flatMap((sh) => { try { return [...sh.cssRules]; } catch { return []; } }).some((r) => r.selectorText?.includes(".theme-toggle:focus-visible")); })));
   const sys = await html(s.page);
-  check("theme 375px: System = no data-theme, light paper on a light phone, color-scheme light, both theme-color metas keep their own navy, nothing stored", sys.theme === null && sys.body === LIGHT_PAPER && sys.scheme === "light" && sys.metas.join("|") === SYSTEM_METAS && sys.stored === null, JSON.stringify(sys));
-  await s.page.click("[data-testid=theme-dark]");
+  check("theme 375px: first state follows the phone = no data-theme, light paper, color-scheme light, both theme-color metas keep their own navy, nothing stored", sys.theme === null && sys.body === LIGHT_PAPER && sys.scheme === "light" && sys.metas.join("|") === SYSTEM_METAS && sys.stored === null, JSON.stringify(sys));
+  await s.page.click("[data-testid=theme-toggle]");
   const dark = await html(s.page);
-  check("theme 375px: Dark → html[data-theme=dark], dark paper, color-scheme dark, both metas the dark navy, remembered on this device, Dark pressed", dark.theme === "dark" && dark.body === DARK_PAPER && dark.scheme === "dark" && dark.metas.every((m) => m.endsWith("=#050d14")) && dark.stored === "dark" && (await pressed(s.page)) === "Dark", JSON.stringify(dark));
-  check("theme 375px: no horizontal scroll (dark)", await noHScroll(s.page));
-  await s.page.locator(".foot").screenshot({ path: `${OUT}/22-theme-switch-375-dark.png` });
+  const t1 = await toggle(s.page);
+  check("theme 375px: one tap → html[data-theme=dark], dark paper, color-scheme dark, both metas the dark navy, 'dark' remembered on this device; the button now reads 'Switch to light theme' with a sun", dark.theme === "dark" && dark.body === DARK_PAPER && dark.scheme === "dark" && dark.metas.every((m) => m.endsWith("=#050d14")) && dark.stored === "dark" && t1.label === "Switch to light theme" && t1.icon === "sun" && t1.effective === "dark", JSON.stringify({ dark, t1 }));
+  check("theme 375px: no horizontal scroll (dark), the toggle still inside the (darker) bar beside Sign out", (await noHScroll(s.page)) && !t1.overlap && t1.right <= 375 && (await s.page.$eval(".topbar", (e) => getComputedStyle(e).backgroundColor)) === "rgb(5, 13, 20)");
+  await s.page.locator(".topbar").screenshot({ path: `${OUT}/22-theme-toggle-375-dark.png` });
   // No flash: with every script bundle blocked (React never runs) the inline boot script alone must already paint Dark.
   const bundles = (u) => u.pathname.startsWith("/_next/static/") && u.pathname.endsWith(".js");
   await s.page.route(bundles, (route) => route.abort());
@@ -2421,17 +2428,34 @@ const draw = async (page, index) => {
   check("theme 375px: no flash — before any JS bundle runs, the inline boot script has already applied the stored Dark (attribute + dark paper)", boot.theme === "dark" && boot.body === DARK_PAPER && boot.scheme === "dark" && (await s.page.$(".view-tab")) === null, JSON.stringify(boot));
   await s.page.unroute(bundles);
   await s.page.goto(B); await ready(s.page);
-  check("theme 375px: after a normal reload Dark is still applied and the switch shows Dark pressed", (await html(s.page)).theme === "dark" && (await pressed(s.page)) === "Dark");
-  // The choice beats the phone: Light on a dark phone; System hands back to the phone and forgets the choice.
+  check("theme 375px: after a normal reload Dark is still applied and the button offers 'Switch to light theme'", (await html(s.page)).theme === "dark" && (await toggle(s.page)).label === "Switch to light theme");
+  // The explicit choice beats the phone: a second tap on a dark phone gives Light and stores it; the phone's dark stays ignored.
   await s.page.emulateMedia({ colorScheme: "dark" });
-  await s.page.click("[data-testid=theme-light]");
+  await s.page.click("[data-testid=theme-toggle]");
   const light = await html(s.page);
-  check("theme 375px: Light on a dark phone → light paper, color-scheme light, metas the light navy, stored 'light'", light.theme === "light" && light.body === LIGHT_PAPER && light.scheme === "light" && light.metas.every((m) => m.endsWith("=#0b1b2b")) && light.stored === "light" && (await pressed(s.page)) === "Light", JSON.stringify(light));
-  await s.page.click("[data-testid=theme-system]");
-  const back = await html(s.page);
-  check("theme 375px: System → attribute and stored choice removed, the dark phone shows dark again, metas back to one navy per scheme", back.theme === null && back.stored === null && back.body === DARK_PAPER && back.scheme === "dark" && back.metas.join("|") === SYSTEM_METAS && (await pressed(s.page)) === "System", JSON.stringify(back));
+  check("theme 375px: second tap on a dark phone → explicit Light: light paper, color-scheme light, metas the light navy, stored 'light', button offers dark again", light.theme === "light" && light.body === LIGHT_PAPER && light.scheme === "light" && light.metas.every((m) => m.endsWith("=#0b1b2b")) && light.stored === "light" && (await toggle(s.page)).label === "Switch to dark theme", JSON.stringify(light));
+  await s.page.reload(); await ready(s.page);
+  check("theme 375px: explicit Light survives a reload on a dark phone", (await html(s.page)).theme === "light" && (await html(s.page)).body === LIGHT_PAPER);
+  // Old stored value "system" (former 3-state control): follows the phone until the first tap, then becomes explicit.
+  await s.page.evaluate(() => localStorage.setItem("actgds-driver:theme", "system"));
+  await s.page.reload(); await ready(s.page);
+  const legacy = await html(s.page);
+  const tl = await toggle(s.page);
+  check("theme 375px: a stored 'system' (old control) follows the dark phone: no attribute, dark paper, sun icon / 'Switch to light theme'", legacy.theme === null && legacy.stored === "system" && legacy.body === DARK_PAPER && tl.label === "Switch to light theme" && tl.icon === "sun" && tl.effective === "dark", JSON.stringify({ legacy, tl }));
+  await s.page.click("[data-testid=theme-toggle]");
+  check("theme 375px: tapping from 'system' on a dark phone → explicit light, stored 'light'", (await html(s.page)).theme === "light" && (await html(s.page)).stored === "light");
+  // The phone flipping while no explicit choice is set: the button follows (icon + name), nothing is stored.
+  await s.page.evaluate(() => localStorage.removeItem("actgds-driver:theme"));
   await s.page.emulateMedia({ colorScheme: "light" });
-  await s.page.locator(".foot").screenshot({ path: `${OUT}/22-theme-switch-375-light.png` });
+  await s.page.reload(); await ready(s.page);
+  const beforeFlip = await toggle(s.page);
+  await s.page.emulateMedia({ colorScheme: "dark" });
+  await settle(150);
+  const afterFlip = await toggle(s.page);
+  check("theme 375px: with no explicit choice the button follows the phone switching to dark (moon → sun, name updates), nothing stored", beforeFlip.icon === "moon" && afterFlip.icon === "sun" && afterFlip.label === "Switch to light theme" && (await html(s.page)).stored === null && (await html(s.page)).theme === null, JSON.stringify({ beforeFlip: beforeFlip.icon, afterFlip: afterFlip.icon }));
+  await s.page.emulateMedia({ colorScheme: "light" });
+  await settle(100);
+  await s.page.locator(".topbar").screenshot({ path: `${OUT}/22-theme-toggle-375-light.png` });
 
   // Only the form: open a learner, start a lesson and tap a competency, then "+ New learner".
   await pick(s.page, "QA Theme Focus");
@@ -2448,18 +2472,18 @@ const draw = async (page, index) => {
   check("focus 375px: + New learner with a lesson running → ONLY the form: no learner header, lesson, progress or history card, no cards, no empty-state line, just 'Show all learners (N)' + a live note", before.phase === "running" && open.form && !open.summary && !open.header && !open.lesson && !open.progress && !open.history && open.cards === 0 && !open.empty && open.expand === `Show all learners (${mine})` && open.note === `${mine} learners hidden while the form is open.`, JSON.stringify(open));
   check("focus 375px: the form's top is on screen at the top (clear of the status bar, scroll-margin), the selected learner is kept underneath, no horizontal scroll", formTop >= 0 && formTop <= 40 && open.selected === focus.id && (await noHScroll(s.page)), `top ${Math.round(formTop)}px`);
   const readable = async (tag) => {
-    const pairs = { heading: await contrast(s.page, "[data-testid=learner-form] h2"), label: await contrast(s.page, "[data-testid=learner-form] .field span"), input: await contrast(s.page, "[data-testid=learner-form] .field input"), hint: await contrast(s.page, "[data-testid=learner-form] .hint-note"), save: await contrast(s.page, "[data-testid=save-learner]"), expand: await contrast(s.page, "[data-testid=learner-list-expand]"), opt: await contrast(s.page, ".theme-opt:not(.active)"), optActive: await contrast(s.page, ".theme-opt.active"), foot: await contrast(s.page, ".foot") };
-    check(`focus 375px ${tag}: form heading, labels, inputs, hint, Save, Show all, Appearance options and footer text all ≥4.5:1`, Object.values(pairs).every((c) => c >= 4.5), JSON.stringify(Object.fromEntries(Object.entries(pairs).map(([k, v]) => [k, Math.round(v * 10) / 10]))));
+    const pairs = { heading: await contrast(s.page, "[data-testid=learner-form] h2"), label: await contrast(s.page, "[data-testid=learner-form] .field span"), input: await contrast(s.page, "[data-testid=learner-form] .field input"), hint: await contrast(s.page, "[data-testid=learner-form] .hint-note"), save: await contrast(s.page, "[data-testid=save-learner]"), expand: await contrast(s.page, "[data-testid=learner-list-expand]"), toggle: await contrast(s.page, "[data-testid=theme-toggle]"), foot: await contrast(s.page, ".foot") };
+    check(`focus 375px ${tag}: form heading, labels, inputs, hint, Save, Show all, the theme toggle icon and footer text all ≥4.5:1`, Object.values(pairs).every((c) => c >= 4.5), JSON.stringify(Object.fromEntries(Object.entries(pairs).map(([k, v]) => [k, Math.round(v * 10) / 10]))));
   };
   await readable("light");
   await shot(s.page, "22-form-375-light");
-  await s.page.click("[data-testid=theme-dark]");
+  await s.page.click("[data-testid=theme-toggle]");
   await settle(150);
   const formDark = await s.page.evaluate(() => ({ body: getComputedStyle(document.body).backgroundColor, form: getComputedStyle(document.querySelector("[data-testid=learner-form]")).backgroundColor, input: getComputedStyle(document.querySelector("[data-testid=learner-form] .field input")).backgroundColor, select: getComputedStyle(document.querySelector("[data-testid=learner-form] select")).backgroundColor, scheme: getComputedStyle(document.querySelector("[data-testid=learner-form] input[type=date]")).colorScheme }));
   check("focus 375px dark: the form, its inputs and selects switch with the tokens (no white islands), native date pickers get color-scheme dark", formDark.body === DARK_PAPER && formDark.form === SURFACE_DARK && formDark.input === SURFACE_DARK && formDark.select === SURFACE_DARK && formDark.scheme === "dark" && (await noHScroll(s.page)), JSON.stringify(formDark));
   await readable("dark");
   await shot(s.page, "22-form-375-dark");
-  await s.page.click("[data-testid=theme-system]");
+  await s.page.click("[data-testid=theme-toggle]");
   // Cancel: exactly the previous view — same learner, running lesson with Taught 2, their card back.
   await s.page.click("[data-testid=new-learner]");
   await s.page.waitForSelector(".card.lesson");
@@ -2493,20 +2517,21 @@ const draw = async (page, index) => {
   check("focus 375px: the running lesson of the previous learner is still on this device", (await s.page.evaluate((id) => { try { return JSON.parse(localStorage.getItem(`actgds-driver:draft:${id}`) ?? "null")?.taughtIds?.join() ?? null; } catch { return "blocked"; } }, focus.id)) === "2", "draft taughtIds");
   check("theme/focus: Tony: no page errors", s.errors.length === 0, s.errors.join("|"));
 
-  // 820px tablet: only the form, no horizontal scroll, ≥44px Appearance options, in both themes.
+  // 820px tablet: only the form, no horizontal scroll, the toggle ≥44px beside Sign out, in both themes.
   await s.page.setViewportSize({ width: 820, height: 1180 });
   await s.page.reload(); await ready(s.page);
   await s.page.click("[data-testid=new-learner]");
   await s.page.waitForSelector("[data-testid=learner-form]");
   const tall44 = (sel) => s.page.$$eval(sel, (es) => es.length > 0 && es.every((e) => e.getBoundingClientRect().height >= 44));
   const p820 = await panels(s.page);
-  check("focus 820px: only the form (no header, lesson, progress, history or cards), no horizontal scroll, Appearance options ≥44px", p820.form && !p820.summary && !p820.lesson && !p820.progress && !p820.history && p820.cards === 0 && (await noHScroll(s.page)) && (await tall44(".theme-opt")), JSON.stringify(p820));
+  const t820 = await toggle(s.page);
+  check("focus 820px: only the form (no header, lesson, progress, history or cards), no horizontal scroll, the toggle ≥44px in the bar beside Sign out", p820.form && !p820.summary && !p820.lesson && !p820.progress && !p820.history && p820.cards === 0 && (await noHScroll(s.page)) && (await tall44("[data-testid=theme-toggle]")) && t820.inBar && !t820.overlap && t820.right <= 820, JSON.stringify({ p820, t820 }));
   await shot(s.page, "22-form-820-light");
-  await s.page.click("[data-testid=theme-dark]");
+  await s.page.click("[data-testid=theme-toggle]");
   await settle(150);
   check("focus 820px dark: no horizontal scroll, dark paper", (await noHScroll(s.page)) && (await html(s.page)).body === DARK_PAPER);
   await shot(s.page, "22-form-820-dark");
-  await s.page.click("[data-testid=theme-system]");
+  await s.page.click("[data-testid=theme-toggle]");
   await s.ctx.close();
 
   // Storage blocked (private window / site data off): the app loads, the switch still works for this page, nothing throws, nothing persists.
@@ -2516,11 +2541,11 @@ const draw = async (page, index) => {
   const errors = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await page.goto(B); await ready(page);
-  await page.click("[data-testid=theme-dark]");
+  await page.click("[data-testid=theme-toggle]");
   const blocked = await html(page);
-  check("theme 375px: with localStorage blocked the app loads, Dark still applies to this page, no page errors (nothing persists, by design)", blocked.theme === "dark" && blocked.body === DARK_PAPER && blocked.stored === "blocked" && (await pressed(page)) === "Dark" && errors.length === 0, JSON.stringify({ ...blocked, errors }));
+  check("theme 375px: with localStorage blocked the app loads, a tap still applies Dark to this page, no page errors (nothing persists, by design)", blocked.theme === "dark" && blocked.body === DARK_PAPER && blocked.stored === "blocked" && (await toggle(page)).label === "Switch to light theme" && errors.length === 0, JSON.stringify({ ...blocked, errors }));
   await page.reload(); await ready(page);
-  check("theme 375px: blocked storage → System again after a reload (no stale choice possible)", (await html(page)).theme === null && (await pressed(page)) === "System" && errors.length === 0, errors.join("|"));
+  check("theme 375px: blocked storage → follows the phone again after a reload (no stale choice possible)", (await html(page)).theme === null && (await toggle(page)).label === "Switch to dark theme" && errors.length === 0, errors.join("|"));
   await ctx.close();
 }
 

@@ -20,17 +20,17 @@ closed PRs; see `TASK.md` for what is in progress.
 - **Real-device / Tony checks:** iPad layout accepted on a real iPad ("iPad 可以"); route
   reminders and the address suggestions (iOS "Scan Text" callout, list vs keyboard) tested
   on Staging, reported OK by Tony ("测试都没问题"), not automated evidence.
-- **Merged to `staging` (PRs #73, #74, #77):** learner list redesign (tokens, navy top bar, cards,
-  `GET /api/learners` `summaries`; qa-browser 20), lesson record redesign (navy header, Start →
-  End, Save after End, ≥44px chips, dark theme; qa-browser 21), Appearance switch + "only the
-  form" while New / Edit learner is open (qa-browser 22). No migration, contract untouched. Not
-  yet on `main` / Production.
-- **On a branch, not merged (needs strict independent review, L2 data + rules):**
-  `feature/intake-p3-licence` = learner intake P3, overseas / interstate licence: migration
-  `0013` (6 nullable `learners.other_licence_*` columns, additive), `lib/other-licence.ts`,
-  school rule in `lib/rules.ts` (R2 + "Competency 23 from"), collapsed form group, revisions,
-  qa-browser 23. Review round 1 fixed (earlier licence counts; C23 date floored at the ACT
-  issue). Staging D1 still `0012`: apply `0013` with `Staging D1 Migrate` BEFORE merging.
+- **Merged to `staging` (PRs #73, #74, #77, #78, #80):** learner list redesign (tokens, navy top bar,
+  cards, `GET /api/learners` `summaries`; qa-browser 20), lesson record redesign (navy header, Start →
+  End, Save after End, ≥44px chips, dark theme; qa-browser 21), "only the form" while New / Edit
+  learner is open + ONE light/dark toggle button in the top bar (qa-browser 22), font-subset temp-dir
+  leak fixed in the PDF test. Released to Production in #15/#16 except the leak fix. Contract untouched.
+- **On a branch, reviewed, merging (L2 data + rules, strict path done):** `feature/intake-p3-licence` =
+  learner intake P3, overseas / interstate licence: migration `0013` (6 nullable
+  `learners.other_licence_*` columns, additive), `lib/other-licence.ts`, school rule in `lib/rules.ts`
+  (R2 + "Competency 23 from"), collapsed form group, revisions, qa-browser 23. Review round 1 fixed
+  (earlier licence counts; C23 date floored at the ACT issue); rules re-review APPROVE. Staging D1
+  Migrate run 8 applied `0013` to Staging (2026-10-13) BEFORE the merge; Production D1 still `0012`.
 - **Still open:** `scripts/check-signature-row-limits.mjs` not yet run against a deployed
   D1 (Staging only, never Production); notify-tick (lesson notifications) waits for Website
   PR #47 rework and Tony's approval of the new endpoint + secret (Production OFF); intake
@@ -156,8 +156,6 @@ record: `tony-kunliu/actgds.com` Issue #3.
   Vietnamese, Greek, Cyrillic, kana, Hangul, Latin Ext-B, box drawing and some
   symbols print as boxes after the user confirms the warning.
 - Minor learner-edit review follow-ups are in `docs/BACKLOG.md`.
-- `tests/pdf-export-font-subset.test.ts` leaves a `/tmp/font-subset-*` dir (~14 MB
-  out.pdf) per run; on shared machines this filled the disk (2026-10-11).
 - `app/manifest.ts` still carries the pre-redesign `background_color` / `theme_color`
   (`#f4f2ee` / `#1d1d1f`), not the shared tokens (affects the installed-PWA splash only).
 

@@ -41,7 +41,7 @@ import { applyRoute, homeDistrict, parseRouteComments, routeFits, routeSuggestio
 import RouteCheckGroup from "./route-check.tsx";
 import { GNAF_ATTRIBUTION, partsAfterEdit, type AddressSuggestion } from "@/lib/address-suggest.ts";
 import AddressInput from "./address-input.tsx";
-import ThemeSwitch from "./theme-switch.tsx";
+import ThemeToggle from "./theme-switch.tsx";
 
 type LessonDraft = {
   lessonDate: string;
@@ -1033,6 +1033,7 @@ export default function DriverApp() {
               <a href={logoutUrl} className="signout-link" data-testid="signout-link">Sign out</a>
             </div>
           ) : null}
+          <ThemeToggle />
         </div>
         <div className="headline">
           <div>
@@ -1661,10 +1662,7 @@ export default function DriverApp() {
         </>
       ) : null}
 
-      <footer className="foot">
-        <ThemeSwitch />
-        ACT Golden Driving School · Internal instructor tool<br /><span data-testid="gnaf-attribution">{GNAF_ATTRIBUTION}</span>
-      </footer>
+      <footer className="foot">ACT Golden Driving School · Internal instructor tool<br /><span data-testid="gnaf-attribution">{GNAF_ATTRIBUTION}</span></footer>
     </main>
   );
 }

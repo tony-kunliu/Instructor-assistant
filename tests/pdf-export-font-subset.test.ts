@@ -5,7 +5,7 @@
 import { test, type TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { PDFDocument, PDFName, PDFRawStream, decodePDFRawStream } from "pdf-lib";
@@ -47,12 +47,15 @@ function noPoppler(t: TestContext): void {
 }
 
 function pdftotext(bytes: Uint8Array, args: string[]): string | null {
-  const file = path.join(mkdtempSync(path.join(os.tmpdir(), "font-subset-")), "out.pdf");
-  writeFileSync(file, bytes);
-  try {
-    const out = execFileSync("pdftotext", [...args, file, "-"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], maxBuffer: 64 << 20 });
-    return out.split("\n").filter((line) => !line.startsWith("<meta ")).join("\n"); // -bbox prints the creation timestamp
-  } catch { return null; } // null: poppler not installed
+  const dir = mkdtempSync(path.join(os.tmpdir(), "font-subset-"));
+  try { // the whole-font PDF is ~14 MB: remove the dir on every path (pdftotext missing/failing, write error); callers assert after it is gone
+    const file = path.join(dir, "out.pdf");
+    writeFileSync(file, bytes);
+    try {
+      const out = execFileSync("pdftotext", [...args, file, "-"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], maxBuffer: 64 << 20 });
+      return out.split("\n").filter((line) => !line.startsWith("<meta ")).join("\n"); // -bbox prints the creation timestamp
+    } catch { return null; } // null: poppler not installed
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 }
 
 const SHAPES: Record<string, { learner: Learner; lessons: Lesson[] }> = {
