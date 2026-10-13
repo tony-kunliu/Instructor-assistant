@@ -25,11 +25,13 @@ closed PRs; see `TASK.md` for what is in progress.
   header, Start → running → End, Save only after End in a sticky bar, derived-values block, ≥44px
   number-only chips, full dark theme via the shared tokens; qa-browser section 21). No migration,
   contract untouched. Not yet on `main` / Production.
-- **On a branch, not merged:** `feature/ui-theme-switch-new-learner` (Tony's two Staging findings,
-  2026-10-13): Appearance switch System / Light / Dark in the footer (`lib/theme.ts`, inline boot
-  script in `app/layout.tsx`, localStorage, theme-color metas in sync) and "+ New learner" / "Edit
-  learner" showing only the form (open learner's card and panels hidden, state and lesson draft
-  kept; form scrolls to the top). Presentation only; qa-browser section 22.
+- **Merged to `staging` (PR #77):** "+ New learner" / "Edit learner" show only the form (open
+  learner's card and panels hidden, state and lesson draft kept) + the first appearance control.
+- **On a branch, not merged:** `feature/ui-theme-toggle-top` (Tony's decision after Staging,
+  2026-10-13): the footer System / Light / Dark group is replaced by ONE small icon button in the
+  top bar (moon / sun) that toggles Light <-> Dark; first state follows the phone, a tap stores the
+  explicit choice (`lib/theme.ts`, boot script and theme-color metas unchanged; old stored
+  "system" still read). Presentation only; qa-browser section 22 updated.
 - **Still open:** `scripts/check-signature-row-limits.mjs` not yet run against a deployed
   D1 (Staging only, never Production); notify-tick (lesson notifications) waits for Website
   PR #47 rework and Tony's approval of the new endpoint + secret (Production OFF); intake
