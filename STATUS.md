@@ -17,20 +17,21 @@ closed PRs; see `TASK.md` for what is in progress.
   run's Worker. D1 Time Travel bookmarks are only in the runs' step summaries (not in the
   logs): not recorded here.
 - **Staging:** `0012` applied by `Staging D1 Migrate` run 38204269795 before P2 merged.
-- **Real-device / Tony checks:** iPad layout accepted on a real iPad ("iPad 可以"); route
-  reminders and the address suggestions (iOS "Scan Text" callout, list vs keyboard) tested
-  on Staging, reported OK by Tony ("测试都没问题"), not automated evidence.
+- **Real-device / Tony checks:** iPad layout accepted on a real iPad; route reminders and
+  address suggestions (iOS "Scan Text", list vs keyboard) OK on Staging per Tony (not automated).
 - **Merged to `staging` (PRs #73, #74, #77, #78, #80):** learner list redesign (tokens, navy top bar,
   cards, `GET /api/learners` `summaries`; qa-browser 20), lesson record redesign (navy header, Start →
   End, Save after End, ≥44px chips, dark theme; qa-browser 21), "only the form" while New / Edit
   learner is open + ONE light/dark toggle button in the top bar (qa-browser 22), font-subset temp-dir
   leak fixed in the PDF test. Released to Production in #15/#16 except the leak fix. Contract untouched.
-- **On a branch, reviewed, merging (L2 data + rules, strict path done):** `feature/intake-p3-licence` =
-  learner intake P3, overseas / interstate licence: migration `0013` (6 nullable
-  `learners.other_licence_*` columns, additive), `lib/other-licence.ts`, school rule in `lib/rules.ts`
-  (R2 + "Competency 23 from"), collapsed form group, revisions, qa-browser 23. Review round 1 fixed
-  (earlier licence counts; C23 date floored at the ACT issue); rules re-review APPROVE. Staging D1
-  Migrate run 8 applied `0013` to Staging (2026-10-13) BEFORE the merge; Production D1 still `0012`.
+- **Merged to `staging` (PR #81):** learner intake P3, overseas / interstate licence (migration `0013`,
+  six nullable `learners.other_licence_*` columns; `lib/other-licence.ts`; school rule in `lib/rules.ts`;
+  qa-browser 23). Staging D1 at `0013` (Staging D1 Migrate run 8, before the merge); Production D1 `0012`.
+- **On a branch (L2 presentation only, one review round):** `feature/ui-learner-form` = learner form
+  restyle (concept screen B: Student / Address / Licence & eligibility cards, sticky Save bar, inline
+  required-name error) + Tony's decision 3: Transfer and Archive moved into the EDIT form's folded "More"
+  (same panels, handlers, guards, testids). `lib/learner-form-view.ts` + test; qa-browser 24; no
+  migration, no payload or rule change. Non-owner rescue transfer (inactive owner) keeps its page link.
 - **Still open:** `scripts/check-signature-row-limits.mjs` not yet run against a deployed
   D1 (Staging only, never Production); notify-tick (lesson notifications) waits for Website
   PR #47 rework and Tony's approval of the new endpoint + secret (Production OFF); intake
@@ -74,10 +75,8 @@ closed PRs; see `TASK.md` for what is in progress.
   `confirm=production`); token only in GitHub Secrets; each run records the
   rollback version and a D1 Time Travel restore point. See
   `docs/RELEASE_B_RUNBOOK.md`.
-- Before #12: progress validity fix run 38153327724 (Worker
-  `908b2c9c-9228-4608-b86b-76c9e2c14e44`, no migration); `0010` run 38106838536 (Worker
-  `792fed94-2fe1-41c6-8ff1-aaead13b7e67`); `0006`-`0009` and older runs: git history of
-  this file. Release B run 37668118567 (rollback target `08ca0c75-cd97-44fa-87ec-ed0f7e6efbae`).
+- Before #12: runs 38153327724 (validity fix), 38106838536 (`0010`), `0006`-`0009` and
+  Release B 37668118567: Worker ids in this file's git history.
 - D1 migration level: `0012`. Cloudflare Access: enabled (Tony + Anna only).
 - Integration enabled: **YES**, `ACTGDS_INTEGRATION_ENV=production`, Receiver
   `https://actgds.com/api/integrations/instructor-assistant/events`,
