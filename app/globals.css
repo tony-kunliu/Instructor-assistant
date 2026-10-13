@@ -203,7 +203,6 @@ html { overflow-x: hidden; }
 .lifecycle p { margin: 0 0 8px; }
 .lifecycle.archived { background: var(--surface-2); }
 .lifecycle.suggest { background: var(--good-soft); color: var(--good); }
-.form-actions { display: grid; gap: 8px; margin-top: 12px; }
 .edit-learner-btn { margin-top: 10px; }
 .archive-link { display: block; margin: 10px 0 0 auto; padding: 4px 0; font-size: 13px; }
 .lifecycle.archive-panel { background: var(--surface); border: 2px solid var(--text-muted); box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12); display: grid; gap: 10px; }

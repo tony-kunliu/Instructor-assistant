@@ -716,6 +716,8 @@ const draw = async (page, index) => {
   await a.page.waitForSelector("[data-testid=history-row]");
   check("ownership: Anna sees Tony's lesson in History but NO Edit button", (await a.page.$$(".history .h-edit")).length === 0 && (await a.page.$("[data-testid=history-readonly]")) !== null);
   check("ownership: read-only label names the recorder", (await a.page.textContent("[data-testid=history-readonly]")).includes("Recorded by Tony"));
+  // Archive has no owner gate (server included): Anna, who has no Edit learner for Tony's learner, keeps the page-level link.
+  check("ownership: Anna (not the owner) has no Edit learner but still sees 'Archive learner…' on the page, as before the form restyle", (await a.page.$("[data-testid=edit-learner]")) === null && (await a.page.$(".archive-link")) !== null && (await a.page.$("[data-testid=learner-more]")) === null);
   const rejected = await fetch(`${B}/api/learners/${revLearner.id}/lessons/${lessonId}`, {
     method: "PATCH", headers: { "content-type": "application/json", "x-instructor-id": WHO.anna[0], "x-instructor-name": "Anna" },
     body: JSON.stringify({ lessonDate: "2026-09-21", startTime: "09:00", finishTime: "10:00", startOdometer: "2000", finishOdometer: "2020", taughtIds: ["1"], location: "QA Anna Hack", adiSignature: SIG, learnerSignature: SIG }),
@@ -2855,7 +2857,17 @@ const draw = async (page, index) => {
   const typed = await formState(s.page);
   check("form 375px Edit: typing clears the inline error at once", typed.nameError === null && typed.nameInvalid === null, JSON.stringify({ err: typed.nameError, inv: typed.nameInvalid }));
   await s.page.fill("[data-testid=learner-name]", "QA Tony Form Restyle");
-  // More: opened → the two existing entry rows (≥44px), both enabled while no lesson is running. Screenshots in both themes.
+  // More while the form holds unsaved edits: a done transfer / archive would close the form and drop them, so both rows wait.
+  await s.page.fill("[data-testid=learner-name]", "QA Tony Form Restyle Edited");
+  await s.page.click("[data-testid=learner-more] > summary");
+  const dirtyMore = await formState(s.page);
+  check("form 375px Edit: with unsaved edits, More's Transfer and Archive are disabled and say 'Save or cancel your changes to this learner first.'", dirtyMore.moreOpen === true && dirtyMore.transferDisabled === true && dirtyMore.archiveDisabled === true && dirtyMore.lockedNote === "Save or cancel your changes to this learner first.", JSON.stringify({ t: dirtyMore.transferDisabled, a: dirtyMore.archiveDisabled, note: dirtyMore.lockedNote }));
+  // Back to a clean form (the address and name edits above were never meant to be saved): Cancel, reopen Edit learner.
+  await s.page.click("[data-testid=cancel-edit-learner]");
+  await s.page.waitForSelector(F, { state: "detached" });
+  await s.page.click("[data-testid=edit-learner]");
+  await s.page.waitForSelector("[data-testid=learner-more]");
+  // More: opened → the two existing entry rows (≥44px), both enabled while no lesson is running and nothing is unsaved. Screenshots in both themes.
   await s.page.click("[data-testid=learner-more] > summary");
   const moreOpen = await formState(s.page);
   check("form 375px Edit: More opens to 'Transfer learner…' and 'Archive learner…' rows (≥44px, enabled, no lock note); Save bar still sticky; no horizontal scroll", moreOpen.moreOpen === true && moreOpen.transferVisible && moreOpen.archiveVisible && moreOpen.transferDisabled === false && moreOpen.archiveDisabled === false && moreOpen.lockedNote === null && moreOpen.shortControls.length === 0 && moreOpen.bar.position === "sticky" && (await noHScroll(s.page)), JSON.stringify({ short: moreOpen.shortControls, locked: moreOpen.lockedNote }));

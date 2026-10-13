@@ -27,11 +27,12 @@ closed PRs; see `TASK.md` for what is in progress.
 - **Merged to `staging` (PR #81):** learner intake P3, overseas / interstate licence (migration `0013`,
   six nullable `learners.other_licence_*` columns; `lib/other-licence.ts`; school rule in `lib/rules.ts`;
   qa-browser 23). Staging D1 at `0013` (Staging D1 Migrate run 8, before the merge); Production D1 `0012`.
-- **On a branch (L2 presentation only, one review round):** `feature/ui-learner-form` = learner form
+- **PR #83 to `staging` (L2 presentation only; review round done, 1 Major + 3 Minors fixed):** `feature/ui-learner-form` = learner form
   restyle (concept screen B: Student / Address / Licence & eligibility cards, sticky Save bar, inline
   required-name error) + Tony's decision 3: Transfer and Archive moved into the EDIT form's folded "More"
   (same panels, handlers, guards, testids). `lib/learner-form-view.ts` + test; qa-browser 24; no
-  migration, no payload or rule change. Non-owner rescue transfer (inactive owner) keeps its page link.
+  migration, no payload or rule change. A non-owner keeps the page-level Transfer (inactive owner) and Archive
+  links; More locks while the form holds unsaved edits.
 - **Still open:** `scripts/check-signature-row-limits.mjs` not yet run against a deployed
   D1 (Staging only, never Production); notify-tick (lesson notifications) waits for Website
   PR #47 rework and Tony's approval of the new endpoint + secret (Production OFF); intake

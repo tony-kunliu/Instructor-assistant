@@ -2,7 +2,7 @@
 // behind the grouped form cards. Presentation only: the server still validates every field with its own messages.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { addressPartChips, formSubline, moreSection, nameIssue, saveLabel } from "../lib/learner-form-view.ts";
+import { addressPartChips, formSubline, moreLockedMessage, moreSection, nameIssue, saveLabel } from "../lib/learner-form-view.ts";
 
 test("nameIssue: the inline message is the server's own wording, only for an empty or blank name", () => {
   assert.equal(nameIssue(""), "Student name is required.");
@@ -46,4 +46,11 @@ test("formSubline and saveLabel: New vs Edit wording, Saving… while a save is 
   assert.equal(saveLabel({ editing: true, saving: false }), "Save changes");
   assert.equal(saveLabel({ editing: true, saving: true }), "Saving…");
   assert.equal(saveLabel({ editing: false, saving: true }), "Saving…");
+});
+
+test("moreLockedMessage: a running or unsaved lesson locks More with the lesson note; unsaved learner edits lock it with the form note; otherwise usable", () => {
+  assert.equal(moreLockedMessage({ phase: "running", formDirty: false }), "Save or discard the current lesson first.");
+  assert.equal(moreLockedMessage({ phase: "ended", formDirty: true }), "Save or discard the current lesson first.");
+  assert.equal(moreLockedMessage({ phase: "ready", formDirty: true }), "Save or cancel your changes to this learner first.");
+  assert.equal(moreLockedMessage({ phase: "ready", formDirty: false }), null);
 });

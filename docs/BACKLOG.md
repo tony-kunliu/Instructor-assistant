@@ -106,11 +106,15 @@ Long term (ecosystem, coordinated with Work on actgds.com Issue #3):
   required-name error (client pre-check with the server's wording; server validation unchanged),
   sticky Save bar that un-pins while a field has focus, EDIT form's folded "More" holding the same
   Transfer and Archive panels (handlers, guards incl. "locked while a lesson runs", testids,
-  confirmations unchanged); `lib/learner-form-view.ts`; qa-browser 24. Follow-ups to confirm with
+  confirmations unchanged); `lib/learner-form-view.ts`; qa-browser 24. Review (2026-10-13, one round): a
+  colleague who cannot open Edit learner keeps the page-level "Archive learner…" link (Archive never had
+  an owner gate, server included); More's rows lock with a note while the form holds unsaved edits.
+  Follow-ups to confirm with
   Tony: (1) the non-owner rescue transfer (owner inactive) keeps its "Transfer learner…" link on the
   learner's page, since that colleague has no Edit learner; (2) the completed card's archive
-  suggestion keeps its own inline panel (not moved); (3) a done transfer closes the Edit form; leaving
-  the form drops an open Transfer / Archive panel (nothing sent); (4) server-side save errors still
+  suggestion keeps its own inline panel (not moved); (3) a done transfer or archive closes the Edit
+  form (only possible once the form has no unsaved edits); leaving the form drops an open Transfer /
+  Archive panel (nothing sent); (4) server-side save errors still
   show in the status line above the form, not next to the sticky Save; (5) the New form's Cancel is
   in the bar too (the top-bar button still toggles); (6) qa-browser 23 used the removed
   `theme-dark` / `theme-system` controls and was fixed to the one toggle in this change.

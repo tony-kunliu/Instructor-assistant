@@ -41,7 +41,7 @@ import { applyRoute, homeDistrict, parseRouteComments, routeFits, routeSuggestio
 import RouteCheckGroup from "./route-check.tsx";
 import { GNAF_ATTRIBUTION, partsAfterEdit, type AddressSuggestion } from "@/lib/address-suggest.ts";
 import AddressInput from "./address-input.tsx";
-import { addressPartChips, formSubline, moreSection, nameIssue, saveLabel } from "@/lib/learner-form-view.ts";
+import { addressPartChips, formSubline, moreLockedMessage, moreSection, nameIssue, saveLabel } from "@/lib/learner-form-view.ts";
 import ThemeToggle from "./theme-switch.tsx";
 
 type LessonDraft = {
@@ -944,6 +944,10 @@ export default function DriverApp() {
   // cannot reach — a colleague rescuing a learner whose instructor is inactive (not the owner, so no Edit learner) — keeps
   // the Transfer link on the learner's page, so the rule stays reachable exactly as before.
   const more = moreSection({ editing: editingLearner, canTransfer, panel });
+  // A done transfer or archive closes the Edit form, so both wait until unsaved edits are saved or cancelled (review 2026-10-13).
+  const formDirty = editingLearner && openedLearnerDraft !== null && JSON.stringify(openedLearnerDraft) !== JSON.stringify(learnerDraft);
+  const moreLocked = phase !== "ready" || formDirty;
+  const moreLockedNote = moreLockedMessage({ phase, formDirty });
   const transferPanel = detail && transferDraft ? (
     <div className="lifecycle transfer-panel" data-testid="transfer-panel">
       <p><b>Transfer {detail.learner.fullName}</b> to another instructor. Lessons already recorded stay with whoever recorded them.</p>
@@ -1188,7 +1192,7 @@ export default function DriverApp() {
               <div className="grid">
                 <label className={`field full${nameError ? " invalid" : ""}`}><span>Student name <span className="req" aria-hidden="true">*</span></span>
                   <input ref={nameInputRef} value={learnerDraft.fullName} onChange={(e) => { setNameError(false); learnerField("fullName", e.target.value); }} autoComplete="off" placeholder="As on the learner licence" aria-required="true" aria-invalid={nameError || undefined} aria-describedby={nameError ? "learner-name-error" : undefined} data-testid="learner-name" />
-                  {nameError ? <span className="field-error" id="learner-name-error" role="alert" data-testid="learner-name-error">Student name is required.</span> : null}
+                  {nameError ? <span className="field-error" id="learner-name-error" role="alert" data-testid="learner-name-error">{nameIssue(learnerDraft.fullName) ?? ""}</span> : null}
                 </label>
                 <label className="field"><span>Phone</span><input type="tel" inputMode="tel" value={learnerDraft.phone} onChange={(e) => learnerField("phone", e.target.value)} /></label>
                 <label className="field"><span>DOB</span><input type="date" value={learnerDraft.dob} onChange={(e) => learnerField("dob", e.target.value)} /></label>
@@ -1318,17 +1322,17 @@ export default function DriverApp() {
                 <div className="inner">
                   {/* The same Transfer / Archive panels, handlers, guards and confirmations as before; only their place changed.
                       Both stay locked while a lesson is running or ended-but-unsaved (phase !== "ready"), as before. */}
-                  {phase !== "ready" ? <p className="hint-note" data-testid="more-locked-note">Save or discard the current lesson first.</p> : null}
+                  {moreLockedNote ? <p className="hint-note" data-testid="more-locked-note">{moreLockedNote}</p> : null}
                   {more.transfer ? (
                     transferDraft ? transferPanel : (
-                      <button type="button" className="link transfer-link" disabled={saving || phase !== "ready"} onClick={openTransferPanel} data-testid="transfer-open">
+                      <button type="button" className="link transfer-link" disabled={saving || moreLocked} onClick={openTransferPanel} data-testid="transfer-open">
                         Transfer learner…
                       </button>
                     )
                   ) : null}
                   {more.archive ? (
                     archiveDraft ? archivePanel : (
-                      <button type="button" className="link archive-link" disabled={saving || phase !== "ready"} onClick={openArchivePanel}>
+                      <button type="button" className="link archive-link" disabled={saving || moreLocked} onClick={openArchivePanel}>
                         Archive learner…
                       </button>
                     )
@@ -1405,6 +1409,15 @@ export default function DriverApp() {
               transferDraft ? transferPanel : (
                 <button type="button" className="link transfer-link" disabled={saving || phase !== "ready"} onClick={openTransferPanel} data-testid="transfer-open">
                   Transfer learner…
+                </button>
+              )
+            ) : null}
+            {/* Archive never had an owner gate (any Access-verified instructor, server included): a colleague who cannot open
+                Edit learner keeps the page-level link exactly as before; the owner finds it under Edit learner > More. */}
+            {panel === "active" && !canEditLearner ? (
+              archiveDraft ? archivePanel : (
+                <button type="button" className="link archive-link" disabled={saving || phase !== "ready"} onClick={openArchivePanel}>
+                  Archive learner…
                 </button>
               )
             ) : null}

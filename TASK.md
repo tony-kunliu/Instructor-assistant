@@ -6,9 +6,12 @@ This file describes **current task only**. Completed work's detail
 lives in git log and closed PRs, not here.
 
 **Current Task:** Learner form restyle (concept screen B, approved 2026-10-12) + Tony's decision 3 (Transfer and
-Archive into the EDIT form's folded "More"), branch `feature/ui-learner-form` — **Completed on the branch; one
-independent review round to arrange (L2, presentation only: layout, markup, wording; no change to data, rules,
-queries, payloads, permissions or ownership logic)**. Student / Address / Licence & eligibility cards (P3 group kept),
+Archive into the EDIT form's folded "More"), branch `feature/ui-learner-form` — **PR #83 to `staging`; independent review
+round done (L2 presentation; one Major fixed: a colleague who cannot open Edit learner keeps the page-level
+"Archive learner…" link, since Archive never had an owner gate, server included; Minors fixed with a test / QA check
+each: More locks with a note while the form holds unsaved edits, `nameIssue()` rendered once, dead `.form-actions`
+CSS removed; the optional translucent-background contrast refinement declined as not weakening any check) — merging
+agent verifies the fixes, no re-review (Handbook §2)**. Student / Address / Licence & eligibility cards (P3 group kept),
 picked-address chips, inline required-name error (server wording, server validation unchanged), sticky Save bar
 (`env(safe-area-inset-bottom)`, un-pins while a field has focus), Cancel link; "More" holds the unchanged Transfer and
 Archive panels (same handlers, `phase !== "ready"` guard, testids, confirmations); the inactive-owner rescue transfer

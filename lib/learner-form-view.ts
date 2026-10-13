@@ -48,3 +48,14 @@ export function saveLabel(input: { editing: boolean; saving: boolean }): string 
   if (input.saving) return "Saving…";
   return input.editing ? "Save changes" : "Save learner";
 }
+
+/**
+ * Why the "More" actions are locked right now, or null when they are usable. A done transfer or archive closes the Edit
+ * form, so both wait while a lesson is running / ended-but-unsaved (the rule they always had) or while the form holds
+ * unsaved edits (otherwise those edits would be dropped without a word).
+ */
+export function moreLockedMessage(input: { phase: string; formDirty: boolean }): string | null {
+  if (input.phase !== "ready") return "Save or discard the current lesson first.";
+  if (input.formDirty) return "Save or cancel your changes to this learner first.";
+  return null;
+}
