@@ -1193,7 +1193,8 @@ export default function DriverApp() {
             {/* Intake P3 (migration 0013, D11): collapsed group; "Yes" opens the details. Reminder input only: nothing here blocks a save. */}
             <details className="full rules-group" key={editingLearner ? "edit-other" : "new-other"} data-testid="other-licence-group">
               <summary>Overseas or interstate licence</summary>
-              <p className="hint-note">{OTHER_LICENCE_HINT} Optional; a reminder only, nothing here blocks a save or goes to the website.</p>
+              <p className="hint-note">{OTHER_LICENCE_HINT}</p>
+              <p className="hint-note"><small>Optional; a reminder only, nothing here blocks a save or goes to the website.</small></p>
               <div className="grid">
                 <label className="field full"><span>Holds an overseas or interstate licence?</span>
                   <select value={learnerDraft.otherLicenceKind} onChange={(e) => otherLicenceKindField(e.target.value)} data-testid="other-kind">

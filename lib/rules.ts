@@ -383,21 +383,30 @@ type Evaluation = { missing: string[]; conditions: Condition[]; unclear: false |
 type DatedCondition = { key: "held" | "age"; on: string; label: string; short: string; shownOn?: string; after?: string; school?: string };
 
 /**
- * The "held" condition with Tony's school rule applied (D13 a/b): an interstate LEARNER licence moves the start of
- * the wait to its own issue date; an interstate or overseas FULL licence held OTHER_FULL_LICENCE_MONTHS removes the
- * wait if that day comes first. `actHeldOn` is the plain ACT reading; `fromDate(start)` recomputes it from another start.
+ * The "held" condition with Tony's school rule applied (D13 a/b; Tony 2026-10-13: count from the EARLIER issued
+ * licence, and never before the ACT learner licence itself):
+ *   - an interstate LEARNER licence issued BEFORE the ACT licence moves the start of the wait to its own issue date
+ *     (held = min(ACT reading, interstate issue + the band's months)); one issued on or after the ACT licence
+ *     contributes nothing (no wording, no band check);
+ *   - an interstate or overseas FULL licence held OTHER_FULL_LICENCE_MONTHS removes the wait if that day comes first;
+ *   - the day is floored at `actIssue` (the ACT learner licence issue date): a Competency 23 date can never precede
+ *     the learner licence the drive is done on (review 2026-10-13, Major-2).
+ * `actHeldOn` is the plain ACT reading; `fromDate(start)` recomputes it from another start.
  */
-function heldWithSchoolRule(rule: SchoolRule, actHeldOn: string, fromDate: (start: string) => string | null, label: string, short: string): DatedCondition {
+function heldWithSchoolRule(rule: SchoolRule, actIssue: string, actHeldOn: string, fromDate: (start: string) => string | null, label: string, short: string): DatedCondition {
   const act: DatedCondition = { key: "held", on: actHeldOn, label, short };
-  if (rule.mode === "learner") {
-    const on = fromDate(rule.issuedOn) ?? actHeldOn;
+  const floor = (date: string) => (date < actIssue ? actIssue : date);
+  if (rule.mode === "learner" && rule.issuedOn < actIssue) {
+    const counted = fromDate(rule.issuedOn) ?? actHeldOn;
+    const on = floor(counted < actHeldOn ? counted : actHeldOn);
     return { key: "held", on, label, short: `${short} from the ${rule.label}, school rule`, after: ` (counted from the ${rule.label}, school rule)`, school: `licence time counted from the ${rule.label}` };
   }
   if (rule.mode === "full") {
     const fullOn = addMonthsClamped(rule.issuedOn, OTHER_FULL_LICENCE_MONTHS);
     if (!fullOn) return act;
     if (fullOn < actHeldOn) {
-      return { key: "held", on: fullOn, shownOn: actHeldOn, label, short: `${rule.label} ${OTHER_FULL_LICENCE_MONTHS} months, school rule`, after: ` (the school rule applies from ${formatDate(fullOn)})`, school: `${rule.label} held ${OTHER_FULL_LICENCE_MONTHS} months on ${formatDate(fullOn)}` };
+      const on = floor(fullOn);
+      return { key: "held", on, shownOn: actHeldOn, label, short: `${rule.label} ${OTHER_FULL_LICENCE_MONTHS} months, school rule`, after: ` (the school rule applies from ${formatDate(on)})`, school: `${rule.label} held ${OTHER_FULL_LICENCE_MONTHS} months on ${formatDate(fullOn)}` };
     }
     // The ACT wait ends first: the school rule changes nothing, but a still-unmet line says when it would apply.
     return { ...act, after: ` (the school rule applies from ${formatDate(fullOn)})` };
@@ -410,8 +419,8 @@ function heldWithSchoolRule(rule: SchoolRule, actHeldOn: string, fromDate: (star
  * `finalDriveEligibleFrom`, so both read the rule the same way. Old licence (before 1 Jan 2020): held 5½ months
  * (from the first issue date if given) and age 16 years 350 days (D12, Q5). New licence: the band is the age at
  * issue (under 25: 12 months + age 17 + 100 h; 25 or over: 6 months + 50 h); a renewed licence whose first and
- * current issue dates fall in different bands is `unclear: "renewed"`, an interstate learner licence issued in a
- * different band from the ACT licence `unclear: "school"` (D13 a). `dob` must be a valid date for a new licence.
+ * current issue dates fall in different bands is `unclear: "renewed"`, an EARLIER interstate learner licence issued in
+ * a different band from the ACT licence `unclear: "school"` (D13 a). `dob` must be a valid date for a new licence.
  * The school rule (overseas / interstate licence) only ever moves the "held" condition (heldWithSchoolRule).
  */
 function datedConditions(learner: EligibilityLearner, issue: string, dob: string | null):
@@ -424,7 +433,7 @@ function datedConditions(learner: EligibilityLearner, issue: string, dob: string
     const dated: DatedCondition[] = [];
     const heldFrom = (start: string) => addDaysIso(addMonthsClamped(start, 5) ?? start, 16);
     const heldOn = heldFrom(firstIssued ?? issue);
-    if (heldOn) dated.push(heldWithSchoolRule(rule, heldOn, heldFrom, "licence held 5½ months", "licence 5½ months"));
+    if (heldOn) dated.push(heldWithSchoolRule(rule, firstIssued ?? issue, heldOn, heldFrom, "licence held 5½ months", "licence 5½ months"));
     const ageOn = dob ? addDaysIso(addMonthsClamped(dob, 17 * 12) ?? dob, -15) : null;
     if (ageOn) dated.push({ key: "age", on: ageOn, label: "age 16 years 350 days", short: "age 16 years 350 days" });
     return { old: true, kind: "old licence", dated };
@@ -434,24 +443,23 @@ function datedConditions(learner: EligibilityLearner, issue: string, dob: string
     return twentyFifth ? issuedOn < twentyFifth : true;
   };
   if (firstIssued && firstIssued !== issue && under25At(firstIssued) !== under25At(issue)) return { old: false, unclear: "renewed" };
-  // D13 (a): the band stays the ACT licence's; an interstate learner licence from the other band cannot be read.
-  if (rule.mode === "learner" && under25At(rule.issuedOn) !== under25At(issue)) return { old: false, unclear: "school", schoolLabel: rule.label };
+  // D13 (a): the band stays the ACT licence's; an EARLIER interstate learner licence from the other band cannot be read
+  // (one issued on or after the ACT licence contributes nothing, so its band is irrelevant).
+  if (rule.mode === "learner" && rule.issuedOn < issue && under25At(rule.issuedOn) !== under25At(issue)) return { old: false, unclear: "school", schoolLabel: rule.label };
   const under25 = under25At(issue);
   const needMonths = under25 ? 12 : 6;
   const dated: DatedCondition[] = [];
   const heldOn = addMonthsClamped(issue, needMonths);
-  if (heldOn) dated.push(heldWithSchoolRule(rule, heldOn, (start) => addMonthsClamped(start, needMonths), `licence held ${needMonths} months`, `licence ${needMonths} months`));
+  if (heldOn) dated.push(heldWithSchoolRule(rule, issue, heldOn, (start) => addMonthsClamped(start, needMonths), `licence held ${needMonths} months`, `licence ${needMonths} months`));
   const ageOn = under25 && dob ? addMonthsClamped(dob, 17 * 12) : null;
   if (ageOn) dated.push({ key: "age", on: ageOn, label: "age 17", short: "age 17" });
   return { old: false, unclear: false, kind: under25 ? "new licence, under 25 at issue" : "new licence, 25 or over at issue", under25, needHours: under25 ? 100 : 50, dated };
 }
 
-/** The school-rule sentence for a plain R2 result: set when the "held" condition was met through the rule on `onDate`. */
-function schoolSentence(dated: DatedCondition[], onDate: string): string {
+/** The school-rule sentence for a plain R2 result (a plain result means every condition, the "held" one included, is met). */
+function schoolSentence(dated: DatedCondition[]): string {
   const held = dated.find((c) => c.key === "held");
   if (!held?.school) return "";
-  // A full licence counts only once its own 12 months have passed; before that the ACT wait (shownOn) did the work.
-  if (held.shownOn && onDate < held.on) return "";
   return `; ${SCHOOL_RULE_LABEL}: ${held.school}`;
 }
 
@@ -469,7 +477,7 @@ function evaluateEligibility(learner: EligibilityLearner, issue: string, onDate:
     // Old licence: age at least 16 years 350 days (17th birthday minus 15 days) and held at least 5½ months (D12, Q5).
     const rule = datedConditions(learner, issue, dob);
     if (rule.old) conditions.push(...rule.dated.map(toCondition));
-    return { missing, conditions, unclear: false, kind: "old licence", school: rule.old ? schoolSentence(rule.dated, onDate) : "" };
+    return { missing, conditions, unclear: false, kind: "old licence", school: rule.old ? schoolSentence(rule.dated) : "" };
   }
 
   // New licence: HPT and logged hours are needed whatever the band.
@@ -499,7 +507,7 @@ function evaluateEligibility(learner: EligibilityLearner, issue: string, onDate:
   conditions.push({ key: "hpt", met: hpt <= onDate, text: `HPT passed on ${formatDate(hpt)}, after this date` });
   const age = rule.dated.find((c) => c.key === "age");
   if (under25 && age) conditions.push(toCondition(age));
-  return { missing, conditions, unclear: false, kind: rule.kind, school: schoolSentence(rule.dated, onDate) };
+  return { missing, conditions, unclear: false, kind: rule.kind, school: schoolSentence(rule.dated) };
 }
 
 const signatureOf = (evaluation: Evaluation) => JSON.stringify([evaluation.kind, evaluation.unclear, evaluation.conditions.map((c) => [c.key, c.met])]);
@@ -639,6 +647,10 @@ export function finalDriveEligibleFrom(learner: EligibilityLearner, today?: stri
     if (!hoursMet) plus.push(`${main.rule.needHours} h`);
     if (!upToToday(learner.hptPassedOn)) plus.push("HPT");
   }
+  // `estimated` marks that the ACT issue date itself is an estimate (the licence type, band and the floor at the ACT issue
+  // date all rest on it), even when every reading lands on the same day (e.g. the 17th birthday, or an earlier interstate
+  // licence, decides): same convention as P1 (tests/rules-eligible-from "age wins"), so the ≈ / ~ never disappears while
+  // the card's own issue date is unknown. A typed issue date gives an exact date.
   return { ok: true, date: main.date, estimated: Boolean(estimate), earliest, latest, because: main.because, plus, kind: main.rule.kind };
 }
 

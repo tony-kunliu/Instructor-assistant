@@ -81,6 +81,52 @@ test("(a) interstate learner with a different age band from the ACT issue date i
   assert.equal(r2(nswLearner("2025-10-09", { dob: "2000-10-09", learnerLicenceIssuedOn: "2025-10-10" }), TODAY)[0], "plain", "both 25+: 6 months from 9 Oct 2025 = 9 Apr 2026");
 });
 
+test("(a) Tony 2026-10-13: count from the EARLIER licence; an interstate learner licence issued on/after the ACT licence contributes nothing (no wording, no band check), in both bands", () => {
+  // ACT issued 1 Mar 2026 (base); NSW issued later, 1 Jun 2026: the ACT reading stands (held 1 Mar 2027), no school-rule wording.
+  const later = nswLearner("2026-06-01");
+  assert.deepEqual(r2(later, TODAY), ["amber", "Competency 23 not yet: licence held 12 months on 1 Mar 2027."]);
+  assert.deepEqual(r2(later, "2027-03-01"), ["plain", "Competency 23 eligibility met per entered data (new licence, under 25 at issue)."]);
+  assert.deepEqual([ok(finalDriveEligibleFrom(later)).date, ok(finalDriveEligibleFrom(later)).because], ["2027-03-01", ["licence 12 months"]]);
+  assert.equal(r2(nswLearner("2026-03-01"), TODAY)[1], "Competency 23 not yet: licence held 12 months on 1 Mar 2027.", "same day as the ACT licence: nothing to count");
+  // 25 or over: ACT 1 Mar 2026 (6 months → 1 Sep 2026), NSW later.
+  const laterOver = nswLearner("2026-05-01", { dob: "1990-01-01", loggedHours: 50, loggedHoursOn: "2026-08-01" });
+  assert.deepEqual(r2(laterOver, "2026-08-31"), ["amber", "Competency 23 not yet: licence held 6 months on 1 Sep 2026."]);
+  assert.deepEqual(r2(laterOver, "2026-09-01"), ["plain", "Competency 23 eligibility met per entered data (new licence, 25 or over at issue)."]);
+  assert.equal(ok(finalDriveEligibleFrom(laterOver)).date, "2026-09-01");
+  // A later interstate licence from the OTHER band is ignored too (no "Age band unclear"): 25th birthday 9 Oct 2025, ACT issued before it, NSW after it.
+  const otherBandLater = nswLearner("2025-10-10", { dob: "2000-10-09", learnerLicenceIssuedOn: "2025-10-08", loggedHours: 200 });
+  assert.deepEqual(r2(otherBandLater, "2026-10-08"), ["plain", "Competency 23 eligibility met per entered data (new licence, under 25 at issue)."]);
+  assert.equal(ok(finalDriveEligibleFrom(otherBandLater)).date, "2026-10-08");
+  assert.equal(otherLicenceDataReminder(otherBandLater), null);
+  // An EARLIER interstate licence still relaxes the wait (and still gets the band check, as above).
+  const earlier = nswLearner("2025-10-13");
+  assert.equal(ok(finalDriveEligibleFrom(earlier)).date, "2026-10-13");
+  assert.match(r2(earlier, TODAY)[1], /school rule, confirmed by Tony: licence time counted from the NSW learner licence/);
+});
+
+test("the Competency 23 date never precedes the ACT learner licence: a full licence held for years → C23 from = the ACT issue date (school-rule wording kept); same with an old interstate learner licence; also on the estimated-ACT-date path", () => {
+  // Full UK licence 2015, ACT learner licence 1 Mar 2026: 12 months were reached in 2016, but the drive needs the ACT licence.
+  const uk = fullLicence("overseas", "United Kingdom", "2015-05-05", { hptPassedOn: "2026-01-01", loggedHoursOn: "2026-01-15" });
+  const from = ok(finalDriveEligibleFrom(uk));
+  assert.deepEqual([from.date, from.because, from.estimated], ["2026-03-01", ["full licence from United Kingdom 12 months, school rule"], false]);
+  assert.equal(generatedEligibility(uk), "C23 from 2026-03-01");
+  assert.deepEqual(r2(uk, "2026-02-28"), ["amber", "Competency 23 not yet: licence held 12 months on 1 Mar 2027 (the school rule applies from 1 Mar 2026)."]);
+  assert.deepEqual(r2(uk, "2026-03-01"), ["plain", "Competency 23 eligibility met per entered data (new licence, under 25 at issue; school rule, confirmed by Tony: full licence from United Kingdom held 12 months on 5 May 2016)."]);
+  // Interstate learner licence from 2020: the counted wait (2021) is floored at the ACT issue date.
+  const oldNsw = nswLearner("2020-01-01", { loggedHoursOn: "2026-01-15" });
+  assert.equal(ok(finalDriveEligibleFrom(oldNsw)).date, "2026-03-01");
+  assert.deepEqual(r2(oldNsw, "2026-02-28"), ["amber", "Competency 23 not yet: licence held 12 months on 1 Mar 2026 (counted from the NSW learner licence, school rule)."]);
+  assert.equal(r2(oldNsw, "2026-03-01")[0], "plain");
+  // Estimated ACT issue date (expiry − 5 years = 1 Mar 2026): floored at the estimate, so the three readings span ±14 days and the line says ≈ with the range.
+  const est = fullLicence("overseas", "United Kingdom", "2015-05-05", { learnerLicenceIssuedOn: null, licenceExpiry: "2031-03-01" });
+  const estFrom = ok(finalDriveEligibleFrom(est));
+  assert.deepEqual([estFrom.date, estFrom.estimated, estFrom.earliest, estFrom.latest], ["2026-03-01", true, "2026-02-15", "2026-03-15"]);
+  assert.equal(generatedEligibility(est), "C23 from ~2026-03-01");
+  assert.equal(finalDriveEligibleFromReminder(est, TODAY).text, "Competency 23 from ≈ 1 Mar 2026, between 15 Feb and 15 Mar (full licence from United Kingdom 12 months, school rule; issue date estimated from the licence expiry).");
+  // The ACT licence expiring before its own issue estimate is impossible here; a typed date wins over the estimate.
+  assert.equal(generatedEligibility({ ...est, learnerLicenceIssuedOn: "2026-03-20" }), "C23 from 2026-03-20");
+});
+
 test("(a) the age-17 condition still applies on top of the interstate time; hours and HPT too", () => {
   const young = nswLearner("2025-01-01", { dob: "2009-12-20", learnerLicenceIssuedOn: "2026-01-10" });
   assert.deepEqual(r2(young, TODAY), ["amber", "Competency 23 not yet: age 17 on 20 Dec 2026."]);
@@ -199,7 +245,7 @@ test("old ACT licence (before 1 Jan 2020): 5½ months counted from the interstat
   const old = nswLearner("2019-01-01", { dob: "2000-01-01", learnerLicenceIssuedOn: "2019-12-01", hptPassedOn: null, loggedHours: null, loggedHoursOn: null });
   // 1 Jan 2019 + 5 months + 16 days = 17 Jun 2019.
   assert.deepEqual(r2(old, "2019-12-02"), ["plain", "Competency 23 eligibility met per entered data (old licence; school rule, confirmed by Tony: licence time counted from the NSW learner licence)."]);
-  assert.equal(ok(finalDriveEligibleFrom(old)).date, "2019-06-17");
+  assert.equal(ok(finalDriveEligibleFrom(old)).date, "2019-12-01", "17 Jun 2019 is floored at the ACT licence issue (1 Dec 2019)");
   const oldFull = fullLicence("overseas", "Japan", "2019-03-01", { dob: "2000-01-01", learnerLicenceIssuedOn: "2019-12-01", hptPassedOn: null, loggedHours: null, loggedHoursOn: null });
   // ACT 5½ months = 17 May 2020; full 12 months = 1 Mar 2020.
   assert.deepEqual(r2(oldFull, "2020-02-29"), ["amber", "Competency 23 not yet: licence held 5½ months on 17 May 2020 (the school rule applies from 1 Mar 2020)."]);

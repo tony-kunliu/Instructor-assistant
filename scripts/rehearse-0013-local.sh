@@ -34,26 +34,26 @@ Q "$OTHERS" > "$P/schema-before.json"
 Q "$INDEXES" > "$P/indexes-before.json"
 W --file migrations/0013_learner_other_licence.sql >/dev/null
 echo "AFTER counts:  $(Q "$SNAP")"
-for t in $TABLES; do Q "SELECT * FROM $t ORDER BY id" > "$P/$t-after.json"; cmp "$P/$t-before.json" "$P/$t-after.json" && echo "$t: every column of every row identical"; done
+for t in $TABLES; do Q "SELECT * FROM $t ORDER BY id" > "$P/$t-after.json"; cmp "$P/$t-before.json" "$P/$t-after.json" && echo "$t: every column of every row identical" || { echo "MISMATCH: $t: every column of every row identical"; exit 1; }; done
 Q "$OTHERS" > "$P/schema-after.json"
-cmp "$P/schema-before.json" "$P/schema-after.json" && echo "other table definitions identical (additive only)"
+cmp "$P/schema-before.json" "$P/schema-after.json" && echo "other table definitions identical (additive only)" || { echo "MISMATCH: other table definitions identical (additive only)"; exit 1; }
 Q "$INDEXES" > "$P/indexes-after.json"
-cmp "$P/indexes-before.json" "$P/indexes-after.json" && echo "index definitions identical"
+cmp "$P/indexes-before.json" "$P/indexes-after.json" && echo "index definitions identical" || { echo "MISMATCH: index definitions identical"; exit 1; }
 echo "learners columns before: $(cat "$P/learners-columns-before.json")"
 echo "learners columns after:  $(Q "SELECT name FROM pragma_table_info('learners') ORDER BY cid")"
 echo "new columns (expect 6 x TEXT, nullable, no default): $(Q "SELECT name, type, \"notnull\" AS nn, dflt_value AS dflt FROM pragma_table_info('learners') WHERE name IN ($NEW_IN) ORDER BY cid")"
 # Existing learner rows: every old column identical, the six new ones NULL.
 Q "SELECT id, instructor_id, full_name, address, phone, dob, licence_number, licence_expiry, eligibility, transmission, school_work, licence_stage, archived_at, created_at, updated_at, learner_licence_issued_on, learner_licence_first_issued_on, hpt_passed_on, logged_hours, logged_hours_on, address_suburb, address_state, address_postcode FROM learners ORDER BY id" > "$P/learners-old-columns-after.json"
 jq -c '[.[] | del(.other_licence_kind, .other_licence_place, .other_licence_number, .other_licence_class, .other_licence_issued_on, .other_licence_expires_on)]' "$P/learners-before.json" > "$P/learners-before-norm.json"
-cmp "$P/learners-before-norm.json" <(jq -c . "$P/learners-old-columns-after.json") && echo "learners: every existing column of every row identical"
+cmp "$P/learners-before-norm.json" <(jq -c . "$P/learners-old-columns-after.json") && echo "learners: every existing column of every row identical" || { echo "MISMATCH: learners: every existing column of every row identical"; exit 1; }
 echo "new columns on existing rows (expect all null): $(Q "SELECT id, $(echo $NEW | tr ' ' ',') FROM learners ORDER BY id")"
 echo "foreign_key_check: $(Q 'PRAGMA foreign_key_check')"
 # Re-apply: ADD COLUMN is refused by SQLite (duplicate column) by design; wrangler records applied migrations so it never runs twice.
-if W --file migrations/0013_learner_other_licence.sql >/dev/null 2>"$P/reapply.err"; then echo "re-apply: UNEXPECTEDLY succeeded"; exit 1; else grep -qi "duplicate column" "$P/reapply.err" && echo "re-apply refused with 'duplicate column' (by design)"; fi
+if W --file migrations/0013_learner_other_licence.sql >/dev/null 2>"$P/reapply.err"; then echo "re-apply: UNEXPECTEDLY succeeded"; exit 1; else grep -qi "duplicate column" "$P/reapply.err" && echo "re-apply refused with 'duplicate column' (by design)" || { echo "MISMATCH: re-apply refused with 'duplicate column' (by design)"; exit 1; }; fi
 # The exact UPDATE shapes lib/repo.ts#updateLearner issues: record an interstate learner licence, then the form's "No" (details cleared, old values only in learner_revisions).
 W --command "UPDATE learners SET other_licence_kind = 'interstate', other_licence_place = 'NSW', other_licence_number = 'QA NSW 1', other_licence_class = 'learner', other_licence_issued_on = '2025-10-13', other_licence_expires_on = '2030-10-13', updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = 'L1';" >/dev/null
 echo "after record (expect interstate/NSW/learner/2025-10-13): $(Q "SELECT $(echo $NEW | tr ' ' ',') FROM learners WHERE id = 'L1'")"
 W --command "UPDATE learners SET other_licence_kind = 'none', other_licence_place = NULL, other_licence_number = NULL, other_licence_class = NULL, other_licence_issued_on = NULL, other_licence_expires_on = NULL, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = 'L1';" >/dev/null
 echo "after 'No' (expect none + nulls): $(Q "SELECT $(echo $NEW | tr ' ' ',') FROM learners WHERE id = 'L1'")"
 echo "L2 untouched (expect nulls + archived): $(Q "SELECT other_licence_kind, other_licence_class, archived_at IS NOT NULL AS archived FROM learners WHERE id = 'L2'")"
-for t in $TABLES; do Q "SELECT * FROM $t ORDER BY id" > "$P/$t-final.json"; cmp "$P/$t-before.json" "$P/$t-final.json" && echo "$t still identical after record + 'No'"; done
+for t in $TABLES; do Q "SELECT * FROM $t ORDER BY id" > "$P/$t-final.json"; cmp "$P/$t-before.json" "$P/$t-final.json" && echo "$t still identical after record + 'No'" || { echo "MISMATCH: $t still identical after record + 'No'"; exit 1; }; done

@@ -29,8 +29,8 @@ closed PRs; see `TASK.md` for what is in progress.
   `feature/intake-p3-licence` = learner intake P3, overseas / interstate licence: migration
   `0013` (6 nullable `learners.other_licence_*` columns, additive), `lib/other-licence.ts`,
   school rule in `lib/rules.ts` (R2 + "Competency 23 from"), collapsed form group, revisions,
-  qa-browser 23. Staging D1 is still at `0012`: apply `0013` with `Staging D1 Migrate` BEFORE
-  merging.
+  qa-browser 23. Review round 1 fixed (earlier licence counts; C23 date floored at the ACT
+  issue). Staging D1 still `0012`: apply `0013` with `Staging D1 Migrate` BEFORE merging.
 - **Still open:** `scripts/check-signature-row-limits.mjs` not yet run against a deployed
   D1 (Staging only, never Production); notify-tick (lesson notifications) waits for Website
   PR #47 rework and Tony's approval of the new endpoint + secret (Production OFF); intake
