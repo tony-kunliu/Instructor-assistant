@@ -1,6 +1,6 @@
 # TASK.md
 
-_Last updated: 2026-10-13_
+_Last updated: 2026-10-16_
 
 This file describes **current task only**. Completed work's detail
 lives in git log and closed PRs, not here.
@@ -16,6 +16,11 @@ feasibility report; Copy / Download summary JSON; not linked, noindex, own manif
 only); `scripts/qa-browser/gps.mjs` (182 checks, 375 / 820 px, light / dark, `watchPosition` spied: never called
 by the synthetic flow, once in Real GPS mode). Prior spike `experiment/gps-pwa-feasibility` reused, not merged.
 Reviewed per Handbook §2 L2: one independent review (PASS, 7 Minors fixed with a test / QA check each, verified by the merging agent).
+
+**Side task (dot / Tony "keep iterating", 2026-10-16):** `chore/manifest-colours` — the installed app's `app/manifest.ts`
+colours move from the pre-redesign pair to the light tokens (`--paper` #f6f3eb, `--navy` #0b1b2b) and
+`tests/manifest-colours.test.ts` keeps manifest, stylesheet and `/gps` manifest in step. L1/L2 presentation, no data,
+schema, contract or permission change; draft PR to `staging`, independent review, no merge by this task.
 
 **Next Recommended Task:** Tony's real-phone drive (phase 1b) on Staging
 `/gps` from the Home Screen — Real GPS, 20-30 min with a 5 min screen lock and 5 min in another app, copy the

@@ -125,7 +125,8 @@ Long term (ecosystem, coordinated with Work on actgds.com Issue #3):
 - Appearance + "only the form" (PR #77 merged to `staging`; Tony's follow-up on branch
   `feature/ui-theme-toggle-top`, 2026-10-13): the control is now one icon button in the top bar that
   toggles Light <-> Dark (first state follows the phone). Follow-ups: (1) `app/manifest.ts`
-  `background_color` / `theme_color` still pre-redesign (PWA splash only); (2) the toggle's name is
+  `background_color` / `theme_color` — DONE on branch `chore/manifest-colours` (light `--paper` / `--navy`, guarded by
+  `tests/manifest-colours.test.ts`; a manifest holds one value, so dark-mode phones still get the light splash); (2) the toggle's name is
   English only, like the rest of the UI; (3) there is no way back to "follow the phone" after a tap
   short of clearing site data — add one only if Tony asks.
 - Follow-ups: the concept's "36 h not yet logged" chip was NOT built
