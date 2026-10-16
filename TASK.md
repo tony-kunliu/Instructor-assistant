@@ -1,6 +1,6 @@
 # TASK.md
 
-_Last updated: 2026-10-13_
+_Last updated: 2026-10-16_
 
 This file describes **current task only**. Completed work's detail
 lives in git log and closed PRs, not here.
@@ -27,6 +27,13 @@ check + Production release. Still queued: intake P4 (iOS Scan Text + local parse
 
 **Waiting on Other Repo:** ACTGDS: notify-tick waits for Website PR #47 rework and Tony's explicit approval of the
 new endpoint + secret (Production stays OFF). Nothing blocks this repo.
+
+**Side task (dot / Tony, 2026-10-16):** `feature/gps-earlier-summaries` — `/gps` "Earlier recordings": the newest five rows show
+one line `16.99 km · Recorded 27.1 min · Coverage 97.4%` (the Results card's own distance, total duration and coverage, from
+the shared `lib/gps/format.ts`), a read-only in-memory projection (`lib/gps/earlier.ts`, existing `summarizeTrack`; bounded,
+one at a time; stale runs dropped; a malformed or empty record degrades alone). No capture, storage-write, consent, lesson,
+API or real-location change. Expected tier L2 (new read + derived display), independent review derives its own. Draft PR to
+`staging`; not merged. Separate from PR #86 (manifest colours).
 
 **Tony Manual Action Required:** none for this step. Later: the phase-1b real-phone drive; approve the consent
 wording (design §6) and the `lesson_tracks` table before phase 2. Optional, still open: hide the ACT
