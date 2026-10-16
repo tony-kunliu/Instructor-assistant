@@ -10,15 +10,17 @@ import { NAVY } from "../lib/theme.ts";
 const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
 // The first :root block is the light theme; dark overrides come later (media query / [data-theme="dark"]).
 const rootBlock = /:root\s*\{([^}]*)\}/.exec(css)?.[1] ?? "";
-// Anchored on the declaration start so `--navy` can never match inside `--on-navy`.
+// Anchored on the declaration start, so a longer custom-property name that merely ENDS in `--navy` (e.g. `--x--navy`)
+// can never be read as `--navy`. (`--on-navy` was never at risk: its `-navy` has one hyphen before it.)
 const readToken = (block: string, name: string) => new RegExp(`(?:^|[\\s;{])--${name}:\\s*(#[0-9a-fA-F]{6})\\b`).exec(block)?.[1]?.toLowerCase() ?? null;
 const token = (name: string) => readToken(rootBlock, name);
 
-test("token reader: `--navy` is not matched inside `--on-navy`, whichever is declared first", () => {
+test("token reader: a longer name ending in `--navy` is not read as `--navy`; neighbouring names are unaffected", () => {
+  assert.equal(readToken("--x--navy: #111111; --navy: #222222;", "navy"), "#222222");
+  assert.equal(readToken("--navy: #222222; --x--navy: #111111;", "navy"), "#222222");
+  assert.equal(readToken("--x--navy: #111111;", "navy"), null);
   assert.equal(readToken("--on-navy: #111111; --navy: #222222;", "navy"), "#222222");
-  assert.equal(readToken("--navy: #222222; --on-navy: #111111;", "navy"), "#222222");
-  assert.equal(readToken("--on-navy: #111111;", "navy"), null);
-  assert.equal(readToken("--on-navy: #111111;", "on-navy"), "#111111");
+  assert.equal(readToken("--on-navy: #111111; --navy: #222222;", "on-navy"), "#111111");
 });
 
 test("the stylesheet's light :root block defines --paper and --navy as 6-digit hex", () => {
