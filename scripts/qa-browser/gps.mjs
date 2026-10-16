@@ -172,6 +172,24 @@ try {
 
     // Earlier recordings + Clear this device (confirm step inside the page, no window.confirm).
     check(`${T} Earlier recordings lists the stopped session with Delete`, (await page.$$("[data-testid=gps-earlier-open]")).length >= 1 && (await page.$$("[data-testid=gps-earlier-delete]")).length >= 1);
+    // A damaged recording on this device: Open says so in words instead of throwing; the page and the other recordings keep working.
+    {
+      const metaCount = () => page.evaluate(() => new Promise((resolve) => { const o = indexedDB.open("ia-gps", 1); o.onsuccess = () => { const r = o.result.transaction("meta").objectStore("meta").count(); r.onsuccess = () => resolve(r.result); }; }));
+      const before = await metaCount();
+      await page.evaluate(() => new Promise((resolve, reject) => { const o = indexedDB.open("ia-gps", 1); o.onsuccess = () => { const tx = o.result.transaction("meta", "readwrite"); tx.objectStore("meta").put({ id: "qa-damaged", startedAt: 1_000, stoppedAt: 61_000, env: { source: "synthetic", userAgent: "qa", standalone: false, wakeLockSupported: true, geolocationSupported: true, startVisibility: "visible" }, pauses: 7 }); tx.oncomplete = () => resolve(true); tx.onerror = () => reject(tx.error); }; }));
+      await page.reload();
+      await page.waitForSelector("[data-testid=gps-start]");
+      await page.waitForSelector("[data-testid=gps-earlier-open]");
+      const errorsBefore = errors.length;
+      const rowsN = (await page.$$("[data-testid=gps-earlier-open]")).length;
+      await page.locator("[data-testid=gps-earlier-open]").nth(rowsN - 1).click(); // oldest = the damaged one
+      await page.waitForSelector("[data-testid=gps-note]");
+      await settle(300);
+      check(`${T} damaged recording: Open says so in words, no page error, no Results card, page still usable (Start offered)`, /can't be read/.test(await page.textContent("[data-testid=gps-note]")) && (await page.$("[data-testid=gps-results]")) === null && errors.length === errorsBefore && (await page.$("[data-testid=gps-start]")) !== null, errors.slice(errorsBefore).join(" | "));
+      await page.locator("[data-testid=gps-earlier-delete]").nth(rowsN - 1).click();
+      await page.waitForFunction((n) => document.querySelectorAll("[data-testid=gps-earlier-open]").length === n - 1, rowsN);
+      check(`${T} damaged recording: Delete removes only it (${before} recordings again)`, (await metaCount()) === before, String(await metaCount()));
+    }
     await page.click("[data-testid=gps-clear-device]");
     await page.waitForSelector("[data-testid=gps-clear-confirm]");
     await layoutOk(page, `${T} clear confirm`);

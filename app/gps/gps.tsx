@@ -199,8 +199,13 @@ export default function GpsRecorder() {
   const showResults = async (id: string, recover: boolean) => {
     if (!store) return;
     if (recover) await recoverSession(store, id, Date.now());
-    const data = await store.load(id);
-    if (data) setResults({ summary: summarizeTrack(data), report: analyzeSession(data) });
+    try {
+      const data = await store.load(id);
+      if (data) { setResults({ summary: summarizeTrack(data), report: analyzeSession(data) }); setNote(null); }
+    } catch {
+      // A damaged record must not break the page (or leave Stop busy): say so; Delete still works.
+      setNote("This recording can't be read on this device. You can delete it.");
+    }
     void refreshLists();
   };
   const stop = async () => {
