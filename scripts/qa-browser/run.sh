@@ -39,3 +39,5 @@ node "$ROOT/scripts/qa-browser/seed.mjs"
 node "$ROOT/scripts/qa-browser/qa.mjs"
 # Isolated P4 GPS recorder page (/gps): synthetic drive only, geolocation spied, 375/820 px, light + dark.
 node "$ROOT/scripts/qa-browser/gps.mjs"
+# Installed-app manifests as served (colours = the light tokens), their links and theme-color metas, phone + iPad widths.
+node "$ROOT/scripts/qa-browser/manifest.mjs"

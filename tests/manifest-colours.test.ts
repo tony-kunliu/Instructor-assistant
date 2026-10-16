@@ -10,7 +10,16 @@ import { NAVY } from "../lib/theme.ts";
 const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
 // The first :root block is the light theme; dark overrides come later (media query / [data-theme="dark"]).
 const rootBlock = /:root\s*\{([^}]*)\}/.exec(css)?.[1] ?? "";
-const token = (name: string) => new RegExp(`--${name}:\\s*(#[0-9a-fA-F]{6})\\b`).exec(rootBlock)?.[1]?.toLowerCase() ?? null;
+// Anchored on the declaration start so `--navy` can never match inside `--on-navy`.
+const readToken = (block: string, name: string) => new RegExp(`(?:^|[\\s;{])--${name}:\\s*(#[0-9a-fA-F]{6})\\b`).exec(block)?.[1]?.toLowerCase() ?? null;
+const token = (name: string) => readToken(rootBlock, name);
+
+test("token reader: `--navy` is not matched inside `--on-navy`, whichever is declared first", () => {
+  assert.equal(readToken("--on-navy: #111111; --navy: #222222;", "navy"), "#222222");
+  assert.equal(readToken("--navy: #222222; --on-navy: #111111;", "navy"), "#222222");
+  assert.equal(readToken("--on-navy: #111111;", "navy"), null);
+  assert.equal(readToken("--on-navy: #111111;", "on-navy"), "#111111");
+});
 
 test("the stylesheet's light :root block defines --paper and --navy as 6-digit hex", () => {
   assert.match(token("paper") ?? "", /^#[0-9a-f]{6}$/);
