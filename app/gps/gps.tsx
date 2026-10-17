@@ -6,6 +6,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import ThemeToggle from "@/app/theme-switch.tsx";
 import { analyzeSession, type Report } from "@/lib/gps/analysis.ts";
+import { loadEarlierSummaries, EARLIER_SUMMARY_LIMIT } from "@/lib/gps/earlier.ts";
+import { coverageText, distanceText, fmtMs, recordedText } from "@/lib/gps/format.ts";
 import { Recorder, describeGeoError, recoverSession, type DocLike, type GeoLike, type RecorderDeps, type Snapshot, type WakeLockLike } from "@/lib/gps/recorder.ts";
 import { FaultInjectingStore, IndexedDbStore } from "@/lib/gps/store.ts";
 import { summarizeTrack, type TrackSummary } from "@/lib/gps/summary.ts";
@@ -17,7 +19,6 @@ type Source = "synthetic" | "device";
 const DEFAULT_SPEEDUP = 90;
 const GEO_NOTICE_MS = 8_000;
 
-const fmtMs = (ms: number | null) => (ms === null ? "—" : ms >= 60_000 ? `${(ms / 60_000).toFixed(1)} min` : `${(ms / 1000).toFixed(1)} s`);
 const pct = (v: number | null) => (v === null ? "n/a" : `${(v * 100).toFixed(1)}%`);
 const clock = (ms: number) => {
   const s = Math.max(0, Math.floor(ms / 1000));
@@ -105,6 +106,9 @@ export default function GpsRecorder() {
   const [results, setResults] = useState<Results | null>(null);
   const [interrupted, setInterrupted] = useState<SessionMeta[]>([]);
   const [past, setPast] = useState<SessionMeta[]>([]);
+  // One-line summaries of the newest earlier recordings: in-memory, read-only, filled in after the list is on screen.
+  const [earlierLines, setEarlierLines] = useState<Record<string, string | null>>({});
+  const earlierRun = useRef(0);
   const [note, setNote] = useState<string | null>(null);
   // A location error stays readable for a few seconds after the next fix clears it (a flash is no use on the dash).
   const [geoNotice, setGeoNotice] = useState<{ n: number; text: string; recovered: boolean; note: boolean; until: number } | null>(null);
@@ -132,6 +136,27 @@ export default function GpsRecorder() {
   }, []);
 
   useEffect(() => { void refreshLists(); }, [refreshLists]);
+
+  // Summaries for the newest earlier recordings. Each list change starts a new run and an older run's late results are
+  // dropped (isCurrent); ids that left the top of the list are pruned; a recording already summarised is not read again.
+  const earlierCache = useRef<Record<string, string | null>>({});
+  useEffect(() => {
+    if (!store) return;
+    const run = ++earlierRun.current;
+    const keep = new Set(past.slice(0, EARLIER_SUMMARY_LIMIT).map((m) => m.id));
+    for (const id of Object.keys(earlierCache.current)) if (!keep.has(id)) delete earlierCache.current[id];
+    setEarlierLines({ ...earlierCache.current });
+    void loadEarlierSummaries(store, past, {
+      isCurrent: () => earlierRun.current === run,
+      skip: (id) => id in earlierCache.current,
+      onResult: (id, line) => {
+        if (!keep.has(id)) return;
+        earlierCache.current[id] = line;
+        setEarlierLines({ ...earlierCache.current });
+      },
+    });
+    return () => { earlierRun.current++; };
+  }, [store, past]);
 
   // Live clock: elapsed (recorder time, simulated for the synthetic drive) and the last-fix age.
   useEffect(() => {
@@ -338,13 +363,13 @@ export default function GpsRecorder() {
           <h2>Results</h2>
           <p className="meta">{when(new Date(r.startedAt).getTime())}{r.recovered ? " · recovered" : ""}</p>
           <dl className="gps-metrics gps-summary">
-            <div className="wide"><dt>GPS distance (diagnostic) — the odometer stays official</dt><dd data-testid="gps-r-distance">{(r.distanceM / 1000).toFixed(2)} km</dd></div>
+            <div className="wide"><dt>GPS distance (diagnostic) — the odometer stays official</dt><dd data-testid="gps-r-distance">{distanceText(r)}</dd></div>
             <div><dt>Moving</dt><dd data-testid="gps-r-moving">{fmtMs(r.movingMs)}</dd></div>
             <div><dt>Stopped</dt><dd data-testid="gps-r-stopped">{fmtMs(r.stoppedMs)}</dd></div>
             <div><dt>Stops (≥ 3 s)</dt><dd data-testid="gps-r-stops">{r.stops.count} · {fmtMs(r.stops.totalMs)}</dd></div>
             <div><dt>Max speed</dt><dd data-testid="gps-r-max">{r.maxSpeedKmh === null ? "—" : `${r.maxSpeedKmh} km/h`}</dd></div>
-            <div><dt>Coverage</dt><dd data-testid="gps-r-coverage">{r.coveragePct}%</dd></div>
-            <div><dt>Recorded</dt><dd data-testid="gps-r-recorded">{fmtMs(r.recordedMs)}</dd></div>
+            <div><dt>Coverage</dt><dd data-testid="gps-r-coverage">{coverageText(r)}</dd></div>
+            <div><dt>Recorded</dt><dd data-testid="gps-r-recorded">{recordedText(r)}</dd></div>
             <div><dt>Paused</dt><dd data-testid="gps-r-paused">{fmtMs(r.pausedMs)}{r.pauses ? ` (${r.pauses}×)` : ""}</dd></div>
             <div><dt>Gaps (&gt; 15 s)</dt><dd data-testid="gps-r-gaps">{r.gaps.count}{r.gaps.count ? ` · max ${fmtMs(r.gaps.maxMs)}` : ""}</dd></div>
             <div><dt>Fixes used</dt><dd>{r.usedFixes} / {r.fixes}{r.jumps ? ` · ${r.jumps} jump${r.jumps > 1 ? "s" : ""}` : ""}</dd></div>
@@ -387,9 +412,12 @@ export default function GpsRecorder() {
       {past.length && !active ? (
         <section className="card" data-testid="gps-earlier">
           <h2>Earlier recordings</h2>
-          {past.map((m) => (
+          {past.map((m, i) => (
             <div key={m.id} className="gps-row gps-past">
-              <button type="button" className="btn ghost" data-testid="gps-earlier-open" onClick={() => void showResults(m.id, false)}>{when(m.startedAt)}{m.env.source === "device" ? " · device" : " · synthetic"}</button>
+              <button type="button" className="btn ghost gps-earlier-open" data-testid="gps-earlier-open" onClick={() => void showResults(m.id, false)}>
+                <span>{when(m.startedAt)}{m.env.source === "device" ? " · device" : " · synthetic"}</span>
+                {i < EARLIER_SUMMARY_LIMIT && earlierLines[m.id] ? <small className="gps-earlier-line" data-testid="gps-earlier-line">{earlierLines[m.id]}</small> : null}
+              </button>
               <button type="button" className="btn ghost gps-danger" data-testid="gps-earlier-delete" onClick={() => void deleteRecording(m.id)}>Delete</button>
             </div>
           ))}

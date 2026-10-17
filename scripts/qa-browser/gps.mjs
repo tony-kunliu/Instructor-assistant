@@ -172,6 +172,51 @@ try {
 
     // Earlier recordings + Clear this device (confirm step inside the page, no window.confirm).
     check(`${T} Earlier recordings lists the stopped session with Delete`, (await page.$$("[data-testid=gps-earlier-open]")).length >= 1 && (await page.$$("[data-testid=gps-earlier-delete]")).length >= 1);
+
+    // ── Earlier recordings: one-line summaries. A read-only, in-memory projection of recordings already on this device
+    //    (existing summarizeTrack; no new rule). Fixtures are SYNTHETIC and injected straight into IndexedDB.
+    const cardVals = async () => ({ distance: (await page.textContent("[data-testid=gps-r-distance]")).trim(), recorded: (await page.textContent("[data-testid=gps-r-recorded]")).trim(), coverage: (await page.textContent("[data-testid=gps-r-coverage]")).trim() });
+    const lineOf = (v) => `${v.distance} · Recorded ${v.recorded} · Coverage ${v.coverage}`;
+    const idbRows = () => page.evaluate(() => new Promise((resolve) => { const o = indexedDB.open("ia-gps", 1); o.onsuccess = () => { const db = o.result; const out = {}; let n = 0; for (const name of ["meta", "samples", "events"]) { const r = db.transaction(name).objectStore(name).count(); r.onsuccess = () => { out[name] = r.result; if (++n === 3) resolve(out); }; r.onerror = () => resolve(null); } }; o.onerror = () => resolve(null); }));
+    const rowsInfo = () => page.$$eval("[data-testid=gps-earlier] .gps-past", (rows) => rows.map((r) => ({ line: r.querySelector("[data-testid=gps-earlier-line]")?.textContent ?? null, open: !!r.querySelector("[data-testid=gps-earlier-open]"), del: !!r.querySelector("[data-testid=gps-earlier-delete]") })));
+    const realCard = await cardVals();
+    // Test setup only (outside the app): keep just the recording the Results card shows, so the list below is exactly the fixtures.
+    const keepId = await page.getAttribute("[data-testid=gps-results]", "data-session");
+    const realStart = await page.evaluate((keep) => new Promise((resolve) => { const o = indexedDB.open("ia-gps", 1); o.onsuccess = () => { const db = o.result; const tx = db.transaction("meta", "readwrite"); const st = tx.objectStore("meta"); const all = st.getAll(); all.onsuccess = () => { let start = null; for (const m of all.result) { if (m.id === keep) start = m.startedAt; else st.delete(m.id); } tx.oncomplete = () => resolve(start); }; }; }), keepId);
+    const DAY = 86_400_000;
+    const env = { source: "synthetic", userAgent: "qa", standalone: false, wakeLockSupported: true, geolocationSupported: true, startVisibility: "visible" };
+    const fixtures = [
+      { id: "qa-empty", startedAt: realStart - DAY, stoppedAt: realStart - DAY + 60_000, env, pauses: [] },           // valid, no fixes at all
+      { id: "qa-corrupt", startedAt: realStart - 2 * DAY, stoppedAt: realStart - 2 * DAY + 60_000, env, pauses: 7 }, // malformed field: summarizeTrack throws
+      ...[3, 4, 5, 6, 7].map((k) => ({ id: `qa-extra-${k}`, startedAt: realStart - k * DAY, stoppedAt: realStart - k * DAY + 60_000, env, pauses: [] })),
+    ];
+    await page.evaluate((metas) => new Promise((resolve, reject) => { const o = indexedDB.open("ia-gps", 1); o.onsuccess = () => { const tx = o.result.transaction("meta", "readwrite"); for (const m of metas) tx.objectStore("meta").put(m); tx.oncomplete = () => resolve(true); tx.onerror = () => reject(tx.error); }; o.onerror = () => reject(o.error); }), fixtures);
+    const idbBefore = await idbRows();
+    const requests = [];
+    page.on("request", (rq) => requests.push(rq.url()));
+    await page.reload();
+    await page.waitForSelector("[data-testid=gps-start]");
+    await page.waitForSelector("[data-testid=gps-earlier-line]");
+    await settle(600);
+    let rows = await rowsInfo();
+    check(`${T} earlier: 8 listed; lines on rows 1, 2, 4, 5 only (newest five; row 3 is the malformed record, rows 6-8 are beyond the limit); every row keeps Open + Delete`, rows.length === 8 && rows.map((r, i) => (r.line ? i : -1)).filter((i) => i >= 0).join() === "0,1,3,4" && rows.every((r) => r.open && r.del), JSON.stringify(rows.map((r) => r.line)));
+    check(`${T} earlier: after stop + reload, row 1's line equals the Results card of the same recording (distance, Recorded, Coverage) — ${rows[0].line}`, rows[0].line === lineOf(realCard), `card=${lineOf(realCard)}`);
+    check(`${T} earlier: wording is the card's total duration "Recorded", never Moving/Paused/parked`, rows.filter((r) => r.line).every((r) => /^\d+\.\d{2} km · Recorded [\d.]+ (min|s) · Coverage [\d.]+%$/.test(r.line) && !/Moving|Paused|Stopped/.test(r.line)));
+    check(`${T} earlier: loading the lines wrote nothing (IndexedDB meta/samples/events counts unchanged)`, JSON.stringify(await idbRows()) === JSON.stringify(idbBefore), JSON.stringify({ before: idbBefore, after: await idbRows() }));
+    check(`${T} earlier: no request left the origin and the geolocation spy saw 0 calls`, requests.every((u) => u.startsWith(B) || u.startsWith("data:") || u.startsWith("blob:")) && (await watchCalls(page)) === 0, `calls=${await watchCalls(page)} foreign=${requests.filter((u) => !(u.startsWith(B) || u.startsWith("data:") || u.startsWith("blob:"))).join(",")}`);
+    await layoutOk(page, `${T} earlier summary lines`);
+    await shot(page, `gps-${width}-${theme}-earlier-lines`);
+    // The empty fixture's line is the same numbers its own Results card shows.
+    await page.locator("[data-testid=gps-earlier] .gps-past").nth(1).locator("[data-testid=gps-earlier-open]").click();
+    await page.waitForSelector("[data-testid=gps-results]");
+    check(`${T} earlier: an empty recording's line equals its own Results card (no special case, no blocking)`, (await rowsInfo())[1].line === lineOf(await cardVals()));
+    // The malformed record does not block the list: delete it; the remaining rows keep working and the newest five all get lines.
+    await page.locator("[data-testid=gps-earlier] .gps-past").nth(2).locator("[data-testid=gps-earlier-delete]").click();
+    await page.waitForFunction(() => document.querySelectorAll("[data-testid=gps-earlier] .gps-past").length === 7);
+    await settle(500);
+    rows = await rowsInfo();
+    check(`${T} earlier: after deleting the malformed record the list updates (7 rows) and the newest five all have lines, later rows none`, rows.length === 7 && rows.map((r, i) => (r.line ? i : -1)).filter((i) => i >= 0).join() === "0,1,2,3,4", JSON.stringify(rows.map((r) => r.line)));
+    check(`${T} earlier: no page errors while summarising a malformed record`, errors.length === 0, errors.join(" | "));
     // Valid A is open, then a damaged B is opened WITHOUT a reload: A's Results card and its Delete must not stay up under B's note.
     {
       const damaged = (id, extra) => ({ id, startedAt: 1_000, env: { source: "synthetic", userAgent: "qa", standalone: false, wakeLockSupported: true, geolocationSupported: true, startVisibility: "visible" }, pauses: 7, ...extra });

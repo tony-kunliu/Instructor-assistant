@@ -1,6 +1,6 @@
 # TASK.md
 
-_Last updated: 2026-10-13_
+_Last updated: 2026-10-16_
 
 This file describes **current task only**. Completed work's detail
 lives in git log and closed PRs, not here.
@@ -17,6 +17,13 @@ only); `scripts/qa-browser/gps.mjs` (182 checks, 375 / 820 px, light / dark, `wa
 by the synthetic flow, once in Real GPS mode). Prior spike `experiment/gps-pwa-feasibility` reused, not merged.
 Reviewed per Handbook §2 L2: one independent review (PASS, 7 Minors fixed with a test / QA check each, verified by the merging agent).
 
+**Side task (dot / Tony "keep iterating", 2026-10-16):** `chore/manifest-colours` (draft PR #86) — the installed app's
+`app/manifest.ts` colours move to the light tokens (`--paper` #f6f3eb, `--navy` #0b1b2b); `tests/manifest-colours.test.ts`
+keeps manifest, stylesheet and `/gps` manifest in step; `scripts/qa-browser/manifest.mjs` checks both manifests as served
+(content type, colours, icon, links, theme-color metas) at phone + iPad widths, light + dark. Tier recorded: **L2
+presentation-only** (author "L1/L2", reviewer L2 under the §2 doubt rule). No data, schema, contract or permission change.
+Draft, not merged; needs Tony's go. Unlocated: the first full unit run was 762/763 (name not captured; 7 later runs clean).
+
 **Next Recommended Task:** Tony's real-phone drive (phase 1b) on Staging
 `/gps` from the Home Screen — Real GPS, 20-30 min with a 5 min screen lock and 5 min in another app, copy the
 summary + feasibility JSON back; the verdict decides web vs native shell. Then phase 2 (lesson hook-in,
@@ -27,6 +34,11 @@ check + Production release. Still queued: intake P4 (iOS Scan Text + local parse
 
 **Waiting on Other Repo:** ACTGDS: notify-tick waits for Website PR #47 rework and Tony's explicit approval of the
 new endpoint + secret (Production stays OFF). Nothing blocks this repo.
+
+**Side task (dot / Tony, 2026-10-16):** `feature/gps-earlier-summaries` — `/gps` "Earlier recordings": the newest five rows show
+one line (`16.99 km · Recorded 27.1 min · Coverage 97.4%`), the Results card's own numbers via `lib/gps/format.ts`: a read-only
+in-memory projection (`lib/gps/earlier.ts`, existing `summarizeTrack`; a malformed record degrades alone). No capture, write,
+consent, lesson, API or location change. Tier L2. Draft PR #87 to `staging`.
 
 **Tony Manual Action Required:** none for this step. Later: the phase-1b real-phone drive; approve the consent
 wording (design §6) and the `lesson_tracks` table before phase 2. Optional, still open: hide the ACT

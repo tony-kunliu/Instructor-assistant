@@ -44,6 +44,8 @@
 .gps-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
 .gps-row .btn { flex: 1 1 140px; min-height: 44px; }
 .gps-past { padding: 6px 0; }
+.gps .btn.gps-earlier-open { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; padding-top: 6px; padding-bottom: 6px; }
+.gps-earlier-line { display: block; font-size: 13px; font-weight: 500; color: var(--text-muted); font-variant-numeric: tabular-nums; text-align: center; overflow-wrap: anywhere; }
 .gps-past + .gps-past { border-top: 1px solid var(--hairline); }
 .gps .btn.gps-danger { color: var(--bad); }
 .gps .btn.block { width: 100%; }
