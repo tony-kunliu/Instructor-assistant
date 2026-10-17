@@ -222,8 +222,9 @@ try {
       const damaged = (id, extra) => ({ id, startedAt: 1_000, env: { source: "synthetic", userAgent: "qa", standalone: false, wakeLockSupported: true, geolocationSupported: true, startVisibility: "visible" }, pauses: 7, ...extra });
       await page.evaluate((m) => new Promise((resolve, reject) => { const o = indexedDB.open("ia-gps", 1); o.onsuccess = () => { const tx = o.result.transaction("meta", "readwrite"); tx.objectStore("meta").put(m); tx.oncomplete = () => resolve(true); tx.onerror = () => reject(tx.error); }; }), damaged("qa-damaged-ab", { stoppedAt: 61_000 }));
       const sessionA = await page.getAttribute("[data-testid=gps-results]", "data-session");
+      const rowsBeforeB = (await page.$$("[data-testid=gps-earlier-open]")).length; // recordings listed before B is injected
       await page.locator("[data-testid=gps-earlier-open]").first().click(); // refreshes the list (B appears) and keeps A valid
-      await page.waitForFunction(() => document.querySelectorAll("[data-testid=gps-earlier-open]").length >= 2);
+      await page.waitForFunction((k) => document.querySelectorAll("[data-testid=gps-earlier-open]").length === k + 1, rowsBeforeB);
       const errorsBefore = errors.length;
       const n = (await page.$$("[data-testid=gps-earlier-open]")).length;
       await page.locator("[data-testid=gps-earlier-open]").nth(n - 1).click(); // oldest = B
