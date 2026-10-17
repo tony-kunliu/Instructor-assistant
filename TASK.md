@@ -36,11 +36,9 @@ check + Production release. Still queued: intake P4 (iOS Scan Text + local parse
 new endpoint + secret (Production stays OFF). Nothing blocks this repo.
 
 **Side task (dot / Tony, 2026-10-16):** `feature/gps-earlier-summaries` — `/gps` "Earlier recordings": the newest five rows show
-one line `16.99 km · Recorded 27.1 min · Coverage 97.4%` (the Results card's own distance, total duration and coverage, from
-the shared `lib/gps/format.ts`), a read-only in-memory projection (`lib/gps/earlier.ts`, existing `summarizeTrack`; bounded,
-one at a time; stale runs dropped; a malformed or empty record degrades alone). No capture, storage-write, consent, lesson,
-API or real-location change. Expected tier L2 (new read + derived display), independent review derives its own. Draft PR to
-`staging`; not merged. Separate from PR #86 (manifest colours).
+one line (`16.99 km · Recorded 27.1 min · Coverage 97.4%`), the Results card's own numbers via `lib/gps/format.ts`: a read-only
+in-memory projection (`lib/gps/earlier.ts`, existing `summarizeTrack`; a malformed record degrades alone). No capture, write,
+consent, lesson, API or location change. Tier L2. Draft PR #87 to `staging`.
 
 **Tony Manual Action Required:** none for this step. Later: the phase-1b real-phone drive; approve the consent
 wording (design §6) and the `lesson_tracks` table before phase 2. Optional, still open: hide the ACT
