@@ -223,19 +223,29 @@ export default function GpsRecorder() {
   const resume = async () => { await recRef.current?.resume(); };
   const showResults = async (id: string, recover: boolean) => {
     if (!store) return;
-    if (recover) await recoverSession(store, id, Date.now());
-    const data = await store.load(id);
-    if (data) setResults({ summary: summarizeTrack(data), report: analyzeSession(data) });
+    try {
+      if (recover) await recoverSession(store, id, Date.now());
+      const data = await store.load(id);
+      if (data) { setResults({ summary: summarizeTrack(data), report: analyzeSession(data) }); setNote(null); }
+    } catch {
+      // A damaged record must not break the page: say so, and drop any earlier Results so Delete cannot target another recording.
+      setResults(null);
+      setNote("This recording can't be read on this device. You can delete it.");
+    }
     void refreshLists();
   };
   const stop = async () => {
     const rec = recRef.current;
     if (!rec || busy) return;
     setBusy(true);
-    await rec.stop();
-    driverRef.current?.dispose();
-    if (rec.meta) await showResults(rec.meta.id, false);
-    setBusy(false);
+    try {
+      // The recording is persisted before the report is read back; if that read fails, still reset and say so below.
+      try { await rec.stop(); } catch { /* showResults reads the record again and reports it in words */ }
+      driverRef.current?.dispose();
+      if (rec.meta) await showResults(rec.meta.id, false);
+    } finally {
+      setBusy(false);
+    }
   };
   const deleteRecording = async (id: string) => {
     await store?.deleteSession(id);

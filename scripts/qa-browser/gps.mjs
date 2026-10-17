@@ -217,6 +217,54 @@ try {
     rows = await rowsInfo();
     check(`${T} earlier: after deleting the malformed record the list updates (7 rows) and the newest five all have lines, later rows none`, rows.length === 7 && rows.map((r, i) => (r.line ? i : -1)).filter((i) => i >= 0).join() === "0,1,2,3,4", JSON.stringify(rows.map((r) => r.line)));
     check(`${T} earlier: no page errors while summarising a malformed record`, errors.length === 0, errors.join(" | "));
+    // Valid A is open, then a damaged B is opened WITHOUT a reload: A's Results card and its Delete must not stay up under B's note.
+    {
+      const damaged = (id, extra) => ({ id, startedAt: 1_000, env: { source: "synthetic", userAgent: "qa", standalone: false, wakeLockSupported: true, geolocationSupported: true, startVisibility: "visible" }, pauses: 7, ...extra });
+      await page.evaluate((m) => new Promise((resolve, reject) => { const o = indexedDB.open("ia-gps", 1); o.onsuccess = () => { const tx = o.result.transaction("meta", "readwrite"); tx.objectStore("meta").put(m); tx.oncomplete = () => resolve(true); tx.onerror = () => reject(tx.error); }; }), damaged("qa-damaged-ab", { stoppedAt: 61_000 }));
+      const sessionA = await page.getAttribute("[data-testid=gps-results]", "data-session");
+      const rowsBeforeB = (await page.$$("[data-testid=gps-earlier-open]")).length; // recordings listed before B is injected
+      await page.locator("[data-testid=gps-earlier-open]").first().click(); // refreshes the list (B appears) and keeps A valid
+      await page.waitForFunction((k) => document.querySelectorAll("[data-testid=gps-earlier-open]").length === k + 1, rowsBeforeB);
+      const errorsBefore = errors.length;
+      const n = (await page.$$("[data-testid=gps-earlier-open]")).length;
+      await page.locator("[data-testid=gps-earlier-open]").nth(n - 1).click(); // oldest = B
+      await page.waitForSelector("[data-testid=gps-note]");
+      await settle(300);
+      check(`${T} A then damaged B (no reload): B's note shown, A's Results card and Delete are gone, no page error`, /can't be read/.test(await page.textContent("[data-testid=gps-note]")) && (await page.$("[data-testid=gps-results]")) === null && (await page.$("[data-testid=gps-delete]")) === null && errors.length === errorsBefore, `A=${sessionA} ${errors.slice(errorsBefore).join(" | ")}`);
+      await page.locator("[data-testid=gps-earlier-delete]").nth(n - 1).click();
+      await page.waitForFunction((k) => document.querySelectorAll("[data-testid=gps-earlier-open]").length === k - 1, n);
+    }
+    // A damaged recording on this device: Open says so in words instead of throwing; the page and the other recordings keep working.
+    {
+      const metaCount = () => page.evaluate(() => new Promise((resolve) => { const o = indexedDB.open("ia-gps", 1); o.onsuccess = () => { const r = o.result.transaction("meta").objectStore("meta").count(); r.onsuccess = () => resolve(r.result); }; }));
+      const before = await metaCount();
+      await page.evaluate(() => new Promise((resolve, reject) => { const o = indexedDB.open("ia-gps", 1); o.onsuccess = () => { const tx = o.result.transaction("meta", "readwrite"); tx.objectStore("meta").put({ id: "qa-damaged", startedAt: 1_000, stoppedAt: 61_000, env: { source: "synthetic", userAgent: "qa", standalone: false, wakeLockSupported: true, geolocationSupported: true, startVisibility: "visible" }, pauses: 7 }); tx.oncomplete = () => resolve(true); tx.onerror = () => reject(tx.error); }; }));
+      await page.reload();
+      await page.waitForSelector("[data-testid=gps-start]");
+      await page.waitForSelector("[data-testid=gps-earlier-open]");
+      const errorsBefore = errors.length;
+      const rowsN = (await page.$$("[data-testid=gps-earlier-open]")).length;
+      await page.locator("[data-testid=gps-earlier-open]").nth(rowsN - 1).click(); // oldest = the damaged one
+      await page.waitForSelector("[data-testid=gps-note]");
+      await settle(300);
+      check(`${T} damaged recording: Open says so in words, no page error, no Results card, page still usable (Start offered)`, /can't be read/.test(await page.textContent("[data-testid=gps-note]")) && (await page.$("[data-testid=gps-results]")) === null && errors.length === errorsBefore && (await page.$("[data-testid=gps-start]")) !== null, errors.slice(errorsBefore).join(" | "));
+      await page.locator("[data-testid=gps-earlier-delete]").nth(rowsN - 1).click();
+      await page.waitForFunction((n) => document.querySelectorAll("[data-testid=gps-earlier-open]").length === n - 1, rowsN);
+      check(`${T} damaged recording: Delete removes only it (${before} recordings again)`, (await metaCount()) === before, String(await metaCount()));
+    }
+    // An interrupted recording whose stored data is damaged: Recover says so in words (no unhandled rejection), the page stays usable.
+    {
+      const bad = { id: "qa-damaged-recover", startedAt: 2_000, env: { source: "synthetic", userAgent: "qa", standalone: false, wakeLockSupported: true, geolocationSupported: true, startVisibility: "visible" }, pauses: 7 }; // no stoppedAt = interrupted
+      await page.evaluate((m) => new Promise((resolve, reject) => { const o = indexedDB.open("ia-gps", 1); o.onsuccess = () => { const tx = o.result.transaction("meta", "readwrite"); tx.objectStore("meta").put(m); tx.oncomplete = () => resolve(true); tx.onerror = () => reject(tx.error); }; }), bad);
+      await page.reload();
+      await page.waitForSelector("[data-testid=gps-recover]");
+      const errorsBefore = errors.length;
+      await page.click("[data-testid=gps-recover]");
+      await page.waitForSelector("[data-testid=gps-note]");
+      await settle(300);
+      check(`${T} damaged interrupted recording: Recover says so in words, no Results card, no page error, page still usable`, /can't be read/.test(await page.textContent("[data-testid=gps-note]")) && (await page.$("[data-testid=gps-results]")) === null && errors.length === errorsBefore && (await page.$("[data-testid=gps-start]")) !== null && !(await page.isDisabled("[data-testid=gps-start]")), errors.slice(errorsBefore).join(" | "));
+      await page.evaluate(() => new Promise((resolve) => { const o = indexedDB.open("ia-gps", 1); o.onsuccess = () => { const tx = o.result.transaction("meta", "readwrite"); tx.objectStore("meta").delete("qa-damaged-recover"); tx.oncomplete = () => resolve(true); }; })); // test cleanup, outside the app
+    }
     await page.click("[data-testid=gps-clear-device]");
     await page.waitForSelector("[data-testid=gps-clear-confirm]");
     await layoutOk(page, `${T} clear confirm`);
@@ -311,6 +359,24 @@ try {
     const s = JSON.parse(readFileSync(file, "utf8"));
     check(`[375px] interrupted while paused → recovered results: fixes kept (${s.fixes}/${fixes}), pause closed (${s.pausedMs} ms ≥ 30 s), recovered flag`, s.recovered === true && s.fixes === fixes && s.pausedMs >= 30_000 && s.pauses === 1, JSON.stringify({ fixes: s.fixes, paused: s.pausedMs }));
     check(`[375px] interrupted-while-paused: no page errors`, errors.length === 0, errors.join(" | "));
+    await ctx.close();
+  }
+  // Stop when reading the recording back fails: the page must not stay busy; the recording is still on the device and opens once reads work.
+  {
+    const { ctx, page, errors } = await open(375, "light");
+    await page.click("[data-testid=gps-start]");
+    await waitElapsed(page, 25);
+    await page.evaluate(() => { const orig = IDBIndex.prototype.getAll; window.__qaRestoreGetAll = () => { IDBIndex.prototype.getAll = orig; }; IDBIndex.prototype.getAll = function () { throw new Error("qa injected read failure"); }; });
+    await page.click("[data-testid=gps-stop]");
+    await page.waitForSelector("[data-testid=gps-note]");
+    await settle(500);
+    check("[375px] Stop with a failing read-back: note in words, Start offered and enabled again (not stuck busy), no Results card, no page error", /can't be read/.test(await page.textContent("[data-testid=gps-note]")) && (await page.$("[data-testid=gps-start]")) !== null && !(await page.isDisabled("[data-testid=gps-start]")) && (await page.$("[data-testid=gps-results]")) === null && errors.length === 0, errors.join(" | "));
+    await page.evaluate(() => window.__qaRestoreGetAll());
+    await page.reload();
+    await page.waitForSelector("[data-testid=gps-earlier-open]");
+    await page.locator("[data-testid=gps-earlier-open]").first().click();
+    await page.waitForSelector("[data-testid=gps-results]");
+    check("[375px] Stop with a failing read-back: the recording was kept and opens normally once reads work", /km/.test(await page.textContent("[data-testid=gps-r-distance]")));
     await ctx.close();
   }
 } catch (error) {
