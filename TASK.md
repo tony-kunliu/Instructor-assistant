@@ -17,6 +17,13 @@ only); `scripts/qa-browser/gps.mjs` (182 checks, 375 / 820 px, light / dark, `wa
 by the synthetic flow, once in Real GPS mode). Prior spike `experiment/gps-pwa-feasibility` reused, not merged.
 Reviewed per Handbook §2 L2: one independent review (PASS, 7 Minors fixed with a test / QA check each, verified by the merging agent).
 
+**Side task (dot / Tony "keep iterating", 2026-10-16):** `chore/manifest-colours` (draft PR #86) — the installed app's
+`app/manifest.ts` colours move to the light tokens (`--paper` #f6f3eb, `--navy` #0b1b2b); `tests/manifest-colours.test.ts`
+keeps manifest, stylesheet and `/gps` manifest in step; `scripts/qa-browser/manifest.mjs` checks both manifests as served
+(content type, colours, icon, links, theme-color metas) at phone + iPad widths, light + dark. Tier recorded: **L2
+presentation-only** (author "L1/L2", reviewer L2 under the §2 doubt rule). No data, schema, contract or permission change.
+Draft, not merged; needs Tony's go. Unlocated: the first full unit run was 762/763 (name not captured; 7 later runs clean).
+
 **Next Recommended Task:** Tony's real-phone drive (phase 1b) on Staging
 `/gps` from the Home Screen — Real GPS, 20-30 min with a 5 min screen lock and 5 min in another app, copy the
 summary + feasibility JSON back; the verdict decides web vs native shell. Then phase 2 (lesson hook-in,
