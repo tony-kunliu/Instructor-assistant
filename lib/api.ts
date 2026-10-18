@@ -1,5 +1,5 @@
 import type { D1Database } from "./d1-types.ts";
-import { markTransferRecordsChecked, NotFoundError, PaperImportError, setLearnerArchived, transferLearner, updateLearner, ValidationError } from "./repo.ts";
+import { markTransferRecordsChecked, NotFoundError, PaperImportError, setLearnerArchived, transferLearner, updateInstructorAdiNumber, updateLearner, ValidationError } from "./repo.ts";
 
 /** Run a route handler body and map domain errors to JSON responses. */
 export async function handle(work: () => unknown | Promise<unknown>, status = 200): Promise<Response> {
@@ -97,4 +97,13 @@ export async function postLearnerTransfer(db: D1Database, id: string, request: R
 export async function postTransferRecordsChecked(db: D1Database, id: string, request: Request): Promise<Record<string, unknown>> {
   const body = await readJsonWithActor(request);
   return { learner: await markTransferRecordsChecked(db, id, { actingInstructorId: body.actingInstructorId }) };
+}
+
+/**
+ * PATCH /api/instructors/[id] `{ adiNumber }`. The actor is the verified `x-instructor-id` header via readJsonWithActor,
+ * never the body when signed in: only the instructor themselves may change their ADI number. See lib/repo.ts#updateInstructorAdiNumber.
+ */
+export async function patchInstructor(db: D1Database, id: string, request: Request): Promise<Record<string, unknown>> {
+  const body = await readJsonWithActor(request);
+  return { instructor: await updateInstructorAdiNumber(db, id, body.adiNumber, { actingInstructorId: body.actingInstructorId }) };
 }
