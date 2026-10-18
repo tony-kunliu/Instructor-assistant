@@ -38,8 +38,8 @@ test("app manifest: background = light --paper, theme colour = light --navy (= t
 
 test("app manifest keeps its identity: name, start_url, standalone, one icon (colours are the only change)", () => {
   const m = manifest();
-  assert.equal(m.name, "ACTGDS Driver");
-  assert.equal(m.short_name, "ACTGDS Driver");
+  assert.equal(m.name, "ACTGDS Instructor");
+  assert.equal(m.short_name, "Instructor");
   assert.equal(m.start_url, "/");
   assert.equal(m.display, "standalone");
   assert.deepEqual(m.icons, [{ src: "/icon.svg", sizes: "any", type: "image/svg+xml", purpose: "any" }]);

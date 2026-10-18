@@ -4,10 +4,10 @@ import { NAVY, THEME_BOOT_SCRIPT } from "@/lib/theme.ts";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "ACTGDS Driver",
+  title: "ACTGDS Instructor",
   description: "CBT&A Lesson Checklist for ACT Golden Driving School instructors",
-  applicationName: "ACTGDS Driver",
-  appleWebApp: { capable: true, title: "ACTGDS Driver", statusBarStyle: "black-translucent" },
+  applicationName: "ACTGDS Instructor",
+  appleWebApp: { capable: true, title: "Instructor", statusBarStyle: "black-translucent" },
   icons: { icon: "/icon.svg", apple: "/icon.svg" },
   robots: { index: false, follow: false },
 };

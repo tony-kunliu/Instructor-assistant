@@ -8,8 +8,8 @@ export const MANIFEST_BACKGROUND = "#f6f3eb"; // --paper (light)
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "ACTGDS Driver",
-    short_name: "ACTGDS Driver",
+    name: "ACTGDS Instructor",
+    short_name: "Instructor",
     description: "CBT&A Lesson Checklist for ACT Golden Driving School instructors",
     start_url: "/",
     display: "standalone",
