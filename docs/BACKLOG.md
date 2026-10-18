@@ -28,6 +28,14 @@ Near term (Instructor Assistant only, low risk):
   qa-browser section 16. Still open: run `scripts/check-signature-row-limits.mjs`
   against Staging D1 (never Production) to prove the two-signature row on real D1.
 
+Working defaults set by Tony 2026-10-18 ("按这个来"; he has little time, keep his load minimal):
+- Small changes (UI text, colours, docs only): after the required tests, merge to
+  staging without asking Tony. This does not waive the Handbook's independent-review
+  rules; it only means Tony is not asked.
+- Database and permission changes: ask Tony each time, one sentence, he answers "同意".
+- Production releases and merges into main: only on Tony's explicit "同意".
+- Report to Tony in a few lines: what was done, and whether a decision is needed.
+
 Follow-ups agreed with Tony 2026-10-18 (direction, not an authorization):
 - **Instructor correction** (selector choices Tony/Kun Liu ADI604, Anna/Yaping
   Qu ADI358; keep other instructors' history; no delete/merge/reattribute):
