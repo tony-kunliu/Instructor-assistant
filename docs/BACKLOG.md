@@ -1,6 +1,6 @@
 # Backlog
 
-_Last updated: 2026-10-18. Not an authorization: every item still needs Tony's
+_Last updated: 2026-10-18 (later). Not an authorization: every item still needs Tony's
 go-ahead and ends with a stop (AGENTS.md §11). The longer-term two-repo
 direction is in `docs/ECOSYSTEM_ROADMAP.md` (P1–P6)._
 
@@ -41,10 +41,13 @@ Follow-ups agreed with Tony 2026-10-18 (direction, not an authorization):
   Qu ADI358; keep other instructors' history; no delete/merge/reattribute):
   read-only D1 audit first, then a minimal plan; any write needs Tony's go per
   environment. Needs a valid Cloudflare token in the environment settings (Tony).
-- **ADI PATCH authorization fix** (scheduled by Tony): `PATCH /api/instructors/[id]`
-  should only allow editing one's own ADI number (compare the id with the trusted
-  `x-instructor-id`), with tests. Auth/permission change = ALWAYS-ASK; do it
-  after the correction above.
+- **ADI PATCH authorization fix**: DONE on `staging` (PR #92, merge `3c879dde`,
+  2026-10-18; Tony approved; one independent Claude review comment accepted by
+  Tony, no Must-fix). `PATCH /api/instructors/[id]` only lets the signed-in
+  instructor change their own ADI number (an inactive instructor's can be set by an
+  active one). Left for later: (1) a PDF export by instructor A of B's learner,
+  where B has no ADI number, now dead-ends (both numbers are set today); (2) a
+  route-level test that a refusal returns HTTP 400.
 - GPS phase 1b real-phone drive (Tony), then phase 2 only on his separate approval.
 - Pages reachability test page: waits on the same Cloudflare token.
 
