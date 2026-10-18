@@ -5,6 +5,12 @@ _Last updated: 2026-10-16_
 This file describes **current task only**. Completed work's detail
 lives in git log and closed PRs, not here.
 
+**Instructor picker correction (2026-10-18), branch `feature/instructor-picker-labels`:**
+- `Current Task:` Partial. Data done: Staging legacy `ADI604` set `inactive`, Production Anna ADI `358`. Code done and pushed: picker labels (display only), not merged. Waiting for: independent review, merge to `staging`.
+- `Next Recommended Task:` independent review, merge to `staging`, Tony's real-login look at the picker, then a Production release (Tony's separate authorization); also the pre-existing qa-browser failure listed in STATUS Known Issues.
+- `Waiting on Other Repo:` NONE.
+- `Tony Manual Action Required:` real Cloudflare Access login check of the picker on Staging after merge.
+
 **Current Task:** P4 GPS phase 1 — isolated, default-OFF GPS recorder, branch `feature/gps-p4-recorder` —
 **Merged to `staging` (PR #84, 62923cf) and deployed to Staging by Workers Builds (L2 isolated: new page + pure libraries; no D1, no migration, no API, no lesson change;
 nothing uploaded).** Design + delivered / not-done list: `docs/superpowers/specs/2026-10-13-gps-tracking-design.md`

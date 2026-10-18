@@ -7,6 +7,8 @@ closed PRs; see `TASK.md` for what is in progress.
 
 ## Current Snapshot
 
+- **Instructor picker (2026-10-18):** only Tony (ADI604) and Anna (ADI358) are active on Staging and Production. Staging: legacy `ADI604` row (`3cd3c634-3c63-4251-8eb9-91d104a9d8e9`) set `inactive` (its 1 learner / 1 lesson untouched; reversible by setting `active`). Production: Anna `adi_number` set to `358`. Picker labels `Tony/Kun Liu (ADI604)` / `Anna/Yaping Qu (ADI358)` are on `feature/instructor-picker-labels` (display only, not yet merged or released).
+
 - **Production** (all via `Production Release`, all success): #12 run 38157600087 (`main`
   `9dc4763`, PR #60: 3c T1 transfer, `0011`, intake P1; Worker `5ea1eb27-3dc9-4d74-ba75-0bffba7219e9`);
   #13 run 38277936881 (PR #64: iPad, intake P2, Handbook; `0012`; Worker
@@ -153,6 +155,7 @@ record: `tony-kunliu/actgds.com` Issue #3.
   Vietnamese, Greek, Cyrillic, kana, Hangul, Latin Ext-B, box drawing and some
   symbols print as boxes after the user confirms the warning.
 - Minor learner-edit review follow-ups are in `docs/BACKLOG.md`.
+- qa-browser (2026-10-18, Sunday): 1 check fails on `staging` itself (701/702) - `route: the line comes after R2 and R3 (r2, r3, r10) and the booking link is still shown`; cause not yet investigated (possibly date/weekday dependent). Not caused by the picker-label change; left unfixed per AGENTS.md section 6.
 - `app/manifest.ts` still carries the pre-redesign `background_color` / `theme_color`
   (`#f4f2ee` / `#1d1d1f`), not the shared tokens (affects the installed-PWA splash only).
 
