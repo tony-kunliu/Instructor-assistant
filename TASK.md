@@ -1,40 +1,43 @@
 # TASK.md
 
-_Last updated: 2026-10-13_
+_Last updated: 2026-10-16_
 
 This file describes **current task only**. Completed work's detail
 lives in git log and closed PRs, not here.
 
-**Current Task:** Learner intake P3, overseas / interstate licence (design
-`docs/superpowers/specs/2026-10-11-learner-intake-design.md` D11-D14, D17 school rule), branch
-`feature/intake-p3-licence` — **Completed on the branch, review round 1 fixed, rules re-review APPROVE, Staging D1 at `0013` (run 8), merging to `staging`** (L2
-additive migration + reminder logic + derived value). Migration `0013` adds six nullable
-`learners.other_licence_*` columns (kind, place, number, class, issued_on, expires_on; no default, no
-backfill, no rebuild; rehearsed with `scripts/rehearse-0013-local.sh`, re-apply refused by design).
-`lib/other-licence.ts` (enums, labels, D12 validation with distinct errors, bundled country list);
-`lib/rules.ts`: Tony's rule as REMINDERS only — interstate LEARNER time counts from its issue date only when
-it is EARLIER than the ACT licence (grey "Age band unclear" if the bands differ; a later one contributes nothing), interstate or overseas FULL licence held 12 months
-(`OTHER_FULL_LICENCE_MONTHS`) removes the wait, overseas learner / class `other` never count (note on the
-R2 line), missing type or date → grey `otherLicenceDataReminder`; hours, HPT and age unchanged; the other
-licence's expiry is never read; the C23 date is never before the ACT licence issue date. "Competency 23
-from" and the PDF Eligibility auto-fill follow (never overwriting Tony's text). Form: collapsed group "Overseas or interstate licence" after the Competency 23
-group; "Yes" opens the details; "No" clears them (old values stay in `learner_revisions`). D1: edit 5 /
-create 3 statements, UPDATE binds 25, INSERT 25, revision 4. Nothing to ACTGDS (payload keys pinned).
-qa-browser section 23 (375 light/dark, 820, R2 wording, PDF, snapshots). Staging D1 `0013`; Production D1 `0012` until the next release.
+**Picker correction (2026-10-18), `feature/instructor-picker-labels`:**
+- `Current Task:` Partial. Data done (Staging legacy `ADI604` inactive; Production Anna ADI 358). Labels pushed, not merged; needs review.
+- `Next Recommended Task:` review, merge to `staging`, Production release (Tony's separate go); the qa-browser failure in STATUS Known Issues.
+- `Waiting on Other Repo:` NONE. `Tony Manual Action Required:` real-login look at the picker on Staging after merge.
 
-**Next Recommended Task:** post-merge CI on `staging`; Tony's real-phone look at the new group
-(375px, iOS date pickers); then release to Production (the Production Release workflow applies `0013`). Then, on Tony's go: (a) Transfer /
-Archive into the edit form's "More" section + learner form restyle; (b) `docs/tasks` memory scheme;
-(c) intake P4 (iOS Scan Text + local parser); (d) `scripts/check-signature-row-limits.mjs` on Staging
-D1. (The font-subset temp-dir leak is fixed, PR #80.)
+**Current Task:** P4 GPS phase 1, isolated default-OFF GPS recorder (`feature/gps-p4-recorder`) — **Merged to `staging` (PR #84, 62923cf), deployed to Staging** (L2 isolated: new `/gps` page + pure `lib/gps`; no D1, migration, API or lesson change; nothing uploaded). Delivered / not-done list: `docs/superpowers/specs/2026-10-13-gps-tracking-design.md` §8-§9. Reviewed per Handbook §2 L2 (PASS, 7 Minors fixed).
 
-**Waiting on Other Repo:** ACTGDS: notify-tick waits for Website PR #47 rework and Tony's explicit
-approval of the new endpoint + secret (Production stays OFF); Work's display polish list. Nothing
-blocks this repo.
+**Side task (dot / Tony "keep iterating", 2026-10-16):** `chore/manifest-colours` (draft PR #86) — the installed app's
+`app/manifest.ts` colours move to the light tokens (`--paper` #f6f3eb, `--navy` #0b1b2b); `tests/manifest-colours.test.ts`
+keeps manifest, stylesheet and `/gps` manifest in step; `scripts/qa-browser/manifest.mjs` checks both manifests as served
+(content type, colours, icon, links, theme-color metas) at phone + iPad widths, light + dark. Tier recorded: **L2
+presentation-only** (author "L1/L2", reviewer L2 under the §2 doubt rule). No data, schema, contract or permission change.
+Draft, not merged; needs Tony's go. Unlocated: the first full unit run was 762/763 (name not captured; 7 later runs clean).
 
-**Tony Manual Action Required:** none blocking (P3 questions answered 2026-10-13: count from the
-earlier licence; keep the separate grey line; keep the country list). Optional, still open: hide the ACT "Jerrabomberra" district in
-Address suggestions; the 30-minute tooling checklist (Dependabot, duplicate environments, plugins).
+**Next Recommended Task:** Tony's real-phone drive (phase 1b) on Staging
+`/gps` from the Home Screen — Real GPS, 20-30 min with a 5 min screen lock and 5 min in another app, copy the
+summary + feasibility JSON back; the verdict decides web vs native shell. Then phase 2 (lesson hook-in,
+`lesson_tracks` migration, consent record, 90-day Cron, R10 line) only on Tony's separate approval (new table =
+ALWAYS-ASK 1). PR #83 (learner form + Transfer / Archive in "More") is merged to `staging` (bc1e0cb) and awaits Tony's phone
+check + Production release. Still queued: intake P4 (iOS Scan Text + local parser), `docs/tasks` memory scheme,
+`scripts/check-signature-row-limits.mjs` on Staging D1.
 
-**CI note:** poppler tests are opt-in hard failures (`REQUIRE_POPPLER=1`, `ci.yml` only); Cloudflare
-Workers Builds skip them. Simulate the Workers Builds command locally before merging (see STATUS.md CI).
+**Waiting on Other Repo:** ACTGDS: notify-tick waits for Website PR #47 rework and Tony's explicit approval of the
+new endpoint + secret (Production stays OFF). Nothing blocks this repo.
+
+**Side task (dot / Tony, 2026-10-16):** `feature/gps-earlier-summaries` — `/gps` "Earlier recordings": the newest five rows show
+one line (`16.99 km · Recorded 27.1 min · Coverage 97.4%`), the Results card's own numbers via `lib/gps/format.ts`: a read-only
+in-memory projection (`lib/gps/earlier.ts`, existing `summarizeTrack`; a malformed record degrades alone). No capture, write,
+consent, lesson, API or location change. Tier L2. Draft PR #87 to `staging`.
+
+**Tony Manual Action Required:** none for this step. Later: the phase-1b real-phone drive; approve the consent
+wording (design §6) and the `lesson_tracks` table before phase 2. Optional, still open: hide the ACT
+"Jerrabomberra" district in Address suggestions; the 30-minute tooling checklist.
+
+**CI note:** poppler tests are opt-in hard failures (`REQUIRE_POPPLER=1`, `ci.yml` only); Cloudflare Workers
+Builds skip them. Simulate the Workers Builds command locally before merging (see STATUS.md CI).

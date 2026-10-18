@@ -41,6 +41,8 @@ import { applyRoute, homeDistrict, parseRouteComments, routeFits, routeSuggestio
 import RouteCheckGroup from "./route-check.tsx";
 import { GNAF_ATTRIBUTION, partsAfterEdit, type AddressSuggestion } from "@/lib/address-suggest.ts";
 import AddressInput from "./address-input.tsx";
+import { addressPartChips, formSubline, moreLockedMessage, moreSection, nameIssue, saveLabel } from "@/lib/learner-form-view.ts";
+import { instructorLabel } from "@/lib/instructor-label.ts";
 import ThemeToggle from "./theme-switch.tsx";
 
 type LessonDraft = {
@@ -327,6 +329,9 @@ export default function DriverApp() {
   const [archiveHistoryError, setArchiveHistoryError] = useState<string | null>(null);
   // Inline transfer panel (3c T1): null = closed; the only other instructor is preselected, so the common case is two taps.
   const [transferDraft, setTransferDraft] = useState<{ toId: string; note: string } | null>(null);
+  // Learner form (concept screen B): the only client-side pre-check is the name; shown inline after a Save tap, cleared by typing.
+  const [nameError, setNameError] = useState(false);
+  const nameInputRef = useRef<HTMLInputElement>(null);
   const resetArchiveUi = () => {
     setTransferDraft(null);
     setArchiveDraft(null);
@@ -486,6 +491,7 @@ export default function DriverApp() {
     setEditingLearner(true);
     setAddingLearner(true);
     setListExpanded(false);
+    setNameError(false);
     setStatus(null);
   };
 
@@ -493,6 +499,21 @@ export default function DriverApp() {
     setAddingLearner(false);
     setEditingLearner(false);
     setEditLearnerId(null);
+    setNameError(false);
+    // The Transfer / Archive panels live inside the Edit form's More: leaving the form drops an open panel (nothing was sent).
+    setTransferDraft(null);
+    setArchiveDraft(null);
+  };
+
+  // The sticky bar's Save: an empty name is caught here, inline (same wording as the server); everything else is still
+  // validated by the server exactly as before (distinct messages shown in the status line).
+  const submitLearnerForm = () => {
+    if (nameIssue(learnerDraft.fullName)) {
+      setNameError(true);
+      nameInputRef.current?.focus();
+      return;
+    }
+    void (editingLearner ? saveLearnerEdit() : addLearner());
   };
 
   // Switching to another learner (or none) while the edit form is open discards the form: it belongs to the learner it was opened for.
@@ -759,6 +780,9 @@ export default function DriverApp() {
       setTransferDraft(null);
       swap(learner);
       setDetail((current) => (current && current.learner.id === id ? { ...current, learner } : current));
+      // The action sits inside the Edit learner form (Tony's decision 3): a done transfer closes the form so the learner's
+      // page (History line, new owner) shows at once — the sender usually cannot edit the learner any more anyway.
+      closeLearnerForm();
       // The learner leaves this instructor's "My learners"; keep them open under "All" so the History line is visible.
       if (signedInInstructorId && learner.instructorId !== signedInInstructorId) setView("all");
       setStatus({ kind: "ok", text: `Transferred to ${learner.instructorName}.` });
@@ -815,6 +839,7 @@ export default function DriverApp() {
     setAddingLearner(true);
     setListExpanded(false);
     setHoursOnTouched(false);
+    setNameError(false);
     setStatus(null);
   };
 
@@ -916,6 +941,14 @@ export default function DriverApp() {
     setTransferDraft({ toId: transferTargets.length === 1 ? transferTargets[0].id : "", note: "" });
   };
   const transferTargetName = transferTargets.find((i) => i.id === transferDraft?.toId)?.fullName ?? null;
+  // Concept screen B / Tony's decision 3: Transfer and Archive live in the EDIT form's folded "More". The one case the form
+  // cannot reach — a colleague rescuing a learner whose instructor is inactive (not the owner, so no Edit learner) — keeps
+  // the Transfer link on the learner's page, so the rule stays reachable exactly as before.
+  const more = moreSection({ editing: editingLearner, canTransfer, panel });
+  // A done transfer or archive closes the Edit form, so both wait until unsaved edits are saved or cancelled (review 2026-10-13).
+  const formDirty = editingLearner && openedLearnerDraft !== null && JSON.stringify(openedLearnerDraft) !== JSON.stringify(learnerDraft);
+  const moreLocked = phase !== "ready" || formDirty;
+  const moreLockedNote = moreLockedMessage({ phase, formDirty });
   const transferPanel = detail && transferDraft ? (
     <div className="lifecycle transfer-panel" data-testid="transfer-panel">
       <p><b>Transfer {detail.learner.fullName}</b> to another instructor. Lessons already recorded stay with whoever recorded them.</p>
@@ -925,7 +958,7 @@ export default function DriverApp() {
           {transferTargets.map((i) => (
             <label key={i.id} className="transfer-choice">
               <input type="radio" name="transfer-to" value={i.id} checked={transferDraft.toId === i.id} onChange={() => setTransferDraft({ ...transferDraft, toId: i.id })} data-testid="transfer-choice" />
-              <span>{i.fullName}</span>
+              <span>{instructorLabel(i)}</span>
             </label>
           ))}
         </fieldset>
@@ -1148,121 +1181,173 @@ export default function DriverApp() {
 
       {addingLearner ? (
         <section className="card learner-form" ref={learnerFormRef} data-testid="learner-form">
-          <h2>{editingLearner ? "Edit learner" : "New learner"}</h2>
-          <div className="grid">
-            <label className="field full"><span>Student name *</span><input value={learnerDraft.fullName} onChange={(e) => learnerField("fullName", e.target.value)} autoComplete="off" /></label>
-            <AddressInput value={learnerDraft.address} onChange={addressTextField} onPick={addressPicked} />
-            <label className="field"><span>Phone</span><input type="tel" inputMode="tel" value={learnerDraft.phone} onChange={(e) => learnerField("phone", e.target.value)} /></label>
-            <label className="field"><span>DOB</span><input type="date" value={learnerDraft.dob} onChange={(e) => learnerField("dob", e.target.value)} /></label>
-            <label className="field"><span>Licence number</span><input value={learnerDraft.licenceNumber} onChange={(e) => learnerField("licenceNumber", e.target.value)} autoCapitalize="characters" /></label>
-            <label className="field"><span>Licence expiry</span><input type="date" value={learnerDraft.licenceExpiry} onChange={(e) => learnerField("licenceExpiry", e.target.value)} /></label>
-            {formLicenceCheck ? <div className="full"><RulesReminders reminders={[formLicenceCheck]} testId="licence-duplicate" /></div> : null}
-            <label className="field"><span>Eligibility</span><input value={learnerDraft.eligibility} onChange={(e) => learnerField("eligibility", e.target.value)} data-testid="learner-eligibility" />
-              {showsAutoHint(learnerDraft.eligibility, draftEligibilityLearner(learnerDraft)) ? <small className="auto-hint" data-testid="eligibility-auto">auto: from the licence dates</small> : null}
-            </label>
-            <label className="field"><span>Manual / Auto</span>
-              <select value={learnerDraft.transmission} onChange={(e) => learnerField("transmission", e.target.value)}>
-                <option value="">—</option>
-                <option value="auto">Auto</option>
-                <option value="manual">Manual</option>
-              </select>
-            </label>
-            <label className="field full"><span>School / Work</span><input value={learnerDraft.schoolWork} onChange={(e) => learnerField("schoolWork", e.target.value)} /></label>
-            <details className="full rules-group" key={editingLearner ? "edit" : "new"} data-testid="c23-group">
-              <summary>Competency 23 eligibility</summary>
-              <p className="hint-note">Optional. Only used for the Competency 23 reminder; nothing here blocks a save or goes to the website.</p>
-              {formEligibleFromLine ? <RulesReminders reminders={[formEligibleFromLine]} testId="c23-from-form" /> : null}
+          {/* Concept screen B (approved 2026-10-12): Student / Address / Licence & eligibility cards, the EDIT form's folded "More"
+              (Transfer + Archive, Tony's decision 3) and one primary action in a sticky bottom bar. Same fields, same payloads. */}
+          <div className="form-head">
+            <h2>{editingLearner ? "Edit learner" : "New learner"}</h2>
+            <p className="form-sub">{formSubline(editingLearner)}</p>
+          </div>
+          <div className="fsections">
+            <section className="lblock fsect" aria-labelledby="fsect-student" data-testid="fsect-student">
+              <div className="card-head"><h3 id="fsect-student">Student</h3><small><span className="req" aria-hidden="true">*</span> required</small></div>
               <div className="grid">
-                <label className="field full"><span>Learner licence issue date</span>
-                  <input type="date" value={learnerDraft.learnerLicenceIssuedOn} onChange={(e) => learnerField("learnerLicenceIssuedOn", e.target.value)} max={localNow().date} data-testid="c23-issued" />
-                  <small>Leave empty to estimate it from the licence expiry (shown as estimated).</small>
+                <label className={`field full${nameError ? " invalid" : ""}`}><span>Student name <span className="req" aria-hidden="true">*</span></span>
+                  <input ref={nameInputRef} value={learnerDraft.fullName} onChange={(e) => { setNameError(false); learnerField("fullName", e.target.value); }} autoComplete="off" placeholder="As on the learner licence" aria-required="true" aria-invalid={nameError || undefined} aria-describedby={nameError ? "learner-name-error" : undefined} data-testid="learner-name" />
+                  {nameError ? <span className="field-error" id="learner-name-error" role="alert" data-testid="learner-name-error">{nameIssue(learnerDraft.fullName) ?? ""}</span> : null}
                 </label>
-                <label className="field full"><span>First issue date (only if renewed)</span>
-                  <input type="date" value={learnerDraft.learnerLicenceFirstIssuedOn} onChange={(e) => learnerField("learnerLicenceFirstIssuedOn", e.target.value)} max={localNow().date} data-testid="c23-first-issued" />
-                </label>
-                <label className="field full"><span>HPT passed on</span>
-                  <input type="date" value={learnerDraft.hptPassedOn} onChange={(e) => learnerField("hptPassedOn", e.target.value)} max={localNow().date} data-testid="c23-hpt" />
-                </label>
-                <label className="field"><span>Logged hours (logbook)</span>
-                  <input type="text" inputMode="numeric" pattern="[0-9]*" value={learnerDraft.loggedHours} onChange={(e) => loggedHoursField(e.target.value)} placeholder="e.g. 82" data-testid="c23-hours" />
-                </label>
-                <label className="field"><span>Hours as of</span>
-                  <input type="date" value={learnerDraft.loggedHoursOn} onChange={(e) => { setHoursOnTouched(true); learnerField("loggedHoursOn", e.target.value); }} max={localNow().date} data-testid="c23-hours-on" />
-                </label>
-              </div>
-            </details>
-            {/* Intake P3 (migration 0013, D11): collapsed group; "Yes" opens the details. Reminder input only: nothing here blocks a save. */}
-            <details className="full rules-group" key={editingLearner ? "edit-other" : "new-other"} data-testid="other-licence-group">
-              <summary>Overseas or interstate licence</summary>
-              <p className="hint-note">{OTHER_LICENCE_HINT}</p>
-              <p className="hint-note"><small>Optional; a reminder only, nothing here blocks a save or goes to the website.</small></p>
-              <div className="grid">
-                <label className="field full"><span>Holds an overseas or interstate licence?</span>
-                  <select value={learnerDraft.otherLicenceKind} onChange={(e) => otherLicenceKindField(e.target.value)} data-testid="other-kind">
+                <label className="field"><span>Phone</span><input type="tel" inputMode="tel" value={learnerDraft.phone} onChange={(e) => learnerField("phone", e.target.value)} /></label>
+                <label className="field"><span>DOB</span><input type="date" value={learnerDraft.dob} onChange={(e) => learnerField("dob", e.target.value)} /></label>
+                <label className="field"><span>Manual / Auto</span>
+                  <select value={learnerDraft.transmission} onChange={(e) => learnerField("transmission", e.target.value)}>
                     <option value="">—</option>
-                    {OTHER_LICENCE_KINDS.map((kind) => <option key={kind} value={kind}>{OTHER_LICENCE_KIND_LABELS[kind]}</option>)}
+                    <option value="auto">Auto</option>
+                    <option value="manual">Manual</option>
                   </select>
                 </label>
-                {holdsOtherLicence(learnerDraft.otherLicenceKind) ? (
-                  <>
-                    <label className="field"><span>{learnerDraft.otherLicenceKind === "interstate" ? "State or territory" : "Country"}</span>
-                      {learnerDraft.otherLicenceKind === "interstate" ? (
-                        <select value={learnerDraft.otherLicencePlace} onChange={(e) => learnerField("otherLicencePlace", e.target.value)} data-testid="other-place">
-                          <option value="">—</option>
-                          {INTERSTATE_PLACES.map((place) => <option key={place} value={place}>{place}</option>)}
-                        </select>
-                      ) : (
-                        <>
-                          <input value={learnerDraft.otherLicencePlace} onChange={(e) => learnerField("otherLicencePlace", e.target.value)} list="other-licence-countries" maxLength={MAX_OTHER_PLACE_LENGTH} autoComplete="off" placeholder="Any country" data-testid="other-place" />
-                          <datalist id="other-licence-countries">{COUNTRIES.map((country) => <option key={country} value={country} />)}</datalist>
-                        </>
-                      )}
+                <label className="field"><span>School / Work</span><input value={learnerDraft.schoolWork} onChange={(e) => learnerField("schoolWork", e.target.value)} /></label>
+              </div>
+            </section>
+
+            <section className="lblock fsect" aria-labelledby="fsect-address" data-testid="fsect-address">
+              <div className="card-head"><h3 id="fsect-address">Address</h3><small>home district for Competency 23</small></div>
+              <AddressInput value={learnerDraft.address} onChange={addressTextField} onPick={addressPicked} />
+              <div className="picked-parts" aria-label="Parts kept from the picked suggestion" data-testid="address-parts">
+                {addressPartChips(learnerDraft).map((chip) => <span key={chip.label} className="lc-chip" data-part={chip.label}>{chip.label} · {chip.value}</span>)}
+              </div>
+            </section>
+
+            <section className="lblock fsect" aria-labelledby="fsect-licence" data-testid="fsect-licence">
+              <div className="card-head"><h3 id="fsect-licence">Licence &amp; eligibility</h3><small>drives the reminders</small></div>
+              <div className="grid">
+                <label className="field"><span>Licence number</span><input value={learnerDraft.licenceNumber} onChange={(e) => learnerField("licenceNumber", e.target.value)} autoCapitalize="characters" /></label>
+                <label className="field"><span>Licence expiry</span><input type="date" value={learnerDraft.licenceExpiry} onChange={(e) => learnerField("licenceExpiry", e.target.value)} /></label>
+                {formLicenceCheck ? <div className="full"><RulesReminders reminders={[formLicenceCheck]} testId="licence-duplicate" /></div> : null}
+                <label className="field full"><span>Eligibility</span><input value={learnerDraft.eligibility} onChange={(e) => learnerField("eligibility", e.target.value)} data-testid="learner-eligibility" />
+                  {showsAutoHint(learnerDraft.eligibility, draftEligibilityLearner(learnerDraft)) ? <small className="auto-hint" data-testid="eligibility-auto">auto: from the licence dates</small> : null}
+                </label>
+                <details className="full rules-group" key={editingLearner ? "edit" : "new"} data-testid="c23-group">
+                  <summary>Competency 23 eligibility</summary>
+                  <p className="hint-note">Optional. Only used for the Competency 23 reminder; nothing here blocks a save or goes to the website.</p>
+                  {formEligibleFromLine ? <RulesReminders reminders={[formEligibleFromLine]} testId="c23-from-form" /> : null}
+                  <div className="grid">
+                    <label className="field full"><span>Learner licence issue date</span>
+                      <input type="date" value={learnerDraft.learnerLicenceIssuedOn} onChange={(e) => learnerField("learnerLicenceIssuedOn", e.target.value)} max={localNow().date} data-testid="c23-issued" />
+                      <small>Leave empty to estimate it from the licence expiry (shown as estimated).</small>
                     </label>
-                    <label className="field"><span>Licence type</span>
-                      <select value={learnerDraft.otherLicenceClass} onChange={(e) => learnerField("otherLicenceClass", e.target.value)} data-testid="other-class">
+                    <label className="field full"><span>First issue date (only if renewed)</span>
+                      <input type="date" value={learnerDraft.learnerLicenceFirstIssuedOn} onChange={(e) => learnerField("learnerLicenceFirstIssuedOn", e.target.value)} max={localNow().date} data-testid="c23-first-issued" />
+                    </label>
+                    <label className="field full"><span>HPT passed on</span>
+                      <input type="date" value={learnerDraft.hptPassedOn} onChange={(e) => learnerField("hptPassedOn", e.target.value)} max={localNow().date} data-testid="c23-hpt" />
+                    </label>
+                    <label className="field"><span>Logged hours (logbook)</span>
+                      <input type="text" inputMode="numeric" pattern="[0-9]*" value={learnerDraft.loggedHours} onChange={(e) => loggedHoursField(e.target.value)} placeholder="e.g. 82" data-testid="c23-hours" />
+                    </label>
+                    <label className="field"><span>Hours as of</span>
+                      <input type="date" value={learnerDraft.loggedHoursOn} onChange={(e) => { setHoursOnTouched(true); learnerField("loggedHoursOn", e.target.value); }} max={localNow().date} data-testid="c23-hours-on" />
+                    </label>
+                  </div>
+                </details>
+                {/* Intake P3 (migration 0013, D11): collapsed group; "Yes" opens the details. Reminder input only: nothing here blocks a save. */}
+                <details className="full rules-group" key={editingLearner ? "edit-other" : "new-other"} data-testid="other-licence-group">
+                  <summary>Overseas or interstate licence</summary>
+                  <p className="hint-note">{OTHER_LICENCE_HINT}</p>
+                  <p className="hint-note"><small>Optional; a reminder only, nothing here blocks a save or goes to the website.</small></p>
+                  <div className="grid">
+                    <label className="field full"><span>Holds an overseas or interstate licence?</span>
+                      <select value={learnerDraft.otherLicenceKind} onChange={(e) => otherLicenceKindField(e.target.value)} data-testid="other-kind">
                         <option value="">—</option>
-                        {OTHER_LICENCE_CLASSES.map((cls) => <option key={cls} value={cls}>{OTHER_LICENCE_CLASS_LABELS[cls]}</option>)}
+                        {OTHER_LICENCE_KINDS.map((kind) => <option key={kind} value={kind}>{OTHER_LICENCE_KIND_LABELS[kind]}</option>)}
                       </select>
                     </label>
-                    <label className="field full"><span>Licence number</span>
-                      <input value={learnerDraft.otherLicenceNumber} onChange={(e) => learnerField("otherLicenceNumber", e.target.value)} maxLength={MAX_OTHER_NUMBER_LENGTH} autoCapitalize="characters" autoComplete="off" data-testid="other-number" />
-                    </label>
-                    <label className="field"><span>First issued</span>
-                      <input type="date" value={learnerDraft.otherLicenceIssuedOn} onChange={(e) => learnerField("otherLicenceIssuedOn", e.target.value)} max={localNow().date} data-testid="other-issued" />
-                      <small>If known, otherwise the issue date on the card.</small>
-                    </label>
-                    <label className="field"><span>Expiry</span>
-                      <input type="date" value={learnerDraft.otherLicenceExpiresOn} onChange={(e) => learnerField("otherLicenceExpiresOn", e.target.value)} data-testid="other-expires" />
-                      <small>Information only; not needed for the rule.</small>
-                    </label>
-                    {formOtherLicenceLine ? <div className="full"><RulesReminders reminders={[formOtherLicenceLine]} testId="other-licence-note" /></div> : null}
-                  </>
-                ) : null}
+                    {holdsOtherLicence(learnerDraft.otherLicenceKind) ? (
+                      <>
+                        <label className="field"><span>{learnerDraft.otherLicenceKind === "interstate" ? "State or territory" : "Country"}</span>
+                          {learnerDraft.otherLicenceKind === "interstate" ? (
+                            <select value={learnerDraft.otherLicencePlace} onChange={(e) => learnerField("otherLicencePlace", e.target.value)} data-testid="other-place">
+                              <option value="">—</option>
+                              {INTERSTATE_PLACES.map((place) => <option key={place} value={place}>{place}</option>)}
+                            </select>
+                          ) : (
+                            <>
+                              <input value={learnerDraft.otherLicencePlace} onChange={(e) => learnerField("otherLicencePlace", e.target.value)} list="other-licence-countries" maxLength={MAX_OTHER_PLACE_LENGTH} autoComplete="off" placeholder="Any country" data-testid="other-place" />
+                              <datalist id="other-licence-countries">{COUNTRIES.map((country) => <option key={country} value={country} />)}</datalist>
+                            </>
+                          )}
+                        </label>
+                        <label className="field"><span>Licence type</span>
+                          <select value={learnerDraft.otherLicenceClass} onChange={(e) => learnerField("otherLicenceClass", e.target.value)} data-testid="other-class">
+                            <option value="">—</option>
+                            {OTHER_LICENCE_CLASSES.map((cls) => <option key={cls} value={cls}>{OTHER_LICENCE_CLASS_LABELS[cls]}</option>)}
+                          </select>
+                        </label>
+                        <label className="field full"><span>Licence number</span>
+                          <input value={learnerDraft.otherLicenceNumber} onChange={(e) => learnerField("otherLicenceNumber", e.target.value)} maxLength={MAX_OTHER_NUMBER_LENGTH} autoCapitalize="characters" autoComplete="off" data-testid="other-number" />
+                        </label>
+                        <label className="field"><span>First issued</span>
+                          <input type="date" value={learnerDraft.otherLicenceIssuedOn} onChange={(e) => learnerField("otherLicenceIssuedOn", e.target.value)} max={localNow().date} data-testid="other-issued" />
+                          <small>If known, otherwise the issue date on the card.</small>
+                        </label>
+                        <label className="field"><span>Expiry</span>
+                          <input type="date" value={learnerDraft.otherLicenceExpiresOn} onChange={(e) => learnerField("otherLicenceExpiresOn", e.target.value)} data-testid="other-expires" />
+                          <small>Information only; not needed for the rule.</small>
+                        </label>
+                        {formOtherLicenceLine ? <div className="full"><RulesReminders reminders={[formOtherLicenceLine]} testId="other-licence-note" /></div> : null}
+                      </>
+                    ) : null}
+                  </div>
+                </details>
+                {editingLearner ? (
+                  <label className="field full"><span>Licence stage</span>
+                    <select value={learnerDraft.licenceStage} onChange={(e) => learnerField("licenceStage", e.target.value)} data-testid="edit-licence-stage">
+                      <option value="learner">Learner</option>
+                      <option value="p1">P1</option>
+                      <option value="p2">P2</option>
+                      <option value="full">Full</option>
+                    </select>
+                  </label>
+                ) : (
+                  <label className="field full"><span>Instructor <span className="req" aria-hidden="true">*</span></span>
+                    <select value={learnerDraft.instructorId} onChange={(e) => learnerField("instructorId", e.target.value)}>
+                      <option value="">Select instructor…</option>
+                      {instructors.map((i) => <option key={i.id} value={i.id}>{instructorLabel(i)}</option>)}
+                    </select>
+                  </label>
+                )}
               </div>
-            </details>
-            {editingLearner ? (
-              <label className="field full"><span>Licence stage</span>
-                <select value={learnerDraft.licenceStage} onChange={(e) => learnerField("licenceStage", e.target.value)} data-testid="edit-licence-stage">
-                  <option value="learner">Learner</option>
-                  <option value="p1">P1</option>
-                  <option value="p2">P2</option>
-                  <option value="full">Full</option>
-                </select>
-              </label>
-            ) : (
-              <label className="field full"><span>Instructor *</span>
-                <select value={learnerDraft.instructorId} onChange={(e) => learnerField("instructorId", e.target.value)}>
-                  <option value="">Select instructor…</option>
-                  {instructors.map((i) => <option key={i.id} value={i.id}>{i.fullName}</option>)}
-                </select>
-              </label>
-            )}
+            </section>
+
+            {more.shown ? (
+              <details className="fsect group more" data-testid="learner-more">
+                <summary>More <small>{[more.transfer ? "Transfer" : null, more.archive ? "Archive" : null].filter(Boolean).join(" · ")} · rarely needed</small></summary>
+                <div className="inner">
+                  {/* The same Transfer / Archive panels, handlers, guards and confirmations as before; only their place changed.
+                      Both stay locked while a lesson is running or ended-but-unsaved (phase !== "ready"), as before. */}
+                  {moreLockedNote ? <p className="hint-note" data-testid="more-locked-note">{moreLockedNote}</p> : null}
+                  {more.transfer ? (
+                    transferDraft ? transferPanel : (
+                      <button type="button" className="link transfer-link" disabled={saving || moreLocked} onClick={openTransferPanel} data-testid="transfer-open">
+                        Transfer learner…
+                      </button>
+                    )
+                  ) : null}
+                  {more.archive ? (
+                    archiveDraft ? archivePanel : (
+                      <button type="button" className="link archive-link" disabled={saving || moreLocked} onClick={openArchivePanel}>
+                        Archive learner…
+                      </button>
+                    )
+                  ) : null}
+                </div>
+              </details>
+            ) : null}
           </div>
-          <div className="form-actions">
-            <button type="button" className="btn primary block" disabled={saving} onClick={() => void (editingLearner ? saveLearnerEdit() : addLearner())} data-testid="save-learner">
-              {saving ? "Saving…" : editingLearner ? "Save changes" : "Save learner"}
+          {/* One primary action, pinned above the home indicator; un-pinned while a field has focus (globals.css), like the lesson's bar. */}
+          <div className="learner-actions" data-testid="learner-actions">
+            <button type="button" className="btn save" disabled={saving} onClick={submitLearnerForm} data-testid="save-learner">
+              {saveLabel({ editing: editingLearner, saving })}
             </button>
-            {editingLearner ? <button type="button" className="btn ghost block" disabled={saving} onClick={closeLearnerForm} data-testid="cancel-edit-learner">Cancel</button> : null}
+            <button type="button" className="link learner-cancel" disabled={saving} onClick={closeLearnerForm} data-testid={editingLearner ? "cancel-edit-learner" : "cancel-new-learner"}>Cancel</button>
           </div>
         </section>
       ) : null}
@@ -1321,10 +1406,19 @@ export default function DriverApp() {
             {canEditLearner ? (
               <button type="button" className="btn ghost block edit-learner-btn" disabled={saving} onClick={openEditLearner} data-testid="edit-learner">Edit learner</button>
             ) : null}
-            {canTransfer ? (
+            {canTransfer && !canEditLearner ? (
               transferDraft ? transferPanel : (
                 <button type="button" className="link transfer-link" disabled={saving || phase !== "ready"} onClick={openTransferPanel} data-testid="transfer-open">
                   Transfer learner…
+                </button>
+              )
+            ) : null}
+            {/* Archive never had an owner gate (any Access-verified instructor, server included): a colleague who cannot open
+                Edit learner keeps the page-level link exactly as before; the owner finds it under Edit learner > More. */}
+            {panel === "active" && !canEditLearner ? (
+              archiveDraft ? archivePanel : (
+                <button type="button" className="link archive-link" disabled={saving || phase !== "ready"} onClick={openArchivePanel}>
+                  Archive learner…
                 </button>
               )
             ) : null}
@@ -1356,12 +1450,6 @@ export default function DriverApp() {
                 </details>
                 <button type="button" className="btn primary block" disabled={saving} onClick={() => void setLearnerArchived(false)}>Restore learner</button>
               </div>
-            ) : panel === "active" ? (
-              archiveDraft ? archivePanel : (
-                <button type="button" className="link archive-link" disabled={saving || phase !== "ready"} onClick={openArchivePanel}>
-                  Archive learner…
-                </button>
-              )
             ) : null}
             </div>
           </section>

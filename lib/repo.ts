@@ -250,12 +250,26 @@ async function resolveActingInstructorId(db: D1Database, actingInstructorId: unk
   return id;
 }
 
-/** Fills in (or corrects) an instructor's ADI number — needed on the official CBT&A PDF checklist. */
-export async function updateInstructorAdiNumber(db: D1Database, instructorId: string, adiNumber: unknown): Promise<Instructor> {
+/**
+ * Fills in (or corrects) an instructor's ADI number — needed on the official CBT&A PDF checklist. When a verified
+ * actor is given (the trusted `x-instructor-id`, via lib/api.ts#patchInstructor), only that instructor may change
+ * THEIR OWN number; the number of an inactive instructor can be set by any active one. No actor (local dev/tests)
+ * is allowed, as for learner edit and transfer.
+ */
+export async function updateInstructorAdiNumber(
+  db: D1Database,
+  instructorId: string,
+  adiNumber: unknown,
+  options: { actingInstructorId?: unknown } = {},
+): Promise<Instructor> {
   const value = text(adiNumber, 40);
   if (!value) throw new ValidationError("ADI number is required.");
+  const actor = await resolveActingInstructorId(db, options.actingInstructorId);
   const existing = await db.prepare("SELECT id, full_name, email, status FROM instructors WHERE id = ?").bind(instructorId).first<Row>();
   if (!existing) throw new NotFoundError("Instructor not found.");
+  if (actor !== null && actor !== instructorId && existing.status === "active") {
+    throw new ValidationError(`Only ${String(existing.full_name)} can change their own ADI number.`);
+  }
   await db.prepare("UPDATE instructors SET adi_number = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?").bind(value, instructorId).run();
   return { ...toInstructor(existing), adiNumber: value };
 }

@@ -1,6 +1,6 @@
 # Backlog
 
-_Last updated: 2026-10-13. Not an authorization: every item still needs Tony's
+_Last updated: 2026-10-18 (later). Not an authorization: every item still needs Tony's
 go-ahead and ends with a stop (AGENTS.md §11). The longer-term two-repo
 direction is in `docs/ECOSYSTEM_ROADMAP.md` (P1–P6)._
 
@@ -27,6 +27,29 @@ Near term (Instructor Assistant only, low risk):
   700k chars with a distinct 'too large' error),
   qa-browser section 16. Still open: run `scripts/check-signature-row-limits.mjs`
   against Staging D1 (never Production) to prove the two-signature row on real D1.
+
+Working defaults set by Tony 2026-10-18 ("按这个来"; he has little time, keep his load minimal):
+- Small changes (UI text, colours, docs only): after the required tests, merge to
+  staging without asking Tony. This does not waive the Handbook's independent-review
+  rules; it only means Tony is not asked.
+- Database and permission changes: ask Tony each time, one sentence, he answers "同意".
+- Production releases and merges into main: only on Tony's explicit "同意".
+- Report to Tony in a few lines: what was done, and whether a decision is needed.
+
+Follow-ups agreed with Tony 2026-10-18 (direction, not an authorization):
+- **Instructor correction** (selector choices Tony/Kun Liu ADI604, Anna/Yaping
+  Qu ADI358; keep other instructors' history; no delete/merge/reattribute):
+  read-only D1 audit first, then a minimal plan; any write needs Tony's go per
+  environment. Needs a valid Cloudflare token in the environment settings (Tony).
+- **ADI PATCH authorization fix**: DONE on `staging` (PR #92, merge `3c879dde`,
+  2026-10-18; Tony approved; one independent Claude review comment accepted by
+  Tony, no Must-fix). `PATCH /api/instructors/[id]` only lets the signed-in
+  instructor change their own ADI number (an inactive instructor's can be set by an
+  active one). Left for later: (1) a PDF export by instructor A of B's learner,
+  where B has no ADI number, now dead-ends (both numbers are set today); (2) a
+  route-level test that a refusal returns HTTP 400.
+- GPS phase 1b real-phone drive (Tony), then phase 2 only on his separate approval.
+- Pages reachability test page: waits on the same Cloudflare token.
 
 Medium term (new features; confirm rules with Tony before building):
 4. Competency 23 route suggestions and route check (R10). **R10a DONE
@@ -58,9 +81,13 @@ Long term (ecosystem, coordinated with Work on actgds.com Issue #3):
    (`AGENTS.md` §14 exclusion; Production stays OFF). IA-side caller spec only
    once the Website confirms the endpoint (Handbook §14 follow-up d).
 8. P3 bookings into Today's Lessons (Cal.com).
-9. P4 GPS tracking, then P5 drive intelligence. New storage = new
-   infrastructure: needs Tony's separate approval; design first. Revisit when
-   Tony is back in Australia with real learner data.
+9. P4 GPS tracking, then P5 drive intelligence. Design + Tony's decisions
+   (2026-10-13): `docs/superpowers/specs/2026-10-13-gps-tracking-design.md`.
+   Phase 1 (isolated `/gps` recorder, `lib/gps`, synthetic closed loop, nothing
+   uploaded) DONE on `feature/gps-p4-recorder`. Next: phase 1b = Tony's
+   real-phone drive on Staging (web vs native verdict), then phase 2 (lesson
+   hook-in, `lesson_tracks` table = new storage, needs Tony's separate
+   approval; consent record; 90-day Cron; R10 suggestion line).
 10. P6 driving journey across licence stages and both systems.
 
 ## Designed, waiting for a go
@@ -95,16 +122,34 @@ Long term (ecosystem, coordinated with Work on actgds.com Issue #3):
   Archived, the C23-from and licence-expiry chips, the collapsed list + "Show all learners".
 - Lesson record redesign (branch `feature/ui-lesson-record`, concept screen A approved 2026-10-12,
   Tony's decisions: number-only chips; Save only after End Lesson; Transfer/Archive stay where they
-  are for now): done on the branch. Follow-ups from it: (1) concept screen B — learner form in
-  Student / Address / Licence sections with Transfer and Archive folded into a "More" section of the
-  EDIT form (separate task, Tony's decision 3); (2) the History panel and the learner form got
-  colour harmonisation only (legacy tokens now alias the shared ones), their layout is unchanged;
-  (3) the progress card still repeats the header's segments/gates (kept for its legend, invalidation
-  warning and Completed banner) — fold or drop it only on Tony's say-so.
+  are for now): merged (PR #74). Follow-ups from it: (1) concept screen B — DONE on branch
+  `feature/ui-learner-form` (below); (2) the History panel got colour harmonisation only (legacy
+  tokens alias the shared ones), its layout is unchanged; (3) the progress card still repeats the
+  header's segments/gates (kept for its legend, invalidation warning and Completed banner) — fold or
+  drop it only on Tony's say-so.
+- Learner form restyle + Transfer / Archive into "More" (concept screen B, Tony's decision 3; branch
+  `feature/ui-learner-form`, L2 presentation only, 2026-10-13): Student / Address (picked
+  suburb · state · postcode chips) / Licence & eligibility cards, the P3 group kept, inline
+  required-name error (client pre-check with the server's wording; server validation unchanged),
+  sticky Save bar that un-pins while a field has focus, EDIT form's folded "More" holding the same
+  Transfer and Archive panels (handlers, guards incl. "locked while a lesson runs", testids,
+  confirmations unchanged); `lib/learner-form-view.ts`; qa-browser 24. Review (2026-10-13, one round): a
+  colleague who cannot open Edit learner keeps the page-level "Archive learner…" link (Archive never had
+  an owner gate, server included); More's rows lock with a note while the form holds unsaved edits.
+  Follow-ups to confirm with
+  Tony: (1) the non-owner rescue transfer (owner inactive) keeps its "Transfer learner…" link on the
+  learner's page, since that colleague has no Edit learner; (2) the completed card's archive
+  suggestion keeps its own inline panel (not moved); (3) a done transfer or archive closes the Edit
+  form (only possible once the form has no unsaved edits); leaving the form drops an open Transfer /
+  Archive panel (nothing sent); (4) server-side save errors still
+  show in the status line above the form, not next to the sticky Save; (5) the New form's Cancel is
+  in the bar too (the top-bar button still toggles); (6) qa-browser 23 used the removed
+  `theme-dark` / `theme-system` controls and was fixed to the one toggle in this change.
 - Appearance + "only the form" (PR #77 merged to `staging`; Tony's follow-up on branch
   `feature/ui-theme-toggle-top`, 2026-10-13): the control is now one icon button in the top bar that
   toggles Light <-> Dark (first state follows the phone). Follow-ups: (1) `app/manifest.ts`
-  `background_color` / `theme_color` still pre-redesign (PWA splash only); (2) the toggle's name is
+  `background_color` / `theme_color` — DONE on branch `chore/manifest-colours` (light `--paper` / `--navy`, guarded by
+  `tests/manifest-colours.test.ts`; a manifest holds one value, so dark-mode phones still get the light splash); (2) the toggle's name is
   English only, like the rest of the UI; (3) there is no way back to "follow the phone" after a tap
   short of clearing site data — add one only if Tony asks.
 - Follow-ups: the concept's "36 h not yet logged" chip was NOT built
@@ -190,5 +235,6 @@ Long term (ecosystem, coordinated with Work on actgds.com Issue #3):
 ## Ecosystem phases (see the roadmap)
 
 - P1 Student Account: ACTGDS side ("My Driving"); is live in Production.
-- P2 Lesson notification emails, P3 Cal.com booking into Today's Lessons, P4 GPS
-  tracking, P5 Drive intelligence, P6 Driving journey: not started.
+- P4 GPS tracking: phase 1 (isolated recorder) on a branch; see item 9.
+- P2 Lesson notification emails, P3 Cal.com booking into Today's Lessons,
+  P5 Drive intelligence, P6 Driving journey: not started.

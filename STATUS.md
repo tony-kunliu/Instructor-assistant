@@ -1,36 +1,26 @@
 # STATUS.md
 
-_Last updated: 2026-10-13_ (Production and Staging D1 at migration `0012`; release #14 live)
+_Last updated: 2026-10-13_ (Production and Staging D1 at migration `0013`; release #17 live)
 
 This file describes **current state only**. History lives in git log and
 closed PRs; see `TASK.md` for what is in progress.
 
 ## Current Snapshot
 
+- **Instructor picker (2026-10-18):** only Tony (ADI604) and Anna (ADI358) are active in both environments. Staging legacy `ADI604` (`3cd3c634-3c63-4251-8eb9-91d104a9d8e9`) set `inactive` (data kept; reversible). Production Anna `adi_number` = `358`. Labels on `feature/instructor-picker-labels` (display only, unmerged).
+
 - **Production** (all via `Production Release`, all success): #12 run 38157600087 (`main`
-  `9dc4763`, PR #60: 3c T1 transfer, migration `0011`, intake P1, C23 line + PDF Eligibility;
-  Worker `5ea1eb27-3dc9-4d74-ba75-0bffba7219e9`); #13 run 38277936881 (`main` `98354bc`,
-  PR #64: iPad layout, intake P2 address suggestions, Operating Handbook; migration `0012`
-  applied by the release; Worker `eb9fa409-5707-4524-944d-636d133202d8`); #14 run 38287641067
-  (`main` `ae8d066`, PR #66: R10a Competency 23 route reminders, no migration; Worker
-  `690fb2c1-5387-42fb-807f-f7b2b6db39fc`). Rollback target of each run = the previous
-  run's Worker. D1 Time Travel bookmarks are only in the runs' step summaries (not in the
-  logs): not recorded here.
-- **Staging:** `0012` applied by `Staging D1 Migrate` run 38204269795 before P2 merged.
-- **Real-device / Tony checks:** iPad layout accepted on a real iPad ("iPad 可以"); route
-  reminders and the address suggestions (iOS "Scan Text" callout, list vs keyboard) tested
-  on Staging, reported OK by Tony ("测试都没问题"), not automated evidence.
-- **Merged to `staging` (PRs #73, #74, #77, #78, #80):** learner list redesign (tokens, navy top bar,
-  cards, `GET /api/learners` `summaries`; qa-browser 20), lesson record redesign (navy header, Start →
-  End, Save after End, ≥44px chips, dark theme; qa-browser 21), "only the form" while New / Edit
-  learner is open + ONE light/dark toggle button in the top bar (qa-browser 22), font-subset temp-dir
-  leak fixed in the PDF test. Released to Production in #15/#16 except the leak fix. Contract untouched.
-- **On a branch, reviewed, merging (L2 data + rules, strict path done):** `feature/intake-p3-licence` =
-  learner intake P3, overseas / interstate licence: migration `0013` (6 nullable
-  `learners.other_licence_*` columns, additive), `lib/other-licence.ts`, school rule in `lib/rules.ts`
-  (R2 + "Competency 23 from"), collapsed form group, revisions, qa-browser 23. Review round 1 fixed
-  (earlier licence counts; C23 date floored at the ACT issue); rules re-review APPROVE. Staging D1
-  Migrate run 8 applied `0013` to Staging (2026-10-13) BEFORE the merge; Production D1 still `0012`.
+  `9dc4763`, PR #60: 3c T1 transfer, `0011`, intake P1; Worker `5ea1eb27-3dc9-4d74-ba75-0bffba7219e9`);
+  #13 run 38277936881 (PR #64: iPad, intake P2, Handbook; `0012`; Worker
+  `eb9fa409-5707-4524-944d-636d133202d8`); #14 run 38287641067 (PR #66: R10a route reminders;
+  Worker `690fb2c1-5387-42fb-807f-f7b2b6db39fc`); #15 (learner list + lesson record redesign, review
+  policy docs); #16 (form-only New/Edit, top-bar theme toggle); #17 (intake P3, `0013`). Run ids and
+  Worker ids of #15-#17: the runs' step summaries. Rollback target of each run = the previous run's
+  Worker. D1 Time Travel bookmarks only in the step summaries.
+- **Real-device / Tony checks:** iPad layout, route reminders and address suggestions accepted by Tony on real devices (not automated).
+- **In Production (#15-#17):** list + lesson redesign, theme toggle, PDF test temp-dir fix (PRs #73-#80), intake P3 (PR #81, `0013`). Contract untouched.
+- **Merged to `staging` (PR #83, bc1e0cb; L2 presentation):** learner form restyle + Transfer and Archive in the EDIT form's folded "More"; qa-browser 24; no migration, payload or rule change.
+- **Merged to `staging` (PR #84, 62923cf; L2 isolated + privacy review):** P4 GPS phase 1 = `lib/gps` + page `/gps` (synthetic default, Real GPS behind a per-session consent box, nothing uploaded, not linked, noindex); qa-browser `gps.mjs`. Deployed to Staging. No D1/API/lesson change. Design: `docs/superpowers/specs/2026-10-13-gps-tracking-design.md`. A synthetic PASS is not iPhone background-GPS evidence; phase 1b (Tony's real drive on Staging `/gps`) is next.
 - **Still open:** `scripts/check-signature-row-limits.mjs` not yet run against a deployed
   D1 (Staging only, never Production); notify-tick (lesson notifications) waits for Website
   PR #47 rework and Tony's approval of the new endpoint + secret (Production OFF); intake
@@ -62,7 +52,7 @@ closed PRs; see `TASK.md` for what is in progress.
 - Workers Builds deploys every `staging` push to Worker
   `instructor-assistant`. The agent's token can read deployment metadata, not
   the commit mapping, so the live commit is inferred from push time.
-- D1 migration level: `0012`. Apply a migration to Staging D1 BEFORE merging
+- D1 migration level: `0013`. Apply a migration to Staging D1 BEFORE merging
   code that needs it to `staging`, with the manual workflow `Staging D1
   Migrate` (`staging-migrate.yml`, on `main`; inputs `ref` = a branch,
   `confirm` = `staging`).
@@ -74,10 +64,8 @@ closed PRs; see `TASK.md` for what is in progress.
   `confirm=production`); token only in GitHub Secrets; each run records the
   rollback version and a D1 Time Travel restore point. See
   `docs/RELEASE_B_RUNBOOK.md`.
-- Before #12: progress validity fix run 38153327724 (Worker
-  `908b2c9c-9228-4608-b86b-76c9e2c14e44`, no migration); `0010` run 38106838536 (Worker
-  `792fed94-2fe1-41c6-8ff1-aaead13b7e67`); `0006`-`0009` and older runs: git history of
-  this file. Release B run 37668118567 (rollback target `08ca0c75-cd97-44fa-87ec-ed0f7e6efbae`).
+- Before #12: runs 38153327724 (validity fix), 38106838536 (`0010`), `0006`-`0009` and
+  Release B 37668118567: Worker ids in this file's git history.
 - D1 migration level: `0012`. Cloudflare Access: enabled (Tony + Anna only).
 - Integration enabled: **YES**, `ACTGDS_INTEGRATION_ENV=production`, Receiver
   `https://actgds.com/api/integrations/instructor-assistant/events`,
@@ -150,12 +138,12 @@ record: `tony-kunliu/actgds.com` Issue #3.
   reopen (0003 ALTER) and re-runs the 0006 rebuild. Use `:memory:` or
   `wrangler d1 migrations apply`.
 - Legacy data may hold 18-22 assessed too early; tolerated, never rewritten.
-- Cloudflare's `returnTo` on `/cdn-cgi/access/logout` is observed behaviour
-  (same-origin absolute URL gives 302, else 400), not documented.
+- Cloudflare's `returnTo` on `/cdn-cgi/access/logout` (same-origin absolute URL → 302, else 400) is observed, not documented.
 - PDF font coverage gap (accepted by Tony: names are normally English only):
   Vietnamese, Greek, Cyrillic, kana, Hangul, Latin Ext-B, box drawing and some
   symbols print as boxes after the user confirms the warning.
 - Minor learner-edit review follow-ups are in `docs/BACKLOG.md`.
+- qa-browser (2026-10-18, Sunday): 1 check fails on `staging` itself (701/702) - `route: the line comes after R2 and R3 (r2, r3, r10) and the booking link is still shown`; cause not yet investigated (possibly date/weekday dependent). Not caused by the picker-label change; left unfixed per AGENTS.md section 6.
 - `app/manifest.ts` still carries the pre-redesign `background_color` / `theme_color`
   (`#f4f2ee` / `#1d1d1f`), not the shared tokens (affects the installed-PWA splash only).
 

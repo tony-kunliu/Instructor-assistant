@@ -1,0 +1,66 @@
+/* P4 GPS recorder page (/gps). Shared tokens from app/globals.css (light + dark); parked-only operation: big actions,
+   one at-a-glance status line, nothing to tap while moving. */
+.gps .gps-top .brand { width: 100%; }
+.gps .gps-top .brand-name { flex: 1; }
+.gps .card h2 { font-size: 16px; margin-bottom: 10px; }
+.gps .gps-source .view-tabs { margin-bottom: 10px; }
+.gps .view-tab:disabled { cursor: default; opacity: .7; }
+
+/* Consent: short text + one 44px checkbox; state only, never persisted. */
+.gps-consent { display: grid; gap: 8px; padding: 10px 12px; border-radius: var(--radius-s); background: var(--surface-2); }
+.gps-consent p { margin: 0; font-size: 14px; }
+.gps-check { display: flex; align-items: center; gap: 10px; min-height: 44px; font-size: 14px; font-weight: 600; cursor: pointer; }
+.gps-check input { appearance: none; -webkit-appearance: none; flex: none; width: 44px; height: 44px; margin: 0; border-radius: 12px; border: 2px solid var(--text-muted); background: var(--surface); cursor: pointer; display: grid; place-items: center; }
+.gps-check input:checked { background: var(--strong); border-color: var(--strong); }
+.gps-check input:checked::before { content: ""; width: 12px; height: 20px; border: solid var(--on-strong); border-width: 0 3px 3px 0; transform: translateY(-2px) rotate(45deg); }
+.gps-check input:disabled { opacity: .6; cursor: default; }
+.gps-check input:focus-visible { outline: 2px solid var(--brand-gold); outline-offset: 2px; }
+
+/* Status line: navy band, big, tabular — "Recording · 00:42 · 12.3 km". */
+.gps-state { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 10px; margin: -14px -14px 12px; padding: 16px 14px; border-radius: var(--radius) var(--radius) 0 0; background: var(--navy); color: var(--on-navy); font-size: 24px; font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
+.gps-state b { font-weight: 800; }
+.gps-state-recording b::before { content: ""; display: inline-block; width: 12px; height: 12px; border-radius: 50%; background: var(--bad); margin-right: 8px; vertical-align: 2px; animation: gps-blink 1.2s steps(2, start) infinite; }
+.gps-state-paused b { color: var(--brand-gold); }
+.gps-state-sub { font-size: 14px; font-weight: 500; opacity: .75; }
+@keyframes gps-blink { to { visibility: hidden; } }
+@media (prefers-reduced-motion: reduce) { .gps-state-recording b::before { animation: none; } }
+
+/* Actions: ≥ 52 px, full width, side by side when two. */
+.gps-actions { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 10px; margin-bottom: 12px; }
+.gps .btn.gps-big { min-height: 56px; font-size: 20px; border-radius: 14px; }
+
+.gps-metrics { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin: 0 0 12px; }
+.gps-metrics div { background: var(--surface-2); border-radius: var(--radius-s); padding: 8px 10px; min-width: 0; }
+.gps-metrics div.wide { grid-column: 1 / -1; }
+.gps-metrics dt { font-size: 12px; color: var(--text-muted); font-weight: 600; }
+.gps-metrics dd { margin: 0; font-size: 17px; font-weight: 700; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.gps-summary dd { font-size: 18px; }
+.gps-summary div.wide dd { font-size: 26px; }
+@media (max-width: 400px) { .gps-metrics { grid-template-columns: 1fr 1fr; } }
+@media (min-width: 700px) { .gps-metrics { grid-template-columns: repeat(4, 1fr); } }
+
+.gps-geo-error { font-weight: 600; font-size: 14px; }
+.gps-tools { margin-bottom: 12px; }
+.gps-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+.gps-row .btn { flex: 1 1 140px; min-height: 44px; }
+.gps-past { padding: 6px 0; }
+.gps .btn.gps-earlier-open { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; padding-top: 6px; padding-bottom: 6px; }
+.gps-earlier-line { display: block; font-size: 13px; font-weight: 500; color: var(--text-muted); font-variant-numeric: tabular-nums; text-align: center; overflow-wrap: anywhere; }
+.gps-past + .gps-past { border-top: 1px solid var(--hairline); }
+.gps .btn.gps-danger { color: var(--bad); }
+.gps .btn.block { width: 100%; }
+.gps-log { list-style: none; margin: 0; padding: 0; font: 12px/1.5 ui-monospace, Menlo, monospace; color: var(--text-muted); display: flex; flex-direction: column; gap: 2px; }
+.gps-log li { overflow-wrap: anywhere; }
+
+.gps-verdict { padding: 12px; border-radius: var(--radius-s); font-weight: 800; font-size: 16px; border: 2px solid currentColor; }
+.gps-verdict.ok { background: var(--good-soft); color: var(--good); }
+.gps-verdict.warn { background: var(--warn-soft); color: var(--warn); }
+.gps-verdict.bad { background: var(--bad-soft); color: var(--bad); }
+.gps-verdict small { display: block; font-weight: 500; font-size: 13px; margin-top: 4px; }
+.gps-gaps { font-size: 13px; margin: 0; padding-left: 18px; color: var(--text-muted); }
+.gps-feasibility { margin-bottom: 12px; }
+.gps-foot { margin: 16px 0 0; text-align: center; font-size: 12px; color: var(--text-muted); }
+
+/* Tablet: the live card and the results sit side by side only when the page is wide enough; the app shell stays 560. */
+@media (min-width: 800px) { .gps.app { max-width: 720px; } }
+@media (max-width: 400px) { .gps-state { font-size: 21px; } }
