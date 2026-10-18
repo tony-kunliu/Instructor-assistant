@@ -7,7 +7,7 @@ closed PRs; see `TASK.md` for what is in progress.
 
 ## Current Snapshot
 
-- **Instructor picker (2026-10-18):** only Tony (ADI604) and Anna (ADI358) are active in both environments. Staging legacy `ADI604` (`3cd3c634-3c63-4251-8eb9-91d104a9d8e9`) set `inactive` (data kept; reversible). Production Anna `adi_number` = `358`. Labels on `feature/instructor-picker-labels` (display only, unmerged).
+- **Instructor picker (2026-10-18):** only Tony (ADI604) and Anna (ADI358) are active in both environments (Staging legacy `ADI604` `3cd3c634-3c63-4251-8eb9-91d104a9d8e9` set `inactive`, data kept; Production Anna ADI `358`). Labels `Tony/Kun Liu (ADI604)` / `Anna/Yaping Qu (ADI358)` (display only) are in Production (#18).
 
 - **Production** (all via `Production Release`, all success): #12 run 38157600087 (`main`
   `9dc4763`, PR #60: 3c T1 transfer, `0011`, intake P1; Worker `5ea1eb27-3dc9-4d74-ba75-0bffba7219e9`);
@@ -15,12 +15,11 @@ closed PRs; see `TASK.md` for what is in progress.
   `eb9fa409-5707-4524-944d-636d133202d8`); #14 run 38287641067 (PR #66: R10a route reminders;
   Worker `690fb2c1-5387-42fb-807f-f7b2b6db39fc`); #15 (learner list + lesson record redesign, review
   policy docs); #16 (form-only New/Edit, top-bar theme toggle); #17 (intake P3, `0013`). Run ids and
-  Worker ids of #15-#17: the runs' step summaries. Rollback target of each run = the previous run's
+  Worker ids of #15-#17: the runs' step summaries. #18 run 39132693394 (`main` `9a4cb05`: #83 form restyle, GPS `/gps` phase 1, manifest colours, #91 labels, #92 ADI PATCH own-only; no migration): Worker `24f679f8-ad00-4773-863b-71725144849f`, rollback Worker `2854e821-4098-4b0e-9670-3db0a9f1c1ec`, D1 bookmark `00000c43-00000000-00005108-31820f5c1ed8c40179222dcf8241275a`. Rollback target of each run = the previous run's
   Worker. D1 Time Travel bookmarks only in the step summaries.
 - **Real-device / Tony checks:** iPad layout, route reminders and address suggestions accepted by Tony on real devices (not automated).
 - **In Production (#15-#17):** list + lesson redesign, theme toggle, PDF test temp-dir fix (PRs #73-#80), intake P3 (PR #81, `0013`). Contract untouched.
-- **Merged to `staging` (PR #83, bc1e0cb; L2 presentation):** learner form restyle + Transfer and Archive in the EDIT form's folded "More"; qa-browser 24; no migration, payload or rule change.
-- **Merged to `staging` (PR #84, 62923cf; L2 isolated + privacy review):** P4 GPS phase 1 = `lib/gps` + page `/gps` (synthetic default, Real GPS behind a per-session consent box, nothing uploaded, not linked, noindex); qa-browser `gps.mjs`. Deployed to Staging. No D1/API/lesson change. Design: `docs/superpowers/specs/2026-10-13-gps-tracking-design.md`. A synthetic PASS is not iPhone background-GPS evidence; phase 1b (Tony's real drive on Staging `/gps`) is next.
+- **Merged to `staging` (PR #84, 62923cf; L2 isolated + privacy review):** P4 GPS phase 1 = `lib/gps` + page `/gps` (synthetic default, Real GPS behind a per-session consent box, nothing uploaded, not linked, noindex); qa-browser `gps.mjs`. In Production (#18). No D1/API/lesson change. Design: `docs/superpowers/specs/2026-10-13-gps-tracking-design.md`. A synthetic PASS is not iPhone background-GPS evidence; phase 1b (Tony's real drive on Staging `/gps`) is next.
 - **Still open:** `scripts/check-signature-row-limits.mjs` not yet run against a deployed
   D1 (Staging only, never Production); notify-tick (lesson notifications) waits for Website
   PR #47 rework and Tony's approval of the new endpoint + secret (Production OFF); intake
@@ -143,7 +142,7 @@ record: `tony-kunliu/actgds.com` Issue #3.
   Vietnamese, Greek, Cyrillic, kana, Hangul, Latin Ext-B, box drawing and some
   symbols print as boxes after the user confirms the warning.
 - Minor learner-edit review follow-ups are in `docs/BACKLOG.md`.
-- qa-browser (2026-10-18, Sunday): 1 check fails on `staging` itself (701/702) - `route: the line comes after R2 and R3 (r2, r3, r10) and the booking link is still shown`; cause not yet investigated (possibly date/weekday dependent). Not caused by the picker-label change; left unfixed per AGENTS.md section 6.
+- qa-browser route-line check failed only on Canberra Sundays (`r3-day` id, correct behaviour); fix on `fix/qa-route-reminder-order`, verify on Sun 2026-10-25.
 - `app/manifest.ts` still carries the pre-redesign `background_color` / `theme_color`
   (`#f4f2ee` / `#1d1d1f`), not the shared tokens (affects the installed-PWA splash only).
 
