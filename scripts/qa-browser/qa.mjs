@@ -1986,7 +1986,8 @@ const draw = async (page, index) => {
   await pick(s.page, "QA Tony Route Florey");
   let line = await r10();
   check("route: 23-ready panel adds the 4th line with the unfamiliar centres (home Belconnen from 'Florey', not 'Gungahlin Dr')", line.tone === "plain" && line.text === "Unfamiliar town centres (home: Belconnen, from 'Florey' in the address): Civic, Gungahlin, Woden, Tuggeranong, Fyshwick, Manuka/Kingston.", line.text);
-  const routeRules = (await s.page.$$eval("[data-testid=panel-reminders] .reminder", (els) => els.map((e) => e.dataset.rule))).join(",");
+  // On a Sunday or an ACT public holiday the Competency 23 day line is `r3-day` / `r3-holidays`, still the R3 slot.
+  const routeRules = (await s.page.$$eval("[data-testid=panel-reminders] .reminder", (els) => els.map((e) => e.dataset.rule))).map((rule) => (rule.startsWith("r3") ? "r3" : rule)).join(",");
   check("route: the line comes after R2 and R3 (r2, r3, r10) and the booking link is still shown", routeRules === "r2,r3,r10" && (await s.page.$("[data-testid=adi-booking]")) !== null, routeRules);
   check("route: no horizontal scroll at 375px (panel)", await noHScroll(s.page));
   await shot(s.page, "19-route-panel-375");
