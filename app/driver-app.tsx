@@ -42,6 +42,7 @@ import RouteCheckGroup from "./route-check.tsx";
 import { GNAF_ATTRIBUTION, partsAfterEdit, type AddressSuggestion } from "@/lib/address-suggest.ts";
 import AddressInput from "./address-input.tsx";
 import { addressPartChips, formSubline, moreLockedMessage, moreSection, nameIssue, saveLabel } from "@/lib/learner-form-view.ts";
+import { instructorLabel } from "@/lib/instructor-label.ts";
 import ThemeToggle from "./theme-switch.tsx";
 
 type LessonDraft = {
@@ -957,7 +958,7 @@ export default function DriverApp() {
           {transferTargets.map((i) => (
             <label key={i.id} className="transfer-choice">
               <input type="radio" name="transfer-to" value={i.id} checked={transferDraft.toId === i.id} onChange={() => setTransferDraft({ ...transferDraft, toId: i.id })} data-testid="transfer-choice" />
-              <span>{i.fullName}</span>
+              <span>{instructorLabel(i)}</span>
             </label>
           ))}
         </fieldset>
@@ -1309,7 +1310,7 @@ export default function DriverApp() {
                   <label className="field full"><span>Instructor <span className="req" aria-hidden="true">*</span></span>
                     <select value={learnerDraft.instructorId} onChange={(e) => learnerField("instructorId", e.target.value)}>
                       <option value="">Select instructor…</option>
-                      {instructors.map((i) => <option key={i.id} value={i.id}>{i.fullName}</option>)}
+                      {instructors.map((i) => <option key={i.id} value={i.id}>{instructorLabel(i)}</option>)}
                     </select>
                   </label>
                 )}
