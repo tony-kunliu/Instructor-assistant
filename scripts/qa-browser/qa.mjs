@@ -1503,7 +1503,7 @@ const draw = async (page, index) => {
   await s.page.click("[data-testid=transfer-open]");
   await s.page.waitForSelector("[data-testid=transfer-panel]");
   const choices = await s.page.$$eval("[data-testid=transfer-choice]", (els) => els.map((e) => ({ checked: e.checked, label: e.closest("label").textContent.trim() })));
-  check("transfer: the panel lists only the other active instructor (Anna), preselected", choices.length === 1 && choices[0].label === "Anna" && choices[0].checked, JSON.stringify(choices));
+  check("transfer: the panel lists only the other active instructor (Anna), preselected", choices.length === 1 && choices[0].label.startsWith("Anna/Yaping Qu") && choices[0].checked, JSON.stringify(choices));
   check("transfer: confirm button reads 'Transfer to Anna'", (await s.page.textContent("[data-testid=transfer-confirm]")).trim() === "Transfer to Anna");
   check("transfer: no horizontal scroll at 375px (transfer panel)", await noHScroll(s.page));
   await shot(s.page, "16-transfer-panel-375");

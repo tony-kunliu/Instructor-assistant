@@ -5,17 +5,12 @@ _Last updated: 2026-10-16_
 This file describes **current task only**. Completed work's detail
 lives in git log and closed PRs, not here.
 
-**Current Task:** P4 GPS phase 1 — isolated, default-OFF GPS recorder, branch `feature/gps-p4-recorder` —
-**Merged to `staging` (PR #84, 62923cf) and deployed to Staging by Workers Builds (L2 isolated: new page + pure libraries; no D1, no migration, no API, no lesson change;
-nothing uploaded).** Design + delivered / not-done list: `docs/superpowers/specs/2026-10-13-gps-tracking-design.md`
-§8-§9. Delivered: `lib/gps` (recorder with Pause / Resume and crash recovery, pause-aware feasibility analysis
-with the PWA-vs-native verdict, pure `summarizeTrack` with 150 m trimming and no coordinates, synthetic drive +
-accelerated `syntheticDriver`, IndexedDB `ia-gps`); page `/gps` (Synthetic drive default, Real GPS only behind a
-per-session, never-persisted consent box; Start / Pause / Resume / Stop / Clear this device; Results card; folded
-feasibility report; Copy / Download summary JSON; not linked, noindex, own manifest); 43 unit tests (synthetic
-only); `scripts/qa-browser/gps.mjs` (182 checks, 375 / 820 px, light / dark, `watchPosition` spied: never called
-by the synthetic flow, once in Real GPS mode). Prior spike `experiment/gps-pwa-feasibility` reused, not merged.
-Reviewed per Handbook §2 L2: one independent review (PASS, 7 Minors fixed with a test / QA check each, verified by the merging agent).
+**Picker correction (2026-10-18), `feature/instructor-picker-labels`:**
+- `Current Task:` Partial. Data done (Staging legacy `ADI604` inactive; Production Anna ADI 358). Labels pushed, not merged; needs review.
+- `Next Recommended Task:` review, merge to `staging`, Production release (Tony's separate go); the qa-browser failure in STATUS Known Issues.
+- `Waiting on Other Repo:` NONE. `Tony Manual Action Required:` real-login look at the picker on Staging after merge.
+
+**Current Task:** P4 GPS phase 1, isolated default-OFF GPS recorder (`feature/gps-p4-recorder`) — **Merged to `staging` (PR #84, 62923cf), deployed to Staging** (L2 isolated: new `/gps` page + pure `lib/gps`; no D1, migration, API or lesson change; nothing uploaded). Delivered / not-done list: `docs/superpowers/specs/2026-10-13-gps-tracking-design.md` §8-§9. Reviewed per Handbook §2 L2 (PASS, 7 Minors fixed).
 
 **Side task (dot / Tony "keep iterating", 2026-10-16):** `chore/manifest-colours` (draft PR #86) — the installed app's
 `app/manifest.ts` colours move to the light tokens (`--paper` #f6f3eb, `--navy` #0b1b2b); `tests/manifest-colours.test.ts`
