@@ -1,6 +1,6 @@
 # Backlog
 
-_Last updated: 2026-10-13. Not an authorization: every item still needs Tony's
+_Last updated: 2026-10-18. Not an authorization: every item still needs Tony's
 go-ahead and ends with a stop (AGENTS.md §11). The longer-term two-repo
 direction is in `docs/ECOSYSTEM_ROADMAP.md` (P1–P6)._
 
@@ -27,6 +27,18 @@ Near term (Instructor Assistant only, low risk):
   700k chars with a distinct 'too large' error),
   qa-browser section 16. Still open: run `scripts/check-signature-row-limits.mjs`
   against Staging D1 (never Production) to prove the two-signature row on real D1.
+
+Follow-ups agreed with Tony 2026-10-18 (direction, not an authorization):
+- **Instructor correction** (selector choices Tony/Kun Liu ADI604, Anna/Yaping
+  Qu ADI358; keep other instructors' history; no delete/merge/reattribute):
+  read-only D1 audit first, then a minimal plan; any write needs Tony's go per
+  environment. Needs a valid Cloudflare token in the environment settings (Tony).
+- **ADI PATCH authorization fix** (scheduled by Tony): `PATCH /api/instructors/[id]`
+  should only allow editing one's own ADI number (compare the id with the trusted
+  `x-instructor-id`), with tests. Auth/permission change = ALWAYS-ASK; do it
+  after the correction above.
+- GPS phase 1b real-phone drive (Tony), then phase 2 only on his separate approval.
+- Pages reachability test page: waits on the same Cloudflare token.
 
 Medium term (new features; confirm rules with Tony before building):
 4. Competency 23 route suggestions and route check (R10). **R10a DONE
