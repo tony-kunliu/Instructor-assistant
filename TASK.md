@@ -1,14 +1,12 @@
 # TASK.md
 
-_Last updated: 2026-10-16_
+_Last updated: 2026-10-18_
 
 This file describes **current task only**. Completed work's detail
 lives in git log and closed PRs, not here.
 
-**Picker correction (2026-10-18), `feature/instructor-picker-labels`:**
-- `Current Task:` Partial. Data done (Staging legacy `ADI604` inactive; Production Anna ADI 358). Labels pushed, not merged; needs review.
-- `Next Recommended Task:` review, merge to `staging`, Production release (Tony's separate go); the qa-browser failure in STATUS Known Issues.
-- `Waiting on Other Repo:` NONE. `Tony Manual Action Required:` real-login look at the picker on Staging after merge.
+**Picker correction (2026-10-18):** `Current Task:` Completed. Data fixed in both environments; labels and #92 (ADI PATCH own-only) released to Production (#18, run 39132693394, no migration).
+`Next Recommended Task:` PR `fix/qa-route-reminder-order` (qa-only); GPS phase 1b real drive. `Waiting on Other Repo:` NONE. `Tony Manual Action Required:` real-login look at the picker on Production.
 
 **Current Task:** P4 GPS phase 1, isolated default-OFF GPS recorder (`feature/gps-p4-recorder`) — **Merged to `staging` (PR #84, 62923cf), deployed to Staging** (L2 isolated: new `/gps` page + pure `lib/gps`; no D1, migration, API or lesson change; nothing uploaded). Delivered / not-done list: `docs/superpowers/specs/2026-10-13-gps-tracking-design.md` §8-§9. Reviewed per Handbook §2 L2 (PASS, 7 Minors fixed).
 
