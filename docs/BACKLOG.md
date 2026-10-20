@@ -47,7 +47,7 @@ Follow-ups agreed with Tony 2026-10-18 (direction, not an authorization):
   instructor change their own ADI number (an inactive instructor's can be set by an
   active one). Left for later: (1) a PDF export by instructor A of B's learner,
   where B has no ADI number, now dead-ends (both numbers are set today); (2) a
-  route-level test that a refusal returns HTTP 400.
+  route-level test that a refusal returns HTTP 400 (DONE 2026-10-20: `tests/instructor-adi-authz.test.ts`, via `handle`).
 - GPS phase 1b real-phone drive (Tony), then phase 2 only on his separate approval.
 - Pages reachability test page: waits on the same Cloudflare token.
 
