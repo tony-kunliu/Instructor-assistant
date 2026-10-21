@@ -1,6 +1,6 @@
 # STATUS.md
 
-_Last updated: 2026-10-21_ (Production and Staging D1 at migration `0013`; release #17 live)
+_Last updated: 2026-10-21_ (Production and Staging D1 at migration `0013`; release #21 live)
 
 This file describes **current state only**. History lives in git log and
 closed PRs; see `TASK.md` for what is in progress.
@@ -12,14 +12,15 @@ closed PRs; see `TASK.md` for what is in progress.
   `docs/superpowers/*/2026-10-21-saas-edition*`. No SaaS environment exists.
 - **Instructor picker (2026-10-18):** only Tony (ADI604) and Anna (ADI358) are active in both environments (Staging legacy `ADI604` `3cd3c634-3c63-4251-8eb9-91d104a9d8e9` set `inactive`, data kept; Production Anna ADI `358`). Labels `Tony/Kun Liu (ADI604)` / `Anna/Yaping Qu (ADI358)` (display only) are in Production (#18).
 
-- **Production** (all via `Production Release`, all success): #12 run 38157600087 (`main`
-  `9dc4763`, PR #60: 3c T1 transfer, `0011`, intake P1; Worker `5ea1eb27-3dc9-4d74-ba75-0bffba7219e9`);
-  #13 run 38277936881 (PR #64: iPad, intake P2, Handbook; `0012`; Worker
-  `eb9fa409-5707-4524-944d-636d133202d8`); #14 run 38287641067 (PR #66: R10a route reminders;
-  Worker `690fb2c1-5387-42fb-807f-f7b2b6db39fc`); #15 (learner list + lesson record redesign, review
-  policy docs); #16 (form-only New/Edit, top-bar theme toggle); #17 (intake P3, `0013`). Run ids and
-  Worker ids of #15-#17: the runs' step summaries. #18 run 39132693394 (`main` `9a4cb05`; no migration): Worker `24f679f8-ad00-4773-863b-71725144849f`, rollback Worker `2854e821-4098-4b0e-9670-3db0a9f1c1ec`, D1 bookmark `00000c43-00000000-00005108-31820f5c1ed8c40179222dcf8241275a`. #19 run 39571799727 (`main` `c4dab19`: app renamed ACTGDS Instructor, ADI route tests; no migration): Worker `93d9b7a4-e85b-45c3-a472-4adbe2f77e7c`, rollback Worker `24f679f8-ad00-4773-863b-71725144849f`, D1 bookmark in the run summary. Rollback target of each run = the previous run's
-  Worker. D1 Time Travel bookmarks only in the step summaries.
+- **Production** (all via `Production Release`, all success; run and Worker ids of #12-#20 are in the runs' step
+  summaries; rollback target of each run = the previous run's Worker; D1 Time Travel bookmarks only in the summaries).
+  #12-#17: transfer, intake P1-P3 (`0011`-`0013`), iPad, R10a, list/lesson redesign, theme toggle. #18-#20: picker
+  labels, GPS phase 1, ACTGDS Instructor name, phone top bar. #21 run 39662454901 (`main` `869cfb5`; no migration):
+  Start Lesson in the summary (PR #105), Paste from assistant (PR #106); Worker `949fba77-cb1c-458c-b996-89b0b996a602`,
+  rollback Worker `3cde58e1-1c34-4d8a-b208-780b6b0ab5f1`.
+- **On `staging`, not in Production (PR #108, two L3 reviews):** Record a past lesson; save now, sign later (To sign
+  queue, `signLesson`; FD23 only signed and after every earlier app lesson is signed). No migration. Ships with the
+  next release, which also carries SaaS P0 and so needs Tony's go.
 - **Real-device / Tony checks:** iPad layout, route reminders and address suggestions accepted by Tony on real devices (not automated).
 - **In Production (#15-#17):** list + lesson redesign, theme toggle, PDF test temp-dir fix (PRs #73-#80), intake P3 (PR #81, `0013`). Contract untouched.
 - **Merged to `staging` (PR #84, 62923cf; L2 isolated + privacy review):** P4 GPS phase 1 = `lib/gps` + page `/gps` (synthetic default, Real GPS behind a per-session consent box, nothing uploaded, not linked, noindex); qa-browser `gps.mjs`. In Production (#18). No D1/API/lesson change. Design: `docs/superpowers/specs/2026-10-13-gps-tracking-design.md`. A synthetic PASS is not iPhone background-GPS evidence; phase 1b (Tony's real drive on Staging `/gps`) is next.
