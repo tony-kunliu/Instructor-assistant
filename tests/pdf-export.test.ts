@@ -69,6 +69,7 @@ function lesson(n: number, overrides: Partial<Lesson> = {}): Lesson {
     priorLessonCount: null,
     revisionCount: 0,
     editedBeforeRevisionHistory: false,
+    signedLater: false,
     ...overrides,
   };
 }

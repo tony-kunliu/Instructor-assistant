@@ -32,7 +32,7 @@ function lesson(n: number, overrides: Partial<Lesson> = {}): Lesson {
     startOdometer: n * 10, finishOdometer: n * 10 + 5, durationMinutes: 30, distanceKm: 5, cumulativeMinutes: n * 30, cumulativeKm: n * 5,
     taught: "1, 2", competenciesAssessed: "3", achieved: "3", location: "Belconnen", comments: "Good", adiSignature: null, learnerSignature: null,
     createdAt: "2026-01-01T00:00:00.000Z", updatedAt: null, updatedByInstructorId: null, updatedByInstructorName: null, recordSource: "app",
-    signatureStatus: "unsigned", priorInstructorLabel: null, priorLessonCount: null, revisionCount: 0, editedBeforeRevisionHistory: false, ...overrides,
+    signatureStatus: "unsigned", priorInstructorLabel: null, priorLessonCount: null, revisionCount: 0, editedBeforeRevisionHistory: false, signedLater: false, ...overrides,
   };
 }
 

@@ -264,7 +264,7 @@ const pdfLesson: Lesson = {
   startOdometer: 10, finishOdometer: 15, durationMinutes: 30, distanceKm: 5, cumulativeMinutes: 30, cumulativeKm: 5,
   taught: "1", competenciesAssessed: null, achieved: null, location: "QA", comments: null, adiSignature: null, learnerSignature: null,
   createdAt: "2026-01-01T00:00:00.000Z", updatedAt: null, updatedByInstructorId: null, updatedByInstructorName: null, recordSource: "app",
-  signatureStatus: "unsigned", priorInstructorLabel: null, priorLessonCount: null, revisionCount: 0, editedBeforeRevisionHistory: false,
+  signatureStatus: "unsigned", priorInstructorLabel: null, priorLessonCount: null, revisionCount: 0, editedBeforeRevisionHistory: false, signedLater: false,
 };
 
 function pdfText(t: TestContext, bytes: Uint8Array): string | null {

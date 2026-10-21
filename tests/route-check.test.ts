@@ -519,7 +519,7 @@ test("PDF: the route line prints through the existing Comments cell (and the cen
     id: "lesson-1", learnerId: "learner-1", instructorId: "instructor-1", lessonNo: 1, lessonDate: "2026-10-01", startTime: "09:00", finishTime: "10:00",
     startOdometer: 10, finishOdometer: 20, durationMinutes: 60, distanceKm: 10, cumulativeMinutes: 60, cumulativeKm: 10, taught: null, competenciesAssessed: "23 Final Drive", achieved: "23 Final Drive",
     location: fields.location, comments: fields.comments, adiSignature: SIG, learnerSignature: SIG, createdAt: new Date().toISOString(), updatedAt: null, updatedByInstructorId: null,
-    updatedByInstructorName: null, recordSource: "app", signatureStatus: "digital", priorInstructorLabel: null, priorLessonCount: null, revisionCount: 0, editedBeforeRevisionHistory: false,
+    updatedByInstructorName: null, recordSource: "app", signatureStatus: "digital", priorInstructorLabel: null, priorLessonCount: null, revisionCount: 0, editedBeforeRevisionHistory: false, signedLater: false,
   };
   const result = await buildCbtaChecklistPdf({ templateBytes, fontBytes, learner, lessons: [lesson] });
   assert.ok(result.bytes.length > 1000);

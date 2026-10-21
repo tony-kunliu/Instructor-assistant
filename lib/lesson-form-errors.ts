@@ -54,8 +54,12 @@ export const DRAFT_KEYS_BY_FIELD: Record<FormFieldId, (keyof LessonDraftLike)[]>
   "learner-signature": ["adiSignature", "learnerSignature"],
 };
 
-/** Mirrors the server's own checks (lib/repo.ts) so the common mistakes are caught before a round trip. */
-export function validateLessonDraftFields(draft: LessonDraftLike, mode: FormMode): FormIssue[] {
+/**
+ * Mirrors the server's own checks (lib/repo.ts) so the common mistakes are caught before a round trip.
+ * `signLater` (Tony 2026-10-22): the lesson may be saved with neither signature and signed later, so only one
+ * signature without the other is a problem.
+ */
+export function validateLessonDraftFields(draft: LessonDraftLike, mode: FormMode, options: { signLater?: boolean } = {}): FormIssue[] {
   const found = new Map<FormFieldId, string>();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(draft.lessonDate.trim())) found.set("date", "Lesson date is required.");
   if (mode === "paper") {
@@ -82,8 +86,12 @@ export function validateLessonDraftFields(draft: LessonDraftLike, mode: FormMode
   if (finish === null) found.set("finish-odometer", "Finish odometer is required.");
   else if (start !== null && distanceKm(start, finish) === null) found.set("finish-odometer", "Finish odometer must not be less than start odometer.");
   if (draft.assessedIds.some((id) => !(id in draft.achievedResults))) found.set("competency", "Mark Achieved / Not achieved for every Assessed competency.");
-  if (!draft.adiSignature) found.set("adi-signature", "ADI signature is required.");
-  if (!draft.learnerSignature) found.set("learner-signature", "Learner signature is required.");
+  if (options.signLater && !draft.adiSignature !== !draft.learnerSignature) {
+    found.set(draft.adiSignature ? "learner-signature" : "adi-signature", "Sign with both signatures, or clear both to sign later.");
+  } else if (!options.signLater) {
+    if (!draft.adiSignature) found.set("adi-signature", "ADI signature is required.");
+    if (!draft.learnerSignature) found.set("learner-signature", "Learner signature is required.");
+  }
   return ORDER[mode].filter((field) => found.has(field)).map((field) => ({ field, message: found.get(field)! }));
 }
 
@@ -92,6 +100,7 @@ const SERVER_RULES: [RegExp, FormFieldId][] = [
   [/^start odometer/i, "start-odometer"],
   [/lesson date/i, "date"],
   [/start and finish time/i, "times"],
+  [/both signatures, or/i, "adi-signature"],
   [/ADI signature/i, "adi-signature"],
   [/learner signature/i, "learner-signature"],
   [/signatures? .*(redrawn|redraw|no longer valid)/i, "adi-signature"],

@@ -34,7 +34,7 @@ import { validateAddressParts } from "./address-suggest.ts";
 import { OTHER_LICENCE_KEYS, validateOtherLicence, type OtherLicenceFields } from "./other-licence.ts";
 import { summaryFromProgress, type LearnerListSummary } from "./learner-card.ts";
 import type { Scope } from "./scope.ts";
-import type { CompletionSummary, Instructor, Learner, LearnerArchiveEvent, LearnerInput, LearnerTransferEvent, Lesson, LessonInput, LessonRevision, LessonRevisionSnapshot, SignatureStatus } from "./types.ts";
+import type { CompletionSummary, Instructor, Learner, LearnerArchiveEvent, LearnerInput, LearnerTransferEvent, Lesson, LessonInput, LessonRevision, LessonRevisionSnapshot, SignatureStatus, UnsignedLessonItem } from "./types.ts";
 
 export class ValidationError extends Error {}
 export class NotFoundError extends Error {}
@@ -184,7 +184,8 @@ export function toLesson(row: Row): Lesson {
     priorInstructorLabel: isPrior ? strictPresent(row.prior_instructor_label, "prior_instructor_label", String) : nullableString(row.prior_instructor_label),
     priorLessonCount: isPrior ? strictPresent(row.prior_lesson_count, "prior_lesson_count", Number) : nullableNumber(row.prior_lesson_count),
     revisionCount: Number(row.revision_count ?? 0),
-    editedBeforeRevisionHistory: row.updated_at != null && Number(row.revision_count ?? 0) === 0 && !isPrior,
+    signedLater: Number(row.all_revision_count ?? 0) > Number(row.revision_count ?? 0),
+    editedBeforeRevisionHistory: row.updated_at != null && Number(row.all_revision_count ?? row.revision_count ?? 0) === 0 && !isPrior,
   };
 }
 
@@ -867,7 +868,11 @@ export async function getTotals(db: D1Database, learnerId: string): Promise<Tota
 // that line), never guessed.
 const UPDATED_BY_JOIN = "LEFT JOIN instructors ub ON ub.id = lessons.updated_by_instructor_id";
 // "Edited N times" — computed inside the same lesson query (no extra round trip, no N+1).
-const REVISION_COUNT_SELECT = "(SELECT COUNT(*) FROM lesson_revisions lr WHERE lr.lesson_id = lessons.id) AS revision_count";
+// Signing a lesson saved to sign later keeps its unsigned version as a revision with this reserved reason. It is not
+// a correction: revision_count (History "Edited n times", PDF "(amended)") leaves it out; all_revision_count does not.
+export const SIGNED_LATER_REASON = "Signed later";
+const REVISION_COUNT_SELECT = `(SELECT COUNT(*) FROM lesson_revisions lr WHERE lr.lesson_id = lessons.id AND COALESCE(lr.reason, '') <> '${SIGNED_LATER_REASON}') AS revision_count,
+  (SELECT COUNT(*) FROM lesson_revisions lr WHERE lr.lesson_id = lessons.id) AS all_revision_count`;
 
 /** Lessons newest first. Signatures are omitted from the list to keep it light. */
 export async function listLessons(db: D1Database, learnerId: string): Promise<Lesson[]> {
@@ -893,6 +898,72 @@ export async function listLessonsForExport(db: D1Database, learnerId: string): P
     .bind(learnerId)
     .all<Row>();
   return results.map(toLesson);
+}
+
+/** Lesson numbers of this learner's app lessons saved to sign later. */
+async function unsignedAppLessonNos(db: D1Database, learnerId: string): Promise<number[]> {
+  const { results } = await db
+    .prepare("SELECT lesson_no FROM lessons WHERE learner_id = ? AND record_source = 'app' AND signature_status = 'unsigned' ORDER BY lesson_no ASC")
+    .bind(learnerId)
+    .all<Row>();
+  return results.map((row) => Number(row.lesson_no));
+}
+
+/** The To sign queue: app lessons saved to sign later, for active learners, oldest lesson first; only the signed-in instructor's own lessons when there is one (Code of Practice 9.2). */
+export async function listUnsignedLessons(db: D1Database, instructorId: string | null = null): Promise<UnsignedLessonItem[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT lessons.learner_id, learners.full_name, lessons.instructor_id, lessons.id, lessons.lesson_no, lessons.lesson_date, lessons.start_time, lessons.finish_time
+       FROM lessons JOIN learners ON learners.id = lessons.learner_id
+       WHERE lessons.record_source = 'app' AND lessons.signature_status = 'unsigned' AND learners.archived_at IS NULL AND (? IS NULL OR lessons.instructor_id = ?)
+       ORDER BY lessons.lesson_date ASC, lessons.start_time ASC, lessons.lesson_no ASC`,
+    )
+    .bind(instructorId, instructorId)
+    .all<Row>();
+  return results.map((row) => ({
+    learnerId: String(row.learner_id), learnerName: String(row.full_name), instructorId: String(row.instructor_id), lessonId: String(row.id),
+    lessonNo: Number(row.lesson_no), lessonDate: String(row.lesson_date), startTime: (row.start_time as string) ?? null, finishTime: (row.finish_time as string) ?? null,
+  }));
+}
+
+/**
+ * Adds both signatures to an app lesson saved to sign later. Only the two signatures and the status change: the
+ * content the learner signs is exactly what was saved, and exactly what they were shown (`expectedUpdatedAt` is the
+ * lesson's updatedAt when the To sign screen loaded it; an edit in between refuses the signing). Like History Edit,
+ * only the instructor who recorded the lesson may sign it, and the previous (unsigned) version is kept as a revision.
+ */
+export async function signLesson(
+  db: D1Database,
+  learnerId: string,
+  lessonId: string,
+  input: { adiSignature?: unknown; learnerSignature?: unknown; expectedUpdatedAt?: unknown; actingInstructorId?: unknown },
+): Promise<Lesson> {
+  const existing = await getLesson(db, learnerId, lessonId);
+  if (existing.recordSource !== "app") throw new ValidationError("Only lessons recorded in the app can be signed here.");
+  if (existing.signatureStatus !== "unsigned") throw new ValidationError(`Lesson #${existing.lessonNo} is already signed.`);
+  const actingInstructorId = await resolveActingInstructorId(db, input.actingInstructorId);
+  if (actingInstructorId !== null && actingInstructorId !== existing.instructorId) {
+    const owner = await db.prepare("SELECT full_name FROM instructors WHERE id = ?").bind(existing.instructorId).first<Row>();
+    throw new ValidationError(`This lesson was recorded by ${owner ? String(owner.full_name) : "another instructor"}; only they can sign it (Code of Practice 9.2).`);
+  }
+  const expected = input.expectedUpdatedAt === null ? null : typeof input.expectedUpdatedAt === "string" ? input.expectedUpdatedAt : undefined;
+  if (expected === undefined || expected !== existing.updatedAt) throw new ValidationError(`Lesson #${existing.lessonNo} was changed after it was opened. Reload it and go through it with the learner again.`);
+  const adiSignature = submittedSignature(input.adiSignature, "ADI");
+  const learnerSignature = submittedSignature(input.learnerSignature, "Learner");
+  if (!adiSignature) throw new ValidationError("ADI signature is required.");
+  if (!learnerSignature) throw new ValidationError("Learner signature is required.");
+  const [, update] = await db.batch([
+    revisionInsertStatement(db, lessonId, actingInstructorId, SIGNED_LATER_REASON, { updatedAt: expected }),
+    db
+      .prepare(
+        `UPDATE lessons SET adi_signature = ?, learner_signature = ?, signature_status = 'digital', updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+           updated_by_instructor_id = COALESCE(?, updated_by_instructor_id)
+         WHERE id = ? AND learner_id = ? AND signature_status = 'unsigned' AND updated_at IS ?`,
+      )
+      .bind(adiSignature, learnerSignature, actingInstructorId, lessonId, learnerId, expected),
+  ]);
+  if (!update.meta.changes) throw new ValidationError(`Lesson #${existing.lessonNo} was signed or changed in the meantime. Reload it.`);
+  return getLesson(db, learnerId, lessonId);
 }
 
 export async function getLesson(db: D1Database, learnerId: string, lessonId: string): Promise<Lesson> {
@@ -1004,8 +1075,13 @@ export async function createLesson(db: D1Database, learnerId: string, input: Les
 
   const adiSignature = submittedSignature(input.adiSignature, "ADI");
   const learnerSignature = submittedSignature(input.learnerSignature, "Learner");
-  if (!adiSignature) throw new ValidationError("ADI signature is required.");
-  if (!learnerSignature) throw new ValidationError("Learner signature is required.");
+  // Save now, sign later (Tony 2026-10-22): with signLater the lesson may be saved with neither signature ("unsigned")
+  // and signed later in the To sign queue (signLesson). Never with only one of them.
+  const signLater = input.signLater === true;
+  if (signLater && Boolean(adiSignature) !== Boolean(learnerSignature)) throw new ValidationError("Save with both signatures, or neither (sign later).");
+  if (!signLater && !adiSignature) throw new ValidationError("ADI signature is required.");
+  if (!signLater && !learnerSignature) throw new ValidationError("Learner signature is required.");
+  const signatureStatus: SignatureStatus = adiSignature && learnerSignature ? "digital" : "unsigned";
 
   const taughtIds = parseIdList(input.taughtIds, CORE_COMPETENCY_IDS);
   const assessedIds = parseIdList(input.assessedIds, ALL_ASSESSABLE_IDS);
@@ -1026,6 +1102,12 @@ export async function createLesson(db: D1Database, learnerId: string, input: Les
     throw error;
   }
   const achievedIds = assessedIds.filter((id) => achievedResults[id] === "achieved");
+  if (assessedIds.includes(FINAL_DRIVE_23)) {
+    // The final assessment closes the record: it is signed on the day, and only once every earlier app lesson is signed.
+    if (signatureStatus === "unsigned") throw new ValidationError("Final Drive 23 must be signed when it is saved.");
+    const unsigned = await unsignedAppLessonNos(db, learnerId);
+    if (unsigned.length) throw new ValidationError(`Sign ${unsigned.map((n) => `Lesson #${n}`).join(", ")} first: Final Drive 23 waits until every earlier lesson is signed.`);
+  }
 
   // The instructor who actually taught/created this lesson (Instructor
   // Identity V1) — falls back to the learner's own instructor when not
@@ -1083,8 +1165,8 @@ export async function createLesson(db: D1Database, learnerId: string, input: Les
     .prepare(
       `INSERT INTO lessons (id, learner_id, instructor_id, lesson_no, lesson_date, start_time, finish_time,
          start_odometer, finish_odometer, duration_minutes, distance_km, cumulative_minutes, cumulative_km,
-         taught, competencies_assessed, achieved, location, comments, adi_signature, learner_signature)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         taught, competencies_assessed, achieved, location, comments, adi_signature, learner_signature, signature_status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .bind(
       id,
@@ -1107,6 +1189,7 @@ export async function createLesson(db: D1Database, learnerId: string, input: Les
       text(input.comments, 3000),
       adiSignature,
       learnerSignature,
+      signatureStatus,
     );
 
   // Set-based: one statement for all of this lesson's events, whatever their
@@ -1229,8 +1312,10 @@ export const MAX_REVISION_REASON_LENGTH = 200;
  * 5 bound parameters; revision_no is the next number for this lesson. Signature images are never copied,
  * only whether each was present.
  */
-function revisionInsertStatement(db: D1Database, lessonId: string, editedByInstructorId: string | null, reason: string | null): D1PreparedStatement {
-  return db
+function revisionInsertStatement(db: D1Database, lessonId: string, editedByInstructorId: string | null, reason: string | null, onlyIfUnsignedAt?: { updatedAt: string | null }): D1PreparedStatement {
+  // onlyIfUnsignedAt (signLesson): the same guard as its UPDATE, so a signing that loses a race writes no revision either.
+  const guard = onlyIfUnsignedAt ? " AND lessons.signature_status = 'unsigned' AND lessons.updated_at IS ?" : "";
+  const statement = db
     .prepare(
       `INSERT INTO lesson_revisions (id, lesson_id, revision_no, edited_at, edited_by_instructor_id, reason, snapshot_json)
        SELECT ?, lessons.id, (SELECT COALESCE(MAX(r.revision_no), 0) + 1 FROM lesson_revisions r WHERE r.lesson_id = lessons.id), ?, ?, ?,
@@ -1242,9 +1327,10 @@ function revisionInsertStatement(db: D1Database, lessonId: string, editedByInstr
            'adiSignaturePresent', json(CASE WHEN COALESCE(lessons.adi_signature, '') <> '' THEN 'true' ELSE 'false' END),
            'learnerSignaturePresent', json(CASE WHEN COALESCE(lessons.learner_signature, '') <> '' THEN 'true' ELSE 'false' END)
          )
-       FROM lessons WHERE lessons.id = ?`,
-    )
-    .bind(crypto.randomUUID(), new Date().toISOString(), editedByInstructorId, reason, lessonId);
+       FROM lessons WHERE lessons.id = ?${guard}`,
+    );
+  const binds: (string | null)[] = [crypto.randomUUID(), new Date().toISOString(), editedByInstructorId, reason, lessonId];
+  return onlyIfUnsignedAt ? statement.bind(...binds, onlyIfUnsignedAt.updatedAt) : statement.bind(...binds);
 }
 
 /** A lesson's previous versions, oldest first — one query (joined to the lesson to scope it to the learner, and to instructors for the editor's name). */
@@ -1305,6 +1391,7 @@ export async function updateLesson(db: D1Database, learnerId: string, lessonId: 
   }
   const reasonRaw = String(input.reason ?? "").trim();
   if (reasonRaw.length > MAX_REVISION_REASON_LENGTH) throw new ValidationError(`Reason must be ${MAX_REVISION_REASON_LENGTH} characters or fewer.`);
+  if (reasonRaw.toLowerCase() === SIGNED_LATER_REASON.toLowerCase()) throw new ValidationError(`"${SIGNED_LATER_REASON}" is kept for signing a lesson; describe the correction instead.`);
   const reason = reasonRaw || null;
 
   const lessonDate = isoDate(input.lessonDate);
@@ -1481,6 +1568,14 @@ export async function updateLesson(db: D1Database, learnerId: string, lessonId: 
     // Paper records carry no digital signatures: whatever is stored stays untouched.
     adiSignature = existing.adiSignature;
     learnerSignature = existing.learnerSignature;
+  } else if (existing.signatureStatus === "unsigned") {
+    // Saved to sign later: nothing signed yet, so a correction invalidates nothing. Both signatures make it signed.
+    const newAdi = submittedSignature(input.adiSignature, "ADI");
+    const newLearner = submittedSignature(input.learnerSignature, "Learner");
+    if (Boolean(newAdi) !== Boolean(newLearner)) throw new ValidationError("Sign with both signatures, or leave both blank to keep it unsigned.");
+    adiSignature = newAdi;
+    learnerSignature = newLearner;
+    signatureStatus = newAdi ? "digital" : "unsigned";
   } else if (contentChanged) {
     const newAdi = submittedSignature(input.adiSignature, "ADI");
     const newLearner = submittedSignature(input.learnerSignature, "Learner");
@@ -1498,6 +1593,13 @@ export async function updateLesson(db: D1Database, learnerId: string, lessonId: 
     learnerSignature = submittedSignature(input.learnerSignature, "Learner") ?? existing.learnerSignature ?? "";
     if (!adiSignature) throw new ValidationError("ADI signature is required.");
     if (!learnerSignature) throw new ValidationError("Learner signature is required.");
+  }
+
+  if (!isPaper && assessedIds.includes(FINAL_DRIVE_23)) {
+    // Same rule as createLesson: Final Drive 23 is signed, and every other app lesson of this learner is signed first.
+    if (signatureStatus === "unsigned") throw new ValidationError("Final Drive 23 must be signed when it is saved.");
+    const unsigned = (await unsignedAppLessonNos(db, learnerId)).filter((n) => n < existing.lessonNo);
+    if (unsigned.length) throw new ValidationError(`Sign ${unsigned.map((n) => `Lesson #${n}`).join(", ")} first: Final Drive 23 waits until every earlier lesson is signed.`);
   }
 
   const before = computeProgress(allEventsBeforeEdit);
