@@ -1,6 +1,6 @@
 # STATUS.md
 
-_Last updated: 2026-10-21_ (Production and Staging D1 at migration `0013`; release #22 live)
+_Last updated: 2026-10-21_ (Production and Staging D1 at migration `0014`; release #23 live)
 
 This file describes **current state only**. History lives in git log and
 closed PRs; see `TASK.md` for what is in progress.
@@ -20,8 +20,10 @@ closed PRs; see `TASK.md` for what is in progress.
   rollback Worker `3cde58e1-1c34-4d8a-b208-780b6b0ab5f1`. #22 run 39672461921 (`main` `4f60f99`; no migration): SaaS P0
   (PR #109) and PR #108 (two L3 reviews): record a past lesson; save now, sign later (To sign queue, `signLesson`;
   FD23 only signed, after every earlier app lesson is signed); Worker, rollback Worker, bookmark: the run's summary.
+  #23 run 39680183179 (`main` `438a8f8`; migration `0014` `instructors.adi_signature`, on Staging and Production):
+  saved ADI signature, own tap only (PR #115); a corrected signed lesson may be left unsigned. Worker
+  `d716940c-62d9-4830-95ad-ac23e8ee6301`, rollback Worker `ed79c2a7-286f-4f3a-a0eb-2088f78e8c5c`.
 - **Real-device / Tony checks:** iPad layout, route reminders and address suggestions accepted by Tony on real devices (not automated).
-- **In Production (#15-#17):** list + lesson redesign, theme toggle, PDF test temp-dir fix (PRs #73-#80), intake P3 (PR #81, `0013`). Contract untouched.
 - **Merged to `staging` (PR #84, 62923cf; L2 isolated + privacy review):** P4 GPS phase 1 = `lib/gps` + page `/gps` (synthetic default, Real GPS behind a per-session consent box, nothing uploaded, not linked, noindex); qa-browser `gps.mjs`. In Production (#18). No D1/API/lesson change. Design: `docs/superpowers/specs/2026-10-13-gps-tracking-design.md`. A synthetic PASS is not iPhone background-GPS evidence; phase 1b (Tony's real drive on Staging `/gps`) is next.
 - **Still open:** `scripts/check-signature-row-limits.mjs` not yet run against a deployed
   D1 (Staging only, never Production); notify-tick (lesson notifications) waits for Website
