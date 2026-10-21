@@ -693,7 +693,7 @@ details.fsect.group .inner > .hint-note { margin: 0; }
   .app:has(> .lesson, > .lesson-completed, > .learner-form) > .topbar,
   .app:has(> .lesson, > .lesson-completed, > .learner-form) > .foot { grid-column: 1 / -1; }
   .app:has(> .lesson, > .lesson-completed, > .learner-form) > :is(.lesson, .lesson-completed, .learner-form) { grid-column: 2; grid-row: 2 / 10; }
-  /* Before Start Lesson the lesson card is short: keep it (and Start Lesson) in view
+  /* Before Start Lesson the lesson card is short (Start itself sits in the learner summary): keep it in view
      while scrolling the learner's progress and History on the left. */
   /* Capped to the viewport so a tall card (many reminders) scrolls inside instead of hiding its bottom. */
   .app > .lesson:not(:has(.timebar)), .app > .lesson-completed {

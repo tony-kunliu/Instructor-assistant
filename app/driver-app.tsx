@@ -1398,6 +1398,18 @@ export default function DriverApp() {
               </div>
             </div>
             <div className="summary-body">
+            {licenceReminder ? <RulesReminders reminders={[licenceReminder]} testId="licence-reminder" /> : null}
+            {eligibleFromLine ? <RulesReminders reminders={[eligibleFromLine]} testId="c23-from" /> : null}
+            <RulesReminders reminders={learnerChecks} testId="learner-checks" />
+            {recordsCheck && showRecordsCheck ? (
+              <div className="reminders" data-testid="transfer-check">
+                <p className="reminder amber transfer-check" data-tone="amber">
+                  <span>{recordsCheckText(recordsCheck.fromName)}</span>
+                  <button type="button" className="btn ghost small" disabled={saving} onClick={() => void markRecordsChecked()} data-testid="transfer-checked">Checked</button>
+                </p>
+              </div>
+            ) : null}
+            {/* Start Lesson under the learner's warnings (licence, C23, missing details, transfer check), above ID / PDF / Edit. */}
             {panel === "active" && phase === "ready" ? (
               <div className="start-top" data-testid="start-top">
                 {panelReminders.length || showBookingLink ? (
@@ -1408,17 +1420,6 @@ export default function DriverApp() {
                 ) : null}
                 <button type="button" className="btn huge go" onClick={startLesson}>Start Lesson #{lessonNo}</button>
                 <p className="phase-note">Date and start time are taken from the clock. Competencies and signatures appear after you start.</p>
-              </div>
-            ) : null}
-            {licenceReminder ? <RulesReminders reminders={[licenceReminder]} testId="licence-reminder" /> : null}
-            {eligibleFromLine ? <RulesReminders reminders={[eligibleFromLine]} testId="c23-from" /> : null}
-            <RulesReminders reminders={learnerChecks} testId="learner-checks" />
-            {recordsCheck && showRecordsCheck ? (
-              <div className="reminders" data-testid="transfer-check">
-                <p className="reminder amber transfer-check" data-tone="amber">
-                  <span>{recordsCheckText(recordsCheck.fromName)}</span>
-                  <button type="button" className="btn ghost small" disabled={saving} onClick={() => void markRecordsChecked()} data-testid="transfer-checked">Checked</button>
-                </p>
               </div>
             ) : null}
             <p className="meta integration-id">
@@ -1502,7 +1503,7 @@ export default function DriverApp() {
             <div className="lblock lesson-status" data-testid="lesson-status">
               <div className="card-head"><h2>Lesson #{lessonNo}</h2><small data-testid="lesson-date">{lessonDateLine(draft.lessonDate)}</small></div>
               {phase === "ready" ? (
-                <p className="phase-note">Start the lesson under the learner&rsquo;s name at the top.</p>
+                <p className="phase-note">Start the lesson with the learner&rsquo;s details above.</p>
               ) : (
                 <div className="timebar">
                   <div><small>Started</small><strong>{draft.startTime}</strong></div>

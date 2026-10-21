@@ -223,10 +223,11 @@ try {
   await pick(s.page, "QA Tony Gate Locked");
   await s.page.waitForSelector("text=Start Lesson");
   // Start Lesson sits under the learner header (in the summary card, above the progress card), not in the lesson card.
-  check("Start Lesson #N is in the learner summary, above the progress card; the lesson card points up to it", await s.page.evaluate(() => {
+  check("Start Lesson #N is in the learner summary below its warnings, above the progress card; the lesson card points up to it", await s.page.evaluate(() => {
     const go = document.querySelector(".btn.go"), summary = document.querySelector(".card.summary"), progress = document.querySelector(".card.progress");
     return !!go && summary.contains(go) && /^Start Lesson #\d+$/.test(go.textContent) && go.getBoundingClientRect().bottom < progress.getBoundingClientRect().top
-      && !document.querySelector(".card.lesson .btn.go") && /Start the lesson under/.test(document.querySelector(".card.lesson [data-testid=lesson-status]").textContent);
+      && !document.querySelector(".card.lesson .btn.go") && /Start the lesson with the learner/.test(document.querySelector(".card.lesson [data-testid=lesson-status]").textContent)
+      && [...document.querySelectorAll("[data-testid=licence-reminder], [data-testid=learner-checks]")].every((w) => w.compareDocumentPosition(go) & Node.DOCUMENT_POSITION_FOLLOWING);
   }));
   await s.page.click("text=Start Lesson");
   check("after Start Lesson the page moves to the lesson card (its top near the top of the screen)", await s.page.evaluate(() => {
