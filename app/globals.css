@@ -437,7 +437,8 @@ details.group .inner > .grid { margin: 0; }
 .progress-chip.achieved { background: var(--good-soft); color: var(--good); }
 .review-status { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
 .review-status li { display: flex; justify-content: space-between; gap: 8px; }
-.review-status span { color: var(--muted); }
+.review-status span { color: var(--muted); flex: none; white-space: nowrap; }
+.review-status b { text-align: right; }
 .comp-legend { margin-top: 10px; font-size: 13px; }
 .comp-legend summary { color: var(--muted); cursor: pointer; padding: 4px 0; }
 .comp-legend ul { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
