@@ -222,7 +222,18 @@ try {
   await ready(s.page);
   await pick(s.page, "QA Tony Gate Locked");
   await s.page.waitForSelector("text=Start Lesson");
+  // Start Lesson sits under the learner header (in the summary card, above the progress card), not in the lesson card.
+  check("Start Lesson #N is in the learner summary below its warnings, above the progress card; the lesson card points up to it", await s.page.evaluate(() => {
+    const go = document.querySelector(".btn.go"), summary = document.querySelector(".card.summary"), progress = document.querySelector(".card.progress");
+    return !!go && summary.contains(go) && /^Start Lesson #\d+$/.test(go.textContent) && go.getBoundingClientRect().bottom < progress.getBoundingClientRect().top
+      && !document.querySelector(".card.lesson .btn.go") && /Start the lesson with the learner/.test(document.querySelector(".card.lesson [data-testid=lesson-status]").textContent)
+      && [...document.querySelectorAll("[data-testid=licence-reminder], [data-testid=learner-checks]")].every((w) => w.compareDocumentPosition(go) & Node.DOCUMENT_POSITION_FOLLOWING);
+  }));
   await s.page.click("text=Start Lesson");
+  check("after Start Lesson the page moves to the lesson card (its top near the top of the screen)", await s.page.evaluate(() => {
+    const top = document.querySelector(".card.lesson").getBoundingClientRect().top;
+    return document.querySelector(".card.lesson").dataset.phase === "running" && top >= -2 && top < 120;
+  }));
   await s.page.click("text=End Lesson");
   const assessedRow = s.page.locator(".comp-section:has(.comp-label:text-is('Assessed')) .chip-row").first();
   const lockedStates = await Promise.all(["18", "20", "21"].map(async (id) => (await assessedRow.locator(`button:text-is("${id}")`).isDisabled()) && (await assessedRow.locator(`button:text-is("${id}")`).getAttribute("data-locked")) === "true"));
@@ -2976,6 +2987,45 @@ const draw = async (page, index) => {
   await shot(s.page, "24-form-edit-more-820");
   await s.page.click("[data-testid=cancel-edit-learner]");
   check("form 820px: Tony: no page errors", s.errors.length === 0, s.errors.join("|"));
+  await s.ctx.close();
+}
+
+// ═══ 25. Paste from assistant (Tony 2026-10-22): a fixed-format draft only pre-fills the lesson / new-learner form; nothing is saved from it ═══
+{
+  // Its own learner: earlier sections rename QA Tony Bravo.
+  await fetch(`${B}/api/learners`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ fullName: "QA Tony Paste", instructorId: WHO.tony[0] }) });
+  const s = await session("tony");
+  await ready(s.page);
+  const paste = async (text) => {
+    await s.page.click("[data-testid=paste-draft-open]");
+    await s.page.fill("[data-testid=paste-draft-text]", text);
+    await s.page.click("[data-testid=paste-draft-use]");
+  };
+  await paste("ACTGDS-DRAFT LESSON\nLearner: qa tony  paste\nDate: 2026-10-20\nStart: 09:00\nFinish: 10:00\nStart odometer: 5000\nFinish odometer: 5025\nTaught: 1, 2\nAssessed: 3\nAchieved: 3\nLocation: Belconnen\nComments: Draft from QA.");
+  await s.page.waitForSelector(".card.lesson[data-phase=ended]");
+  const filled = await s.page.evaluate(() => ({
+    name: document.querySelector(".summary-main small")?.textContent,
+    finishOdo: document.querySelector("#lesson-field-finish-odometer")?.value,
+    status: document.querySelector(".status")?.textContent ?? "",
+    adiSig: document.querySelectorAll("canvas").length,
+  }));
+  check("paste: lesson draft opens the named learner (case/space-insensitive) with the lesson ENDED and the finish odometer filled", filled.name === "QA Tony Paste" && filled.finishOdo === "5025", JSON.stringify(filled));
+  check("paste: the status line says check, sign and save — nothing was saved", /Check every field, then both sign and save/.test(filled.status) && (await s.page.$("[data-testid=lesson-status]")) !== null, filled.status);
+  const taught = await s.page.getAttribute('.comp-section:has(.comp-label:text-is("Taught")) .chip-row >> text="2"', "aria-pressed");
+  const assessed = await s.page.getAttribute('.comp-section:has(.comp-label:text-is("Assessed")) .chip-row >> text="3"', "aria-pressed");
+  check("paste: Taught 2 and Assessed 3 are selected from the draft", taught === "true" && assessed === "true", `${taught}/${assessed}`);
+  await s.page.reload(); await ready(s.page);
+  await paste("ACTGDS-DRAFT LESSON\nLearner: Nobody QA\nTaught: 1");
+  check("paste: an unknown learner is refused with a plain message and nothing opens", /No active learner is called "Nobody QA"/.test(await s.page.textContent("[data-testid=paste-draft-problems]")));
+  await s.page.click("text=Cancel");
+  await paste("ACTGDS-DRAFT LESSON\nLearner: qa tony  paste\nTaught: 4\nComments: no times given");
+  check("paste: a lesson draft without Date and Start time is refused, so nothing hides behind Start Lesson", /needs its Date and Start time/.test(await s.page.textContent("[data-testid=paste-draft-problems]")));
+  await s.page.click("text=Cancel");
+  await paste("ACTGDS-DRAFT LEARNER\nName: QA Pasted Learner\nInstructor: Anna\nManual / Auto: Auto");
+  await s.page.waitForSelector("[data-testid=fsect-student]");
+  const form = await s.page.evaluate(() => ({ name: [...document.querySelectorAll("input")].some((i) => i.value === "QA Pasted Learner"), status: document.querySelector(".status")?.textContent ?? "" }));
+  check("paste: a learner draft opens New learner with the name filled and asks to check and save", form.name && /Check every field, then Save learner/.test(form.status), JSON.stringify(form));
+  check("paste: no horizontal scroll, no page errors", (await noHScroll(s.page)) && s.errors.length === 0, s.errors.join("|"));
   await s.ctx.close();
 }
 
