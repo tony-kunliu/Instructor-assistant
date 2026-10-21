@@ -33,6 +33,7 @@ import { parseTransferNote, TransferInputError } from "./learner-transfer.ts";
 import { validateAddressParts } from "./address-suggest.ts";
 import { OTHER_LICENCE_KEYS, validateOtherLicence, type OtherLicenceFields } from "./other-licence.ts";
 import { summaryFromProgress, type LearnerListSummary } from "./learner-card.ts";
+import type { Scope } from "./scope.ts";
 import type { CompletionSummary, Instructor, Learner, LearnerArchiveEvent, LearnerInput, LearnerTransferEvent, Lesson, LessonInput, LessonRevision, LessonRevisionSnapshot, SignatureStatus, UnsignedLessonItem } from "./types.ts";
 
 export class ValidationError extends Error {}
@@ -211,9 +212,12 @@ export async function listInstructors(db: D1Database): Promise<Instructor[]> {
   return results.map(toInstructor);
 }
 
-/** Active instructors only — for a "who is performing this" attribution selector (Instructor Identity V1). */
-export async function listActiveInstructors(db: D1Database): Promise<Instructor[]> {
-  return (await listInstructors(db)).filter((instructor) => instructor.status === "active");
+/**
+ * Active instructors only — for a "who is performing this" attribution selector (Instructor Identity V1).
+ * An instructor scope (SaaS) narrows it to that instructor alone; `all` (private) is unchanged.
+ */
+export async function listActiveInstructors(db: D1Database, scope: Scope = { kind: "all" }): Promise<Instructor[]> {
+  return (await listInstructors(db)).filter((instructor) => instructor.status === "active" && (scope.kind === "all" || instructor.id === scope.instructorId));
 }
 
 /**
@@ -293,15 +297,25 @@ const LEARNER_SELECT = `
   LEFT JOIN learner_archive_events ae ON l.archived_at IS NOT NULL AND ae.action = 'archived'
     AND ae.rowid = (SELECT e.rowid FROM learner_archive_events e WHERE e.learner_id = l.id ORDER BY e.at DESC, e.rowid DESC LIMIT 1)`;
 
-export async function listLearners(db: D1Database, options: { archived?: boolean } = {}): Promise<Learner[]> {
+/** An instructor scope (SaaS) lists only that instructor's learners (bound parameter); `all` (private) is the unchanged, unbound statement. */
+export async function listLearners(db: D1Database, options: { archived?: boolean; scope?: Scope } = {}): Promise<Learner[]> {
+  const scope = options.scope ?? { kind: "all" };
   const where = options.archived ? "l.archived_at IS NOT NULL" : "l.archived_at IS NULL";
+  if (scope.kind === "instructor") {
+    const { results } = await db.prepare(`${LEARNER_SELECT} WHERE ${where} AND l.instructor_id = ? ORDER BY l.full_name COLLATE NOCASE`).bind(scope.instructorId).all<Row>();
+    return results.map(toLearner);
+  }
   const { results } = await db.prepare(`${LEARNER_SELECT} WHERE ${where} ORDER BY l.full_name COLLATE NOCASE`).all<Row>();
   return results.map(toLearner);
 }
 
-/** The one statement behind listLearnerSummaries (exported so tests can EXPLAIN it). */
-export function learnerSummariesSql(archived: boolean): string {
-  const where = archived ? "archived_at IS NOT NULL" : "archived_at IS NULL";
+/**
+ * The one statement behind listLearnerSummaries (exported so tests can EXPLAIN it). `scoped` (SaaS instructor scope)
+ * adds `instructor_id = ?` to the learner set of BOTH grouped subqueries and the outer WHERE (3 bound parameters, all
+ * the same instructor id), so no other instructor's lessons or events are ever aggregated. Unscoped, the SQL is unchanged.
+ */
+export function learnerSummariesSql(archived: boolean, scoped = false): string {
+  const where = (archived ? "archived_at IS NOT NULL" : "archived_at IS NULL") + (scoped ? " AND instructor_id = ?" : "");
   // Both grouped subqueries are bounded to the requested learners (IN on the learners index, then the learner_id
   // indexes of lessons / competency_events), so D1 rows read scale with that set, not with every learner ever.
   return `SELECT l.id AS learner_id,
@@ -322,15 +336,19 @@ export function learnerSummariesSql(archived: boolean): string {
 
 /**
  * Per-learner card data for the learner list (UI redesign 2026-10-12), in ONE set-based statement with no bound
- * parameters: a grouped aggregate over `lessons` (lesson count, total minutes, latest lesson date — the same
+ * parameters (an instructor scope binds only its id): a grouped aggregate over `lessons` (lesson count, total minutes, latest lesson date — the same
  * figures as getTotals) and one json_group_array of each learner's ASSESSED competency events, which
  * lib/competency.ts#computeProgress turns into the exact Review 1-17 / Review 1-22 / Final Drive 23 statuses
  * of the learner's own progress card. Taught events are left out on purpose: in computeProgress they only
  * feed taughtCount/firstTaughtAt/lastTaughtAt, never a status or achievedCount (pinned by
  * tests/learner-list-summaries.test.ts against getLearnerProgress). Never a per-learner query.
  */
-export async function listLearnerSummaries(db: D1Database, options: { archived?: boolean } = {}): Promise<Record<string, LearnerListSummary>> {
-  const { results } = await db.prepare(learnerSummariesSql(Boolean(options.archived))).all<Row>();
+export async function listLearnerSummaries(db: D1Database, options: { archived?: boolean; scope?: Scope } = {}): Promise<Record<string, LearnerListSummary>> {
+  const scope = options.scope ?? { kind: "all" };
+  const statement = scope.kind === "instructor"
+    ? db.prepare(learnerSummariesSql(Boolean(options.archived), true)).bind(scope.instructorId, scope.instructorId, scope.instructorId)
+    : db.prepare(learnerSummariesSql(Boolean(options.archived)));
+  const { results } = await statement.all<Row>();
   const summaries: Record<string, LearnerListSummary> = {};
   for (const row of results) {
     const packed = row.events_json ? (JSON.parse(String(row.events_json)) as [string, string | null, string, string, number | null][]) : [];
@@ -1227,7 +1245,7 @@ export class PaperImportError extends ValidationError {
  * owned by the learner's own instructor, signed on paper) whose achievements
  * become assessed/achieved competency events. They are never sent to ACTGDS.
  */
-export async function importPaperLessons(db: D1Database, learnerId: string, csvText: string, mode: "preview" | "commit"): Promise<PaperImportResult> {
+export async function importPaperLessons(db: D1Database, learnerId: string, csvText: string, mode: "preview" | "commit", scope: Scope = { kind: "all" }): Promise<PaperImportResult> {
   if (mode !== "preview" && mode !== "commit") throw new ValidationError("Import mode must be preview or commit.");
   if (typeof csvText !== "string" || !csvText.trim()) throw new ValidationError("CSV file is required.");
   if (new TextEncoder().encode(csvText).length > MAX_IMPORT_CSV_BYTES) throw new ValidationError("File is too large.");
@@ -1236,7 +1254,8 @@ export async function importPaperLessons(db: D1Database, learnerId: string, csvT
   const existing = await db.prepare("SELECT COUNT(*) AS n FROM lessons WHERE learner_id = ?").bind(learnerId).first<Row>();
   if (Number(existing?.n ?? 0) !== 0) throw new ValidationError("Paper records can only be imported into a learner with no lessons.");
 
-  const plan = planPaperImport(csvText, await listActiveInstructors(db));
+  // The CSV instructor column only matches instructors in scope (SaaS: never another tenant's name).
+  const plan = planPaperImport(csvText, await listActiveInstructors(db, scope));
   if (!plan.ok) throw new PaperImportError(plan.errors);
   if (mode === "preview") return { mode, preview: plan.preview };
 
@@ -1864,9 +1883,12 @@ export async function getProgressBeforeLesson(db: D1Database, learnerId: string,
   return computeProgress(results.map(competencyEventFromRow));
 }
 
-/** A lesson's current Taught/Assessed/Achieved selections, reconstructed from its competency events (for the edit form). */
-export async function getLessonCompetencySelections(db: D1Database, lessonId: string): Promise<{ taughtIds: string[]; assessedIds: string[]; achievedResults: Record<string, NonNullable<CompetencyEvent["result"]>> }> {
-  const { results } = await db.prepare("SELECT competency_id, action, result FROM competency_events WHERE lesson_id = ?").bind(lessonId).all<Row>();
+/**
+ * A lesson's current Taught/Assessed/Achieved selections, reconstructed from its competency events (for the edit form).
+ * Paired with its learner, like getLesson: another learner's lesson id gives empty selections.
+ */
+export async function getLessonCompetencySelections(db: D1Database, learnerId: string, lessonId: string): Promise<{ taughtIds: string[]; assessedIds: string[]; achievedResults: Record<string, NonNullable<CompetencyEvent["result"]>> }> {
+  const { results } = await db.prepare("SELECT competency_id, action, result FROM competency_events WHERE lesson_id = ? AND learner_id = ?").bind(lessonId, learnerId).all<Row>();
   const taughtIds: string[] = [];
   const assessedIds: string[] = [];
   const achievedResults: Record<string, NonNullable<CompetencyEvent["result"]>> = {};

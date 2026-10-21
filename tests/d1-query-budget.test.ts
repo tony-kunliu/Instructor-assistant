@@ -140,7 +140,7 @@ function assertCumulativeIsRunningSum(rows: Row[]): void {
  */
 async function assertOutboxRowMatchesLesson(db: D1Database, outbox: Row, lesson: Row, instructorName: string): Promise<LessonUpsertedPayloadV1> {
   const payload = JSON.parse(String(outbox.payload_json)) as LessonUpsertedPayloadV1;
-  const selections = await getLessonCompetencySelections(db, String(lesson.id));
+  const selections = await getLessonCompetencySelections(db, String(lesson.learner_id), String(lesson.id));
   const expected = buildLessonUpsertedPayload({
     environment: "staging",
     learnerId: String(lesson.learner_id),
@@ -707,7 +707,7 @@ test("route GET /api/learners: `summaries=0` is the only way to skip the aggrega
   // app/api/learners/route.ts cannot be imported here (`@/` alias), so pin its wiring at source level, as for the Cron entry above.
   const route = readFileSync(new URL("../app/api/learners/route.ts", import.meta.url), "utf8");
   assert.match(route, /const \{ archived, withSummaries \} = parseLearnerListQuery\(request\.url\)/);
-  assert.match(route, /withSummaries \? listLearnerSummaries\(db, \{ archived \}\) : Promise\.resolve\(\{\}\)/);
+  assert.match(route, /withSummaries \? listLearnerSummaries\(db, \{ archived, scope \}\) : Promise\.resolve\(\{\}\)/);
   assert.match(route, /return \{ learners, summaries \}/);
 });
 
