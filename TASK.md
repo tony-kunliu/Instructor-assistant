@@ -1,11 +1,11 @@
 # TASK.md
 
-_Last updated: 2026-10-18_
+_Last updated: 2026-10-21_
 
 This file describes **current task only**. Completed work's detail
 lives in git log and closed PRs, not here.
 
-**SaaS edition spec (2026-10-21):** `Current Task:` Partial; spec approved, plan `docs/superpowers/plans/2026-10-21-saas-edition.md` revised after independent review, awaits Tony. `Next Recommended Task:` P0 isolation. `Tony Manual Action Required:` none now (P2 Cloudflare setup later).
+**SaaS edition P0 (2026-10-21):** `Current Task:` Completed on `feature/saas-p0-shared` (reviewed, L3), PR to `staging` pending Tony's merge go. `Next Recommended Task:` P1 (plan Tasks 3-5). `Waiting on Other Repo:` NONE. `Tony Manual Action Required:` approve merge; P2 Cloudflare setup later.
 
 **Picker correction (2026-10-18):** `Current Task:` Completed. Data fixed in both environments; labels and #92 (ADI PATCH own-only) released to Production (#18, run 39132693394, no migration).
 `Next Recommended Task:` PR `fix/qa-route-reminder-order` (qa-only); GPS phase 1b real drive. `Waiting on Other Repo:` NONE. `Tony Manual Action Required:` real-login look at the picker on Production.
