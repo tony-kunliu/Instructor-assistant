@@ -293,6 +293,16 @@ export default function DriverApp() {
     focusFinishOdo.current = false;
     finishOdoRef.current.focus();
   });
+  // Start Lesson sits under the learner header; after the tap the page moves to the lesson card (its odometer and
+  // competencies), in the commit that renders the running lesson, so nothing jumps later.
+  const lessonCardRef = useRef<HTMLElement>(null);
+  const scrollToLesson = useRef(false);
+  useLayoutEffect(() => {
+    const card = lessonCardRef.current;
+    if (!scrollToLesson.current || !card || card.dataset.phase === "ready") return;
+    scrollToLesson.current = false;
+    card.scrollIntoView({ block: "start" });
+  });
   // Latest requested learner — lets a slow /api/learners/:id response be dropped if the selection changed meanwhile (e.g. a view switch).
   const selectedRef = useRef("");
 
@@ -435,6 +445,7 @@ export default function DriverApp() {
 
   const startLesson = () => {
     const now = localNow();
+    scrollToLesson.current = true;
     setStatus(null);
     setDraft((current) => (current ? { ...current, lessonDate: now.date, startTime: now.time, finishTime: "" } : current));
   };
@@ -1487,6 +1498,19 @@ export default function DriverApp() {
                 </p>
               </div>
             ) : null}
+            {/* Start Lesson under the learner's warnings (licence, C23, missing details, transfer check), above ID / PDF / Edit. */}
+            {panel === "active" && phase === "ready" ? (
+              <div className="start-top" data-testid="start-top">
+                {panelReminders.length || showBookingLink ? (
+                  <div className="start-reminders" data-testid="start-reminders">
+                    <RulesReminders reminders={panelReminders} testId="panel-reminders" />
+                    {showBookingLink ? <BookingLink /> : null}
+                  </div>
+                ) : null}
+                <button type="button" className="btn huge go" onClick={startLesson}>Start Lesson #{lessonNo}</button>
+                <p className="phase-note">Date and start time are taken from the clock. Competencies and signatures appear after you start.</p>
+              </div>
+            ) : null}
             <p className="meta integration-id">
               Integration ID: <code>{detail.learner.id}</code>
               <button type="button" className="link" onClick={() => void copyIntegrationId(detail.learner.id)}>Copy ID</button>
@@ -1563,21 +1587,12 @@ export default function DriverApp() {
           ) : null}
 
           {panel !== "active" ? null : (
-          <section className="card lesson" data-phase={phase}>
+          <section className="card lesson" data-phase={phase} ref={lessonCardRef}>
             {/* Lesson status: Start Lesson → running timebar + End Lesson → ended. One primary action per state. */}
             <div className="lblock lesson-status" data-testid="lesson-status">
               <div className="card-head"><h2>Lesson #{lessonNo}</h2><small data-testid="lesson-date">{lessonDateLine(draft.lessonDate)}</small></div>
               {phase === "ready" ? (
-                <>
-                  {panelReminders.length || showBookingLink ? (
-                    <div className="start-reminders" data-testid="start-reminders">
-                      <RulesReminders reminders={panelReminders} testId="panel-reminders" />
-                      {showBookingLink ? <BookingLink /> : null}
-                    </div>
-                  ) : null}
-                  <button type="button" className="btn huge go" onClick={startLesson}>Start Lesson</button>
-                  <p className="phase-note">Date and start time are taken from the clock. Competencies and signatures appear after you start.</p>
-                </>
+                <p className="phase-note">Start the lesson with the learner&rsquo;s details above.</p>
               ) : (
                 <div className="timebar">
                   <div><small>Started</small><strong>{draft.startTime}</strong></div>
