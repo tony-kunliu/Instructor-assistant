@@ -4,7 +4,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { openTestD1 } from "../lib/db.ts";
-import { createLearner, createLesson, findInstructorByEmail, getLesson, listLessonRevisions, listUnsignedLessons, setLearnerArchived, signLesson, updateLesson, ValidationError } from "../lib/repo.ts";
+import { createLearner, createLesson, findInstructorByEmail, getLesson, getOwnAdiSignature, listLessonRevisions, setOwnAdiSignature, listUnsignedLessons, setLearnerArchived, signLesson, updateLesson, ValidationError } from "../lib/repo.ts";
 import { FINAL_DRIVE_23, REVIEW_1_17, REVIEW_1_22 } from "../lib/competency.ts";
 
 const SIG_A = "data:image/png;base64,iVBORw0KGgoAAAA1";
@@ -150,4 +150,56 @@ test("a signing that loses a race writes no revision, and the reserved reason ca
   await assert.rejects(signLesson(db, learner.id, lesson.id, { adiSignature: SIG_A, learnerSignature: SIG_B, expectedUpdatedAt: null }), /changed/);
   assert.equal((await listLessonRevisions(db, learner.id, lesson.id)).length, 0);
   await assert.rejects(updateLesson(db, learner.id, lesson.id, { ...input(), startOdometer: lesson.startOdometer, finishOdometer: lesson.finishOdometer, reason: " signed LATER " }), /kept for signing/);
+});
+
+test("correcting a signed lesson without new signatures leaves it unsigned, keeps the old version, and joins the To sign list", async () => {
+  const { db, learner, tony, input } = await setup("QA Edit Unsigned");
+  const lesson = await createLesson(db, learner.id, input({ adiSignature: SIG_A, learnerSignature: SIG_B }));
+  const edited = await updateLesson(db, learner.id, lesson.id, { ...input(), startOdometer: lesson.startOdometer, finishOdometer: lesson.finishOdometer, comments: "corrected", actingInstructorId: tony.id });
+  assert.equal(edited.lesson.signatureStatus, "unsigned");
+  const stored = await getLesson(db, learner.id, lesson.id);
+  assert.equal(stored.adiSignature, null);
+  assert.equal(stored.learnerSignature, null);
+  assert.equal(stored.comments, "corrected");
+  assert.equal(stored.revisionCount, 1, "a real correction: Edited 1 time");
+  assert.equal((await listLessonRevisions(db, learner.id, lesson.id))[0].snapshot.adiSignaturePresent, true, "the signed version stays in the history");
+  assert.deepEqual((await listUnsignedLessons(db, tony.id)).map((l) => l.lessonId), [lesson.id]);
+  await assert.rejects(updateLesson(db, learner.id, lesson.id, { ...input(), startOdometer: lesson.startOdometer, finishOdometer: lesson.finishOdometer, comments: "x", adiSignature: SIG_A }), /both signatures, or leave both blank/);
+});
+
+test("an unchanged signed lesson keeps its signatures; one new signature alone is refused", async () => {
+  const { db, learner, input } = await setup("QA Edit Signed");
+  const lesson = await createLesson(db, learner.id, input({ adiSignature: SIG_A, learnerSignature: SIG_B }));
+  const same = { ...input(), startOdometer: lesson.startOdometer, finishOdometer: lesson.finishOdometer, comments: lesson.comments };
+  assert.equal((await updateLesson(db, learner.id, lesson.id, same)).lesson.signatureStatus, "digital");
+  await assert.rejects(updateLesson(db, learner.id, lesson.id, { ...same, comments: "changed", adiSignature: SIG_B }), /must be redrawn/);
+});
+
+test("a Final Drive 23 lesson still needs both signatures redrawn after an edit", async () => {
+  const { db, learner, input } = await setup("QA Edit FD");
+  const sig = { adiSignature: SIG_A, learnerSignature: SIG_B };
+  const assess = (ids: string[]) => createLesson(db, learner.id, input({ taughtIds: [], assessedIds: ids, achievedResults: Object.fromEntries(ids.map((id) => [id, "achieved"])), ...sig }));
+  await assess(range(1, 17));
+  await assess([REVIEW_1_17]);
+  await assess(range(18, 22));
+  await assess([REVIEW_1_22]);
+  const last = await assess([FINAL_DRIVE_23]);
+  await assert.rejects(
+    updateLesson(db, learner.id, last.id, { ...input(), startOdometer: last.startOdometer, finishOdometer: last.finishOdometer, taughtIds: [], assessedIds: [FINAL_DRIVE_23], achievedResults: { [FINAL_DRIVE_23]: "achieved" }, comments: "corrected" }),
+    /Final Drive 23 is signed when it is saved/,
+  );
+});
+
+test("an instructor's saved ADI signature is private to them", async () => {
+  const { db, tony } = await setup("QA Saved Sig");
+  const other = (await db.prepare("SELECT id FROM instructors WHERE id <> ? AND status = 'active' LIMIT 1").bind(tony.id).first<{ id: string }>())!;
+  assert.equal(await getOwnAdiSignature(db, tony.id), null);
+  assert.equal(await setOwnAdiSignature(db, tony.id, SIG_A), SIG_A);
+  assert.equal(await getOwnAdiSignature(db, tony.id), SIG_A);
+  assert.equal(await getOwnAdiSignature(db, other.id), null);
+  await assert.rejects(setOwnAdiSignature(db, tony.id, "not a png"), /not a valid image/);
+  assert.equal(await setOwnAdiSignature(db, tony.id, ""), null);
+  assert.equal(await getOwnAdiSignature(db, tony.id), null);
+  const listed = JSON.stringify(await db.prepare("SELECT * FROM instructors").all());
+  assert.ok(!listed.includes(SIG_B));
 });

@@ -12,6 +12,7 @@ import {
   FINAL_DRIVE_23,
   computeProgress,
   diffInvalidatedMilestones,
+  competencyLabel,
   formatIdList,
   parseAchievedResults,
   parseIdList,
@@ -277,6 +278,27 @@ export async function updateInstructorAdiNumber(
   }
   await db.prepare("UPDATE instructors SET adi_number = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?").bind(value, instructorId).run();
   return { ...toInstructor(existing), adiNumber: value };
+}
+
+/**
+ * The signed-in instructor's own saved ADI signature (migration 0014): a PNG data URL, or null when none is saved.
+ * Only ever for the instructor named by the trusted `x-instructor-id`; nobody else's is readable through this.
+ */
+export async function getOwnAdiSignature(db: D1Database, instructorId: string): Promise<string | null> {
+  const row = await db.prepare("SELECT adi_signature FROM instructors WHERE id = ? AND status = 'active'").bind(instructorId).first<Row>();
+  if (!row) throw new NotFoundError("Instructor not found.");
+  return (row.adi_signature as string | null) || null;
+}
+
+/** Saves (or, with an empty value, removes) the signed-in instructor's own ADI signature; same validation as a lesson's. */
+export async function setOwnAdiSignature(db: D1Database, instructorId: string, signature: unknown): Promise<string | null> {
+  const value = submittedSignature(signature, "ADI");
+  const update = await db
+    .prepare("UPDATE instructors SET adi_signature = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ? AND status = 'active'")
+    .bind(value, instructorId)
+    .run();
+  if (!update.meta.changes) throw new NotFoundError("Instructor not found.");
+  return value;
 }
 
 // ── Learners ─────────────────────────────────────────────────────────────
@@ -1579,14 +1601,24 @@ export async function updateLesson(db: D1Database, learnerId: string, lessonId: 
   } else if (contentChanged) {
     const newAdi = submittedSignature(input.adiSignature, "ADI");
     const newLearner = submittedSignature(input.learnerSignature, "Learner");
-    if (!newAdi || !newLearner) {
-      throw new ValidationError(`Content changed (${SIGNATURE_PROTECTED_FIELDS.join(", ")}) — both signatures must be redrawn before saving.`);
+    // A correction to a signed app lesson may leave it unsigned (Tony 2026-10-22): the old signatures are dropped, the
+    // previous version stays as a revision, and it joins the To sign queue. Final Drive 23 is the exception: it is
+    // signed when saved, so an edit that touches it needs both signatures redrawn as before.
+    const touchesFinalDrive = assessedIds.includes(FINAL_DRIVE_23) || (existing.competenciesAssessed ?? "").includes(competencyLabel(FINAL_DRIVE_23));
+    if (!newAdi && !newLearner && !touchesFinalDrive) {
+      adiSignature = null;
+      learnerSignature = null;
+      signatureStatus = "unsigned";
+    } else {
+      if (!newAdi || !newLearner) {
+        throw new ValidationError(`Content changed (${SIGNATURE_PROTECTED_FIELDS.join(", ")}) — ${touchesFinalDrive ? "Final Drive 23 is signed when it is saved: " : ""}both signatures must be redrawn before saving.`);
+      }
+      if (newAdi === existing.adiSignature || newLearner === existing.learnerSignature) {
+        throw new ValidationError("Content changed — the previous signatures are no longer valid. Please redraw both before saving.");
+      }
+      adiSignature = newAdi;
+      learnerSignature = newLearner;
     }
-    if (newAdi === existing.adiSignature || newLearner === existing.learnerSignature) {
-      throw new ValidationError("Content changed — the previous signatures are no longer valid. Please redraw both before saving.");
-    }
-    adiSignature = newAdi;
-    learnerSignature = newLearner;
   } else {
     // Not sent → keep the stored one; sent but unusable → rejected above (never a silent fallback).
     adiSignature = submittedSignature(input.adiSignature, "ADI") ?? existing.adiSignature ?? "";

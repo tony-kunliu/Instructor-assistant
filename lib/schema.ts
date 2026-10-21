@@ -222,4 +222,6 @@ ALTER TABLE learners ADD COLUMN other_licence_number TEXT;
 ALTER TABLE learners ADD COLUMN other_licence_class TEXT;
 ALTER TABLE learners ADD COLUMN other_licence_issued_on TEXT;
 ALTER TABLE learners ADD COLUMN other_licence_expires_on TEXT;
+
+ALTER TABLE instructors ADD COLUMN adi_signature TEXT;
 `;

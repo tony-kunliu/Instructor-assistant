@@ -224,7 +224,7 @@ test("app edit unchanged: blank times still rejected; signatures still required"
 
   await assert.rejects(updateLesson(db, learner.id, lesson.id, { ...base, startTime: "", finishTime: "" }), /Start and finish time are required/);
   await assert.rejects(updateLesson(db, learner.id, lesson.id, { ...base, startOdometer: "", finishOdometer: "" }), /Start odometer is required/);
-  await assert.rejects(updateLesson(db, learner.id, lesson.id, { ...base, comments: "changed", adiSignature: undefined, learnerSignature: undefined }), /signatures must be redrawn/);
+  await assert.rejects(updateLesson(db, learner.id, lesson.id, { ...base, comments: "changed", learnerSignature: undefined }), /signatures must be redrawn/);
   // signatureStatus input is ignored for app lessons: stays digital.
   const ok = await updateLesson(db, learner.id, lesson.id, { ...base, signatureStatus: "unsigned" });
   assert.equal(ok.lesson.signatureStatus, "digital");

@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { formatMinutes } from "@/lib/calc.ts";
 import { formatDate } from "@/lib/rules.ts";
 import type { Lesson, UnsignedLessonItem } from "@/lib/types.ts";
+import SavedSignature from "./saved-signature.tsx";
 import SignaturePad from "./signature-pad.tsx";
 
 async function api<T>(url: string, init?: RequestInit): Promise<T> {
@@ -119,7 +120,7 @@ export default function SignQueue({ items, startLessonId, onSigned, onClose }: P
           ) : !error ? <p className="meta">Loading…</p> : null}
           <p className="hint">Go through this record with the learner. If anything is wrong, correct it in History first, then sign.</p>
           <div className="sigs">
-            <SignaturePad label="ADI signature" value={adi} onChange={setAdi} />
+            <div><SignaturePad label="ADI signature" value={adi} onChange={setAdi} /><SavedSignature value={adi} onUse={setAdi} /></div>
             <SignaturePad label="Learner signature" value={learner} onChange={setLearner} />
           </div>
           {error ? <p className="hint danger" role="alert" data-testid="sign-queue-error">{error}</p> : null}
