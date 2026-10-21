@@ -137,6 +137,9 @@ export type Lesson = {
 };
 
 /** Previous content of an edited lesson (lesson_revisions.snapshot_json). Signature images are never stored, only whether each was present. */
+/** One row of the To sign queue (GET /api/unsigned-lessons): an app lesson saved to sign later. */
+export type UnsignedLessonItem = { learnerId: string; learnerName: string; instructorId: string; lessonId: string; lessonNo: number; lessonDate: string; startTime: string | null; finishTime: string | null };
+
 export type LessonRevisionSnapshot = {
   lessonDate: string;
   startTime: string | null;
@@ -223,7 +226,9 @@ export type LessonInput = {
   learnerSignature?: unknown;
   /** Which instructor actually performed this create/edit (Instructor Identity V1) — must be an existing, active instructor id. Optional: omitted requests keep prior behavior (create falls back to the learner's own instructor; edit leaves updatedByInstructorId unchanged). */
   actingInstructorId?: unknown;
-  /** Paper-imported lessons only (History Edit): "on_paper" | "unsigned". Ignored for app lessons, which are always "digital". */
+  /** Create only: true lets an app lesson be saved with neither signature ("unsigned"), signed later (lib/repo.ts#signLesson). */
+  signLater?: unknown;
+  /** Paper-imported lessons only (History Edit): "on_paper" | "unsigned". Ignored for app lessons, which are "digital", or "unsigned" when saved with signLater. */
   signatureStatus?: unknown;
   /** History Edit only: optional free-text reason for the correction, max 200 characters. */
   reason?: unknown;
