@@ -1,9 +1,11 @@
 # TASK.md
 
-_Last updated: 2026-10-18_
+_Last updated: 2026-10-21_
 
 This file describes **current task only**. Completed work's detail
 lives in git log and closed PRs, not here.
+
+**SaaS edition P0 (2026-10-21):** `Current Task:` Completed, merged to `staging` (PR #109, L3). **Release gate:** the next `staging` → `main` / Production release carries P0 (new `APP_MODE` var); it needs Tony's explicit go first. `Next Recommended Task:` P1 (plan Tasks 3-5). `Waiting on Other Repo:` NONE. `Tony Manual Action Required:` go/no-go for P0 in Production.
 
 **Picker correction (2026-10-18):** `Current Task:` Completed. Data fixed in both environments; labels and #92 (ADI PATCH own-only) released to Production (#18, run 39132693394, no migration).
 `Next Recommended Task:` PR `fix/qa-route-reminder-order` (qa-only); GPS phase 1b real drive. `Waiting on Other Repo:` NONE. `Tony Manual Action Required:` real-login look at the picker on Production.

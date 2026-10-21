@@ -222,3 +222,10 @@ test("paper mode still requires a result for every assessed competency", () => {
   const draft = goodDraft({ assessedIds: ["5"], achievedResults: {} });
   assert.deepEqual(fieldsOf(validateLessonDraftFields(draft, "paper")), ["competency"]);
 });
+
+test("sign later: no signatures is fine, one alone is not", () => {
+  const base = { lessonDate: "2026-10-20", startTime: "09:00", finishTime: "10:00", startOdometer: "1", finishOdometer: "2", taughtIds: [], assessedIds: [], achievedResults: {}, location: "", comments: "", adiSignature: "", learnerSignature: "" };
+  assert.deepEqual(validateLessonDraftFields(base, "new", { signLater: true }), []);
+  assert.deepEqual(validateLessonDraftFields({ ...base, adiSignature: "data:x" }, "new", { signLater: true }).map((i) => i.field), ["learner-signature"]);
+  assert.deepEqual(validateLessonDraftFields(base, "new").map((i) => i.field), ["adi-signature", "learner-signature"]);
+});

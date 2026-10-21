@@ -26,13 +26,14 @@ import { currentIssues, issueFromServerMessage, validateLessonDraftFields, type 
 import { availableViews, initialSelection, learnerPanel, selectionAfterViewChange, viewLearners, type PickerView } from "@/lib/learner-picker.ts";
 import { priorRecordLine, splitPriorRecords } from "@/lib/prior-record.ts";
 import { revisionChanges, snapshotOfLesson } from "@/lib/revision-diff.ts";
-import type { CompletionSummary, Instructor, Learner, LearnerArchiveEvent, Lesson, LessonRevision, SignatureStatus } from "@/lib/types.ts";
+import type { CompletionSummary, Instructor, Learner, LearnerArchiveEvent, Lesson, LessonRevision, SignatureStatus, UnsignedLessonItem } from "@/lib/types.ts";
 import CompetencyPicker from "./competency-picker.tsx";
 import CompetencyProgressCard from "./competency-progress.tsx";
 import ExportPdfButton from "./export-pdf-button.tsx";
 import SaveErrorSummary from "./save-error-summary.tsx";
 import PaperImportPanel from "./paper-import-panel.tsx";
 import SignaturePad from "./signature-pad.tsx";
+import SignQueue from "./sign-queue.tsx";
 import { BookingLink, RulesReminders } from "./rules-reminders.tsx";
 import { finalDriveEligibilityReminder, finalDriveEligibleFromReminder, finalDriveFormReminders, finalDrivePanelReminder, learnerLicenceReminder, otherLicenceDataReminder, reviewGapReminder, type EligibilityLearner, type Reminder } from "@/lib/rules.ts";
 import { COUNTRIES, holdsOtherLicence, INTERSTATE_PLACES, MAX_OTHER_NUMBER_LENGTH, MAX_OTHER_PLACE_LENGTH, OTHER_LICENCE_CLASS_LABELS, OTHER_LICENCE_CLASSES, OTHER_LICENCE_HINT, OTHER_LICENCE_KIND_LABELS, OTHER_LICENCE_KINDS } from "@/lib/other-licence.ts";
@@ -280,6 +281,27 @@ export default function DriverApp() {
   const [status, setStatus] = useState<{ kind: "info" | "error" | "ok" | "warn"; text: string } | null>(null);
   // "Paste from assistant": a draft only pre-fills a form; the instructor still checks, signs and saves (lib/assistant-draft.ts).
   const [pasteOpen, setPasteOpen] = useState(false);
+  // Save now, sign later (Tony 2026-10-22): lessons saved without signatures, and the To sign queue that signs them.
+  const [unsigned, setUnsigned] = useState<UnsignedLessonItem[]>([]);
+  const [signQueue, setSignQueue] = useState<{ startLessonId: string | null } | null>(null);
+  // After signing in the To sign queue: the open learner's History and totals refresh, nothing else (a running lesson,
+  // an open History Edit or a half-typed past lesson are left alone).
+  const refreshDetail = async (id: string) => {
+    try {
+      const data = await api<Detail>(`/api/learners/${encodeURIComponent(id)}`);
+      if (selectedRef.current !== id) return;
+      // The revisions panel belongs to one loaded copy of the lessons (as in loadLearner).
+      setRevisionsOpenId(null);
+      setRevisions(null);
+      setDetail((current) => (current && current.learner.id === id ? data : current));
+      setSummaries((current) => ({ ...current, [id]: summaryFromDetail(data) }));
+    } catch {
+      // The History simply keeps its last copy; the queue already shows the lesson as signed.
+    }
+  };
+  const loadUnsigned = useCallback(() => {
+    void api<{ lessons: UnsignedLessonItem[] }>("/api/unsigned-lessons").then((data) => setUnsigned(data.lessons)).catch(() => undefined);
+  }, []);
   const [pasteText, setPasteText] = useState("");
   const [pasteProblems, setPasteProblems] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
@@ -311,6 +333,9 @@ export default function DriverApp() {
   const [editOriginal, setEditOriginal] = useState<LessonDraft | null>(null);
   // Set while editing a paper_import lesson: optional times/odometer, "Signed on paper" select instead of signature pads.
   const [editPaperSignature, setEditPaperSignature] = useState<SignatureStatus | null>(null);
+  // History Edit of an app lesson saved to sign later: signatures optional (both or neither), nothing to invalidate.
+  const [editUnsigned, setEditUnsigned] = useState(false);
+  const [pastLesson, setPastLesson] = useState<{ date: string; start: string; finish: string; error: string | null } | null>(null);
   const [editProgress, setEditProgress] = useState<LearnerProgress | null>(null);
   const [editGateProgress, setEditGateProgress] = useState<LearnerProgress | null>(null);
   // Save-failure summaries (rendered next to the Save button; see lib/lesson-form-errors.ts).
@@ -362,6 +387,7 @@ export default function DriverApp() {
     setSelectedId(id);
     setDetail(null);
     setDraft(null);
+    setPastLesson(null);
     cancelEditLesson();
     // The revisions panel belongs to one loaded copy of a lesson; never keep it across a reload or an edit.
     setRevisionsOpenId(null);
@@ -404,6 +430,7 @@ export default function DriverApp() {
         void api<{ learners: Learner[] }>("/api/learners?status=archived&summaries=0")
           .then((data) => setArchivedLearners((current) => current ?? data.learners))
           .catch(() => undefined);
+        loadUnsigned();
         if (start.learnerId) await loadLearner(start.learnerId);
         else if (!learnerData.learners.length) setAddingLearner(true);
       } catch (error) {
@@ -411,7 +438,7 @@ export default function DriverApp() {
         setReady(true);
       }
     })();
-  }, [loadLearner]);
+  }, [loadLearner, loadUnsigned]);
 
   // After "Show all learners": focus the open learner's card, else the first card (keyboard / screen-reader continuity).
   useEffect(() => {
@@ -448,6 +475,24 @@ export default function DriverApp() {
     scrollToLesson.current = true;
     setStatus(null);
     setDraft((current) => (current ? { ...current, lessonDate: now.date, startTime: now.time, finishTime: "" } : current));
+  };
+
+  // Record a past lesson (Tony 2026-10-22): a lesson written up afterwards takes its date and times as typed, not from
+  // the clock; everything after that is the normal ended-lesson form (odometer, competencies, save / sign later).
+  const openPastLesson = () => setPastLesson({ date: localNow().date, start: "", finish: "", error: null });
+  const usePastLesson = () => {
+    if (!pastLesson) return;
+    const { date, start, finish } = pastLesson;
+    let error: string | null = null;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) error = "Enter the lesson date.";
+    else if (date > localNow().date || (date === localNow().date && finish > localNow().time)) error = "The lesson cannot end in the future.";
+    else if (durationMinutes(start, finish) === null) error = "Enter start and finish time; finish must be after start.";
+    if (error) return setPastLesson({ ...pastLesson, error });
+    scrollToLesson.current = true;
+    focusFinishOdo.current = true;
+    setStatus(null);
+    setDraft((current) => (current ? { ...current, lessonDate: date, startTime: start, finishTime: finish } : current));
+    setPastLesson(null);
   };
 
   const endLesson = () => {
@@ -569,9 +614,9 @@ export default function DriverApp() {
     }
   };
 
-  const saveLesson = async () => {
+  const saveLesson = async (signLater = false) => {
     if (!detail || !draft) return;
-    const problems = validateLessonDraftFields(draft, "new");
+    const problems = validateLessonDraftFields(draft, "new", { signLater });
     if (problems.length) {
       setSaveIssues({ source: "client", issues: problems, snapshot: draft });
       setSaveAttempt((n) => n + 1);
@@ -582,7 +627,7 @@ export default function DriverApp() {
     try {
       const result = await api<{ lesson: Lesson; totals: Totals; progress: LearnerProgress; completion: CompletionSummary | null }>(
         `/api/learners/${encodeURIComponent(detail.learner.id)}/lessons`,
-        { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(draft) },
+        { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...draft, signLater }) },
       );
       storage.remove(draftKey(detail.learner.id));
       setSaveIssues(null);
@@ -590,7 +635,10 @@ export default function DriverApp() {
       setDetail(next);
       setSummaries((current) => ({ ...current, [detail.learner.id]: summaryFromDetail(next) }));
       setDraft(freshLesson(result.totals.lastFinishOdometer));
-      setStatus({ kind: "ok", text: `Lesson #${result.lesson.lessonNo} saved.` });
+      if (result.lesson.signatureStatus === "unsigned") {
+        loadUnsigned();
+        setStatus({ kind: "warn", text: `Lesson #${result.lesson.lessonNo} saved, not signed yet. Sign it later from "To sign" at the top.` });
+      } else setStatus({ kind: "ok", text: `Lesson #${result.lesson.lessonNo} saved.` });
       window.scrollTo({ top: 0, behavior: "smooth" });
     } catch (error) {
       setSaveIssues({ source: "server", issues: [issueFromServerMessage((error as Error).message)], snapshot: draft });
@@ -616,6 +664,7 @@ export default function DriverApp() {
       setEditDraft(draft);
       setEditOriginal(draft);
       setEditPaperSignature(data.lesson.recordSource === "paper_import" ? (data.lesson.signatureStatus === "unsigned" ? "unsigned" : "on_paper") : null);
+      setEditUnsigned(data.lesson.recordSource === "app" && data.lesson.signatureStatus === "unsigned");
       setEditProgress(data.progressExcludingThisLesson);
       setEditGateProgress(data.progressBeforeThisLesson);
     } catch (error) {
@@ -630,6 +679,7 @@ export default function DriverApp() {
     setEditDraft(null);
     setEditOriginal(null);
     setEditPaperSignature(null);
+    setEditUnsigned(false);
     setEditProgress(null);
     setEditGateProgress(null);
     setEditIssues(null);
@@ -644,7 +694,7 @@ export default function DriverApp() {
       // Any protected-field change invalidates both signatures (CBT&A V3 rule
       // 5) — clear them here too so the instructor is visibly forced to
       // redraw; the server enforces this independently regardless.
-      if (!editPaperSignature && contentChanged(editOriginal, next) && (next.adiSignature === editOriginal.adiSignature || next.learnerSignature === editOriginal.learnerSignature)) {
+      if (!editPaperSignature && !editUnsigned && contentChanged(editOriginal, next) && (next.adiSignature === editOriginal.adiSignature || next.learnerSignature === editOriginal.learnerSignature)) {
         return { ...next, adiSignature: "", learnerSignature: "" };
       }
       return next;
@@ -670,7 +720,7 @@ export default function DriverApp() {
 
   const saveEditLesson = async () => {
     if (!detail || !editingLessonId || !editDraft) return;
-    const problems = validateLessonDraftFields(editDraft, editPaperSignature ? "paper" : "edit");
+    const problems = validateLessonDraftFields(editDraft, editPaperSignature ? "paper" : "edit", { signLater: editUnsigned });
     if (problems.length) {
       setEditIssues({ source: "client", issues: problems, snapshot: editDraft });
       setEditAttempt((n) => n + 1);
@@ -688,6 +738,7 @@ export default function DriverApp() {
       setRevisionsOpenId(null);
       setRevisions(null);
       await loadLearner(detail.learner.id);
+      if (editUnsigned) loadUnsigned();
       setInvalidation(result.invalidated);
       cancelEditLesson();
       const notice = invalidationNotice(result.invalidated);
@@ -919,7 +970,7 @@ export default function DriverApp() {
     if (activeView === "archived") chooseView("mine");
     pickLearner(learner.id);
     closePaste();
-    const text = `Lesson draft filled in for ${learner.fullName}. Check every field, then both sign and save.`;
+    const text = `Lesson draft filled in for ${learner.fullName}. Check every field, then save it: signed now, or later from To sign.`;
     setStatus(notes.length ? { kind: "warn", text: `${text} Please check: ${notes.join(" ")}` } : { kind: "ok", text });
   };
 
@@ -1195,11 +1246,28 @@ export default function DriverApp() {
               <button type="button" className="btn primary" disabled={!pasteText.trim()} onClick={applyAssistantDraft} data-testid="paste-draft-use">Fill in the form</button>
               <button type="button" className="btn ghost" onClick={closePaste}>Cancel</button>
             </div>
-            <p className="hint-note">Nothing is saved from a draft: you check it, both sign, then save as usual.</p>
+            <p className="hint-note">Nothing is saved from a draft: you check it, then save it (signed now, or later).</p>
           </div>
         ) : (
           <button type="button" className="link paste-link" onClick={() => setPasteOpen(true)} disabled={saving} data-testid="paste-draft-open">Paste from assistant</button>
         )}
+        {unsigned.length && !signQueue ? (
+          <button type="button" className="to-sign" onClick={() => setSignQueue({ startLessonId: null })} data-testid="to-sign-open">
+            To sign: {unsigned.length} {unsigned.length === 1 ? "lesson" : "lessons"}
+          </button>
+        ) : null}
+        {signQueue ? (
+          <SignQueue
+            key={signQueue.startLessonId ?? "queue"}
+            items={unsigned}
+            startLessonId={signQueue.startLessonId}
+            onSigned={(item) => {
+              setUnsigned((current) => current.filter((i) => i.lessonId !== item.lessonId));
+              if (detail?.learner.id === item.learnerId) void refreshDetail(item.learnerId);
+            }}
+            onClose={() => { setSignQueue(null); loadUnsigned(); }}
+          />
+        ) : null}
         <div className="view-tabs" role="group" aria-label="Which learners to show">
           {views.map((v) => (
             <button key={v} type="button" className={`view-tab${activeView === v ? " active" : ""}`} aria-pressed={activeView === v} onClick={() => chooseView(v)}>
@@ -1509,6 +1577,22 @@ export default function DriverApp() {
                 ) : null}
                 <button type="button" className="btn huge go" onClick={startLesson}>Start Lesson #{lessonNo}</button>
                 <p className="phase-note">Date and start time are taken from the clock. Competencies and signatures appear after you start.</p>
+                {pastLesson ? (
+                  <div className="past-lesson" data-testid="past-lesson">
+                    <div className="grid">
+                      <label className="field full"><span>Lesson date</span><input type="date" value={pastLesson.date} max={localNow().date} onChange={(e) => setPastLesson({ ...pastLesson, date: e.target.value, error: null })} data-testid="past-lesson-date" /></label>
+                      <label className="field"><span>Start time</span><input type="time" value={pastLesson.start} onChange={(e) => setPastLesson({ ...pastLesson, start: e.target.value, error: null })} data-testid="past-lesson-start" /></label>
+                      <label className="field"><span>Finish time</span><input type="time" value={pastLesson.finish} onChange={(e) => setPastLesson({ ...pastLesson, finish: e.target.value, error: null })} data-testid="past-lesson-finish" /></label>
+                    </div>
+                    {pastLesson.error ? <p className="hint danger" role="alert" data-testid="past-lesson-error">{pastLesson.error}</p> : null}
+                    <div className="paste-actions">
+                      <button type="button" className="btn primary" onClick={usePastLesson} data-testid="past-lesson-use">Continue</button>
+                      <button type="button" className="btn ghost" onClick={() => setPastLesson(null)}>Cancel</button>
+                    </div>
+                  </div>
+                ) : (
+                  <button type="button" className="link paste-link" onClick={openPastLesson} data-testid="past-lesson-open">Record a past lesson</button>
+                )}
               </div>
             ) : null}
             <p className="meta integration-id">
@@ -1673,7 +1757,7 @@ export default function DriverApp() {
                 </div>
 
                 <div className="lblock" data-testid="signatures-block">
-                  <div className="card-head"><h3>Signatures</h3><small>both required to save</small></div>
+                  <div className="card-head"><h3>Signatures</h3><small>{draft.assessedIds.includes(FINAL_DRIVE_23) ? "both required to save" : "both now, or both later"}</small></div>
                   <div className="sigs">
                     <div id="lesson-field-adi-signature"><SignaturePad label="ADI signature" value={draft.adiSignature} onChange={(value) => setField("adiSignature", value)} /></div>
                     <div id="lesson-field-learner-signature"><SignaturePad label="Learner signature" value={draft.learnerSignature} onChange={(value) => setField("learnerSignature", value)} /></div>
@@ -1686,6 +1770,9 @@ export default function DriverApp() {
                     <button type="button" className="btn save" disabled={saving} onClick={() => void saveLesson()}>
                       {saving ? "Saving…" : `Save Lesson #${lessonNo}`}
                     </button>
+                    {!draft.adiSignature && !draft.learnerSignature && !draft.assessedIds.includes(FINAL_DRIVE_23) ? (
+                      <button type="button" className="btn ghost sign-later" disabled={saving} onClick={() => void saveLesson(true)} data-testid="save-sign-later">Save without signatures (sign later)</button>
+                    ) : null}
                     <button type="button" className="link danger" onClick={discardLesson}>Discard this lesson</button>
                   </div>
                 ) : (
@@ -1755,7 +1842,9 @@ export default function DriverApp() {
                             </label>
                           ) : (
                             <>
-                              {editOriginal && contentChanged(editOriginal, editDraft) ? (
+                              {editUnsigned ? (
+                                <p className="hint" data-testid="edit-unsigned-hint">Not signed yet: sign both now, or leave both blank and sign later.</p>
+                              ) : editOriginal && contentChanged(editOriginal, editDraft) ? (
                                 <p className="hint danger">Content changed — both signatures were cleared. Please redraw both before saving.</p>
                               ) : null}
                               <div id="edit-field-adi-signature"><SignaturePad label="ADI signature" value={editDraft.adiSignature} onChange={(value) => setEditFieldValue((d) => ({ ...d, adiSignature: value }))} /></div>
@@ -1782,6 +1871,9 @@ export default function DriverApp() {
                       <div className="h-top">
                         <span className="h-no">#{lesson.lessonNo}</span>
                         {lesson.recordSource === "paper_import" ? <span className="h-paper" data-testid="paper-badge">Paper record</span> : null}
+                        {lesson.recordSource === "app" && lesson.signatureStatus === "unsigned" && panel !== "archived" && (!signedInInstructorId || lesson.instructorId === signedInInstructorId) ? (
+                          <button type="button" className="h-unsigned" data-testid="unsigned-badge" onClick={() => setSignQueue({ startLessonId: lesson.id })}>Not signed · Sign now</button>
+                        ) : null}
                         <span>{lesson.lessonDate} · {lesson.startTime ?? "—"}–{lesson.finishTime ?? "—"}</span>
                         {signedInInstructorId && lesson.instructorId !== signedInInstructorId ? (
                           <span className="h-readonly" data-testid="history-readonly">Recorded by {instructors.find((i) => i.id === lesson.instructorId)?.fullName ?? "another instructor"}</span>
@@ -1798,10 +1890,10 @@ export default function DriverApp() {
                       {lesson.competenciesAssessed ? <p><b>Assessed:</b> {lesson.competenciesAssessed}</p> : null}
                       {lesson.achieved ? <p><b>Achieved:</b> {lesson.achieved}</p> : null}
                       {lesson.comments ? <p><b>Comments:</b> {lesson.comments}</p> : null}
-                      {lesson.revisionCount > 0 ? (
+                      {lesson.revisionCount > 0 || lesson.signedLater ? (
                         <p className="h-revisions">
                           <button type="button" className="link" data-testid="revisions-toggle" aria-expanded={revisionsOpenId === lesson.id} onClick={() => void toggleRevisions(lesson.id)}>
-                            Edited {lesson.revisionCount} {lesson.revisionCount === 1 ? "time" : "times"}
+                            {lesson.revisionCount > 0 ? `Edited ${lesson.revisionCount} ${lesson.revisionCount === 1 ? "time" : "times"}${lesson.signedLater ? " · signed later" : ""}` : "Signed later"}
                           </button>
                         </p>
                       ) : null}

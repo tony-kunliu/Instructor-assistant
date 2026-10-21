@@ -1,4 +1,5 @@
 import type { D1Database } from "./d1-types.ts";
+import type { Scope } from "./scope.ts";
 import { markTransferRecordsChecked, NotFoundError, PaperImportError, setLearnerArchived, transferLearner, updateInstructorAdiNumber, updateLearner, ValidationError } from "./repo.ts";
 
 /** Run a route handler body and map domain errors to JSON responses. */
@@ -62,6 +63,15 @@ export async function readJsonWithDefaultInstructor(request: Request): Promise<R
   if (String(body.instructorId ?? "").trim()) return body;
   const instructorId = request.headers.get("x-instructor-id");
   return instructorId ? { ...body, instructorId } : body;
+}
+
+/**
+ * POST /api/learners body. An instructor scope (SaaS) always assigns the new learner to that instructor, ignoring
+ * any submitted `instructorId`; `all` (private) is exactly readJsonWithDefaultInstructor.
+ */
+export async function readJsonForNewLearner(request: Request, scope: Scope): Promise<Record<string, unknown>> {
+  if (scope.kind === "all") return readJsonWithDefaultInstructor(request);
+  return { ...(await readJson(request)), instructorId: scope.instructorId };
 }
 
 /**

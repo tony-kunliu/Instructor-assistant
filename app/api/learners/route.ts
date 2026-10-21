@@ -1,6 +1,7 @@
-import { handle, parseLearnerListQuery, readJsonWithDefaultInstructor } from "@/lib/api.ts";
+import { handle, parseLearnerListQuery, readJsonForNewLearner } from "@/lib/api.ts";
 import { getD1 } from "@/lib/db.ts";
 import { createLearner, listLearners, listLearnerSummaries } from "@/lib/repo.ts";
+import { requestScope } from "@/lib/scope.ts";
 
 export const dynamic = "force-dynamic";
 
@@ -10,12 +11,13 @@ export const dynamic = "force-dynamic";
 export function GET(request: Request) {
   const { archived, withSummaries } = parseLearnerListQuery(request.url);
   return handle(async () => {
+    const scope = requestScope(request);
     const db = getD1();
-    const [learners, summaries] = await Promise.all([listLearners(db, { archived }), withSummaries ? listLearnerSummaries(db, { archived }) : Promise.resolve({})]);
+    const [learners, summaries] = await Promise.all([listLearners(db, { archived, scope }), withSummaries ? listLearnerSummaries(db, { archived, scope }) : Promise.resolve({})]);
     return { learners, summaries };
   });
 }
 
 export async function POST(request: Request) {
-  return handle(async () => ({ learner: await createLearner(getD1(), await readJsonWithDefaultInstructor(request)) }), 201);
+  return handle(async () => ({ learner: await createLearner(getD1(), await readJsonForNewLearner(request, requestScope(request))) }), 201);
 }
