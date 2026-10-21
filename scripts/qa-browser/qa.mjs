@@ -2997,7 +2997,7 @@ const draw = async (page, index) => {
     adiSig: document.querySelectorAll("canvas").length,
   }));
   check("paste: lesson draft opens the named learner (case/space-insensitive) with the lesson ENDED and the finish odometer filled", filled.name === "QA Tony Bravo" && filled.finishOdo === "5025", JSON.stringify(filled));
-  check("paste: the status line says check, sign and save — nothing was saved", /Check every field, then both sign and save/.test(filled.status) && (await s.page.$("[data-testid=lesson-status]")) !== null, filled.status);
+  check("paste: the status line says check, sign and save — nothing was saved", /Check every field, then save it: signed now, or later/.test(filled.status) && (await s.page.$("[data-testid=lesson-status]")) !== null, filled.status);
   const taught = await s.page.getAttribute('.comp-section:has(.comp-label:text-is("Taught")) .chip-row >> text="2"', "aria-pressed");
   const assessed = await s.page.getAttribute('.comp-section:has(.comp-label:text-is("Assessed")) .chip-row >> text="3"', "aria-pressed");
   check("paste: Taught 2 and Assessed 3 are selected from the draft", taught === "true" && assessed === "true", `${taught}/${assessed}`);
