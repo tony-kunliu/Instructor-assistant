@@ -2,7 +2,8 @@
 // fixed-format text block; the instructor copies it and pastes it into the app, which only PRE-FILLS a form. Nothing is
 // saved from a draft: the instructor checks it, both signatures are taken in the app, and the normal save validates it.
 //
-// Format (one "Key: value" per line; keys case-insensitive; a line without a known key continues the previous value):
+// Format (one "Key: value" per line; keys case-insensitive; only Location, Comments and Address may run onto further
+// lines, and everything after "Comments:" is comment text, so a comment line that looks like "Next time: hills" stays in it):
 //   ACTGDS-DRAFT LESSON                      ACTGDS-DRAFT LEARNER
 //   Learner: Jane Citizen                    Name: Jane Citizen
 //   Date: 2026-10-22                         Instructor: Tony
@@ -17,7 +18,7 @@
 //   Comments: free text
 // Values like "not provided", "未提供", "-" or "—" mean empty. Nothing is guessed: unknown or invalid values are reported.
 
-import { ALL_ASSESSABLE_IDS, CORE_COMPETENCY_IDS, FINAL_DRIVE_23, REVIEW_1_17, REVIEW_1_22, type AssessmentResult } from "./competency.ts";
+import { CORE_COMPETENCY_IDS, FINAL_DRIVE_23, REVIEW_1_17, REVIEW_1_22, type AssessmentResult } from "./competency.ts";
 
 export const DRAFT_MARKER = "ACTGDS-DRAFT";
 
@@ -53,7 +54,7 @@ export type AssistantDraft =
   | { kind: "learner"; fields: LearnerDraftFields; problems: string[] };
 
 const EMPTY = new Set(["", "-", "—", "–", "n/a", "na", "none", "not provided", "not given", "unknown", "未提供", "无", "没有"]);
-const clean = (v: string) => (EMPTY.has(v.trim().toLowerCase()) ? "" : v.trim());
+const clean = (v: string) => (EMPTY.has(v.trim().toLowerCase().replace(/[.。!！]+$/, "")) ? "" : v.trim());
 
 const LESSON_KEYS: Record<string, keyof LessonDraftFields> = {
   learner: "learnerName", "learner name": "learnerName", name: "learnerName",
@@ -91,34 +92,56 @@ function idList(value: string, label: string, problems: string[]): string[] {
   return out;
 }
 
-function splitLines(text: string): { kind: string; pairs: [string, string][] } | null {
+/** Fields whose value may run onto further lines. */
+const MULTILINE = new Set<string>(["location", "comments", "address"]);
+
+/**
+ * The "Key: value" pairs after the marker line, mapped to field names. Unknown keys, repeated keys and stray lines are
+ * reported, never guessed into a field; a repeated field is left empty. Everything after the Comments line is comment text.
+ */
+function splitLines<F extends string>(text: string, keys: Record<string, F>, problems: string[]): { kind: string; values: Map<F, string> } | null {
   const lines = text.replace(/\r/g, "").split("\n");
-  const start = lines.findIndex((l) => l.trim().toUpperCase().startsWith(DRAFT_MARKER));
+  // Tolerate a marker the assistant formatted as Markdown ("**ACTGDS-DRAFT LESSON**", "# ACTGDS-DRAFT LESSON").
+  const bare = (l: string) => l.trim().replace(/^[*#>\s]+/, "").replace(/\*+$/, "").trim();
+  const start = lines.findIndex((l) => bare(l).toUpperCase().startsWith(DRAFT_MARKER));
   if (start < 0) return null;
-  const kind = lines[start].trim().slice(DRAFT_MARKER.length).trim().toLowerCase();
-  const pairs: [string, string][] = [];
+  const kind = bare(lines[start]).slice(DRAFT_MARKER.length).trim().toLowerCase();
+  const values = new Map<F, string>();
+  const repeated = new Set<F>();
+  let last: F | null = null;
   for (const line of lines.slice(start + 1)) {
     if (line.trim().startsWith("```")) break;
-    const m = /^\s*([A-Za-z][A-Za-z /]*?)\s*[:：]\s*(.*)$/.exec(line);
-    if (m) pairs.push([m[1].toLowerCase().replace(/\s+/g, " "), m[2]]);
-    else if (pairs.length && line.trim()) pairs[pairs.length - 1][1] += `\n${line.trim()}`;
+    if (last === "comments") { values.set(last, `${values.get(last)}\n${line.trim()}`); continue; }
+    const m = /^\s*([^:：]{1,40}?)\s*[:：]\s*(.*)$/.exec(line);
+    const field = m ? keys[m[1].toLowerCase().replace(/\s+/g, " ")] : undefined;
+    if (m && field) {
+      if (values.has(field)) { repeated.add(field); problems.push(`"${m[1].trim()}" appears more than once; that field was left empty.`); }
+      values.set(field, m[2]);
+      last = field;
+    } else if (m && /^[A-Za-z][A-Za-z /]*$/.test(m[1].trim())) {
+      problems.push(`Unknown line "${m[1].trim()}" was ignored.`);
+      last = null;
+    } else if (line.trim()) {
+      if (last && MULTILINE.has(last)) values.set(last, `${values.get(last)}\n${line.trim()}`);
+      else problems.push(`Line "${line.trim().slice(0, 40)}" was ignored.`);
+    }
   }
-  return { kind, pairs };
+  for (const field of repeated) values.set(field, "");
+  return { kind, values };
 }
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 export function parseAssistantDraft(text: string): AssistantDraft | { kind: "none"; problems: string[] } {
-  const split = splitLines(text);
-  if (!split) return { kind: "none", problems: [`No ${DRAFT_MARKER} block found. Copy the whole draft from the assistant, including its first line.`] };
   const problems: string[] = [];
-  if (split.kind === "lesson") {
+  const head = splitLines(text, {}, []);
+  if (!head) return { kind: "none", problems: [`No ${DRAFT_MARKER} block found. Copy the whole draft from the assistant, including its first line.`] };
+  if (head.kind === "lesson") {
+    const split = splitLines(text, LESSON_KEYS, problems)!;
     const f: LessonDraftFields = { learnerName: "", lessonDate: "", startTime: "", finishTime: "", startOdometer: "", finishOdometer: "", taughtIds: [], assessedIds: [], achievedResults: {}, location: "", comments: "" };
     let achievedText = "";
-    for (const [key, raw] of split.pairs) {
-      const field = LESSON_KEYS[key];
-      if (!field) { problems.push(`Unknown line "${key}" was ignored.`); continue; }
+    for (const [field, raw] of split.values) {
       const value = clean(raw);
       if (field === "taughtIds") f.taughtIds = idList(value, "Taught", problems);
       else if (field === "assessedIds") f.assessedIds = idList(value, "Assessed", problems);
@@ -129,21 +152,20 @@ export function parseAssistantDraft(text: string): AssistantDraft | { kind: "non
     const achieved = idList(achievedText, "Achieved", problems);
     for (const id of achieved) if (!f.assessedIds.includes(id)) problems.push(`Achieved ${id} is not in Assessed; add it to Assessed or remove it.`);
     for (const id of f.assessedIds) f.achievedResults[id] = achieved.includes(id) ? "achieved" : "not_achieved";
-    for (const id of f.taughtIds) if (f.assessedIds.includes(id) && CORE_COMPETENCY_IDS.includes(id)) problems.push(`Competency ${id} is both Taught and Assessed; keep it in one of them.`);
+    for (const id of f.taughtIds) if (f.assessedIds.includes(id) && CORE_COMPETENCY_IDS.includes(id)) problems.push(`Competency ${id} is both Taught and Assessed; it was kept in Assessed only.`);
     for (const id of f.taughtIds) if (!CORE_COMPETENCY_IDS.includes(id)) problems.push(`Taught can only hold 1-22, not ${id}.`);
-    f.taughtIds = f.taughtIds.filter((id) => CORE_COMPETENCY_IDS.includes(id));
+    f.taughtIds = f.taughtIds.filter((id) => CORE_COMPETENCY_IDS.includes(id) && !f.assessedIds.includes(id));
     if (!f.learnerName) problems.push("Learner name is missing.");
+    if (!f.lessonDate) problems.push("Date is missing.");
     if (f.lessonDate && !DATE.test(f.lessonDate)) { problems.push(`Date "${f.lessonDate}" must look like 2026-10-22.`); f.lessonDate = ""; }
     for (const k of ["startTime", "finishTime"] as const) if (f[k] && !TIME.test(f[k])) { problems.push(`${k === "startTime" ? "Start" : "Finish"} time "${f[k]}" must look like 09:30.`); f[k] = ""; }
     for (const k of ["startOdometer", "finishOdometer"] as const) if (f[k] && !/^\d+$/.test(f[k])) { problems.push(`${k === "startOdometer" ? "Start" : "Finish"} odometer "${f[k]}" must be whole kilometres.`); f[k] = ""; }
-    for (const id of f.assessedIds) if (!ALL_ASSESSABLE_IDS.includes(id)) problems.push(`Assessed ${id} is not assessable.`);
     return { kind: "lesson", fields: f, problems };
   }
-  if (split.kind === "learner") {
+  if (head.kind === "learner") {
+    const split = splitLines(text, LEARNER_KEYS, problems)!;
     const f: LearnerDraftFields = { fullName: "", instructorName: "", phone: "", dob: "", licenceNumber: "", licenceExpiry: "", address: "", schoolWork: "", transmission: "", eligibility: "" };
-    for (const [key, raw] of split.pairs) {
-      const field = LEARNER_KEYS[key];
-      if (!field) { problems.push(`Unknown line "${key}" was ignored.`); continue; }
+    for (const [field, raw] of split.values) {
       const value = clean(raw);
       if (field === "transmission") {
         const t = value.toLowerCase();
@@ -157,7 +179,7 @@ export function parseAssistantDraft(text: string): AssistantDraft | { kind: "non
     for (const k of ["dob", "licenceExpiry"] as const) if (f[k] && !DATE.test(f[k])) { problems.push(`${k === "dob" ? "DOB" : "Licence expiry"} "${f[k]}" must look like 2026-10-22.`); f[k] = ""; }
     return { kind: "learner", fields: f, problems };
   }
-  return { kind: "none", problems: [`"${split.kind || "(blank)"}" after ${DRAFT_MARKER} must be LESSON or LEARNER.`] };
+  return { kind: "none", problems: [`"${head.kind || "(blank)"}" after ${DRAFT_MARKER} must be LESSON or LEARNER.`] };
 }
 
 /** Learners whose name matches the draft's, ignoring case and extra spaces. The caller refuses anything but exactly one. */

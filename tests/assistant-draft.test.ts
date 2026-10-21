@@ -45,11 +45,11 @@ test("rule breaks are reported, never silently fixed into a record", () => {
   if (d.kind !== "lesson") return;
   assert.equal(d.fields.startTime, "");
   assert.equal(d.fields.lessonDate, "");
-  assert.deepEqual(d.fields.taughtIds, ["4"]);
+  assert.deepEqual(d.fields.taughtIds, []);
 });
 
 test("empty markers mean empty, and nothing is guessed", () => {
-  const d = parseAssistantDraft("ACTGDS-DRAFT LESSON\nLearner: Jane\nStart odometer: 未提供\nFinish odometer: not provided\nLocation: —");
+  const d = parseAssistantDraft("ACTGDS-DRAFT LESSON\nLearner: Jane\nDate: 2026-10-22\nStart odometer: 未提供\nFinish odometer: not provided\nLocation: —");
   if (d.kind !== "lesson") return assert.fail(d.kind);
   assert.deepEqual([d.fields.startOdometer, d.fields.finishOdometer, d.fields.location], ["", "", ""]);
   assert.deepEqual(d.problems, []);
@@ -85,4 +85,40 @@ test("learner lookup ignores case and extra spaces and returns every match", () 
   const list = [{ fullName: "Jane Citizen" }, { fullName: "jane  citizen" }, { fullName: "John" }];
   assert.equal(matchLearnersByName(list, " JANE citizen ").length, 2);
   assert.equal(matchLearnersByName(list, "Nobody").length, 0);
+});
+
+test("stray lines never run into a non-text field; comment text keeps lines that look like keys", () => {
+  const d = parseAssistantDraft("ACTGDS-DRAFT LESSON\r\nLearner: Jane\r\nDate: 2026-10-22\r\nStart: 09:00\r\nFinish odometer: 12370\r\n25\r\n学员：Jane\r\nComments: Good drive.\r\nNext time: hill starts\r\nFinish: parking practice\r\n```\r\nTaught: 1");
+  if (d.kind !== "lesson") return assert.fail(d.kind);
+  assert.equal(d.fields.finishOdometer, "12370");
+  assert.equal(d.fields.finishTime, "");
+  assert.equal(d.fields.comments, "Good drive.\nNext time: hill starts\nFinish: parking practice");
+  assert.deepEqual(d.fields.taughtIds, []);
+  assert.match(d.problems.join("|"), /Line "25" was ignored/);
+  assert.match(d.problems.join("|"), /Line "学员：Jane" was ignored/);
+});
+
+test("a repeated key is reported and left empty; a missing date is reported", () => {
+  const d = parseAssistantDraft("ACTGDS-DRAFT LESSON\nLearner: Jane\nTaught: 1, 2\nTaught: 3\nAssessed: 4\nAchieved: 4, 5");
+  if (d.kind !== "lesson") return assert.fail(d.kind);
+  assert.deepEqual(d.fields.taughtIds, []);
+  assert.deepEqual(d.fields.achievedResults, { "4": "achieved" });
+  assert.match(d.problems.join("|"), /"Taught" appears more than once/);
+  assert.match(d.problems.join("|"), /Date is missing/);
+  assert.match(d.problems.join("|"), /Achieved 5 is not in Assessed/);
+});
+
+test("a Markdown-formatted marker and empty markers with punctuation are accepted", () => {
+  const d = parseAssistantDraft("**ACTGDS-DRAFT LEARNER**\nName: Jane\nPhone: Not provided.\nEligibility: 未提供。");
+  if (d.kind !== "learner") return assert.fail(d.kind);
+  assert.equal(d.fields.phone, "");
+  assert.equal(d.fields.eligibility, "");
+  assert.deepEqual(d.problems, []);
+});
+
+test("a competency both taught and assessed is kept in Assessed only", () => {
+  const d = parseAssistantDraft("ACTGDS-DRAFT LESSON\nLearner: Jane\nDate: 2026-10-22\nTaught: 1, 2\nAssessed: 2");
+  if (d.kind !== "lesson") return assert.fail(d.kind);
+  assert.deepEqual(d.fields.taughtIds, ["1"]);
+  assert.deepEqual(d.fields.assessedIds, ["2"]);
 });

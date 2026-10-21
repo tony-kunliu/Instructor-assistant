@@ -3005,6 +3005,9 @@ const draw = async (page, index) => {
   await paste("ACTGDS-DRAFT LESSON\nLearner: Nobody QA\nTaught: 1");
   check("paste: an unknown learner is refused with a plain message and nothing opens", /No active learner is called "Nobody QA"/.test(await s.page.textContent("[data-testid=paste-draft-problems]")));
   await s.page.click("text=Cancel");
+  await paste("ACTGDS-DRAFT LESSON\nLearner: qa tony  bravo\nTaught: 4\nComments: no times given");
+  check("paste: a lesson draft without Date and Start time is refused, so nothing hides behind Start Lesson", /needs its Date and Start time/.test(await s.page.textContent("[data-testid=paste-draft-problems]")));
+  await s.page.click("text=Cancel");
   await paste("ACTGDS-DRAFT LEARNER\nName: QA Pasted Learner\nInstructor: Anna\nManual / Auto: Auto");
   await s.page.waitForSelector("[data-testid=fsect-student]");
   const form = await s.page.evaluate(() => ({ name: [...document.querySelectorAll("input")].some((i) => i.value === "QA Pasted Learner"), status: document.querySelector(".status")?.textContent ?? "" }));

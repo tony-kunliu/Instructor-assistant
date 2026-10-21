@@ -860,9 +860,14 @@ export default function DriverApp() {
     const notes = [...parsed.problems];
     if (parsed.kind === "learner") {
       const f = parsed.fields;
-      const wanted = f.instructorName.trim().toLowerCase();
-      const instructor = wanted ? instructors.find((i) => i.fullName.toLowerCase() === wanted || i.fullName.toLowerCase().split(/[ /]/)[0] === wanted.split(/[ /]/)[0]) : undefined;
-      if (wanted && !instructor) notes.push(`Instructor "${f.instructorName}" was not found; pick one in the form.`);
+      // Full name, or a first name only one instructor has; anything else is left for the instructor to pick.
+      const norm = (v: string) => v.trim().replace(/\s+/g, " ").toLowerCase();
+      const wanted = norm(f.instructorName);
+      const byFull = instructors.filter((i) => norm(i.fullName) === wanted);
+      const byFirst = instructors.filter((i) => norm(i.fullName).split(" ")[0] === wanted);
+      const instructor = !wanted ? undefined : byFull.length === 1 ? byFull[0] : byFull.length === 0 && byFirst.length === 1 ? byFirst[0] : undefined;
+      if (wanted && !instructor) notes.push(`Instructor "${f.instructorName}" was not matched to exactly one instructor; pick one in the form.`);
+      if (addingLearner && !window.confirm("The learner form is open. Replace what is in it with the assistant's draft?")) return;
       openAddLearner();
       setLearnerDraft((current) => ({
         ...current, fullName: f.fullName, phone: f.phone, dob: f.dob, licenceNumber: f.licenceNumber, licenceExpiry: f.licenceExpiry,
@@ -881,17 +886,25 @@ export default function DriverApp() {
         ? `${matches.length} active learners are called "${f.learnerName.trim()}". Open the right one and enter the lesson there.`
         : `No active learner is called "${f.learnerName.trim()}". Check the spelling, or create the learner first.`]);
     }
+    // Times are never taken from the clock for a written-up lesson: without them the draft would sit hidden behind Start Lesson.
+    if (!f.lessonDate || !f.startTime) return setPasteProblems([...notes, "A lesson draft needs its Date and Start time. Add them and paste again."]);
     const learner = matches[0];
-    const existing = storage.get(draftKey(learner.id));
-    if (existing && (JSON.parse(existing) as Partial<LessonDraft>).startTime && !window.confirm(`${learner.fullName} already has a lesson in progress on this device. Replace it with the assistant's draft?`)) return;
+    let running = learner.id === selectedId && Boolean(draft?.startTime);
+    try {
+      const existing = storage.get(draftKey(learner.id));
+      if (existing && (JSON.parse(existing) as Partial<LessonDraft>).startTime) running = true;
+    } catch { running = true; }
+    if (running && !window.confirm(`${learner.fullName} already has a lesson in progress on this device. Replace it with the assistant's draft?`)) return;
     const saved: Partial<LessonDraft> = {
-      lessonDate: f.lessonDate || localNow().date, taughtIds: f.taughtIds, assessedIds: f.assessedIds, achievedResults: f.achievedResults,
+      lessonDate: f.lessonDate, taughtIds: f.taughtIds, assessedIds: f.assessedIds, achievedResults: f.achievedResults,
       location: f.location, comments: f.comments, adiSignature: "", learnerSignature: "",
     };
     // Empty values are left out, so the carried start odometer (from the last lesson) is kept.
     for (const key of ["startTime", "finishTime", "startOdometer", "finishOdometer"] as const) if (f[key]) saved[key] = f[key];
-    if (!f.startTime || !f.finishTime) notes.push("Start or finish time is missing: use Start Lesson / End Lesson or Edit date / times.");
-    storage.set(draftKey(learner.id), JSON.stringify(saved));
+    if (!f.finishTime) notes.push("Finish time is missing: use End Lesson or Edit date / times.");
+    const json = JSON.stringify(saved);
+    storage.set(draftKey(learner.id), json);
+    if (storage.get(draftKey(learner.id)) !== json) return setPasteProblems(["This device would not keep the draft (browser storage is blocked or full). Nothing was changed."]);
     if (activeView === "archived") chooseView("mine");
     pickLearner(learner.id);
     closePaste();
@@ -1164,7 +1177,7 @@ export default function DriverApp() {
             </label>
             {pasteProblems.length ? (
               <ul className="paste-problems" role="alert" data-testid="paste-draft-problems">
-                {pasteProblems.map((p) => <li key={p}>{p}</li>)}
+                {pasteProblems.map((p, i) => <li key={i}>{p}</li>)}
               </ul>
             ) : null}
             <div className="paste-actions">
