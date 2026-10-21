@@ -294,6 +294,7 @@ html { overflow-x: hidden; }
 .phase-note { margin: 0; font-size: 12px; color: var(--muted); text-align: center; }
 .lblock .btn.huge { margin: 0; }
 .start-reminders { display: grid; gap: 8px; }
+.start-top { display: grid; gap: 10px; }
 .start-reminders .reminders { margin: 0; }
 
 .timebar { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 0; text-align: center; }
@@ -328,6 +329,9 @@ details.group > summary::-webkit-details-marker { display: none; }
 details.group > summary::after { content: "+"; font-size: 20px; font-weight: 700; color: var(--brand-gold); flex: none; }
 details.group[open] > summary::after { content: "–"; }
 details.group > summary small { font-weight: 500; font-size: 12px; color: var(--muted); }
+/* Keep the group title on one line; the grey hint takes the rest of the row, right-aligned, and wraps if it must. */
+details.group > summary { white-space: nowrap; }
+details.group > summary small { white-space: normal; min-width: 0; margin-left: auto; text-align: right; }
 details.group .inner { padding: 0 14px 14px; display: grid; gap: 12px; }
 details.group .inner > .grid { margin: 0; }
 .edit-times { margin: 0; }
@@ -689,7 +693,7 @@ details.fsect.group .inner > .hint-note { margin: 0; }
   .app:has(> .lesson, > .lesson-completed, > .learner-form) > .topbar,
   .app:has(> .lesson, > .lesson-completed, > .learner-form) > .foot { grid-column: 1 / -1; }
   .app:has(> .lesson, > .lesson-completed, > .learner-form) > :is(.lesson, .lesson-completed, .learner-form) { grid-column: 2; grid-row: 2 / 10; }
-  /* Before Start Lesson the lesson card is short: keep it (and Start Lesson) in view
+  /* Before Start Lesson the lesson card is short (Start itself sits in the learner summary): keep it in view
      while scrolling the learner's progress and History on the left. */
   /* Capped to the viewport so a tall card (many reminders) scrolls inside instead of hiding its bottom. */
   .app > .lesson:not(:has(.timebar)), .app > .lesson-completed {
@@ -702,3 +706,11 @@ details.fsect.group .inner > .hint-note { margin: 0; }
   /* Without a right-hand card (no learner picked, archived learner) — or without
      :has() support — the single 880px column from the ≥700px rule applies. */
 }
+
+/* "Paste from assistant" (lib/assistant-draft.ts): a quiet link under the search; the panel holds the pasted text,
+   any problems found, and the one action that pre-fills a form. */
+.paste-link { justify-self: start; min-height: 44px; padding: 0 2px; font-size: 14px; }
+.paste-draft { display: grid; gap: 10px; padding: 12px; border: 1px solid var(--line); border-radius: var(--radius-m); background: var(--surface); }
+.paste-draft textarea { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 14px; }
+.paste-problems { margin: 0; padding-left: 18px; color: var(--bad, #9b1c1c); font-size: 14px; display: grid; gap: 4px; }
+.paste-actions { display: flex; gap: 10px; flex-wrap: wrap; }

@@ -43,6 +43,7 @@ import { GNAF_ATTRIBUTION, partsAfterEdit, type AddressSuggestion } from "@/lib/
 import AddressInput from "./address-input.tsx";
 import { addressPartChips, formSubline, moreLockedMessage, moreSection, nameIssue, saveLabel } from "@/lib/learner-form-view.ts";
 import { instructorLabel } from "@/lib/instructor-label.ts";
+import { matchLearnersByName, parseAssistantDraft } from "@/lib/assistant-draft.ts";
 import ThemeToggle from "./theme-switch.tsx";
 
 type LessonDraft = {
@@ -277,6 +278,10 @@ export default function DriverApp() {
   const [openedLearnerDraft, setOpenedLearnerDraft] = useState<LearnerDraft | null>(null);
   const [learnerDraft, setLearnerDraft] = useState<LearnerDraft>(emptyLearner);
   const [status, setStatus] = useState<{ kind: "info" | "error" | "ok" | "warn"; text: string } | null>(null);
+  // "Paste from assistant": a draft only pre-fills a form; the instructor still checks, signs and saves (lib/assistant-draft.ts).
+  const [pasteOpen, setPasteOpen] = useState(false);
+  const [pasteText, setPasteText] = useState("");
+  const [pasteProblems, setPasteProblems] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [clock, setClock] = useState(() => localNow().time);
   const finishOdoRef = useRef<HTMLInputElement>(null);
@@ -287,6 +292,16 @@ export default function DriverApp() {
     if (!focusFinishOdo.current || finishOdoRef.current?.disabled !== false) return;
     focusFinishOdo.current = false;
     finishOdoRef.current.focus();
+  });
+  // Start Lesson sits under the learner header; after the tap the page moves to the lesson card (its odometer and
+  // competencies), in the commit that renders the running lesson, so nothing jumps later.
+  const lessonCardRef = useRef<HTMLElement>(null);
+  const scrollToLesson = useRef(false);
+  useLayoutEffect(() => {
+    const card = lessonCardRef.current;
+    if (!scrollToLesson.current || !card || card.dataset.phase === "ready") return;
+    scrollToLesson.current = false;
+    card.scrollIntoView({ block: "start" });
   });
   // Latest requested learner — lets a slow /api/learners/:id response be dropped if the selection changed meanwhile (e.g. a view switch).
   const selectedRef = useRef("");
@@ -430,6 +445,7 @@ export default function DriverApp() {
 
   const startLesson = () => {
     const now = localNow();
+    scrollToLesson.current = true;
     setStatus(null);
     setDraft((current) => (current ? { ...current, lessonDate: now.date, startTime: now.time, finishTime: "" } : current));
   };
@@ -843,6 +859,70 @@ export default function DriverApp() {
     setStatus(null);
   };
 
+  const closePaste = () => {
+    setPasteOpen(false);
+    setPasteText("");
+    setPasteProblems([]);
+  };
+
+  const applyAssistantDraft = () => {
+    const parsed = parseAssistantDraft(pasteText);
+    if (parsed.kind === "none") return setPasteProblems(parsed.problems);
+    const notes = [...parsed.problems];
+    if (parsed.kind === "learner") {
+      const f = parsed.fields;
+      // Full name, or a first name only one instructor has; anything else is left for the instructor to pick.
+      const norm = (v: string) => v.trim().replace(/\s+/g, " ").toLowerCase();
+      const wanted = norm(f.instructorName);
+      const byFull = instructors.filter((i) => norm(i.fullName) === wanted);
+      const byFirst = instructors.filter((i) => norm(i.fullName).split(" ")[0] === wanted);
+      const instructor = !wanted ? undefined : byFull.length === 1 ? byFull[0] : byFull.length === 0 && byFirst.length === 1 ? byFirst[0] : undefined;
+      if (wanted && !instructor) notes.push(`Instructor "${f.instructorName}" was not matched to exactly one instructor; pick one in the form.`);
+      if (addingLearner && !window.confirm("The learner form is open. Replace what is in it with the assistant's draft?")) return;
+      openAddLearner();
+      setLearnerDraft((current) => ({
+        ...current, fullName: f.fullName, phone: f.phone, dob: f.dob, licenceNumber: f.licenceNumber, licenceExpiry: f.licenceExpiry,
+        address: f.address, schoolWork: f.schoolWork, transmission: f.transmission, eligibility: f.eligibility,
+        ...(instructor ? { instructorId: instructor.id } : {}),
+      }));
+      closePaste();
+      const text = "Learner draft filled in from the assistant. Check every field, then Save learner.";
+      setStatus(notes.length ? { kind: "warn", text: `${text} Please check: ${notes.join(" ")}` } : { kind: "ok", text });
+      return;
+    }
+    const f = parsed.fields;
+    const matches = matchLearnersByName(learners, f.learnerName);
+    if (matches.length !== 1) {
+      return setPasteProblems([...notes, matches.length
+        ? `${matches.length} active learners are called "${f.learnerName.trim()}". Open the right one and enter the lesson there.`
+        : `No active learner is called "${f.learnerName.trim()}". Check the spelling, or create the learner first.`]);
+    }
+    // Times are never taken from the clock for a written-up lesson: without them the draft would sit hidden behind Start Lesson.
+    if (!f.lessonDate || !f.startTime) return setPasteProblems([...notes, "A lesson draft needs its Date and Start time. Add them and paste again."]);
+    const learner = matches[0];
+    let running = learner.id === selectedId && Boolean(draft?.startTime);
+    try {
+      const existing = storage.get(draftKey(learner.id));
+      if (existing && (JSON.parse(existing) as Partial<LessonDraft>).startTime) running = true;
+    } catch { running = true; }
+    if (running && !window.confirm(`${learner.fullName} already has a lesson in progress on this device. Replace it with the assistant's draft?`)) return;
+    const saved: Partial<LessonDraft> = {
+      lessonDate: f.lessonDate, taughtIds: f.taughtIds, assessedIds: f.assessedIds, achievedResults: f.achievedResults,
+      location: f.location, comments: f.comments, adiSignature: "", learnerSignature: "",
+    };
+    // Empty values are left out, so the carried start odometer (from the last lesson) is kept.
+    for (const key of ["startTime", "finishTime", "startOdometer", "finishOdometer"] as const) if (f[key]) saved[key] = f[key];
+    if (!f.finishTime) notes.push("Finish time is missing: use End Lesson or Edit date / times.");
+    const json = JSON.stringify(saved);
+    storage.set(draftKey(learner.id), json);
+    if (storage.get(draftKey(learner.id)) !== json) return setPasteProblems(["This device would not keep the draft (browser storage is blocked or full). Nothing was changed."]);
+    if (activeView === "archived") chooseView("mine");
+    pickLearner(learner.id);
+    closePaste();
+    const text = `Lesson draft filled in for ${learner.fullName}. Check every field, then both sign and save.`;
+    setStatus(notes.length ? { kind: "warn", text: `${text} Please check: ${notes.join(" ")}` } : { kind: "ok", text });
+  };
+
   // Live, derived values for the current lesson.
   const liveDuration = draft ? durationMinutes(draft.startTime, draft.finishTime) : null;
   const liveKm = draft ? distanceKm(parseOdometer(draft.startOdometer), parseOdometer(draft.finishOdometer)) : null;
@@ -1100,6 +1180,26 @@ export default function DriverApp() {
             enterKeyHint="search"
           />
         </label>
+        {pasteOpen ? (
+          <div className="paste-draft" data-testid="paste-draft">
+            <label className="field">
+              <span>Paste the assistant&rsquo;s draft (it starts with ACTGDS-DRAFT)</span>
+              <textarea value={pasteText} onChange={(e) => setPasteText(e.target.value)} rows={6} autoFocus spellCheck={false} data-testid="paste-draft-text" />
+            </label>
+            {pasteProblems.length ? (
+              <ul className="paste-problems" role="alert" data-testid="paste-draft-problems">
+                {pasteProblems.map((p, i) => <li key={i}>{p}</li>)}
+              </ul>
+            ) : null}
+            <div className="paste-actions">
+              <button type="button" className="btn primary" disabled={!pasteText.trim()} onClick={applyAssistantDraft} data-testid="paste-draft-use">Fill in the form</button>
+              <button type="button" className="btn ghost" onClick={closePaste}>Cancel</button>
+            </div>
+            <p className="hint-note">Nothing is saved from a draft: you check it, both sign, then save as usual.</p>
+          </div>
+        ) : (
+          <button type="button" className="link paste-link" onClick={() => setPasteOpen(true)} disabled={saving} data-testid="paste-draft-open">Paste from assistant</button>
+        )}
         <div className="view-tabs" role="group" aria-label="Which learners to show">
           {views.map((v) => (
             <button key={v} type="button" className={`view-tab${activeView === v ? " active" : ""}`} aria-pressed={activeView === v} onClick={() => chooseView(v)}>
@@ -1398,6 +1498,19 @@ export default function DriverApp() {
                 </p>
               </div>
             ) : null}
+            {/* Start Lesson under the learner's warnings (licence, C23, missing details, transfer check), above ID / PDF / Edit. */}
+            {panel === "active" && phase === "ready" ? (
+              <div className="start-top" data-testid="start-top">
+                {panelReminders.length || showBookingLink ? (
+                  <div className="start-reminders" data-testid="start-reminders">
+                    <RulesReminders reminders={panelReminders} testId="panel-reminders" />
+                    {showBookingLink ? <BookingLink /> : null}
+                  </div>
+                ) : null}
+                <button type="button" className="btn huge go" onClick={startLesson}>Start Lesson #{lessonNo}</button>
+                <p className="phase-note">Date and start time are taken from the clock. Competencies and signatures appear after you start.</p>
+              </div>
+            ) : null}
             <p className="meta integration-id">
               Integration ID: <code>{detail.learner.id}</code>
               <button type="button" className="link" onClick={() => void copyIntegrationId(detail.learner.id)}>Copy ID</button>
@@ -1474,21 +1587,12 @@ export default function DriverApp() {
           ) : null}
 
           {panel !== "active" ? null : (
-          <section className="card lesson" data-phase={phase}>
+          <section className="card lesson" data-phase={phase} ref={lessonCardRef}>
             {/* Lesson status: Start Lesson → running timebar + End Lesson → ended. One primary action per state. */}
             <div className="lblock lesson-status" data-testid="lesson-status">
               <div className="card-head"><h2>Lesson #{lessonNo}</h2><small data-testid="lesson-date">{lessonDateLine(draft.lessonDate)}</small></div>
               {phase === "ready" ? (
-                <>
-                  {panelReminders.length || showBookingLink ? (
-                    <div className="start-reminders" data-testid="start-reminders">
-                      <RulesReminders reminders={panelReminders} testId="panel-reminders" />
-                      {showBookingLink ? <BookingLink /> : null}
-                    </div>
-                  ) : null}
-                  <button type="button" className="btn huge go" onClick={startLesson}>Start Lesson</button>
-                  <p className="phase-note">Date and start time are taken from the clock. Competencies and signatures appear after you start.</p>
-                </>
+                <p className="phase-note">Start the lesson with the learner&rsquo;s details above.</p>
               ) : (
                 <div className="timebar">
                   <div><small>Started</small><strong>{draft.startTime}</strong></div>
