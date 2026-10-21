@@ -21,12 +21,15 @@ type Props = {
   items: UnsignedLessonItem[];
   /** Lesson to open first (from a "Sign now" button in History); the oldest otherwise. */
   startLessonId?: string | null;
+  /** Signed here, or found already signed elsewhere: either way it leaves the queue. */
   onSigned: (item: UnsignedLessonItem) => void;
   onClose: () => void;
 };
 
 export default function SignQueue({ items, startLessonId, onSigned, onClose }: Props) {
-  const [currentId, setCurrentId] = useState<string | null>(() => (items.some((i) => i.lessonId === startLessonId) ? startLessonId! : items[0]?.lessonId ?? null));
+  // A "Sign now" for a lesson that is not in the list (signed meanwhile, another instructor's, archived learner) never falls back to another lesson.
+  const missingStart = Boolean(startLessonId) && !items.some((i) => i.lessonId === startLessonId);
+  const [currentId, setCurrentId] = useState<string | null>(() => (missingStart ? null : startLessonId ?? items[0]?.lessonId ?? null));
   const [lesson, setLesson] = useState<Lesson | null>(null);
   const [adi, setAdi] = useState("");
   const [learner, setLearner] = useState("");
@@ -36,11 +39,11 @@ export default function SignQueue({ items, startLessonId, onSigned, onClose }: P
   const current = items.find((i) => i.lessonId === currentId) ?? null;
   const position = current ? items.indexOf(current) + 1 : 0;
 
+  const [loadNo, setLoadNo] = useState(0);
   useEffect(() => {
     setLesson(null);
     setAdi("");
     setLearner("");
-    setError(null);
     if (!current) return;
     let live = true;
     api<{ lesson: Lesson }>(lessonUrl(current))
@@ -48,7 +51,7 @@ export default function SignQueue({ items, startLessonId, onSigned, onClose }: P
       .catch((e: Error) => { if (live) setError(e.message); });
     return () => { live = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentId]);
+  }, [currentId, loadNo]);
 
   const nextAfter = (id: string) => {
     const remaining = items.filter((i) => i.lessonId !== id);
@@ -62,13 +65,20 @@ export default function SignQueue({ items, startLessonId, onSigned, onClose }: P
     setBusy(true);
     setError(null);
     try {
-      await api(`${lessonUrl(current)}/sign`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ adiSignature: adi, learnerSignature: learner }) });
+      await api(`${lessonUrl(current)}/sign`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ adiSignature: adi, learnerSignature: learner, expectedUpdatedAt: lesson?.updatedAt ?? null }) });
       const next = nextAfter(current.lessonId);
       setSignedCount((n) => n + 1);
       onSigned(current);
       setCurrentId(next?.lessonId ?? null);
     } catch (e) {
-      setError((e as Error).message);
+      const message = (e as Error).message;
+      if (/already signed/.test(message)) {
+        // Signed on another device: drop it from the queue and carry on with the next one.
+        const next = nextAfter(current.lessonId);
+        onSigned(current);
+        setCurrentId(next?.lessonId ?? null);
+      } else if (/changed/.test(message)) setLoadNo((n) => n + 1); // show the learner the current record before anyone signs
+      setError(message);
     } finally {
       setBusy(false);
     }
@@ -76,6 +86,7 @@ export default function SignQueue({ items, startLessonId, onSigned, onClose }: P
 
   const skip = () => {
     if (!current) return;
+    setError(null);
     const at = items.indexOf(current);
     setCurrentId(items[(at + 1) % items.length].lessonId);
   };
@@ -88,7 +99,8 @@ export default function SignQueue({ items, startLessonId, onSigned, onClose }: P
       </div>
       {!current ? (
         <>
-          <p data-testid="sign-queue-done">{signedCount ? "All lessons are signed." : "No lessons are waiting to be signed."}</p>
+          {error ? <p className="hint danger" role="alert">{error}</p> : null}
+          <p data-testid="sign-queue-done">{missingStart && !signedCount ? "That lesson is not waiting for your signature (already signed, or not yours to sign)." : signedCount ? "All lessons are signed." : "No lessons are waiting to be signed."}</p>
           <button type="button" className="btn ghost" onClick={onClose}>Close</button>
         </>
       ) : (

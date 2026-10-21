@@ -26,7 +26,7 @@ import { currentIssues, issueFromServerMessage, validateLessonDraftFields, type 
 import { availableViews, initialSelection, learnerPanel, selectionAfterViewChange, viewLearners, type PickerView } from "@/lib/learner-picker.ts";
 import { priorRecordLine, splitPriorRecords } from "@/lib/prior-record.ts";
 import { revisionChanges, snapshotOfLesson } from "@/lib/revision-diff.ts";
-import type { CompletionSummary, Instructor, Learner, LearnerArchiveEvent, Lesson, LessonRevision, SignatureStatus , UnsignedLessonItem } from "@/lib/types.ts";
+import type { CompletionSummary, Instructor, Learner, LearnerArchiveEvent, Lesson, LessonRevision, SignatureStatus, UnsignedLessonItem } from "@/lib/types.ts";
 import CompetencyPicker from "./competency-picker.tsx";
 import CompetencyProgressCard from "./competency-progress.tsx";
 import ExportPdfButton from "./export-pdf-button.tsx";
@@ -284,6 +284,18 @@ export default function DriverApp() {
   // Save now, sign later (Tony 2026-10-22): lessons saved without signatures, and the To sign queue that signs them.
   const [unsigned, setUnsigned] = useState<UnsignedLessonItem[]>([]);
   const [signQueue, setSignQueue] = useState<{ startLessonId: string | null } | null>(null);
+  // After signing in the To sign queue: the open learner's History and totals refresh, nothing else (a running lesson,
+  // an open History Edit or a half-typed past lesson are left alone).
+  const refreshDetail = async (id: string) => {
+    try {
+      const data = await api<Detail>(`/api/learners/${encodeURIComponent(id)}`);
+      if (selectedRef.current !== id) return;
+      setDetail((current) => (current && current.learner.id === id ? data : current));
+      setSummaries((current) => ({ ...current, [id]: summaryFromDetail(data) }));
+    } catch {
+      // The History simply keeps its last copy; the queue already shows the lesson as signed.
+    }
+  };
   const loadUnsigned = useCallback(() => {
     void api<{ lessons: UnsignedLessonItem[] }>("/api/unsigned-lessons").then((data) => setUnsigned(data.lessons)).catch(() => undefined);
   }, []);
@@ -470,7 +482,7 @@ export default function DriverApp() {
     const { date, start, finish } = pastLesson;
     let error: string | null = null;
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) error = "Enter the lesson date.";
-    else if (date > localNow().date) error = "The date cannot be in the future.";
+    else if (date > localNow().date || (date === localNow().date && finish > localNow().time)) error = "The lesson cannot end in the future.";
     else if (durationMinutes(start, finish) === null) error = "Enter start and finish time; finish must be after start.";
     if (error) return setPastLesson({ ...pastLesson, error });
     scrollToLesson.current = true;
@@ -1243,11 +1255,12 @@ export default function DriverApp() {
         ) : null}
         {signQueue ? (
           <SignQueue
+            key={signQueue.startLessonId ?? "queue"}
             items={unsigned}
             startLessonId={signQueue.startLessonId}
             onSigned={(item) => {
               setUnsigned((current) => current.filter((i) => i.lessonId !== item.lessonId));
-              if (detail?.learner.id === item.learnerId) void loadLearner(item.learnerId);
+              if (detail?.learner.id === item.learnerId) void refreshDetail(item.learnerId);
             }}
             onClose={() => { setSignQueue(null); loadUnsigned(); }}
           />
@@ -1855,7 +1868,7 @@ export default function DriverApp() {
                       <div className="h-top">
                         <span className="h-no">#{lesson.lessonNo}</span>
                         {lesson.recordSource === "paper_import" ? <span className="h-paper" data-testid="paper-badge">Paper record</span> : null}
-                        {lesson.recordSource === "app" && lesson.signatureStatus === "unsigned" ? (
+                        {lesson.recordSource === "app" && lesson.signatureStatus === "unsigned" && panel !== "archived" && (!signedInInstructorId || lesson.instructorId === signedInInstructorId) ? (
                           <button type="button" className="h-unsigned" data-testid="unsigned-badge" onClick={() => setSignQueue({ startLessonId: lesson.id })}>Not signed · Sign now</button>
                         ) : null}
                         <span>{lesson.lessonDate} · {lesson.startTime ?? "—"}–{lesson.finishTime ?? "—"}</span>

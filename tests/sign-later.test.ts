@@ -4,7 +4,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { openTestD1 } from "../lib/db.ts";
-import { createLearner, createLesson, findInstructorByEmail, getLesson, listUnsignedLessons, setLearnerArchived, signLesson, updateLesson, ValidationError } from "../lib/repo.ts";
+import { createLearner, createLesson, findInstructorByEmail, getLesson, listLessonRevisions, listUnsignedLessons, setLearnerArchived, signLesson, updateLesson, ValidationError } from "../lib/repo.ts";
 import { FINAL_DRIVE_23, REVIEW_1_17, REVIEW_1_22 } from "../lib/competency.ts";
 
 const SIG_A = "data:image/png;base64,iVBORw0KGgoAAAA1";
@@ -43,19 +43,20 @@ test("without signLater both signatures are still required; with it, one signatu
 test("signing keeps every content field and makes the lesson digital; signing twice is refused", async () => {
   const { db, learner, input } = await setup();
   const lesson = await createLesson(db, learner.id, input({ signLater: true, comments: "Good lesson", location: "Belconnen" }));
-  const signed = await signLesson(db, learner.id, lesson.id, { adiSignature: SIG_A, learnerSignature: SIG_B });
+  const signed = await signLesson(db, learner.id, lesson.id, { adiSignature: SIG_A, learnerSignature: SIG_B, expectedUpdatedAt: null });
   assert.equal(signed.signatureStatus, "digital");
   const stored = await getLesson(db, learner.id, lesson.id);
   assert.equal(stored.adiSignature, SIG_A);
   assert.equal(stored.learnerSignature, SIG_B);
   for (const k of ["lessonDate", "startTime", "finishTime", "startOdometer", "finishOdometer", "taught", "comments", "location", "durationMinutes", "distanceKm"] as const) assert.equal(stored[k], lesson[k], k);
-  await assert.rejects(signLesson(db, learner.id, lesson.id, { adiSignature: SIG_A, learnerSignature: SIG_B }), /already signed/);
+  await assert.rejects(signLesson(db, learner.id, lesson.id, { adiSignature: SIG_A, learnerSignature: SIG_B, expectedUpdatedAt: stored.updatedAt }), /already signed/);
+  assert.equal(stored.revisionCount, 1, "the unsigned version is kept as a revision");
 });
 
 test("signing needs both signatures", async () => {
   const { db, learner, input } = await setup();
   const lesson = await createLesson(db, learner.id, input({ signLater: true }));
-  await assert.rejects(signLesson(db, learner.id, lesson.id, { adiSignature: SIG_A }), ValidationError);
+  await assert.rejects(signLesson(db, learner.id, lesson.id, { adiSignature: SIG_A, expectedUpdatedAt: null }), ValidationError);
   assert.equal((await getLesson(db, learner.id, lesson.id)).signatureStatus, "unsigned");
 });
 
@@ -79,7 +80,7 @@ test("Final Drive 23 cannot be recorded while an earlier app lesson is unsigned"
   const unsigned = await assess(range(18, 22), { signLater: true });
   await assess([REVIEW_1_22]);
   await assert.rejects(assess([FINAL_DRIVE_23]), /Sign Lesson #3 first/);
-  await signLesson(db, learner.id, unsigned.id, sig);
+  await signLesson(db, learner.id, unsigned.id, { ...sig, expectedUpdatedAt: null });
   await assert.rejects(assess([FINAL_DRIVE_23], { signLater: true }), /Final Drive 23 must be signed/);
   const last = await assess([FINAL_DRIVE_23]);
   assert.equal(last.signatureStatus, "digital");
@@ -96,4 +97,42 @@ test("the To sign list holds unsigned app lessons of active learners, oldest fir
   assert.equal(list[0].lessonNo, 1);
   await setLearnerArchived(db, learner.id, true);
   assert.deepEqual(await listUnsignedLessons(db), []);
+});
+
+test("signing refuses a lesson changed after the To sign screen loaded it", async () => {
+  const { db, learner, input } = await setup();
+  const lesson = await createLesson(db, learner.id, input({ signLater: true }));
+  await updateLesson(db, learner.id, lesson.id, { ...input(), startOdometer: lesson.startOdometer, finishOdometer: lesson.finishOdometer, comments: "changed on another device" });
+  await assert.rejects(signLesson(db, learner.id, lesson.id, { adiSignature: SIG_A, learnerSignature: SIG_B, expectedUpdatedAt: null }), /changed after it was opened/);
+  await assert.rejects(signLesson(db, learner.id, lesson.id, { adiSignature: SIG_A, learnerSignature: SIG_B }), /changed after it was opened/);
+  const fresh = await getLesson(db, learner.id, lesson.id);
+  assert.equal((await signLesson(db, learner.id, lesson.id, { adiSignature: SIG_A, learnerSignature: SIG_B, expectedUpdatedAt: fresh.updatedAt })).signatureStatus, "digital");
+  const revisions = await listLessonRevisions(db, learner.id, lesson.id);
+  assert.equal(revisions.at(-1)?.reason, "Signed later");
+});
+
+test("only the instructor who recorded the lesson can sign it, and the queue shows only their own", async () => {
+  const { db, learner, tony, input } = await setup();
+  const lesson = await createLesson(db, learner.id, input({ signLater: true, actingInstructorId: tony.id }));
+  const other = (await db.prepare("SELECT id FROM instructors WHERE id <> ? AND status = 'active' LIMIT 1").bind(tony.id).first<{ id: string }>())!;
+  await assert.rejects(signLesson(db, learner.id, lesson.id, { adiSignature: SIG_A, learnerSignature: SIG_B, expectedUpdatedAt: null, actingInstructorId: other.id }), /only they can sign it/);
+  assert.equal((await listUnsignedLessons(db, other.id)).length, 0);
+  assert.equal((await listUnsignedLessons(db, tony.id)).length, 1);
+});
+
+test("History Edit cannot add Final Drive 23 while another app lesson is unsigned", async () => {
+  const { db, learner, input } = await setup();
+  const sig = { adiSignature: SIG_A, learnerSignature: SIG_B };
+  const assess = (ids: string[], extra: Record<string, unknown> = sig) =>
+    createLesson(db, learner.id, input({ taughtIds: [], assessedIds: ids, achievedResults: Object.fromEntries(ids.map((id) => [id, "achieved"])), ...extra }));
+  await assess(range(1, 17));
+  await assess([REVIEW_1_17]);
+  await assess(range(18, 22), { signLater: true });
+  await assess([REVIEW_1_22]);
+  const plain = await createLesson(db, learner.id, input({ ...sig, taughtIds: [] }));
+  const ids = [FINAL_DRIVE_23];
+  await assert.rejects(
+    updateLesson(db, learner.id, plain.id, { ...input(), startOdometer: plain.startOdometer, finishOdometer: plain.finishOdometer, taughtIds: [], assessedIds: ids, achievedResults: Object.fromEntries(ids.map((id) => [id, "achieved"])), adiSignature: "data:image/png;base64,iVBORw0KGgoAAAA7", learnerSignature: "data:image/png;base64,iVBORw0KGgoAAAA8" }),
+    /Sign Lesson #3 first/,
+  );
 });

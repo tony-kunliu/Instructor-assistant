@@ -54,8 +54,8 @@ export const DRAFT_KEYS_BY_FIELD: Record<FormFieldId, (keyof LessonDraftLike)[]>
   "learner-signature": ["adiSignature", "learnerSignature"],
 };
 
-/** Mirrors the server's own checks (lib/repo.ts) so the common mistakes are caught before a round trip. */
 /**
+ * Mirrors the server's own checks (lib/repo.ts) so the common mistakes are caught before a round trip.
  * `signLater` (Tony 2026-10-22): the lesson may be saved with neither signature and signed later, so only one
  * signature without the other is a problem.
  */

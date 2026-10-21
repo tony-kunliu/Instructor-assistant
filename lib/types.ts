@@ -136,10 +136,10 @@ export type Lesson = {
   editedBeforeRevisionHistory: boolean;
 };
 
-/** Previous content of an edited lesson (lesson_revisions.snapshot_json). Signature images are never stored, only whether each was present. */
 /** One row of the To sign queue (GET /api/unsigned-lessons): an app lesson saved to sign later. */
 export type UnsignedLessonItem = { learnerId: string; learnerName: string; instructorId: string; lessonId: string; lessonNo: number; lessonDate: string; startTime: string | null; finishTime: string | null };
 
+/** Previous content of an edited lesson (lesson_revisions.snapshot_json). Signature images are never stored, only whether each was present. */
 export type LessonRevisionSnapshot = {
   lessonDate: string;
   startTime: string | null;

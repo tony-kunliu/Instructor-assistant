@@ -3041,7 +3041,7 @@ const draw = async (page, index) => {
   await s.page.fill("[data-testid=past-lesson-start]", "09:00");
   await s.page.fill("[data-testid=past-lesson-finish]", "10:00");
   await s.page.click("[data-testid=past-lesson-use]");
-  check("past lesson: a future date is refused", /cannot be in the future/.test(await s.page.textContent("[data-testid=past-lesson-error]")));
+  check("past lesson: a future date is refused", /cannot end in the future/.test(await s.page.textContent("[data-testid=past-lesson-error]")));
   await s.page.fill("[data-testid=past-lesson-date]", "2026-10-20");
   await s.page.fill("[data-testid=past-lesson-finish]", "08:00");
   await s.page.click("[data-testid=past-lesson-use]");
