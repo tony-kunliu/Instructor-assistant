@@ -294,6 +294,7 @@ html { overflow-x: hidden; }
 .phase-note { margin: 0; font-size: 12px; color: var(--muted); text-align: center; }
 .lblock .btn.huge { margin: 0; }
 .start-reminders { display: grid; gap: 8px; }
+.start-top { display: grid; gap: 10px; }
 .start-reminders .reminders { margin: 0; }
 
 .timebar { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 0; text-align: center; }
