@@ -3027,6 +3027,68 @@ const draw = async (page, index) => {
   await s.ctx.close();
 }
 
+// ═══ 26. Record a past lesson, save now, sign later (Tony 2026-10-22): typed date/times, save without signatures, To sign queue ═══
+{
+  const made = await (await fetch(`${B}/api/learners`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ fullName: "QA Tony Sign Later", instructorId: WHO.tony[0] }) })).json();
+  const s = await session("tony");
+  await ready(s.page);
+  await pick(s.page, "QA Tony Sign Later");
+  await s.page.waitForSelector("[data-testid=past-lesson-open]");
+  await s.page.click("[data-testid=past-lesson-open]");
+  await s.page.fill("[data-testid=past-lesson-date]", "2099-01-01");
+  await s.page.fill("[data-testid=past-lesson-start]", "09:00");
+  await s.page.fill("[data-testid=past-lesson-finish]", "10:00");
+  await s.page.click("[data-testid=past-lesson-use]");
+  check("past lesson: a future date is refused", /cannot be in the future/.test(await s.page.textContent("[data-testid=past-lesson-error]")));
+  await s.page.fill("[data-testid=past-lesson-date]", "2026-10-20");
+  await s.page.fill("[data-testid=past-lesson-finish]", "08:00");
+  await s.page.click("[data-testid=past-lesson-use]");
+  check("past lesson: finish before start is refused", /finish must be after start/.test(await s.page.textContent("[data-testid=past-lesson-error]")));
+  await s.page.fill("[data-testid=past-lesson-finish]", "10:15");
+  await s.page.click("[data-testid=past-lesson-use]");
+  await s.page.waitForSelector(".card.lesson[data-phase=ended]");
+  const typed = await s.page.evaluate(() => ({ date: document.querySelector("#lesson-field-date")?.value, start: document.querySelector("#lesson-field-times")?.value, duration: document.querySelector("[data-testid=duration]")?.textContent }));
+  check("past lesson: the lesson is ENDED with the typed date and times, not the clock", typed.date === "2026-10-20" && typed.start === "09:00" && /1h 15|1 h 15|75/.test(typed.duration ?? ""), JSON.stringify(typed));
+  await s.page.fill("#lesson-field-start-odometer", "1000");
+  await s.page.fill("#lesson-field-finish-odometer", "1030");
+  await s.page.click("[data-testid=save-sign-later]");
+  await s.page.waitForSelector("text=not signed yet");
+  check("sign later: saved without signatures, the status says it is not signed yet", true);
+  await s.page.waitForSelector("[data-testid=to-sign-open]");
+  check("sign later: To sign shows 1 lesson, History marks it Not signed", (await s.page.textContent("[data-testid=to-sign-open]")).includes("1 lesson") && (await s.page.$("[data-testid=unsigned-badge]")) !== null);
+  const second = await postLesson(made.learner.id, { lessonDate: "2026-10-21", startTime: "09:00", finishTime: "10:00", startOdometer: "1030", finishOdometer: "1050", taughtIds: ["1"], signLater: true });
+  check("sign later: the API stores a signLater lesson as unsigned", second.status === 201 && second.body.lesson.signatureStatus === "unsigned", JSON.stringify(second.body).slice(0, 200));
+  await s.page.reload(); await ready(s.page);
+  await pick(s.page, "QA Tony Sign Later");
+  await s.page.waitForSelector("[data-testid=unsigned-badge]");
+  await s.page.click('[data-testid=history-row]:has-text("2026-10-21") .h-edit');
+  await s.page.waitForSelector("[data-testid=edit-unsigned-hint]");
+  await s.page.fill('[data-testid=edit-reason]', "QA");
+  await s.page.click("text=Save changes");
+  await s.page.waitForSelector("text=Lesson updated");
+  check("sign later: an unsigned lesson is edited without signatures and stays Not signed", (await s.page.$$("[data-testid=unsigned-badge]")).length === 2);
+  await s.page.click("[data-testid=to-sign-open]");
+  await s.page.waitForSelector("[data-testid=sign-queue-record]");
+  const q = await s.page.evaluate(() => ({ title: document.querySelector("[data-testid=sign-queue-title]")?.textContent ?? "", record: document.querySelector("[data-testid=sign-queue-record]")?.textContent ?? "" }));
+  check("To sign: the oldest lesson opens first, read-only, with its times and odometer", q.title.includes("QA Tony Sign Later") && q.title.includes("Lesson #1") && q.record.includes("09:00–10:15") && q.record.includes("1000 → 1030"), JSON.stringify(q));
+  await s.page.click("[data-testid=sign-queue-sign]");
+  check("To sign: signing without both signatures is refused", /Both signatures/.test(await s.page.textContent("[data-testid=sign-queue-error]")));
+  await signBoth(s.page);
+  await s.page.click("[data-testid=sign-queue-sign]");
+  await s.page.waitForSelector('[data-testid=sign-queue-title]:has-text("Lesson #2")');
+  await shot(s.page, "26-sign-queue");
+  check("To sign: after signing, the next lesson opens; no horizontal scroll", await noHScroll(s.page));
+  await signBoth(s.page);
+  await s.page.click("[data-testid=sign-queue-sign]");
+  await s.page.waitForSelector("[data-testid=sign-queue-done]");
+  await s.page.waitForFunction(() => document.querySelectorAll("[data-testid=unsigned-badge]").length === 0, null, { timeout: 10000 }).catch(() => {});
+  const lessons = (await (await fetch(`${B}/api/learners/${made.learner.id}`)).json()).lessons ?? [];
+  check("To sign: both lessons are signed (digital) and History no longer marks them", lessons.length === 2 && lessons.every((l) => l.signatureStatus === "digital") && (await s.page.$$("[data-testid=unsigned-badge]")).length === 0, JSON.stringify(lessons.map((l) => l.signatureStatus)));
+  await s.page.click("[data-testid=sign-queue] >> text=Close");
+  check("To sign: the entry is gone when nothing is left; no page errors", (await s.page.$("[data-testid=to-sign-open]")) === null && s.errors.length === 0, s.errors.join("|"));
+  await s.ctx.close();
+}
+
 } catch (error) {
   check(`script aborted: ${String(error.message).split("\n")[0]}`, false, String(error.message).split("\n").slice(1,4).join(" ").trim());
 }

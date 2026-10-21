@@ -320,6 +320,7 @@ export default function DriverApp() {
   const [editPaperSignature, setEditPaperSignature] = useState<SignatureStatus | null>(null);
   // History Edit of an app lesson saved to sign later: signatures optional (both or neither), nothing to invalidate.
   const [editUnsigned, setEditUnsigned] = useState(false);
+  const [pastLesson, setPastLesson] = useState<{ date: string; start: string; finish: string; error: string | null } | null>(null);
   const [editProgress, setEditProgress] = useState<LearnerProgress | null>(null);
   const [editGateProgress, setEditGateProgress] = useState<LearnerProgress | null>(null);
   // Save-failure summaries (rendered next to the Save button; see lib/lesson-form-errors.ts).
@@ -371,6 +372,7 @@ export default function DriverApp() {
     setSelectedId(id);
     setDetail(null);
     setDraft(null);
+    setPastLesson(null);
     cancelEditLesson();
     // The revisions panel belongs to one loaded copy of a lesson; never keep it across a reload or an edit.
     setRevisionsOpenId(null);
@@ -458,6 +460,24 @@ export default function DriverApp() {
     scrollToLesson.current = true;
     setStatus(null);
     setDraft((current) => (current ? { ...current, lessonDate: now.date, startTime: now.time, finishTime: "" } : current));
+  };
+
+  // Record a past lesson (Tony 2026-10-22): a lesson written up afterwards takes its date and times as typed, not from
+  // the clock; everything after that is the normal ended-lesson form (odometer, competencies, save / sign later).
+  const openPastLesson = () => setPastLesson({ date: localNow().date, start: "", finish: "", error: null });
+  const usePastLesson = () => {
+    if (!pastLesson) return;
+    const { date, start, finish } = pastLesson;
+    let error: string | null = null;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) error = "Enter the lesson date.";
+    else if (date > localNow().date) error = "The date cannot be in the future.";
+    else if (durationMinutes(start, finish) === null) error = "Enter start and finish time; finish must be after start.";
+    if (error) return setPastLesson({ ...pastLesson, error });
+    scrollToLesson.current = true;
+    focusFinishOdo.current = true;
+    setStatus(null);
+    setDraft((current) => (current ? { ...current, lessonDate: date, startTime: start, finishTime: finish } : current));
+    setPastLesson(null);
   };
 
   const endLesson = () => {
@@ -1541,6 +1561,22 @@ export default function DriverApp() {
                 ) : null}
                 <button type="button" className="btn huge go" onClick={startLesson}>Start Lesson #{lessonNo}</button>
                 <p className="phase-note">Date and start time are taken from the clock. Competencies and signatures appear after you start.</p>
+                {pastLesson ? (
+                  <div className="past-lesson" data-testid="past-lesson">
+                    <div className="grid">
+                      <label className="field full"><span>Lesson date</span><input type="date" value={pastLesson.date} max={localNow().date} onChange={(e) => setPastLesson({ ...pastLesson, date: e.target.value, error: null })} data-testid="past-lesson-date" /></label>
+                      <label className="field"><span>Start time</span><input type="time" value={pastLesson.start} onChange={(e) => setPastLesson({ ...pastLesson, start: e.target.value, error: null })} data-testid="past-lesson-start" /></label>
+                      <label className="field"><span>Finish time</span><input type="time" value={pastLesson.finish} onChange={(e) => setPastLesson({ ...pastLesson, finish: e.target.value, error: null })} data-testid="past-lesson-finish" /></label>
+                    </div>
+                    {pastLesson.error ? <p className="hint danger" role="alert" data-testid="past-lesson-error">{pastLesson.error}</p> : null}
+                    <div className="paste-actions">
+                      <button type="button" className="btn primary" onClick={usePastLesson} data-testid="past-lesson-use">Continue</button>
+                      <button type="button" className="btn ghost" onClick={() => setPastLesson(null)}>Cancel</button>
+                    </div>
+                  </div>
+                ) : (
+                  <button type="button" className="link paste-link" onClick={openPastLesson} data-testid="past-lesson-open">Record a past lesson</button>
+                )}
               </div>
             ) : null}
             <p className="meta integration-id">
