@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { openTestD1 } from "../lib/db.ts";
-import { patchInstructor } from "../lib/api.ts";
+import { handle, patchInstructor } from "../lib/api.ts";
 import { listInstructors, updateInstructorAdiNumber, ValidationError } from "../lib/repo.ts";
 
 // Seeded by lib/schema.ts: Tony and Anna, both active. Only the trusted `x-instructor-id` identifies the actor.
@@ -64,4 +64,20 @@ test("an INACTIVE instructor's number can be set by an active one (nobody else c
 test("validation still applies: an empty number is rejected even for the instructor themselves", async () => {
   const { db, tony } = await twoInstructors();
   await assert.rejects(() => patchInstructor(db, tony.id, patchRequest("  ", tony.id)), /ADI number is required/);
+});
+
+test("the route wrapper answers a refused change with HTTP 400 and the message, and writes nothing", async () => {
+  const { db, tony, anna } = await twoInstructors();
+  await updateInstructorAdiNumber(db, anna.id, "358");
+  const res = await handle(() => patchInstructor(db, anna.id, patchRequest("999", tony.id)));
+  assert.equal(res.status, 400);
+  assert.match(((await res.json()) as { error: string }).error, /Only Anna can change their own ADI number/);
+  assert.equal(await adiOf(db, anna.id), "358");
+});
+
+test("the route wrapper answers an allowed change with HTTP 200", async () => {
+  const { db, tony } = await twoInstructors();
+  const res = await handle(() => patchInstructor(db, tony.id, patchRequest("604", tony.id)));
+  assert.equal(res.status, 200);
+  assert.equal(await adiOf(db, tony.id), "604");
 });

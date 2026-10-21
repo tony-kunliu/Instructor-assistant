@@ -1057,7 +1057,7 @@ export default function DriverApp() {
         <div className="brand">
           <img src="/icon.svg" width={34} height={34} alt="" />
           <div className="brand-name">
-            <strong>ACTGDS Driver</strong>
+            <strong>ACTGDS Instructor</strong>
             <small>CBT&amp;A Lesson Checklist</small>
           </div>
           {signedInAs ? (
