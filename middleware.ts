@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { verifyAccessIdentity } from "./lib/access.ts";
+import { modeGate } from "./lib/app-mode.ts";
 import { findInstructorByEmail } from "./lib/repo.ts";
 
 declare global {
@@ -35,9 +36,15 @@ declare global {
  * which must fail closed, not silently allow the request through.
  * Outside the deployed Worker (local dev/build/tests, where `env.DB` is
  * absent and nothing is publicly exposed), this check is skipped.
+ *
+ * Before any of that, `modeGate` (lib/app-mode.ts) fails closed with 503
+ * on an invalid `APP_MODE`, or on `saas` without a D1 binding, so the
+ * local-dev pass-through can never be reached in a SaaS deployment.
  */
 export async function middleware(request: NextRequest): Promise<NextResponse> {
   const { env } = getCloudflareContext();
+  const gate = modeGate(env.APP_MODE, Boolean(env.DB));
+  if (gate) return new NextResponse(gate.message, { status: gate.status });
   if (!env.DB) return NextResponse.next();
 
   let identity: Awaited<ReturnType<typeof verifyAccessIdentity>>;

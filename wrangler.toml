@@ -22,6 +22,8 @@ binding = "ASSETS"
 # its own Access Application (one per hostname), hence its own aud here.
 [vars]
 ACCESS_AUD = "dbaecdf29cb50d215f3edbb3b260b2c85209db78728fb19e3c53c39c5d9759e3"
+# Edition: exactly "private" or "saas"; anything else is 503 (fail closed, see SaaS spec §2).
+APP_MODE = "private"
 
 # ACTGDS Integration V1 (see docs/integrations/actgds-instructor-assistant-v1.md).
 # Coordinated non-Production Staging <-> ACTGDS QA Integration QA (Tony
@@ -71,6 +73,8 @@ crons = ["*/5 * * * *"]
 
 [env.production.vars]
 ACCESS_AUD = "5d77a5074b7a9436e7610db2937f4108d9fd60a97d6c9243421fb44909ce288b"
+# Edition: exactly "private" or "saas"; anything else is 503 (fail closed, see SaaS spec §2).
+APP_MODE = "private"
 # Release B (Tony-authorized 2026-10-07): ACTGDS Receiver declared PRODUCTION
 # READY (actgds.com PR #21); ACTGDS_WEBHOOK_SECRET is a Worker secret set by
 # Tony. Kill switch: set back to "false" and redeploy. See
