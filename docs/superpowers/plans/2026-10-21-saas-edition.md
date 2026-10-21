@@ -70,7 +70,7 @@
   - `readJsonForNewLearner(req({ instructorId: "other" }), { kind: "instructor", instructorId: "me" })` → `instructorId === "me"`; with `all` keeps `"other"`.
   - `integrationHooksFromRequestContext` returns `undefined` when mode is saas even with `ACTGDS_INTEGRATION_ENABLED = "true"` (test via an exported pure `hooksFor(mode, env)`).
 - [ ] **Step 2:** `npm test` → FAIL.
-- [ ] **Step 3:** Implement; routes pass `requestScope(request)`; update the one existing caller of `getLessonCompetencySelections`.
+- [ ] **Step 3:** Implement; routes pass `requestScope(request)`; update the existing callers of `getLessonCompetencySelections` (the lesson route and `tests/d1-query-budget.test.ts`, call arguments only).
 - [ ] **Step 4:** Full checks + `bash scripts/qa-browser/run.sh` → PASS (private unchanged).
 - [ ] **Step 5:** Commit `feat(saas): scoped lists, paper import and integration`; update `STATUS.md`/`TASK.md`; push `feature/saas-p0-shared`; independent L3 review; PR to `staging`. **Stop before Production; ask Tony.**
 
