@@ -727,3 +727,7 @@ details.fsect.group .inner > .hint-note { margin: 0; }
 .sign-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .sign-actions .btn.save { flex: 1 1 12em; margin: 0; min-height: 52px; }
 .h-unsigned { background: var(--warn-soft); color: var(--warn); border: 0; border-radius: 8px; padding: 1px 8px; font-size: 12px; font-weight: 700; min-height: 28px; }
+
+/* Saved ADI signature buttons under the ADI pad. */
+.saved-sig { display: flex; flex-wrap: wrap; gap: 4px 16px; align-items: center; margin-top: 4px; }
+.saved-sig .link { min-height: 44px; padding: 0 2px; font-size: 14px; }

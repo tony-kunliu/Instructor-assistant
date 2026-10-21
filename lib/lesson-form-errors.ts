@@ -124,11 +124,12 @@ export function issueFromServerMessage(message: string): FormIssue {
  * - "server": the server's single message stays visible until the field it
  *   is about changes (or, with no field, until the next save attempt replaces it).
  */
-export type IssueState = { source: "client" | "server"; issues: FormIssue[]; snapshot: LessonDraftLike };
+/** `signLater`: the save that produced these issues allowed saving without signatures, so re-checking the form does the same. */
+export type IssueState = { source: "client" | "server"; issues: FormIssue[]; snapshot: LessonDraftLike; signLater?: boolean };
 
 export function currentIssues(state: IssueState | null, draft: LessonDraftLike, mode: FormMode): FormIssue[] {
   if (!state) return [];
-  if (state.source === "client") return validateLessonDraftFields(draft, mode);
+  if (state.source === "client") return validateLessonDraftFields(draft, mode, { signLater: state.signLater });
   const [issue] = state.issues;
   if (!issue?.field) return state.issues;
   const changed = DRAFT_KEYS_BY_FIELD[issue.field].some((key) => JSON.stringify(draft[key]) !== JSON.stringify(state.snapshot[key]));

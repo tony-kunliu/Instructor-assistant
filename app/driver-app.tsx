@@ -33,6 +33,7 @@ import ExportPdfButton from "./export-pdf-button.tsx";
 import SaveErrorSummary from "./save-error-summary.tsx";
 import PaperImportPanel from "./paper-import-panel.tsx";
 import SignaturePad from "./signature-pad.tsx";
+import SavedSignature from "./saved-signature.tsx";
 import SignQueue from "./sign-queue.tsx";
 import { BookingLink, RulesReminders } from "./rules-reminders.tsx";
 import { finalDriveEligibilityReminder, finalDriveEligibleFromReminder, finalDriveFormReminders, finalDrivePanelReminder, learnerLicenceReminder, otherLicenceDataReminder, reviewGapReminder, type EligibilityLearner, type Reminder } from "@/lib/rules.ts";
@@ -618,7 +619,7 @@ export default function DriverApp() {
     if (!detail || !draft) return;
     const problems = validateLessonDraftFields(draft, "new", { signLater });
     if (problems.length) {
-      setSaveIssues({ source: "client", issues: problems, snapshot: draft });
+      setSaveIssues({ source: "client", issues: problems, snapshot: draft, signLater });
       setSaveAttempt((n) => n + 1);
       return;
     }
@@ -694,7 +695,7 @@ export default function DriverApp() {
       // Any protected-field change invalidates both signatures (CBT&A V3 rule
       // 5) — clear them here too so the instructor is visibly forced to
       // redraw; the server enforces this independently regardless.
-      if (!editPaperSignature && !editUnsigned && contentChanged(editOriginal, next) && (next.adiSignature === editOriginal.adiSignature || next.learnerSignature === editOriginal.learnerSignature)) {
+      if (!editPaperSignature && !editUnsigned && contentChanged(editOriginal, next) && next.learnerSignature === editOriginal.learnerSignature) {
         return { ...next, adiSignature: "", learnerSignature: "" };
       }
       return next;
@@ -720,9 +721,9 @@ export default function DriverApp() {
 
   const saveEditLesson = async () => {
     if (!detail || !editingLessonId || !editDraft) return;
-    const problems = validateLessonDraftFields(editDraft, editPaperSignature ? "paper" : "edit", { signLater: editUnsigned });
+    const problems = validateLessonDraftFields(editDraft, editPaperSignature ? "paper" : "edit", { signLater: editSignatureOptionalNow });
     if (problems.length) {
-      setEditIssues({ source: "client", issues: problems, snapshot: editDraft });
+      setEditIssues({ source: "client", issues: problems, snapshot: editDraft, signLater: editSignatureOptionalNow });
       setEditAttempt((n) => n + 1);
       return;
     }
@@ -738,7 +739,7 @@ export default function DriverApp() {
       setRevisionsOpenId(null);
       setRevisions(null);
       await loadLearner(detail.learner.id);
-      if (editUnsigned) loadUnsigned();
+      loadUnsigned();
       setInvalidation(result.invalidated);
       cancelEditLesson();
       const notice = invalidationNotice(result.invalidated);
@@ -987,6 +988,10 @@ export default function DriverApp() {
   // Prior-instructor records (spec §12) are shown as compact cards, never as editable lessons.
   const history = splitPriorRecords(detail?.lessons ?? []);
   const shownSaveIssues = draft ? currentIssues(saveIssues, draft, "new") : [];
+  // A correction to an app lesson may be saved without signatures (it becomes "not signed"), except Final Drive 23.
+  const editSignOptional = editPaperSignature === null && Boolean(editDraft) && !editDraft!.assessedIds.includes(FINAL_DRIVE_23) && !editOriginal?.assessedIds.includes(FINAL_DRIVE_23);
+  // Signatures may be left blank when the lesson is already unsigned, or when a correction changed a signed one.
+  const editSignatureOptionalNow = editUnsigned || (editSignOptional && Boolean(editOriginal && editDraft && contentChanged(editOriginal, editDraft)));
   const shownEditIssues = editDraft ? currentIssues(editIssues, editDraft, editPaperSignature ? "paper" : "edit") : [];
 
   // Only a licence-date/DOB edit refreshes an app-owned Eligibility; typing in Eligibility itself never auto-fills (so it can be cleared or rewritten).
@@ -1759,7 +1764,7 @@ export default function DriverApp() {
                 <div className="lblock" data-testid="signatures-block">
                   <div className="card-head"><h3>Signatures</h3><small>{draft.assessedIds.includes(FINAL_DRIVE_23) ? "both required to save" : "both now, or both later"}</small></div>
                   <div className="sigs">
-                    <div id="lesson-field-adi-signature"><SignaturePad label="ADI signature" value={draft.adiSignature} onChange={(value) => setField("adiSignature", value)} /></div>
+                    <div id="lesson-field-adi-signature"><SignaturePad label="ADI signature" value={draft.adiSignature} onChange={(value) => setField("adiSignature", value)} /><SavedSignature value={draft.adiSignature} onUse={(value) => setField("adiSignature", value)} /></div>
                     <div id="lesson-field-learner-signature"><SignaturePad label="Learner signature" value={draft.learnerSignature} onChange={(value) => setField("learnerSignature", value)} /></div>
                   </div>
                 </div>
@@ -1845,9 +1850,13 @@ export default function DriverApp() {
                               {editUnsigned ? (
                                 <p className="hint" data-testid="edit-unsigned-hint">Not signed yet: sign both now, or leave both blank and sign later.</p>
                               ) : editOriginal && contentChanged(editOriginal, editDraft) ? (
-                                <p className="hint danger">Content changed — both signatures were cleared. Please redraw both before saving.</p>
+                                editSignOptional ? (
+                                  <p className="hint" data-testid="edit-resign-hint">Content changed, so the old signatures were cleared. Sign both again now, or leave both blank: the lesson is saved as not signed and goes to To sign.</p>
+                                ) : (
+                                  <p className="hint danger">Content changed — both signatures were cleared. Please redraw both before saving (Final Drive 23 is signed when it is saved).</p>
+                                )
                               ) : null}
-                              <div id="edit-field-adi-signature"><SignaturePad label="ADI signature" value={editDraft.adiSignature} onChange={(value) => setEditFieldValue((d) => ({ ...d, adiSignature: value }))} /></div>
+                              <div id="edit-field-adi-signature"><SignaturePad label="ADI signature" value={editDraft.adiSignature} onChange={(value) => setEditFieldValue((d) => ({ ...d, adiSignature: value }))} /><SavedSignature value={editDraft.adiSignature} onUse={(value) => setEditFieldValue((d) => ({ ...d, adiSignature: value }))} /></div>
                               <div id="edit-field-learner-signature"><SignaturePad label="Learner signature" value={editDraft.learnerSignature} onChange={(value) => setEditFieldValue((d) => ({ ...d, learnerSignature: value }))} /></div>
 
                             </>

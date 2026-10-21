@@ -1,14 +1,14 @@
 # STATUS.md
 
-_Last updated: 2026-10-21_ (Production and Staging D1 at migration `0013`; release #21 live)
+_Last updated: 2026-10-21_ (Production and Staging D1 at migration `0013`; release #22 live)
 
 This file describes **current state only**. History lives in git log and
 closed PRs; see `TASK.md` for what is in progress.
 
 ## Current Snapshot
 
-- **SaaS edition P0 (2026-10-21):** on `staging` (PR #109, L3; Production needs Tony's go): explicit fail-closed `APP_MODE`,
-  scoped lists / paper import, saas integration off; private unchanged. Spec/plan:
+- **SaaS edition P0 (2026-10-21):** in Production (#22; PR #109, L3): fail-closed `APP_MODE` (must stay in both vars
+  sections), scoped lists / paper import, saas integration off; private unchanged. P1/P2 not started. Spec/plan:
   `docs/superpowers/*/2026-10-21-saas-edition*`. No SaaS environment exists.
 - **Instructor picker (2026-10-18):** only Tony (ADI604) and Anna (ADI358) are active in both environments (Staging legacy `ADI604` `3cd3c634-3c63-4251-8eb9-91d104a9d8e9` set `inactive`, data kept; Production Anna ADI `358`). Labels `Tony/Kun Liu (ADI604)` / `Anna/Yaping Qu (ADI358)` (display only) are in Production (#18).
 
@@ -17,10 +17,9 @@ closed PRs; see `TASK.md` for what is in progress.
   #12-#17: transfer, intake P1-P3 (`0011`-`0013`), iPad, R10a, list/lesson redesign, theme toggle. #18-#20: picker
   labels, GPS phase 1, ACTGDS Instructor name, phone top bar. #21 run 39662454901 (`main` `869cfb5`; no migration):
   Start Lesson in the summary (PR #105), Paste from assistant (PR #106); Worker `949fba77-cb1c-458c-b996-89b0b996a602`,
-  rollback Worker `3cde58e1-1c34-4d8a-b208-780b6b0ab5f1`.
-- **On `staging`, not in Production (PR #108, two L3 reviews):** Record a past lesson; save now, sign later (To sign
-  queue, `signLesson`; FD23 only signed and after every earlier app lesson is signed). No migration. Ships with the
-  next release, which also carries SaaS P0 and so needs Tony's go.
+  rollback Worker `3cde58e1-1c34-4d8a-b208-780b6b0ab5f1`. #22 run 39672461921 (`main` `4f60f99`; no migration): SaaS P0
+  (PR #109) and PR #108 (two L3 reviews): record a past lesson; save now, sign later (To sign queue, `signLesson`;
+  FD23 only signed, after every earlier app lesson is signed); Worker, rollback Worker, bookmark: the run's summary.
 - **Real-device / Tony checks:** iPad layout, route reminders and address suggestions accepted by Tony on real devices (not automated).
 - **In Production (#15-#17):** list + lesson redesign, theme toggle, PDF test temp-dir fix (PRs #73-#80), intake P3 (PR #81, `0013`). Contract untouched.
 - **Merged to `staging` (PR #84, 62923cf; L2 isolated + privacy review):** P4 GPS phase 1 = `lib/gps` + page `/gps` (synthetic default, Real GPS behind a per-session consent box, nothing uploaded, not linked, noindex); qa-browser `gps.mjs`. In Production (#18). No D1/API/lesson change. Design: `docs/superpowers/specs/2026-10-13-gps-tracking-design.md`. A synthetic PASS is not iPhone background-GPS evidence; phase 1b (Tony's real drive on Staging `/gps`) is next.
