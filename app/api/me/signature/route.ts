@@ -21,6 +21,7 @@ export async function PUT(request: Request) {
   return handle(async () => {
     const id = signedInInstructorId(request);
     const body = await readJson(request);
+    if (typeof body.signature !== "string") throw new ValidationError("signature must be a PNG data URL, or an empty string to remove it.");
     return { signature: await setOwnAdiSignature(getD1(), id, body.signature) };
   });
 }

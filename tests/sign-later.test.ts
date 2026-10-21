@@ -203,3 +203,27 @@ test("an instructor's saved ADI signature is private to them", async () => {
   const listed = JSON.stringify(await db.prepare("SELECT * FROM instructors").all());
   assert.ok(!listed.includes(SIG_B));
 });
+
+test("re-signing a corrected lesson: the ADI signature may be the saved (identical) one, the learner's must be new", async () => {
+  const { db, learner, input } = await setup("QA Resign");
+  const lesson = await createLesson(db, learner.id, input({ adiSignature: SIG_A, learnerSignature: SIG_B }));
+  const edit = { ...input(), startOdometer: lesson.startOdometer, finishOdometer: lesson.finishOdometer, comments: "corrected" };
+  await assert.rejects(updateLesson(db, learner.id, lesson.id, { ...edit, adiSignature: SIG_A, learnerSignature: SIG_B }), /learner must sign again/);
+  const ok = await updateLesson(db, learner.id, lesson.id, { ...edit, adiSignature: SIG_A, learnerSignature: "data:image/png;base64,iVBORw0KGgoAAAA3" });
+  assert.equal(ok.lesson.signatureStatus, "digital");
+});
+
+test("an earlier lesson cannot be left unsigned while a later lesson holds a signed Final Drive 23", async () => {
+  const { db, learner, input } = await setup("QA Later FD");
+  const sig = { adiSignature: SIG_A, learnerSignature: SIG_B };
+  const assess = (ids: string[]) => createLesson(db, learner.id, input({ taughtIds: [], assessedIds: ids, achievedResults: Object.fromEntries(ids.map((id) => [id, "achieved"])), ...sig }));
+  const first = await assess(range(1, 17));
+  await assess([REVIEW_1_17]);
+  await assess(range(18, 22));
+  await assess([REVIEW_1_22]);
+  await assess([FINAL_DRIVE_23]);
+  await assert.rejects(
+    updateLesson(db, learner.id, first.id, { ...input(), startOdometer: first.startOdometer, finishOdometer: first.finishOdometer, taughtIds: [], assessedIds: range(1, 17), achievedResults: Object.fromEntries(range(1, 17).map((id) => [id, "achieved"])), comments: "corrected" }),
+    /\(Final Drive 23\) is signed after this lesson/,
+  );
+});

@@ -1606,6 +1606,12 @@ export async function updateLesson(db: D1Database, learnerId: string, lessonId: 
     // signed when saved, so an edit that touches it needs both signatures redrawn as before.
     const touchesFinalDrive = assessedIds.includes(FINAL_DRIVE_23) || (existing.competenciesAssessed ?? "").includes(competencyLabel(FINAL_DRIVE_23));
     if (!newAdi && !newLearner && !touchesFinalDrive) {
+      // Not while a later lesson already holds a signed Final Drive 23: it is only valid after every earlier lesson is signed.
+      const laterFinal = await db
+        .prepare("SELECT lesson_no FROM lessons WHERE learner_id = ? AND lesson_no > ? AND record_source = 'app' AND competencies_assessed LIKE ? ORDER BY lesson_no LIMIT 1")
+        .bind(learnerId, existing.lessonNo, `%${competencyLabel(FINAL_DRIVE_23)}%`)
+        .first<Row>();
+      if (laterFinal) throw new ValidationError(`Lesson #${Number(laterFinal.lesson_no)} (Final Drive 23) is signed after this lesson, so this one has to stay signed: sign both again now.`);
       adiSignature = null;
       learnerSignature = null;
       signatureStatus = "unsigned";
@@ -1613,8 +1619,10 @@ export async function updateLesson(db: D1Database, learnerId: string, lessonId: 
       if (!newAdi || !newLearner) {
         throw new ValidationError(`Content changed (${SIGNATURE_PROTECTED_FIELDS.join(", ")}) — ${touchesFinalDrive ? "Final Drive 23 is signed when it is saved: " : ""}both signatures must be redrawn before saving.`);
       }
-      if (newAdi === existing.adiSignature || newLearner === existing.learnerSignature) {
-        throw new ValidationError("Content changed — the previous signatures are no longer valid. Please redraw both before saving.");
+      // The learner signs the changed record again. The ADI signature may be the instructor's saved one, which can
+      // equal the previous ADI signature byte for byte, so only the learner's has to be new.
+      if (newLearner === existing.learnerSignature) {
+        throw new ValidationError("Content changed — the previous learner signature is no longer valid. The learner must sign again.");
       }
       adiSignature = newAdi;
       learnerSignature = newLearner;

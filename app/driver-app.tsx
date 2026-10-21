@@ -695,7 +695,7 @@ export default function DriverApp() {
       // Any protected-field change invalidates both signatures (CBT&A V3 rule
       // 5) — clear them here too so the instructor is visibly forced to
       // redraw; the server enforces this independently regardless.
-      if (!editPaperSignature && !editUnsigned && contentChanged(editOriginal, next) && (next.adiSignature === editOriginal.adiSignature || next.learnerSignature === editOriginal.learnerSignature)) {
+      if (!editPaperSignature && !editUnsigned && contentChanged(editOriginal, next) && next.learnerSignature === editOriginal.learnerSignature) {
         return { ...next, adiSignature: "", learnerSignature: "" };
       }
       return next;
@@ -721,9 +721,9 @@ export default function DriverApp() {
 
   const saveEditLesson = async () => {
     if (!detail || !editingLessonId || !editDraft) return;
-    const problems = validateLessonDraftFields(editDraft, editPaperSignature ? "paper" : "edit", { signLater: editSignOptional });
+    const problems = validateLessonDraftFields(editDraft, editPaperSignature ? "paper" : "edit", { signLater: editSignatureOptionalNow });
     if (problems.length) {
-      setEditIssues({ source: "client", issues: problems, snapshot: editDraft, signLater: editSignOptional });
+      setEditIssues({ source: "client", issues: problems, snapshot: editDraft, signLater: editSignatureOptionalNow });
       setEditAttempt((n) => n + 1);
       return;
     }
@@ -990,6 +990,8 @@ export default function DriverApp() {
   const shownSaveIssues = draft ? currentIssues(saveIssues, draft, "new") : [];
   // A correction to an app lesson may be saved without signatures (it becomes "not signed"), except Final Drive 23.
   const editSignOptional = editPaperSignature === null && Boolean(editDraft) && !editDraft!.assessedIds.includes(FINAL_DRIVE_23) && !editOriginal?.assessedIds.includes(FINAL_DRIVE_23);
+  // Signatures may be left blank when the lesson is already unsigned, or when a correction changed a signed one.
+  const editSignatureOptionalNow = editUnsigned || (editSignOptional && Boolean(editOriginal && editDraft && contentChanged(editOriginal, editDraft)));
   const shownEditIssues = editDraft ? currentIssues(editIssues, editDraft, editPaperSignature ? "paper" : "edit") : [];
 
   // Only a licence-date/DOB edit refreshes an app-owned Eligibility; typing in Eligibility itself never auto-fills (so it can be cleared or rewritten).

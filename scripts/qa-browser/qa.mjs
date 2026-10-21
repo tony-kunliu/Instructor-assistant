@@ -496,10 +496,20 @@ const draw = async (page, index) => {
   await s.page.click("[data-testid=history-row] .h-edit >> nth=-1");
   await s.page.waitForSelector("text=/Editing Lesson/");
   await s.page.fill('.h-editing input[type="time"] >> nth=1', "10:20");
+  // Changed content may be saved with both pads blank (it becomes Not signed); one signature alone is the error.
+  const adiPad = s.page.locator("#edit-field-adi-signature canvas");
+  await adiPad.scrollIntoViewIfNeeded();
+  await settle(300);
+  const pb = await adiPad.boundingBox();
+  await s.page.mouse.move(pb.x + 20, pb.y + 30);
+  await s.page.mouse.down();
+  await s.page.mouse.move(pb.x + 120, pb.y + 90, { steps: 8 });
+  await s.page.mouse.up();
+  await s.page.waitForFunction(() => document.querySelector("#edit-field-adi-signature .sig-ok") !== null, null, { timeout: 5000 }).catch(() => {});
   await s.page.click(".h-editing .btn.save");
   await s.page.waitForSelector("[data-testid=edit-save-errors]");
   const items = await s.page.$$eval("[data-testid=edit-save-errors] li span", (e) => e.map((x) => x.textContent));
-  check("History Edit: changed content without re-signing lists both signatures", items.join("|") === "ADI signature is required.|Learner signature is required.", items.join(" | "));
+  check("History Edit: changed content with only one signature lists the missing one", items.join("|") === "Sign with both signatures, or clear both to sign later.", items.join(" | "));
   const summaryBox = await s.page.locator("[data-testid=edit-save-errors]").boundingBox(), saveBox = await s.page.locator(".h-editing .btn.save").boundingBox();
   check("History Edit: summary directly above Save changes", saveBox.y - (summaryBox.y + summaryBox.height) >= 0 && saveBox.y - (summaryBox.y + summaryBox.height) < 40);
   await s.page.click("[data-testid=edit-go-learner-signature]");
