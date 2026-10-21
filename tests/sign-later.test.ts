@@ -50,7 +50,10 @@ test("signing keeps every content field and makes the lesson digital; signing tw
   assert.equal(stored.learnerSignature, SIG_B);
   for (const k of ["lessonDate", "startTime", "finishTime", "startOdometer", "finishOdometer", "taught", "comments", "location", "durationMinutes", "distanceKm"] as const) assert.equal(stored[k], lesson[k], k);
   await assert.rejects(signLesson(db, learner.id, lesson.id, { adiSignature: SIG_A, learnerSignature: SIG_B, expectedUpdatedAt: stored.updatedAt }), /already signed/);
-  assert.equal(stored.revisionCount, 1, "the unsigned version is kept as a revision");
+  assert.equal(stored.revisionCount, 0, "signing is not a correction: no \"Edited\" and no PDF (amended)");
+  assert.equal(stored.signedLater, true);
+  assert.equal(stored.editedBeforeRevisionHistory, false);
+  assert.equal((await listLessonRevisions(db, learner.id, lesson.id)).length, 1, "the unsigned version is kept as a revision");
 });
 
 test("signing needs both signatures", async () => {
@@ -135,4 +138,16 @@ test("History Edit cannot add Final Drive 23 while another app lesson is unsigne
     updateLesson(db, learner.id, plain.id, { ...input(), startOdometer: plain.startOdometer, finishOdometer: plain.finishOdometer, taughtIds: [], assessedIds: ids, achievedResults: Object.fromEntries(ids.map((id) => [id, "achieved"])), adiSignature: "data:image/png;base64,iVBORw0KGgoAAAA7", learnerSignature: "data:image/png;base64,iVBORw0KGgoAAAA8" }),
     /Sign Lesson #3 first/,
   );
+});
+
+test("a signing that loses a race writes no revision, and the reserved reason cannot be typed in an edit", async () => {
+  const { db, learner, input } = await setup();
+  const lesson = await createLesson(db, learner.id, input({ signLater: true }));
+  // Simulate the other device signing between this request's checks and its batch.
+  await db.prepare("UPDATE lessons SET signature_status = 'digital', adi_signature = ?, learner_signature = ? WHERE id = ?").bind(SIG_A, SIG_B, lesson.id).run();
+  await db.prepare("UPDATE lessons SET signature_status = 'unsigned' WHERE id = ?").bind(lesson.id).run();
+  await db.prepare("UPDATE lessons SET updated_at = '2026-10-22T00:00:00.000Z' WHERE id = ?").bind(lesson.id).run();
+  await assert.rejects(signLesson(db, learner.id, lesson.id, { adiSignature: SIG_A, learnerSignature: SIG_B, expectedUpdatedAt: null }), /changed/);
+  assert.equal((await listLessonRevisions(db, learner.id, lesson.id)).length, 0);
+  await assert.rejects(updateLesson(db, learner.id, lesson.id, { ...input(), startOdometer: lesson.startOdometer, finishOdometer: lesson.finishOdometer, reason: " signed LATER " }), /kept for signing/);
 });

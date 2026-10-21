@@ -290,6 +290,9 @@ export default function DriverApp() {
     try {
       const data = await api<Detail>(`/api/learners/${encodeURIComponent(id)}`);
       if (selectedRef.current !== id) return;
+      // The revisions panel belongs to one loaded copy of the lessons (as in loadLearner).
+      setRevisionsOpenId(null);
+      setRevisions(null);
       setDetail((current) => (current && current.learner.id === id ? data : current));
       setSummaries((current) => ({ ...current, [id]: summaryFromDetail(data) }));
     } catch {
@@ -1887,10 +1890,10 @@ export default function DriverApp() {
                       {lesson.competenciesAssessed ? <p><b>Assessed:</b> {lesson.competenciesAssessed}</p> : null}
                       {lesson.achieved ? <p><b>Achieved:</b> {lesson.achieved}</p> : null}
                       {lesson.comments ? <p><b>Comments:</b> {lesson.comments}</p> : null}
-                      {lesson.revisionCount > 0 ? (
+                      {lesson.revisionCount > 0 || lesson.signedLater ? (
                         <p className="h-revisions">
                           <button type="button" className="link" data-testid="revisions-toggle" aria-expanded={revisionsOpenId === lesson.id} onClick={() => void toggleRevisions(lesson.id)}>
-                            Edited {lesson.revisionCount} {lesson.revisionCount === 1 ? "time" : "times"}
+                            {lesson.revisionCount > 0 ? `Edited ${lesson.revisionCount} ${lesson.revisionCount === 1 ? "time" : "times"}${lesson.signedLater ? " · signed later" : ""}` : "Signed later"}
                           </button>
                         </p>
                       ) : null}
