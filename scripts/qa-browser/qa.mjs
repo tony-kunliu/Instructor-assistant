@@ -3114,7 +3114,7 @@ const draw = async (page, index) => {
   await pick(s.page, "QA Tony Saved Sig");
   await s.page.click("[data-testid=to-sign-open]");
   await s.page.waitForSelector("[data-testid=sign-queue-record]");
-  await s.page.waitForSelector("[data-testid=saved-signature]");
+  await s.page.waitForSelector("[data-testid=saved-signature]", { state: "attached" });
   check("saved signature: nothing saved yet, so no Use button", (await s.page.$("[data-testid=saved-signature-use]")) === null);
   await signBoth(s.page);
   await s.page.click("[data-testid=saved-signature-save]");
