@@ -102,6 +102,9 @@ html { overflow-x: hidden; }
 .brand-name { display: flex; flex-direction: column; min-width: 0; }
 .brand strong { font-size: 16px; line-height: 1.25; }
 .brand small { font-size: 12px; opacity: .72; letter-spacing: .01em; }
+/* "ACTGDS Instructor" is longer than the old name. On phones the tagline goes (it is the same on every screen) so the
+   brand takes at most two short lines beside "Signed in as" and the theme toggle, instead of four. */
+@media (max-width: 420px) { .brand strong { font-size: 15px; } .brand small { display: none; } }
 .signed-in-as { margin-left: auto; display: flex; flex-direction: column; align-items: flex-end; justify-content: center; gap: 0; text-align: right; flex: none; }
 .signed-in-as span { font-size: 12px; font-weight: 600; opacity: .85; }
 /* 44px hit area from its own padding (the name above it is not part of the link). */

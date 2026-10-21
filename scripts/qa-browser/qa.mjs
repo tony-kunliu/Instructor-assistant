@@ -86,6 +86,11 @@ try {
   check("Tony My learners = only Tony's active learners", opts.length === 7 && opts.every((o) => o.startsWith("QA Tony")), opts.join(","));
   check("nothing pre-selected on a fresh login", (await selectedValue(s.page)) === "" && !(await hasSummary(s.page)));
   check("no horizontal scroll (picker)", await noHScroll(s.page));
+  // Top bar after the rename to "ACTGDS Instructor": the brand stays on one line at 390px, the tagline is hidden on phones.
+  check("top bar: ACTGDS Instructor on one line at 390px, tagline hidden", await s.page.evaluate(() => {
+    const strong = document.querySelector(".brand strong"), small = document.querySelector(".brand small");
+    return strong.textContent === "ACTGDS Instructor" && strong.getBoundingClientRect().height < parseFloat(getComputedStyle(strong).lineHeight) * 1.5 && getComputedStyle(small).display === "none";
+  }));
   await shot(s.page, "01-tony-my-learners");
   await s.page.reload(); await ready(s.page);
   check("Tony refresh/relogin → still My learners", (await activeTab(s.page)).startsWith("Mine"));
