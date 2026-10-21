@@ -1,12 +1,15 @@
 # STATUS.md
 
-_Last updated: 2026-10-13_ (Production and Staging D1 at migration `0013`; release #17 live)
+_Last updated: 2026-10-21_ (Production and Staging D1 at migration `0013`; release #17 live)
 
 This file describes **current state only**. History lives in git log and
 closed PRs; see `TASK.md` for what is in progress.
 
 ## Current Snapshot
 
+- **SaaS edition P0 (2026-10-21):** branch `feature/saas-p0-shared` (L3): explicit fail-closed `APP_MODE`,
+  scoped lists / paper import, integration off in saas; private unchanged. Spec/plan:
+  `docs/superpowers/*/2026-10-21-saas-edition*`. No SaaS environment exists.
 - **Instructor picker (2026-10-18):** only Tony (ADI604) and Anna (ADI358) are active in both environments (Staging legacy `ADI604` `3cd3c634-3c63-4251-8eb9-91d104a9d8e9` set `inactive`, data kept; Production Anna ADI `358`). Labels `Tony/Kun Liu (ADI604)` / `Anna/Yaping Qu (ADI358)` (display only) are in Production (#18).
 
 - **Production** (all via `Production Release`, all success): #12 run 38157600087 (`main`
@@ -42,8 +45,7 @@ closed PRs; see `TASK.md` for what is in progress.
 - **Workers Builds** runs `node scripts/check-project-memory.mjs && npm run
   typecheck && npm test && npm run cf:build && node scripts/check-project-memory.mjs`
   with CI set and no poppler-utils. Anything that fails `npm test` there
-  leaves Staging on the old version (happened 2026-10-09 after PR #31; fixed
-  by PR #32). Before merging, simulate it locally (CI=1, `pdftotext` off PATH).
+  leaves Staging on the old version. Before merging, simulate it locally (CI=1, `pdftotext` off PATH).
 
 ## Environments
 
@@ -63,19 +65,13 @@ closed PRs; see `TASK.md` for what is in progress.
   `confirm=production`); token only in GitHub Secrets; each run records the
   rollback version and a D1 Time Travel restore point. See
   `docs/RELEASE_B_RUNBOOK.md`.
-- Before #12: runs 38153327724 (validity fix), 38106838536 (`0010`), `0006`-`0009` and
-  Release B 37668118567: Worker ids in this file's git history.
 - D1 migration level: `0012`. Cloudflare Access: enabled (Tony + Anna only).
 - Integration enabled: **YES**, `ACTGDS_INTEGRATION_ENV=production`, Receiver
   `https://actgds.com/api/integrations/instructor-assistant/events`,
   `ACTGDS_WEBHOOK_SECRET` set by Tony. Outbox Cron `*/5`. No backfill.
-- **Real end-to-end link verified 2026-10-10 (Canberra):** a paper-imported
-  learner's first App lesson (#3; cumulative includes prior-instructor and
-  paper hours/km) was received by ACTGDS and shown in its Admin panel after
-  the learner was linked in the ACTGDS CRM. ACTGDS ACKed the mid-sequence first
-  event on Issue #3 (2026-10-08). That test learner (a renamed transferred
-  paper-import learner) now has a test lesson #3 in history and PDF;
-  Production data is never deleted, correct it through History Edit.
+- Real end-to-end link verified 2026-10-10 (detail: git history, actgds.com Issue #3).
+- `APP_MODE = "private"` in `[vars]` and `[env.production.vars]` is required (missing → 503
+  everywhere); pinned by `tests/wrangler-app-mode.test.ts`.
 
 ## Current Product
 
@@ -142,6 +138,8 @@ record: `tony-kunliu/actgds.com` Issue #3.
   Vietnamese, Greek, Cyrillic, kana, Hangul, Latin Ext-B, box drawing and some
   symbols print as boxes after the user confirms the warning.
 - Minor learner-edit review follow-ups are in `docs/BACKLOG.md`.
+- SaaS: never deploy a saas environment on P0 alone (per-learner routes get the ownership guard in P1);
+  `worker/scheduled-entry.ts` does not check `APP_MODE` (add when `[env.saas]` is created).
 - qa-browser route-line check failed only on Canberra Sundays (`r3-day` id, correct behaviour); fix on `fix/qa-route-reminder-order`, verify on Sun 2026-10-25.
 - `app/manifest.ts` still carries the pre-redesign `background_color` / `theme_color`
   (`#f4f2ee` / `#1d1d1f`), not the shared tokens (affects the installed-PWA splash only).

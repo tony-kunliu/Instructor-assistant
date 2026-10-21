@@ -12,7 +12,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     const db = getD1();
     const [lesson, selections, progressExcludingThisLesson, progressBeforeThisLesson] = await Promise.all([
       getLesson(db, id, lessonId),
-      getLessonCompetencySelections(db, lessonId),
+      getLessonCompetencySelections(db, id, lessonId),
       getProgressExcludingLesson(db, id, lessonId),
       getProgressBeforeLesson(db, id, lessonId),
     ]);
