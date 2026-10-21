@@ -705,3 +705,11 @@ details.fsect.group .inner > .hint-note { margin: 0; }
   /* Without a right-hand card (no learner picked, archived learner) — or without
      :has() support — the single 880px column from the ≥700px rule applies. */
 }
+
+/* "Paste from assistant" (lib/assistant-draft.ts): a quiet link under the search; the panel holds the pasted text,
+   any problems found, and the one action that pre-fills a form. */
+.paste-link { justify-self: start; min-height: 44px; padding: 0 2px; font-size: 14px; }
+.paste-draft { display: grid; gap: 10px; padding: 12px; border: 1px solid var(--line); border-radius: var(--radius-m); background: var(--surface); }
+.paste-draft textarea { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 14px; }
+.paste-problems { margin: 0; padding-left: 18px; color: var(--bad, #9b1c1c); font-size: 14px; display: grid; gap: 4px; }
+.paste-actions { display: flex; gap: 10px; flex-wrap: wrap; }
