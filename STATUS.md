@@ -7,8 +7,8 @@ closed PRs; see `TASK.md` for what is in progress.
 
 ## Current Snapshot
 
-- **SaaS edition P0 (2026-10-21):** branch `feature/saas-p0-shared` (L3): explicit fail-closed `APP_MODE`,
-  scoped lists / paper import, integration off in saas; private unchanged. Spec/plan:
+- **SaaS edition P0 (2026-10-21):** on `staging` (PR #109, L3; Production needs Tony's go): explicit fail-closed `APP_MODE`,
+  scoped lists / paper import, saas integration off; private unchanged. Spec/plan:
   `docs/superpowers/*/2026-10-21-saas-edition*`. No SaaS environment exists.
 - **Instructor picker (2026-10-18):** only Tony (ADI604) and Anna (ADI358) are active in both environments (Staging legacy `ADI604` `3cd3c634-3c63-4251-8eb9-91d104a9d8e9` set `inactive`, data kept; Production Anna ADI `358`). Labels `Tony/Kun Liu (ADI604)` / `Anna/Yaping Qu (ADI358)` (display only) are in Production (#18).
 
