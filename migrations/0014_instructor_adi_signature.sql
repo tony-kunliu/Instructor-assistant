@@ -1,0 +1,14 @@
+-- Migration number: 0014
+-- Saved ADI signature (Tony 2026-10-22, option A): an instructor draws their ADI signature once and later taps
+-- "Use my saved signature" on a lesson or in the To sign queue. Additive only: one nullable TEXT column on
+-- instructors (a PNG data URL, same format and size limit as lessons.adi_signature), NULL = nothing saved.
+-- Only ever read or written for the signed-in instructor's OWN row (lib/repo.ts#getOwnAdiSignature /
+-- setOwnAdiSignature); never listed with instructors, never sent to ACTGDS, never in the PDF except as the
+-- signature copied onto a lesson the instructor signs. The learner's signature is never stored.
+--
+-- ALTER TABLE ... ADD COLUMN is not idempotent: wrangler records applied migrations, so it runs once.
+--
+-- Must stay in sync with lib/schema.ts SCHEMA_SQL; tests/d1-storage.test.ts checks
+-- migrations/0001..0014 concatenated equal SCHEMA_SQL. Apply with:
+--   wrangler d1 migrations apply DB --local   (local dev, no account needed)
+ALTER TABLE instructors ADD COLUMN adi_signature TEXT;

@@ -144,10 +144,10 @@ test("History Edit server messages map to fields (odometer continuity, signature
   assert.equal(issueFromServerMessage(startLow).field, "start-odometer", startLow);
   const finishHigh = await messageOf(() => updateLesson(db, learner.id, l1.id, base(l1, { finishOdometer: "99" })));
   assert.equal(issueFromServerMessage(finishHigh).field, "finish-odometer", finishHigh);
-  const redraw = await messageOf(() => updateLesson(db, learner.id, l1.id, base(l1, { comments: "changed", adiSignature: "", learnerSignature: "" })));
+  const redraw = await messageOf(() => updateLesson(db, learner.id, l1.id, base(l1, { comments: "changed", learnerSignature: "" })));
   assert.equal(issueFromServerMessage(redraw).field, "adi-signature", redraw);
   const same = await messageOf(() => updateLesson(db, learner.id, l1.id, { ...base(l1, { comments: "changed again" }), adiSignature: l1.adiSignature, learnerSignature: l1.learnerSignature }));
-  assert.equal(issueFromServerMessage(same).field, "adi-signature", same);
+  assert.equal(issueFromServerMessage(same).field, "learner-signature", same);
 });
 
 test("chronology message for a later lesson maps to the competency section", async () => {

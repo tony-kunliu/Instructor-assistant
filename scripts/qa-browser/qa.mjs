@@ -496,10 +496,20 @@ const draw = async (page, index) => {
   await s.page.click("[data-testid=history-row] .h-edit >> nth=-1");
   await s.page.waitForSelector("text=/Editing Lesson/");
   await s.page.fill('.h-editing input[type="time"] >> nth=1', "10:20");
+  // Changed content may be saved with both pads blank (it becomes Not signed); one signature alone is the error.
+  const adiPad = s.page.locator("#edit-field-adi-signature canvas");
+  await adiPad.scrollIntoViewIfNeeded();
+  await settle(300);
+  const pb = await adiPad.boundingBox();
+  await s.page.mouse.move(pb.x + 20, pb.y + 30);
+  await s.page.mouse.down();
+  await s.page.mouse.move(pb.x + 120, pb.y + 90, { steps: 8 });
+  await s.page.mouse.up();
+  await s.page.waitForFunction(() => document.querySelector("#edit-field-adi-signature .sig-ok") !== null, null, { timeout: 5000 }).catch(() => {});
   await s.page.click(".h-editing .btn.save");
   await s.page.waitForSelector("[data-testid=edit-save-errors]");
   const items = await s.page.$$eval("[data-testid=edit-save-errors] li span", (e) => e.map((x) => x.textContent));
-  check("History Edit: changed content without re-signing lists both signatures", items.join("|") === "ADI signature is required.|Learner signature is required.", items.join(" | "));
+  check("History Edit: changed content with only one signature lists the missing one", items.join("|") === "Sign with both signatures, or clear both to sign later.", items.join(" | "));
   const summaryBox = await s.page.locator("[data-testid=edit-save-errors]").boundingBox(), saveBox = await s.page.locator(".h-editing .btn.save").boundingBox();
   check("History Edit: summary directly above Save changes", saveBox.y - (summaryBox.y + summaryBox.height) >= 0 && saveBox.y - (summaryBox.y + summaryBox.height) < 40);
   await s.page.click("[data-testid=edit-go-learner-signature]");
@@ -3088,6 +3098,61 @@ const draw = async (page, index) => {
   check("To sign: both lessons are signed (digital) and History no longer marks them", lessons.length === 2 && lessons.every((l) => l.signatureStatus === "digital") && (await s.page.$$("[data-testid=unsigned-badge]")).length === 0, JSON.stringify(lessons.map((l) => l.signatureStatus)));
   await s.page.click("[data-testid=sign-queue] >> text=Close");
   check("To sign: the entry is gone when nothing is left; no page errors", (await s.page.$("[data-testid=to-sign-open]")) === null && s.errors.length === 0, s.errors.join("|"));
+  await s.ctx.close();
+}
+
+// ═══ 27. Saved ADI signature (own tap only) and editing a signed lesson (Tony 2026-10-22) ═══
+{
+  const made = await (await fetch(`${B}/api/learners`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ fullName: "QA Tony Saved Sig", instructorId: WHO.tony[0] }) })).json();
+  const asAnna = await fetch(`${B}/api/me/signature`, { headers: { "x-instructor-id": WHO.anna[0] } });
+  check("saved signature: Anna starts with none", (await asAnna.json()).signature === null);
+  const s = await session("tony");
+  await ready(s.page);
+  await pick(s.page, "QA Tony Saved Sig");
+  const lesson = (await postLesson(made.learner.id, { lessonDate: "2026-10-20", startTime: "09:00", finishTime: "10:00", startOdometer: "100", finishOdometer: "130", taughtIds: ["1"], signLater: true })).body.lesson;
+  await s.page.reload(); await ready(s.page);
+  await pick(s.page, "QA Tony Saved Sig");
+  await s.page.click("[data-testid=to-sign-open]");
+  await s.page.waitForSelector("[data-testid=sign-queue-record]");
+  await s.page.waitForSelector("[data-testid=saved-signature]", { state: "attached" });
+  check("saved signature: nothing saved yet, so no Use button", (await s.page.$("[data-testid=saved-signature-use]")) === null);
+  await signBoth(s.page);
+  await s.page.click("[data-testid=saved-signature-save]");
+  await s.page.waitForSelector("text=Saved as your signature");
+  const tonySig = await (await fetch(`${B}/api/me/signature`, { headers: { "x-instructor-id": WHO.tony[0] } })).json();
+  const annaSig = await (await fetch(`${B}/api/me/signature`, { headers: { "x-instructor-id": WHO.anna[0] } })).json();
+  check("saved signature: saved for Tony only, never visible to Anna", /^data:image\/png;base64,/.test(tonySig.signature ?? "") && annaSig.signature === null);
+  await s.page.click("[data-testid=sign-queue-sign]");
+  await s.page.waitForSelector("[data-testid=sign-queue-done]");
+  await s.page.click("[data-testid=sign-queue] >> text=Close");
+  // A second lesson: Tony taps "Use my saved signature" himself; the learner still signs.
+  const second = (await postLesson(made.learner.id, { lessonDate: "2026-10-21", startTime: "09:00", finishTime: "10:00", startOdometer: "130", finishOdometer: "160", taughtIds: [], signLater: true })).body.lesson;
+  await s.page.reload(); await ready(s.page);
+  await pick(s.page, "QA Tony Saved Sig");
+  await s.page.click("[data-testid=to-sign-open]");
+  await s.page.waitForSelector("[data-testid=saved-signature-use]");
+  check("saved signature: nothing is filled in on its own", (await s.page.$$(".sig .sig-ok")).length === 0);
+  await s.page.click("[data-testid=saved-signature-use]");
+  await s.page.waitForFunction(() => document.querySelectorAll(".sig .sig-ok").length === 1);
+  await s.page.click("[data-testid=sign-queue-sign]");
+  check("saved signature: with only the ADI pad filled, signing is refused until the learner signs", /Both signatures/.test(await s.page.textContent("[data-testid=sign-queue-error]")));
+  await s.page.close();
+  // Editing a signed lesson: leaving both pads blank saves it as not signed.
+  const t = await session("tony");
+  await ready(t.page);
+  await pick(t.page, "QA Tony Saved Sig");
+  await t.page.waitForSelector("[data-testid=history-row]");
+  await t.page.click('[data-testid=history-row]:has-text("2026-10-20") .h-edit');
+  await t.page.waitForSelector("#edit-field-date");
+  await t.page.fill("textarea >> nth=-1", "corrected afterwards");
+  await t.page.waitForSelector("[data-testid=edit-resign-hint]");
+  await t.page.click("text=Save changes");
+  await t.page.waitForSelector("text=Lesson updated");
+  const after = (await (await fetch(`${B}/api/learners/${made.learner.id}`)).json()).lessons.find((l) => l.id === lesson.id);
+  check("edit signed lesson: both pads blank saves it as Not signed, and it is back in To sign", after.signatureStatus === "unsigned" && (await t.page.$$("[data-testid=unsigned-badge]")).length >= 1 && (await t.page.$("[data-testid=to-sign-open]")) !== null, after.signatureStatus);
+  check("edit signed lesson: History says Edited 1 time", /Edited 1 time/.test(await t.page.textContent('[data-testid=history-row]:has-text("2026-10-20")')));
+  check("saved signature: no horizontal scroll, no page errors", (await noHScroll(t.page)) && t.errors.length === 0, t.errors.join("|"));
+  await t.ctx.close();
   await s.ctx.close();
 }
 
