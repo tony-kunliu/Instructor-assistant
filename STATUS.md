@@ -15,7 +15,7 @@ closed PRs; see `TASK.md` for what is in progress.
   `eb9fa409-5707-4524-944d-636d133202d8`); #14 run 38287641067 (PR #66: R10a route reminders;
   Worker `690fb2c1-5387-42fb-807f-f7b2b6db39fc`); #15 (learner list + lesson record redesign, review
   policy docs); #16 (form-only New/Edit, top-bar theme toggle); #17 (intake P3, `0013`). Run ids and
-  Worker ids of #15-#17: the runs' step summaries. #18 run 39132693394 (`main` `9a4cb05`: #83 form restyle, GPS `/gps` phase 1, manifest colours, #91 labels, #92 ADI PATCH own-only; no migration): Worker `24f679f8-ad00-4773-863b-71725144849f`, rollback Worker `2854e821-4098-4b0e-9670-3db0a9f1c1ec`, D1 bookmark `00000c43-00000000-00005108-31820f5c1ed8c40179222dcf8241275a`. Rollback target of each run = the previous run's
+  Worker ids of #15-#17: the runs' step summaries. #18 run 39132693394 (`main` `9a4cb05`; no migration): Worker `24f679f8-ad00-4773-863b-71725144849f`, rollback Worker `2854e821-4098-4b0e-9670-3db0a9f1c1ec`, D1 bookmark `00000c43-00000000-00005108-31820f5c1ed8c40179222dcf8241275a`. #19 run 39571799727 (`main` `c4dab19`: app renamed ACTGDS Instructor, ADI route tests; no migration): Worker `93d9b7a4-e85b-45c3-a472-4adbe2f77e7c`, rollback Worker `24f679f8-ad00-4773-863b-71725144849f`, D1 bookmark in the run summary. Rollback target of each run = the previous run's
   Worker. D1 Time Travel bookmarks only in the step summaries.
 - **Real-device / Tony checks:** iPad layout, route reminders and address suggestions accepted by Tony on real devices (not automated).
 - **In Production (#15-#17):** list + lesson redesign, theme toggle, PDF test temp-dir fix (PRs #73-#80), intake P3 (PR #81, `0013`). Contract untouched.
