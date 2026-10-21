@@ -222,7 +222,17 @@ try {
   await ready(s.page);
   await pick(s.page, "QA Tony Gate Locked");
   await s.page.waitForSelector("text=Start Lesson");
+  // Start Lesson sits under the learner header (in the summary card, above the progress card), not in the lesson card.
+  check("Start Lesson #N is in the learner summary, above the progress card; the lesson card points up to it", await s.page.evaluate(() => {
+    const go = document.querySelector(".btn.go"), summary = document.querySelector(".card.summary"), progress = document.querySelector(".card.progress");
+    return !!go && summary.contains(go) && /^Start Lesson #\d+$/.test(go.textContent) && go.getBoundingClientRect().bottom < progress.getBoundingClientRect().top
+      && !document.querySelector(".card.lesson .btn.go") && /Start the lesson under/.test(document.querySelector(".card.lesson [data-testid=lesson-status]").textContent);
+  }));
   await s.page.click("text=Start Lesson");
+  check("after Start Lesson the page moves to the lesson card (its top near the top of the screen)", await s.page.evaluate(() => {
+    const top = document.querySelector(".card.lesson").getBoundingClientRect().top;
+    return document.querySelector(".card.lesson").dataset.phase === "running" && top >= -2 && top < 120;
+  }));
   await s.page.click("text=End Lesson");
   const assessedRow = s.page.locator(".comp-section:has(.comp-label:text-is('Assessed')) .chip-row").first();
   const lockedStates = await Promise.all(["18", "20", "21"].map(async (id) => (await assessedRow.locator(`button:text-is("${id}")`).isDisabled()) && (await assessedRow.locator(`button:text-is("${id}")`).getAttribute("data-locked")) === "true"));
