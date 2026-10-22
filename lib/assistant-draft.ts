@@ -126,8 +126,12 @@ function splitLines<F extends string>(text: string, keys: Record<string, F>, pro
     const m = /^\s*([^:：]{1,40}?)\s*[:：]\s*(.*)$/.exec(line);
     const field = m ? keys[m[1].toLowerCase().replace(/\s+/g, " ")] : undefined;
     if (m && field) {
-      if (values.has(field)) { repeated.add(field); problems.push(`"${m[1].trim()}" appears more than once; that field was left empty.`); }
-      values.set(field, m[2]);
+      // Review notes may repeat ("Unclear:" twice, or "Check:" after "Unclear:"): they are joined, never blanked.
+      if (values.has(field) && (field as string) === "notes") values.set(field, `${values.get(field)}\n${m[2]}`);
+      else {
+        if (values.has(field)) { repeated.add(field); problems.push(`"${m[1].trim()}" appears more than once; that field was left empty.`); }
+        values.set(field, m[2]);
+      }
       last = field;
     } else if (m && /^[A-Za-z][A-Za-z /]*$/.test(m[1].trim())) {
       problems.push(`Unknown line "${m[1].trim()}" was ignored.`);
@@ -179,7 +183,7 @@ export function parseAssistantDraft(text: string): AssistantDraft | { kind: "non
     const unclearNotes: string[] = [];
     for (const [field, raw] of split.values) {
       if (field === "notes") { f.notes = raw.trim(); continue; }
-      if (UNCLEAR.has(raw.trim().toLowerCase())) { unclearNotes.push(`${FIELD_LABEL[field] ?? field}: unclear on the paper, check the original.`); continue; }
+      if (UNCLEAR.has(raw.trim().toLowerCase()) || /\?|unclear|illegible|unreadable|看不清|不清楚|模糊/i.test(raw)) { unclearNotes.push(`${FIELD_LABEL[field] ?? field}: unclear on the paper, check the original.`); continue; }
       const value = clean(raw);
       if (field === "transmission") {
         const t = value.toLowerCase();

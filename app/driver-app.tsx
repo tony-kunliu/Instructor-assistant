@@ -644,6 +644,7 @@ export default function DriverApp() {
       nameInputRef.current?.focus();
       return;
     }
+    if (!editingLearner && draftNotesText.trim() && !window.confirm("The notes for review are kept only with a draft and will be discarded. Save the learner anyway? (Cancel, then use Save as draft, to keep them.)")) return;
     void (editingLearner ? saveLearnerEdit() : addLearner());
   };
 
@@ -1168,7 +1169,7 @@ export default function DriverApp() {
   // Transfer (3c T1): the learner's own instructor, or anyone active when that instructor is inactive (not in the
   // active-only instructors list). Never for an archived learner (restore first). The server enforces the same rules.
   const homeInactive = Boolean(detail) && instructors.length > 0 && !instructors.some((i) => i.id === detail?.learner.instructorId);
-  const canTransfer = Boolean(detail) && panel !== "archived" && (!signedInInstructorId || signedInInstructorId === detail?.learner.instructorId || homeInactive);
+  const canTransfer = Boolean(detail) && panel !== "archived" && panel !== "draft" && (!signedInInstructorId || signedInInstructorId === detail?.learner.instructorId || homeInactive);
   const transferTargets = detail ? instructors.filter((i) => i.id !== detail.learner.instructorId) : [];
   const openTransferPanel = () => {
     setArchiveDraft(null);
@@ -1350,7 +1351,7 @@ export default function DriverApp() {
               {/^\s*[`*#>\s]*ACTGDS-DRAFT\s+LEARNER/im.test(pasteText) ? <button type="button" className="btn ghost" disabled={saving} onClick={() => void applyAssistantDraft(true)} data-testid="paste-draft-save-draft">Save as draft now</button> : null}
               <button type="button" className="btn ghost" onClick={closePaste}>Cancel</button>
             </div>
-            <p className="hint-note">Nothing is saved from a draft: you check it, then save it (signed now, or later).</p>
+            <p className="hint-note">"Fill in the form" saves nothing: you check it, then save it. "Save as draft now" keeps a learner block as a draft to review later.</p>
           </div>
         ) : (
           <button type="button" className="link paste-link" onClick={() => setPasteOpen(true)} disabled={saving} data-testid="paste-draft-open">Paste from assistant</button>
@@ -1717,7 +1718,7 @@ export default function DriverApp() {
               Integration ID: <code>{detail.learner.id}</code>
               <button type="button" className="link" onClick={() => void copyIntegrationId(detail.learner.id)}>Copy ID</button>
             </p>
-            <ExportPdfButton key={detail.learner.id} learnerId={detail.learner.id} lessonCount={history.lessons.length} />
+            {panel === "draft" ? null : <ExportPdfButton key={detail.learner.id} learnerId={detail.learner.id} lessonCount={history.lessons.length} />}
             {canEditLearner ? (
               <button type="button" className="btn ghost block edit-learner-btn" disabled={saving} onClick={openEditLearner} data-testid="edit-learner">Edit learner</button>
             ) : null}

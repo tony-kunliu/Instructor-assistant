@@ -3,7 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { openTestD1 } from "../lib/db.ts";
-import { createLearner, createLesson, DRAFT_NAME_PLACEHOLDER, findInstructorByEmail, getLearner, importPaperLessons, listLearners, updateLearner, ValidationError } from "../lib/repo.ts";
+import { createLearner, createLesson, DRAFT_NAME_PLACEHOLDER, findInstructorByEmail, getLearner, importPaperLessons, listLearners, transferLearner, updateLearner, ValidationError } from "../lib/repo.ts";
 
 async function setup() {
   const db = openTestD1(":memory:");
@@ -84,4 +84,34 @@ test("only the learner's own instructor can edit or confirm their draft", async 
   const other = (await db.prepare("SELECT id FROM instructors WHERE id <> ? AND status = 'active' LIMIT 1").bind(tony.id).first<{ id: string }>())!;
   const draft = await createLearner(db, { draft: true, instructorId: tony.id, fullName: "Own Draft" });
   await assert.rejects(updateLearner(db, draft.id, { draft: false, actingInstructorId: other.id }), ValidationError);
+});
+
+test("editing a draft never blanks stored values: a refused value keeps the previous one and says so", async () => {
+  const { db, tony } = await setup();
+  const draft = await createLearner(db, { draft: true, instructorId: tony.id, fullName: "Keep Me", dob: "2008-01-02", learnerLicenceIssuedOn: "2024-01-01", hptPassedOn: "2024-06-01", loggedHours: 5, loggedHoursOn: "2024-06-02" });
+  assert.equal(draft.hptPassedOn, "2024-06-01");
+  const a = await updateLearner(db, draft.id, { draft: true, hptPassedOn: "2999-01-01" });
+  assert.equal(a.learner.hptPassedOn, "2024-06-01");
+  assert.equal(a.learner.learnerLicenceIssuedOn, "2024-01-01");
+  assert.match(a.learner.draftNotes ?? "", /hptPassedOn: "2999-01-01".*previous value was kept/);
+  const b = await updateLearner(db, draft.id, { draft: true, dob: "garbage" });
+  assert.equal(b.learner.dob, "2008-01-02");
+  // A new value that clashes with a stored one (licence date before the stored date of birth) is dropped, not a 400.
+  const c = await updateLearner(db, draft.id, { draft: true, learnerLicenceIssuedOn: "2001-01-01" });
+  assert.equal(c.learner.learnerLicenceIssuedOn, "2024-01-01");
+  assert.match(c.learner.draftNotes ?? "", /cannot be before the date of birth/);
+  // The same bad save again does not repeat its note, and the app's own lines survive a long note.
+  const d = await updateLearner(db, draft.id, { draft: true, dob: "garbage" });
+  assert.equal((d.learner.draftNotes ?? "").split("\n").filter((l) => l.includes('dob: "garbage"')).length, 1);
+  const long = await updateLearner(db, draft.id, { draft: true, dob: "garbage2", draftNotes: "x".repeat(2500) });
+  assert.match(long.learner.draftNotes ?? "", /dob: "garbage2"/);
+});
+
+test("a draft cannot be transferred or exported, and a stale Save draft after a confirm is refused", async () => {
+  const { db, tony } = await setup();
+  const other = (await db.prepare("SELECT id FROM instructors WHERE id <> ? AND status = 'active' LIMIT 1").bind(tony.id).first<{ id: string }>())!;
+  const draft = await createLearner(db, { draft: true, instructorId: tony.id, fullName: "Move Me" });
+  await assert.rejects(transferLearner(db, draft.id, { toInstructorId: other.id }), /draft learner cannot be transferred/);
+  await updateLearner(db, draft.id, { draft: false });
+  await assert.rejects(updateLearner(db, draft.id, { draft: true, phone: "1" }), /Only a draft learner/);
 });

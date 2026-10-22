@@ -33,7 +33,7 @@ export type MoreSection = { shown: boolean; transfer: boolean; archive: boolean 
  */
 export function moreSection(input: { editing: boolean; canTransfer: boolean; panel: LearnerPanelKind }): MoreSection {
   if (!input.editing) return { shown: false, transfer: false, archive: false };
-  const transfer = input.canTransfer;
+  const transfer = input.canTransfer && input.panel !== "draft";
   const archive = input.panel === "active" || input.panel === "draft";
   return { shown: transfer || archive, transfer, archive };
 }

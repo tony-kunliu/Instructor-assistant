@@ -513,13 +513,14 @@ export async function transferLearner(db: D1Database, id: string, options: Trans
   if (!target) throw new ValidationError("That instructor was not found.");
   if (target.status !== "active") throw new ValidationError(`${String(target.full_name)} is not an active instructor.`);
   const current = await db
-    .prepare("SELECT l.instructor_id, l.archived_at, i.full_name, i.status FROM learners l JOIN instructors i ON i.id = l.instructor_id WHERE l.id = ?")
+    .prepare("SELECT l.instructor_id, l.archived_at, l.draft_at, i.full_name, i.status FROM learners l JOIN instructors i ON i.id = l.instructor_id WHERE l.id = ?")
     .bind(id)
     .first<Row>();
   if (!current) throw new NotFoundError("Learner not found.");
   const fromId = String(current.instructor_id);
   const fromName = String(current.full_name ?? "") || "another instructor";
   if (current.archived_at !== null && current.archived_at !== undefined) throw new ValidationError("This learner is archived. Restore the learner first, then transfer.");
+  if (current.draft_at !== null && current.draft_at !== undefined) throw new ValidationError("A draft learner cannot be transferred. Confirm the learner first.");
   if (fromId === toId) throw new ValidationError(`This learner already belongs to ${fromName}.`);
   if (actor !== null && actor !== fromId && current.status === "active") {
     throw new ValidationError(`This learner belongs to ${fromName}; only they can transfer them.`);
@@ -834,34 +835,42 @@ const DRAFT_GROUPS: readonly (readonly (keyof LearnerInput)[])[] = [
  * in the future, a street suggestion that does not match, an unknown other-licence kind, a date that is not a date) is
  * DROPPED and written to the review notes with what was sent. Nothing is guessed or "fixed"; the rest is kept.
  */
-function sanitiseDraftInput(input: LearnerInput, now: Date): { clean: LearnerInput; notes: string[] } {
+function sanitiseDraftInput(input: LearnerInput, now: Date, existing?: Learner): { clean: LearnerInput; notes: string[] } {
   const clean: LearnerInput = { ...input };
   const notes: string[] = [];
-  const shown = (keys: readonly (keyof LearnerInput)[]) => keys.filter((k) => String(clean[k] ?? "").trim() !== "").map((k) => `${String(k)}: "${String(clean[k]).trim().slice(0, 80)}"`).join(", ");
+  const kept = existing ? " The previous value was kept." : "";
+  const sentKeys = (keys: readonly (keyof LearnerInput)[]) => keys.filter((k) => clean[k] !== undefined && String(clean[k] ?? "").trim() !== "");
+  const shown = (keys: readonly (keyof LearnerInput)[]) => sentKeys(keys).map((k) => `${String(k)}: "${String(clean[k]).trim().slice(0, 80)}"`).join(", ");
+  // A dropped value never blanks what is stored: on create it is simply absent, on edit the previous value stays.
+  const drop = (keys: readonly (keyof LearnerInput)[]) => { for (const key of keys) delete clean[key]; };
+  const effective = (key: keyof LearnerInput): unknown => (clean[key] !== undefined ? clean[key] : existing ? existing[key as keyof Learner] : undefined);
   for (const key of ["dob", "licenceExpiry"] as const) {
     const raw = String(clean[key] ?? "").trim();
-    if (raw && isoDate(raw) === null) { notes.push(`Not saved (not a date YYYY-MM-DD): ${key}: "${raw.slice(0, 80)}".`); clean[key] = ""; }
+    if (raw && isoDate(raw) === null) { notes.push(`Not saved (not a date YYYY-MM-DD): ${key}: "${raw.slice(0, 80)}".${kept}`); drop([key]); }
   }
   const tx = String(clean.transmission ?? "").trim().toLowerCase();
-  if (tx && tx !== "manual" && tx !== "auto") { notes.push(`Not saved (must be manual or auto): transmission: "${tx.slice(0, 80)}".`); clean.transmission = ""; }
+  if (tx && tx !== "manual" && tx !== "auto") { notes.push(`Not saved (must be manual or auto): transmission: "${tx.slice(0, 80)}".${kept}`); drop(["transmission"]); }
   for (const group of DRAFT_GROUPS) {
-    if (!shown(group)) continue;
-    const trial: LearnerInput = { fullName: "x", dob: clean.dob };
-    for (const key of group) trial[key] = clean[key];
+    if (!shown(group) && !(existing && clean.dob !== undefined)) continue;
+    const trial: LearnerInput = { fullName: "x", dob: effective("dob") };
+    for (const key of group) trial[key] = effective(key);
     try {
       prepareNewLearnerFields(trial, now);
     } catch (error) {
       if (!(error instanceof ValidationError)) throw error;
-      notes.push(`Not saved (${error.message.replace(/\.$/, "")}): ${shown(group)}.`);
-      for (const key of group) clean[key] = "";
+      if (!shown(group)) continue; // only a changed date of birth is involved: handled by the caller's final check
+      notes.push(`Not saved (${error.message.replace(/\.$/, "")}): ${shown(group)}.${kept}`);
+      drop(group);
     }
   }
   return { clean, notes };
 }
 
+/** Review notes as stored: the app's own "Not saved ..." lines first (they are the ones that must never be cut), then the given text; repeated lines once; at most 2000 characters. */
 function draftNotesText(given: unknown, generated: string[]): string | null {
-  const own = typeof given === "string" ? given.trim() : "";
-  const all = [own, ...generated].filter(Boolean).join("\n");
+  const own = typeof given === "string" ? given.split("\n") : [];
+  const lines = [...generated, ...own].map((line) => line.trim()).filter(Boolean);
+  const all = [...new Set(lines)].join("\n");
   return all ? all.slice(0, MAX_DRAFT_NOTES) : null;
 }
 
@@ -880,24 +889,41 @@ async function createDraftLearner(db: D1Database, input: LearnerInput, now: Date
 async function updateDraftLearner(db: D1Database, existing: Learner, input: LearnerEditInput, now: Date): Promise<UpdateLearnerResult> {
   const confirm = input.draft === false;
   const sent = { ...input } as LearnerInput;
-  const { clean, notes } = confirm ? { clean: sent, notes: [] as string[] } : sanitiseDraftInput(sent, now);
-  const merged: LearnerInput = {};
-  for (const key of LEARNER_EDIT_KEYS) (merged as Record<string, unknown>)[key] = clean[key as keyof LearnerInput] !== undefined ? clean[key as keyof LearnerInput] : existing[key];
-  if (!confirm && text(clean.fullName, 120) === null) merged.fullName = existing.fullName;
-  delete (merged as Record<string, unknown>).licenceStage;
+  const { clean, notes } = confirm ? { clean: sent, notes: [] as string[] } : sanitiseDraftInput(sent, now, existing);
+  const mergeInput = (): LearnerInput => {
+    const merged: LearnerInput = {};
+    for (const key of LEARNER_EDIT_KEYS) (merged as Record<string, unknown>)[key] = clean[key as keyof LearnerInput] !== undefined ? clean[key as keyof LearnerInput] : existing[key];
+    if (!confirm && text(clean.fullName, 120) === null) merged.fullName = existing.fullName;
+    delete (merged as Record<string, unknown>).licenceStage;
+    return merged;
+  };
+  let merged = mergeInput();
   if (confirm) {
     const name = text(merged.fullName, 120);
     if (!name || name === DRAFT_NAME_PLACEHOLDER) throw new ValidationError("Enter the student's name before confirming the draft.");
     parseLearnerFields(merged as LearnerEditInput, true, existing);
   }
-  const fields = prepareNewLearnerFields(merged, now);
+  let fields: Partial<LearnerFields>;
+  try {
+    fields = prepareNewLearnerFields(merged, now);
+  } catch (error) {
+    if (confirm || !(error instanceof ValidationError)) throw error;
+    // The new values clash with ones already stored (e.g. a licence date before the stored date of birth): keep the stored ones.
+    const sensitive = ["dob", ...DRAFT_GROUPS.flat()] as (keyof LearnerInput)[];
+    const lost = sensitive.filter((k) => clean[k] !== undefined && String(clean[k] ?? "").trim() !== "").map((k) => `${String(k)}: "${String(clean[k]).trim().slice(0, 80)}"`);
+    notes.push(`Not saved (${error.message.replace(/\.$/, "")}): ${lost.join(", ")}. The previous values were kept.`);
+    for (const key of sensitive) delete clean[key];
+    merged = mergeInput();
+    fields = prepareNewLearnerFields(merged, now);
+  }
   const changedFields = LEARNER_EDIT_KEYS.filter((key) => key !== "licenceStage" && (fields[key] ?? null) !== (existing[key] ?? null));
   const notesValue = confirm ? null : draftNotesText(input.draftNotes !== undefined ? input.draftNotes : existing.draftNotes, notes);
   const sets = [...changedFields.map((key) => `${LEARNER_COLUMN[key]} = ?`), "draft_notes = ?", ...(confirm ? ["draft_at = NULL"] : [])];
-  await db
+  const update = await db
     .prepare(`UPDATE learners SET ${sets.join(", ")}, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ? AND draft_at IS NOT NULL`)
     .bind(...changedFields.map((key) => fields[key] ?? null), notesValue, existing.id)
     .run();
+  if (!update.meta.changes) throw new ValidationError("This learner is no longer a draft. Reload it.");
   return { learner: await getLearner(db, existing.id), changed: true, changedFields: [...changedFields] };
 }
 

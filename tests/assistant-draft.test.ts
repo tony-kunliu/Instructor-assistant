@@ -134,3 +134,13 @@ test("a learner draft may mark values unclear and add review notes; nothing uncl
   assert.match(d.fields.notes, /Licence number: unclear on the paper/);
   assert.deepEqual(d.problems, []);
 });
+
+test("review notes may repeat and are joined; a value with an unclear part is emptied, not half-kept", () => {
+  const d = parseAssistantDraft("ACTGDS-DRAFT LEARNER\nName: Jane\nPhone: 0400 1?3 456\nLicence number: 12345 (unclear)\nUnclear: one\nCheck: two\nUnclear: three");
+  if (d.kind !== "learner") return assert.fail(d.kind);
+  assert.equal(d.fields.phone, "");
+  assert.equal(d.fields.licenceNumber, "");
+  assert.match(d.fields.notes, /one\ntwo\nthree/);
+  assert.match(d.fields.notes, /Phone: unclear on the paper/);
+  assert.deepEqual(d.problems, []);
+});
