@@ -16,6 +16,8 @@
 //   Achieved: 4, Review 1-17
 //   Location: Belconnen
 //   Comments: free text
+// A LEARNER block may add "Unclear: what to check" lines, and a value of "unclear" / 看不清 means it could not be read:
+// left empty and noted for the review.
 // Values like "not provided", "未提供", "-" or "—" mean empty. Nothing is guessed: unknown or invalid values are reported.
 
 import { CORE_COMPETENCY_IDS, FINAL_DRIVE_23, REVIEW_1_17, REVIEW_1_22, type AssessmentResult } from "./competency.ts";
@@ -47,6 +49,8 @@ export type LearnerDraftFields = {
   schoolWork: string;
   transmission: "" | "manual" | "auto";
   eligibility: string;
+  /** What to check before confirming (from "Unclear:" / "Needs review:" lines and values marked unclear). */
+  notes: string;
 };
 
 export type AssistantDraft =
@@ -54,6 +58,12 @@ export type AssistantDraft =
   | { kind: "learner"; fields: LearnerDraftFields; problems: string[] };
 
 const EMPTY = new Set(["", "-", "—", "–", "n/a", "na", "none", "not provided", "not given", "unknown", "未提供", "无", "没有"]);
+// A value the assistant could not read from the photo: left empty, and noted for the review (never guessed).
+const UNCLEAR = new Set(["unclear", "illegible", "unreadable", "blurry", "?", "??", "看不清", "不清楚", "模糊"]);
+const FIELD_LABEL: Record<string, string> = {
+  fullName: "Name", instructorName: "Instructor", phone: "Phone", dob: "DOB", licenceNumber: "Licence number", licenceExpiry: "Licence expiry",
+  address: "Address", schoolWork: "School / Work", transmission: "Manual / Auto", eligibility: "Eligibility",
+};
 const clean = (v: string) => (EMPTY.has(v.trim().toLowerCase().replace(/[.。!！]+$/, "")) ? "" : v.trim());
 
 const LESSON_KEYS: Record<string, keyof LessonDraftFields> = {
@@ -69,6 +79,7 @@ const LEARNER_KEYS: Record<string, keyof LearnerDraftFields> = {
   "licence expiry": "licenceExpiry", "license expiry": "licenceExpiry", address: "address",
   "school / work": "schoolWork", "school/work": "schoolWork", school: "schoolWork", "manual / auto": "transmission",
   "manual/auto": "transmission", transmission: "transmission", eligibility: "eligibility",
+  unclear: "notes", "needs review": "notes", review: "notes", check: "notes", notes: "notes",
 };
 
 /** "Review 1-17", "R1-17", "review-1-17", "Final Drive 23", "23", "7" → canonical ids; anything else is null. */
@@ -93,7 +104,7 @@ function idList(value: string, label: string, problems: string[]): string[] {
 }
 
 /** Fields whose value may run onto further lines. */
-const MULTILINE = new Set<string>(["location", "comments", "address"]);
+const MULTILINE = new Set<string>(["location", "comments", "address", "notes"]);
 
 /**
  * The "Key: value" pairs after the marker line, mapped to field names. Unknown keys, repeated keys and stray lines are
@@ -164,8 +175,11 @@ export function parseAssistantDraft(text: string): AssistantDraft | { kind: "non
   }
   if (head.kind === "learner") {
     const split = splitLines(text, LEARNER_KEYS, problems)!;
-    const f: LearnerDraftFields = { fullName: "", instructorName: "", phone: "", dob: "", licenceNumber: "", licenceExpiry: "", address: "", schoolWork: "", transmission: "", eligibility: "" };
+    const f: LearnerDraftFields = { fullName: "", instructorName: "", phone: "", dob: "", licenceNumber: "", licenceExpiry: "", address: "", schoolWork: "", transmission: "", eligibility: "", notes: "" };
+    const unclearNotes: string[] = [];
     for (const [field, raw] of split.values) {
+      if (field === "notes") { f.notes = raw.trim(); continue; }
+      if (UNCLEAR.has(raw.trim().toLowerCase())) { unclearNotes.push(`${FIELD_LABEL[field] ?? field}: unclear on the paper, check the original.`); continue; }
       const value = clean(raw);
       if (field === "transmission") {
         const t = value.toLowerCase();
@@ -175,6 +189,7 @@ export function parseAssistantDraft(text: string): AssistantDraft | { kind: "non
         else problems.push(`Manual / Auto "${value}" must be Manual or Auto.`);
       } else f[field] = value;
     }
+    f.notes = [f.notes, ...unclearNotes].filter(Boolean).join("\n");
     if (!f.fullName) problems.push("Student name is missing.");
     for (const k of ["dob", "licenceExpiry"] as const) if (f[k] && !DATE.test(f[k])) { problems.push(`${k === "dob" ? "DOB" : "Licence expiry"} "${f[k]}" must look like 2026-10-22.`); f[k] = ""; }
     return { kind: "learner", fields: f, problems };

@@ -224,4 +224,7 @@ ALTER TABLE learners ADD COLUMN other_licence_issued_on TEXT;
 ALTER TABLE learners ADD COLUMN other_licence_expires_on TEXT;
 
 ALTER TABLE instructors ADD COLUMN adi_signature TEXT;
+
+ALTER TABLE learners ADD COLUMN draft_at TEXT;
+ALTER TABLE learners ADD COLUMN draft_notes TEXT;
 `;

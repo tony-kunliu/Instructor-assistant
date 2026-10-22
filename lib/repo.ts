@@ -81,6 +81,8 @@ function submittedSignature(value: unknown, who: "ADI" | "Learner"): string | nu
 function toLearner(row: Row): Learner {
   return {
     id: String(row.id),
+    draftAt: nullableString(row.draft_at),
+    draftNotes: nullableString(row.draft_notes),
     instructorId: String(row.instructor_id),
     instructorName: String(row.instructor_name ?? ""),
     instructorAdiNumber: (row.instructor_adi_number as string) ?? null,
@@ -742,7 +744,8 @@ function parseLearnerFields(input: LearnerEditInput, strict: boolean, existing?:
   return out;
 }
 
-export async function createLearner(db: D1Database, input: LearnerInput, now: Date = new Date()): Promise<Learner> {
+/** The learner fields of a new learner, validated (name, dates, Competency 23 rules, address parts, other licence). Throws ValidationError. */
+function prepareNewLearnerFields(input: LearnerInput, now: Date): Partial<LearnerFields> {
   const fields = parseLearnerFields({ ...input, fullName: input.fullName ?? "" }, false);
   checkRulesFields(
     { dob: fields.dob ?? null, learnerLicenceIssuedOn: fields.learnerLicenceIssuedOn ?? null, learnerLicenceFirstIssuedOn: fields.learnerLicenceFirstIssuedOn ?? null, hptPassedOn: fields.hptPassedOn ?? null, loggedHours: fields.loggedHours ?? null, loggedHoursOn: fields.loggedHoursOn ?? null },
@@ -757,6 +760,16 @@ export async function createLearner(db: D1Database, input: LearnerInput, now: Da
     localNow(now).date,
   );
   if (other) Object.assign(fields, other);
+  return fields;
+}
+
+export async function createLearner(db: D1Database, input: LearnerInput, now: Date = new Date()): Promise<Learner> {
+  if (input.draft === true) return createDraftLearner(db, input, now);
+  return insertLearner(db, input, now);
+}
+
+async function insertLearner(db: D1Database, input: LearnerInput, now: Date, draftNotes?: string | null): Promise<Learner> {
+  const fields = prepareNewLearnerFields(input, now);
   // Instructor must already exist and be active — no free-text name, no
   // auto-creation. Reuses the same existing-and-active check as lesson
   // attribution, just made required here (an omitted/unknown/inactive id
@@ -765,7 +778,7 @@ export async function createLearner(db: D1Database, input: LearnerInput, now: Da
   if (!instructorId) throw new ValidationError("Instructor is required.");
 
   const id = crypto.randomUUID();
-  await db
+  const insert = db
     .prepare(
       `INSERT INTO learners (id, instructor_id, full_name, address, phone, dob, licence_number, licence_expiry, eligibility, transmission, school_work,
          learner_licence_issued_on, learner_licence_first_issued_on, hpt_passed_on, logged_hours, logged_hours_on,
@@ -799,9 +812,93 @@ export async function createLearner(db: D1Database, input: LearnerInput, now: Da
       fields.otherLicenceClass ?? null,
       fields.otherLicenceIssuedOn ?? null,
       fields.otherLicenceExpiresOn ?? null,
-    )
-    .run();
+    );
+  // A draft is inserted and marked in ONE atomic batch, so it is never visible as a normal learner.
+  if (draftNotes === undefined) await insert.run();
+  else await db.batch([insert, db.prepare("UPDATE learners SET draft_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), draft_notes = ? WHERE id = ?").bind(draftNotes, id)]);
   return getLearner(db, id);
+}
+
+// ── Learner drafts (migration 0015) ──────────────────────────────────────
+
+export const DRAFT_NAME_PLACEHOLDER = "Unnamed draft";
+const MAX_DRAFT_NOTES = 2000;
+const DRAFT_GROUPS: readonly (readonly (keyof LearnerInput)[])[] = [
+  ["learnerLicenceIssuedOn", "learnerLicenceFirstIssuedOn", "hptPassedOn", "loggedHours", "loggedHoursOn"],
+  ["address", "addressSuburb", "addressState", "addressPostcode"],
+  [...OTHER_LICENCE_KEYS],
+];
+
+/**
+ * Makes a draft's input safe to store: each group of fields that the normal rules would refuse (a Competency 23 date
+ * in the future, a street suggestion that does not match, an unknown other-licence kind, a date that is not a date) is
+ * DROPPED and written to the review notes with what was sent. Nothing is guessed or "fixed"; the rest is kept.
+ */
+function sanitiseDraftInput(input: LearnerInput, now: Date): { clean: LearnerInput; notes: string[] } {
+  const clean: LearnerInput = { ...input };
+  const notes: string[] = [];
+  const shown = (keys: readonly (keyof LearnerInput)[]) => keys.filter((k) => String(clean[k] ?? "").trim() !== "").map((k) => `${String(k)}: "${String(clean[k]).trim().slice(0, 80)}"`).join(", ");
+  for (const key of ["dob", "licenceExpiry"] as const) {
+    const raw = String(clean[key] ?? "").trim();
+    if (raw && isoDate(raw) === null) { notes.push(`Not saved (not a date YYYY-MM-DD): ${key}: "${raw.slice(0, 80)}".`); clean[key] = ""; }
+  }
+  const tx = String(clean.transmission ?? "").trim().toLowerCase();
+  if (tx && tx !== "manual" && tx !== "auto") { notes.push(`Not saved (must be manual or auto): transmission: "${tx.slice(0, 80)}".`); clean.transmission = ""; }
+  for (const group of DRAFT_GROUPS) {
+    if (!shown(group)) continue;
+    const trial: LearnerInput = { fullName: "x", dob: clean.dob };
+    for (const key of group) trial[key] = clean[key];
+    try {
+      prepareNewLearnerFields(trial, now);
+    } catch (error) {
+      if (!(error instanceof ValidationError)) throw error;
+      notes.push(`Not saved (${error.message.replace(/\.$/, "")}): ${shown(group)}.`);
+      for (const key of group) clean[key] = "";
+    }
+  }
+  return { clean, notes };
+}
+
+function draftNotesText(given: unknown, generated: string[]): string | null {
+  const own = typeof given === "string" ? given.trim() : "";
+  const all = [own, ...generated].filter(Boolean).join("\n");
+  return all ? all.slice(0, MAX_DRAFT_NOTES) : null;
+}
+
+/** Saves an incomplete learner as a DRAFT: only the instructor is required; the name may be missing ("Unnamed draft"). */
+async function createDraftLearner(db: D1Database, input: LearnerInput, now: Date): Promise<Learner> {
+  const { clean, notes } = sanitiseDraftInput(input, now);
+  const name = text(input.fullName, 120);
+  return insertLearner(db, { ...clean, fullName: name ?? DRAFT_NAME_PLACEHOLDER }, now, draftNotesText(input.draftNotes, notes));
+}
+
+/**
+ * Edits a DRAFT learner. Without `draft: false` it stays a draft (lenient, like create); with `draft: false` it is
+ * CONFIRMED: every rule of a normal learner applies (a real name, valid dates, the Competency 23 rules) and the draft
+ * mark and notes are cleared. Only then can the learner take lessons.
+ */
+async function updateDraftLearner(db: D1Database, existing: Learner, input: LearnerEditInput, now: Date): Promise<UpdateLearnerResult> {
+  const confirm = input.draft === false;
+  const sent = { ...input } as LearnerInput;
+  const { clean, notes } = confirm ? { clean: sent, notes: [] as string[] } : sanitiseDraftInput(sent, now);
+  const merged: LearnerInput = {};
+  for (const key of LEARNER_EDIT_KEYS) (merged as Record<string, unknown>)[key] = clean[key as keyof LearnerInput] !== undefined ? clean[key as keyof LearnerInput] : existing[key];
+  if (!confirm && text(clean.fullName, 120) === null) merged.fullName = existing.fullName;
+  delete (merged as Record<string, unknown>).licenceStage;
+  if (confirm) {
+    const name = text(merged.fullName, 120);
+    if (!name || name === DRAFT_NAME_PLACEHOLDER) throw new ValidationError("Enter the student's name before confirming the draft.");
+    parseLearnerFields(merged as LearnerEditInput, true, existing);
+  }
+  const fields = prepareNewLearnerFields(merged, now);
+  const changedFields = LEARNER_EDIT_KEYS.filter((key) => key !== "licenceStage" && (fields[key] ?? null) !== (existing[key] ?? null));
+  const notesValue = confirm ? null : draftNotesText(input.draftNotes !== undefined ? input.draftNotes : existing.draftNotes, notes);
+  const sets = [...changedFields.map((key) => `${LEARNER_COLUMN[key]} = ?`), "draft_notes = ?", ...(confirm ? ["draft_at = NULL"] : [])];
+  await db
+    .prepare(`UPDATE learners SET ${sets.join(", ")}, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ? AND draft_at IS NOT NULL`)
+    .bind(...changedFields.map((key) => fields[key] ?? null), notesValue, existing.id)
+    .run();
+  return { learner: await getLearner(db, existing.id), changed: true, changedFields: [...changedFields] };
 }
 
 export type UpdateLearnerResult = { learner: Learner; changed: boolean; changedFields: string[] };
@@ -835,6 +932,8 @@ export async function updateLearner(db: D1Database, id: string, input: LearnerEd
     throw new ValidationError(`This learner belongs to ${existing.instructorName || "another instructor"}; only they can edit their details.`);
   }
   if (input.instructorId !== undefined) throw new ValidationError("A learner's instructor cannot be changed here.");
+  if (existing.draftAt) return updateDraftLearner(db, existing, input, now);
+  if (input.draft !== undefined || input.draftNotes !== undefined) throw new ValidationError("Only a draft learner can be saved as a draft or confirmed.");
   const fields = parseLearnerFields(input, true, existing);
   const keys = LEARNER_EDIT_KEYS.filter((key) => fields[key] !== undefined);
   if (!keys.length) throw new ValidationError("Nothing to change: send at least one learner field.");
@@ -1080,6 +1179,7 @@ function scheduleIntegrationDelivery(db: D1Database, integration: IntegrationHoo
 
 export async function createLesson(db: D1Database, learnerId: string, input: LessonInput, integration?: IntegrationHooks): Promise<Lesson> {
   const learner = await getLearner(db, learnerId);
+  if (learner.draftAt) throw new ValidationError("This learner is still a draft. Review the details and confirm the learner before recording lessons.");
 
   const lessonDate = isoDate(input.lessonDate);
   if (!lessonDate) throw new ValidationError(String(input.lessonDate ?? "").trim() ? "Lesson date must be a valid date (YYYY-MM-DD)." : "Lesson date is required.");
@@ -1272,6 +1372,7 @@ export async function importPaperLessons(db: D1Database, learnerId: string, csvT
   if (typeof csvText !== "string" || !csvText.trim()) throw new ValidationError("CSV file is required.");
   if (new TextEncoder().encode(csvText).length > MAX_IMPORT_CSV_BYTES) throw new ValidationError("File is too large.");
   const learner = await getLearner(db, learnerId);
+  if (learner.draftAt) throw new ValidationError("This learner is still a draft. Review the details and confirm the learner before importing records.");
   // No rows at all — getTotals().lessonCount would not see prior-instructor records (negative lesson_no).
   const existing = await db.prepare("SELECT COUNT(*) AS n FROM lessons WHERE learner_id = ?").bind(learnerId).first<Row>();
   if (Number(existing?.n ?? 0) !== 0) throw new ValidationError("Paper records can only be imported into a learner with no lessons.");

@@ -122,3 +122,15 @@ test("a competency both taught and assessed is kept in Assessed only", () => {
   assert.deepEqual(d.fields.taughtIds, ["1"]);
   assert.deepEqual(d.fields.assessedIds, ["2"]);
 });
+
+test("a learner draft may mark values unclear and add review notes; nothing unclear is guessed", () => {
+  const d = parseAssistantDraft("ACTGDS-DRAFT LEARNER\nName: Jane Citizen\nPhone: 看不清\nLicence number: UNCLEAR\nDOB: 2008-01-02\nUnclear: last digit of the licence number\nsecond line of the note");
+  if (d.kind !== "learner") return assert.fail(d.kind);
+  assert.equal(d.fields.phone, "");
+  assert.equal(d.fields.licenceNumber, "");
+  assert.equal(d.fields.dob, "2008-01-02");
+  assert.match(d.fields.notes, /last digit of the licence number\nsecond line of the note/);
+  assert.match(d.fields.notes, /Phone: unclear on the paper/);
+  assert.match(d.fields.notes, /Licence number: unclear on the paper/);
+  assert.deepEqual(d.problems, []);
+});
