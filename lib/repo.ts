@@ -1438,7 +1438,8 @@ export async function importPaperLessons(db: D1Database, learnerId: string, csvT
     });
     eventRowsToInsert.push(...competencyEventRows(learnerId, id, lesson.taughtIds, lesson.assessedIds, lesson.achievedResults));
   }
-  const statements = [jsonInsertStatement(db, "lessons", PAPER_LESSON_COLUMNS, lessonRowsToInsert), insertCompetencyEventsStatement(db, eventRowsToInsert)].filter(
+  // The saved CSV draft (migration 0016) has done its job: removed in the same atomic batch as the import.
+  const statements = [jsonInsertStatement(db, "lessons", PAPER_LESSON_COLUMNS, lessonRowsToInsert), insertCompetencyEventsStatement(db, eventRowsToInsert), db.prepare("DELETE FROM paper_import_drafts WHERE learner_id = ?").bind(learnerId)].filter(
     (statement): statement is D1PreparedStatement => statement !== null,
   );
   try {
@@ -1448,6 +1449,52 @@ export async function importPaperLessons(db: D1Database, learnerId: string, csvT
     throw error;
   }
   return { mode, preview: plan.preview, lessonCount: plan.lessons.length };
+}
+
+// ── Saved CSV drafts for the paper import (migration 0016) ───────────────
+
+export type PaperImportDraft = { csv: string; savedAt: string };
+
+/** The CSV saved for this learner, or null. */
+export async function getPaperImportDraft(db: D1Database, learnerId: string, scope: Scope = { kind: "all" }): Promise<PaperImportDraft | null> {
+  await learnerInScope(db, learnerId, scope);
+  // Only while the learner can still import: a draft left behind by an import that did not clean up is never served.
+  const row = await db
+    .prepare("SELECT csv_text, saved_at FROM paper_import_drafts WHERE learner_id = ? AND NOT EXISTS (SELECT 1 FROM lessons WHERE lessons.learner_id = paper_import_drafts.learner_id)")
+    .bind(learnerId)
+    .first<Row>();
+  return row ? { csv: String(row.csv_text), savedAt: String(row.saved_at) } : null;
+}
+
+/** The learner, or NotFound when an instructor scope (SaaS) does not own them: the CSV holds the learner's records, so it is never served across tenants. Private mode (scope all) sees every learner, like the import. */
+async function learnerInScope(db: D1Database, learnerId: string, scope: Scope): Promise<Learner> {
+  const learner = await getLearner(db, learnerId);
+  if (scope.kind === "instructor" && learner.instructorId !== scope.instructorId) throw new NotFoundError("Learner not found.");
+  return learner;
+}
+
+/** Saves (replaces) the learner's CSV draft: any text is kept, however wrong; only an empty or oversized one is refused. Who may save follows the import itself (every instructor in private mode, own learners in SaaS). */
+export async function savePaperImportDraft(db: D1Database, learnerId: string, csv: unknown, actingInstructorId?: unknown, scope: Scope = { kind: "all" }): Promise<PaperImportDraft> {
+  if (typeof csv !== "string" || !csv.trim()) throw new ValidationError("There is no CSV text to save.");
+  if (new TextEncoder().encode(csv).length > MAX_IMPORT_CSV_BYTES) throw new ValidationError("File is too large.");
+  await learnerInScope(db, learnerId, scope);
+  const actor = await resolveActingInstructorId(db, actingInstructorId);
+  const existing = await db.prepare("SELECT COUNT(*) AS n FROM lessons WHERE learner_id = ?").bind(learnerId).first<Row>();
+  if (Number(existing?.n ?? 0) !== 0) throw new ValidationError("This learner already has lessons, so paper records can no longer be imported.");
+  await db
+    .prepare(
+      `INSERT INTO paper_import_drafts (learner_id, csv_text, saved_at, saved_by_instructor_id) VALUES (?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), ?)
+       ON CONFLICT (learner_id) DO UPDATE SET csv_text = excluded.csv_text, saved_at = excluded.saved_at, saved_by_instructor_id = excluded.saved_by_instructor_id`,
+    )
+    .bind(learnerId, csv, actor)
+    .run();
+  return (await getPaperImportDraft(db, learnerId, scope))!;
+}
+
+/** Removes the learner's CSV draft (nothing to remove is fine). */
+export async function deletePaperImportDraft(db: D1Database, learnerId: string, scope: Scope = { kind: "all" }): Promise<void> {
+  await learnerInScope(db, learnerId, scope);
+  await db.prepare("DELETE FROM paper_import_drafts WHERE learner_id = ?").bind(learnerId).run();
 }
 
 /** Fields that, if changed, invalidate both existing signatures (CBT&A V3 rule 5). */
