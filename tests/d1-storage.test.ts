@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { openTestD1 } from "../lib/db.ts";
 import { SCHEMA_SQL } from "../lib/schema.ts";
 
-test("migrations/0001..0014 match lib/schema.ts (no drift between the two)", () => {
+test("migrations/0001..0015 match lib/schema.ts (no drift between the two)", () => {
   const migrationFiles = [
     "0001_init.sql",
     "0002_add_competency_events.sql",
@@ -20,6 +20,7 @@ test("migrations/0001..0014 match lib/schema.ts (no drift between the two)", () 
     "0012_learner_address_parts.sql",
     "0013_learner_other_licence.sql",
     "0014_instructor_adi_signature.sql",
+    "0015_learner_draft.sql",
   ];
   const migrations = migrationFiles.map((name) => readFileSync(new URL(`../migrations/${name}`, import.meta.url), "utf8"));
   const normalize = (sql: string) => sql.replace(/--.*$/gm, "").replace(/\s+/g, " ").trim();

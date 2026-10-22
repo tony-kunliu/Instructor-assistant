@@ -731,3 +731,9 @@ details.fsect.group .inner > .hint-note { margin: 0; }
 /* Saved ADI signature buttons under the ADI pad. */
 .saved-sig { display: flex; flex-wrap: wrap; gap: 4px 16px; align-items: center; margin-top: 4px; }
 .saved-sig .link { min-height: 44px; padding: 0 2px; font-size: 14px; }
+
+/* Learner drafts (Tony 2026-10-22). */
+.lc-draft { margin-left: 8px; padding: 1px 8px; border-radius: 8px; background: var(--warn-soft); color: var(--warn); font-size: 12px; font-weight: 700; vertical-align: middle; }
+.lifecycle.draft { display: grid; gap: 8px; }
+.lifecycle.draft .draft-notes { white-space: pre-wrap; overflow-wrap: anywhere; background: var(--warn-soft); color: var(--warn); border-radius: 10px; padding: 8px 10px; margin: 0; }
+.learner-actions .btn.save-draft { min-height: 44px; grid-column: 1 / -1; }

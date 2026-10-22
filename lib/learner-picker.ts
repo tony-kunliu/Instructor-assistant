@@ -43,9 +43,10 @@ export function selectionAfterViewChange(selected: Learner | undefined, nextView
 }
 
 /** Which main panel an open learner gets: normal lessons, the CBT&A Completed card (archive suggestion, no Start Lesson), or the archived banner. */
-export type LearnerPanel = "active" | "completed" | "archived";
+export type LearnerPanel = "active" | "completed" | "archived" | "draft";
 
-export function learnerPanel(options: { archivedAt: string | null; completed: boolean }): LearnerPanel {
+export function learnerPanel(options: { archivedAt: string | null; completed: boolean; draftAt?: string | null }): LearnerPanel {
   if (options.archivedAt !== null) return "archived";
+  if (options.draftAt) return "draft";
   return options.completed ? "completed" : "active";
 }
