@@ -1450,6 +1450,44 @@ export async function importPaperLessons(db: D1Database, learnerId: string, csvT
   return { mode, preview: plan.preview, lessonCount: plan.lessons.length };
 }
 
+// ── Saved CSV drafts for the paper import (migration 0016) ───────────────
+
+export type PaperImportDraft = { csv: string; savedAt: string };
+
+/** The CSV saved for this learner, or null. */
+export async function getPaperImportDraft(db: D1Database, learnerId: string): Promise<PaperImportDraft | null> {
+  await getLearner(db, learnerId);
+  const row = await db.prepare("SELECT csv_text, saved_at FROM paper_import_drafts WHERE learner_id = ?").bind(learnerId).first<Row>();
+  return row ? { csv: String(row.csv_text), savedAt: String(row.saved_at) } : null;
+}
+
+/** Saves (replaces) the learner's CSV draft: any text is kept, however wrong; only an empty or oversized one is refused. */
+export async function savePaperImportDraft(db: D1Database, learnerId: string, csv: unknown, actingInstructorId?: unknown): Promise<PaperImportDraft> {
+  if (typeof csv !== "string" || !csv.trim()) throw new ValidationError("There is no CSV text to save.");
+  if (new TextEncoder().encode(csv).length > MAX_IMPORT_CSV_BYTES) throw new ValidationError("File is too large.");
+  const learner = await getLearner(db, learnerId);
+  const actor = await resolveActingInstructorId(db, actingInstructorId);
+  if (actor !== null && actor !== learner.instructorId) throw new ValidationError(`This learner belongs to ${learner.instructorName || "another instructor"}; only they can save a CSV draft for them.`);
+  const existing = await db.prepare("SELECT COUNT(*) AS n FROM lessons WHERE learner_id = ?").bind(learnerId).first<Row>();
+  if (Number(existing?.n ?? 0) !== 0) throw new ValidationError("This learner already has lessons, so paper records can no longer be imported.");
+  await db
+    .prepare(
+      `INSERT INTO paper_import_drafts (learner_id, csv_text, saved_at, saved_by_instructor_id) VALUES (?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), ?)
+       ON CONFLICT (learner_id) DO UPDATE SET csv_text = excluded.csv_text, saved_at = excluded.saved_at, saved_by_instructor_id = excluded.saved_by_instructor_id`,
+    )
+    .bind(learnerId, csv, actor)
+    .run();
+  return (await getPaperImportDraft(db, learnerId))!;
+}
+
+/** Removes the learner's CSV draft (nothing to remove is fine). */
+export async function deletePaperImportDraft(db: D1Database, learnerId: string, actingInstructorId?: unknown): Promise<void> {
+  const learner = await getLearner(db, learnerId);
+  const actor = await resolveActingInstructorId(db, actingInstructorId);
+  if (actor !== null && actor !== learner.instructorId) throw new ValidationError(`This learner belongs to ${learner.instructorName || "another instructor"}; only they can remove a CSV draft.`);
+  await db.prepare("DELETE FROM paper_import_drafts WHERE learner_id = ?").bind(learnerId).run();
+}
+
 /** Fields that, if changed, invalidate both existing signatures (CBT&A V3 rule 5). */
 const SIGNATURE_PROTECTED_FIELDS = ["lessonDate", "startTime", "finishTime", "startOdometer", "finishOdometer", "taught", "assessed", "achieved", "location", "comments"] as const;
 

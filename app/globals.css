@@ -737,3 +737,8 @@ details.fsect.group .inner > .hint-note { margin: 0; }
 .lifecycle.draft { display: grid; gap: 8px; }
 .lifecycle.draft .draft-notes { white-space: pre-wrap; overflow-wrap: anywhere; background: var(--warn-soft); color: var(--warn); border-radius: 10px; padding: 8px 10px; margin: 0; }
 .learner-actions .btn.save-draft { min-height: 44px; grid-column: 1 / -1; }
+
+/* Paper import: CSV text box and saved draft. */
+.paper-import-text { width: 100%; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; line-height: 1.4; }
+.paper-import-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 8px 0; }
+.paper-import-line { display: block; margin-top: 2px; font-size: 12px; overflow-wrap: anywhere; opacity: .85; }

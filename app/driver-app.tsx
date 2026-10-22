@@ -1779,8 +1779,8 @@ export default function DriverApp() {
 
           <CompetencyProgressCard progress={detail.progress} completion={detail.completion} invalidated={invalidation} />
 
-          {detail.lessons.length === 0 && panel === "active" ? (
-            <PaperImportPanel key={detail.learner.id} learnerId={detail.learner.id} onImported={() => loadLearner(detail.learner.id)} />
+          {detail.lessons.length === 0 && (panel === "active" || panel === "draft") ? (
+            <PaperImportPanel key={detail.learner.id} learnerId={detail.learner.id} canImport={panel === "active"} onImported={() => loadLearner(detail.learner.id)} />
           ) : null}
 
           {panel === "completed" ? (

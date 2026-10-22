@@ -227,4 +227,11 @@ ALTER TABLE instructors ADD COLUMN adi_signature TEXT;
 
 ALTER TABLE learners ADD COLUMN draft_at TEXT;
 ALTER TABLE learners ADD COLUMN draft_notes TEXT;
+
+CREATE TABLE IF NOT EXISTS paper_import_drafts (
+  learner_id              TEXT PRIMARY KEY REFERENCES learners (id),
+  csv_text                TEXT NOT NULL,
+  saved_at                TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  saved_by_instructor_id  TEXT REFERENCES instructors (id)
+);
 `;
