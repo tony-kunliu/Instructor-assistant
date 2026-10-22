@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import { formatMinutes } from "@/lib/calc.ts";
-import type { PaperImportPreview } from "@/lib/paper-import.ts";
+import { parseCsvRecords, type PaperImportPreview } from "@/lib/paper-import.ts";
 import { priorPreviewNote, priorSummaryLine } from "@/lib/prior-record.ts";
 
 type RowError = { row: number; message: string };
@@ -51,17 +51,34 @@ export default function PaperImportPanel({ learnerId, onImported, canImport = tr
   const [busy, setBusy] = useState(false);
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
+  // The exact text the preview was made from: Confirm imports THIS, never whatever the box holds by then.
+  const [previewedCsv, setPreviewedCsv] = useState<string | null>(null);
+  // The text last saved as a draft or loaded from one (to warn before it is thrown away).
+  const [savedText, setSavedText] = useState("");
+  // Counts checks and edits: an answer for an older state is dropped. `touched`: the user has put text in the box.
+  const requestNo = useRef(0);
+  const touched = useRef(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   // Opening the panel brings back the CSV saved for this learner, if any.
   const openPanel = () => {
     setOpen(true);
     void draftCall<{ draft: { csv: string; savedAt: string } | null }>(learnerId)
-      .then(({ draft }) => { if (draft) { setText(draft.csv); setSavedAt(draft.savedAt); setNote("Your saved CSV draft is loaded."); } })
+      .then(({ draft }) => {
+        if (!draft) return;
+        setSavedAt(draft.savedAt);
+        setSavedText(draft.csv);
+        // Never over text the user already pasted, chose or typed while this was loading.
+        if (touched.current) { setNote("A CSV draft is saved for this learner. Close this panel and reopen it to load it."); return; }
+        setText(draft.csv);
+        setNote("Your saved CSV draft is loaded.");
+      })
       .catch(() => undefined);
   };
 
   const clearResult = () => {
+    requestNo.current += 1;
+    setPreviewedCsv(null);
     setPreview(null);
     setError(null);
     setRows([]);
@@ -69,6 +86,7 @@ export default function PaperImportPanel({ learnerId, onImported, canImport = tr
 
   const reset = () => {
     clearResult();
+    touched.current = false;
     setText("");
     setFileName("");
     setNote(null);
@@ -79,10 +97,14 @@ export default function PaperImportPanel({ learnerId, onImported, canImport = tr
     clearResult();
     if (!csv.trim()) return setError("Choose a CSV file or paste the CSV text first.");
     setBusy(true);
+    const mine = requestNo.current;
     const result = await post(learnerId, csv, "preview");
     setBusy(false);
-    if (result.ok) setPreview(result.data.preview);
-    else {
+    if (mine !== requestNo.current) return; // the text was edited (or cleared) meanwhile: this answer is about an older text
+    if (result.ok) {
+      setPreview(result.data.preview);
+      setPreviewedCsv(csv);
+    } else {
       setError(result.error);
       setRows(result.rows);
     }
@@ -100,8 +122,9 @@ export default function PaperImportPanel({ learnerId, onImported, canImport = tr
       setError("Could not read that file. Please choose it again.");
       return;
     }
+    touched.current = true;
     setText(content);
-    await check(content);
+    if (canImport) await check(content);
   };
 
   const saveDraft = async () => {
@@ -111,6 +134,7 @@ export default function PaperImportPanel({ learnerId, onImported, canImport = tr
     try {
       const { draft } = await draftCall<{ draft: { csv: string; savedAt: string } }>(learnerId, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ csv: text }) });
       setSavedAt(draft.savedAt);
+      setSavedText(text);
       setNote("Saved as a draft. You can come back to it later.");
     } catch (e) {
       setNote((e as Error).message);
@@ -120,10 +144,12 @@ export default function PaperImportPanel({ learnerId, onImported, canImport = tr
   };
 
   const discardDraft = async () => {
+    if (!window.confirm("Remove the saved CSV draft and clear the text box?")) return;
     setBusy(true);
     try {
       await draftCall(learnerId, { method: "DELETE" });
       setSavedAt(null);
+      setSavedText("");
       reset();
       setNote("Draft removed.");
     } catch (e) {
@@ -134,10 +160,10 @@ export default function PaperImportPanel({ learnerId, onImported, canImport = tr
   };
 
   const confirm = async () => {
-    if (!preview || busy) return;
+    if (!preview || previewedCsv === null || busy) return;
     setBusy(true);
     setError(null);
-    const result = await post(learnerId, text, "commit");
+    const result = await post(learnerId, previewedCsv, "commit");
     if (result.ok) {
       void draftCall(learnerId, { method: "DELETE" }).catch(() => undefined); // the saved draft has done its job
       try {
@@ -161,7 +187,9 @@ export default function PaperImportPanel({ learnerId, onImported, canImport = tr
     return <button type="button" className="btn ghost block" data-testid="paper-import-open" onClick={openPanel}>Import paper records</button>;
   }
 
-  const lines = text.split(/\r?\n/);
+  // The record behind an error row (the parser counts records, not physical lines), shown as its cells.
+  const records = rows.length ? parseCsvRecords(text) : [];
+  const recordText = (row: number) => records.find((r) => r.row === row)?.cells.join(", ") ?? "";
 
   return (
     <section className="card paper-import" data-testid="paper-import-panel">
@@ -170,7 +198,7 @@ export default function PaperImportPanel({ learnerId, onImported, canImport = tr
       <input ref={inputRef} type="file" accept=".csv,text/csv" aria-label="Paper records CSV file" disabled={busy} onChange={(e) => void choose(e.target.files?.[0])} />
       {fileName ? <p className="meta paper-import-file">{fileName}</p> : null}
       <label className="field full"><span>CSV text</span>
-        <textarea className="paper-import-text" rows={8} spellCheck={false} value={text} onChange={(e) => { setText(e.target.value); clearResult(); setNote(null); }} data-testid="paper-import-text" placeholder="date,start_time,finish_time,…" />
+        <textarea className="paper-import-text" rows={8} spellCheck={false} value={text} disabled={busy} onChange={(e) => { touched.current = true; setText(e.target.value); clearResult(); setNote(null); }} data-testid="paper-import-text" placeholder="date,start_time,finish_time,…" />
       </label>
       <div className="paper-import-actions">
         {canImport ? <button type="button" className="btn primary" disabled={busy || !text.trim()} onClick={() => void check(text)} data-testid="paper-import-check">Check</button> : null}
@@ -185,7 +213,7 @@ export default function PaperImportPanel({ learnerId, onImported, canImport = tr
         <div className="status error" data-testid="paper-import-errors">
           <p>{error || "Import has errors."} Fix the lines in the text box and check again, or save it as a draft to finish later.</p>
           <ul className="paper-import-rows">
-            {rows.map((r, i) => <li key={i}>Row {r.row}: {r.message}{lines[r.row - 1] ? <code className="paper-import-line">{lines[r.row - 1].slice(0, 120)}</code> : null}</li>)}
+            {rows.map((r, i) => <li key={i}>Row {r.row}: {r.message}{recordText(r.row) ? <code className="paper-import-line">{Array.from(recordText(r.row)).slice(0, 120).join("")}</code> : null}</li>)}
           </ul>
         </div>
       ) : null}
@@ -214,7 +242,7 @@ export default function PaperImportPanel({ learnerId, onImported, canImport = tr
           ) : null}
         </div>
       ) : null}
-      <button type="button" className="link" onClick={() => { reset(); setOpen(false); }}>Close</button>
+      <button type="button" className="link" onClick={() => { if (text.trim() && text !== savedText && !window.confirm("Close without saving? The CSV text in the box will be lost. (Cancel, then use Save as draft, to keep it.)")) return; reset(); setSavedAt(null); setSavedText(""); setOpen(false); }}>Close</button>
     </section>
   );
 }

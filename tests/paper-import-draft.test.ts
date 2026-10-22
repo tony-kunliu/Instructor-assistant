@@ -46,10 +46,28 @@ test("a draft learner can hold a CSV draft, but cannot import it", async () => {
   await assert.rejects(importPaperLessons(db, draft.id, BAD_CSV, "preview"), /still a draft/);
 });
 
-test("only the learner's own instructor can save or remove their CSV draft", async () => {
+test("an instructor scope (SaaS) only reaches its own learners' CSV drafts", async () => {
   const { db, tony, learner } = await setup();
   const other = (await db.prepare("SELECT id FROM instructors WHERE id <> ? AND status = 'active' LIMIT 1").bind(tony.id).first<{ id: string }>())!;
-  await assert.rejects(savePaperImportDraft(db, learner.id, BAD_CSV, other.id), /only they can save/);
-  await savePaperImportDraft(db, learner.id, BAD_CSV, tony.id);
-  await assert.rejects(deletePaperImportDraft(db, learner.id, other.id), /only they can remove/);
+  const own = { kind: "instructor", instructorId: tony.id } as const;
+  const foreign = { kind: "instructor", instructorId: other.id } as const;
+  await savePaperImportDraft(db, learner.id, BAD_CSV, tony.id, own);
+  assert.equal((await getPaperImportDraft(db, learner.id, own))?.csv, BAD_CSV);
+  await assert.rejects(getPaperImportDraft(db, learner.id, foreign), /not found/i);
+  await assert.rejects(savePaperImportDraft(db, learner.id, BAD_CSV, other.id, foreign), /not found/i);
+  await assert.rejects(deletePaperImportDraft(db, learner.id, foreign), /not found/i);
+  assert.equal((await getPaperImportDraft(db, learner.id))?.csv, BAD_CSV, "private mode (scope all) sees it, like the import");
+});
+
+test("a successful import removes the saved draft in the same batch, and a draft is never served once the learner has lessons", async () => {
+  const { db, learner } = await setup();
+  const fixed = BAD_CSV.replace("2026-13-99", "2026-10-02");
+  await savePaperImportDraft(db, learner.id, fixed);
+  await importPaperLessons(db, learner.id, fixed, "commit");
+  assert.equal(await getPaperImportDraft(db, learner.id), null);
+  const row = await db.prepare("SELECT COUNT(*) AS n FROM paper_import_drafts WHERE learner_id = ?").bind(learner.id).first<{ n: number }>();
+  assert.equal(Number(row?.n), 0);
+  // A stale row (e.g. written before the learner gained a lesson another way) is still not served.
+  await db.prepare("INSERT INTO paper_import_drafts (learner_id, csv_text) VALUES (?, ?)").bind(learner.id, "stale").run();
+  assert.equal(await getPaperImportDraft(db, learner.id), null);
 });
