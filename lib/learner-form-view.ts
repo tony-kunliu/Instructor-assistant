@@ -23,7 +23,7 @@ export function addressPartChips(parts: { addressSuburb: string; addressState: s
   ];
 }
 
-export type LearnerPanelKind = "active" | "completed" | "archived";
+export type LearnerPanelKind = "active" | "completed" | "archived" | "draft";
 export type MoreSection = { shown: boolean; transfer: boolean; archive: boolean };
 
 /**
@@ -33,8 +33,8 @@ export type MoreSection = { shown: boolean; transfer: boolean; archive: boolean 
  */
 export function moreSection(input: { editing: boolean; canTransfer: boolean; panel: LearnerPanelKind }): MoreSection {
   if (!input.editing) return { shown: false, transfer: false, archive: false };
-  const transfer = input.canTransfer;
-  const archive = input.panel === "active";
+  const transfer = input.canTransfer && input.panel !== "draft";
+  const archive = input.panel === "active" || input.panel === "draft";
   return { shown: transfer || archive, transfer, archive };
 }
 
@@ -44,8 +44,9 @@ export function formSubline(editing: boolean): string {
 }
 
 /** The sticky bar's single primary action. */
-export function saveLabel(input: { editing: boolean; saving: boolean }): string {
+export function saveLabel(input: { editing: boolean; saving: boolean; draft?: boolean }): string {
   if (input.saving) return "Saving…";
+  if (input.draft) return "Confirm learner";
   return input.editing ? "Save changes" : "Save learner";
 }
 

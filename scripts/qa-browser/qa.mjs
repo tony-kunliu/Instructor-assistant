@@ -2968,7 +2968,7 @@ const draw = async (page, index) => {
   await s.page.click("[data-testid=new-learner]");
   await s.page.waitForSelector(F);
   const fresh = await formState(s.page);
-  check("form 375px New: title + subline, Student / Address / Licence & eligibility cards, NO More, Instructor select (no Licence stage), 'Save learner' + Cancel in the sticky bar, empty chips, every control ≥44px, no text under 12px", fresh.h2 === "New learner" && fresh.sub === "Only the name and instructor are required. Everything else can wait." && fresh.cards.join("|") === "Student|Address|Licence & eligibility" && fresh.moreOpen === null && fresh.instructor && !fresh.stage && fresh.bar?.save === "Save learner" && fresh.bar.cancel === "cancel-new-learner" && fresh.bar.position === "sticky" && fresh.chips.join("|") === "Suburb · —|State · —|Postcode · —" && fresh.shortControls.length === 0 && fresh.smallText === 0 && (await noHScroll(s.page)), JSON.stringify({ cards: fresh.cards, bar: fresh.bar, short: fresh.shortControls }));
+  check("form 375px New: title + subline, Student / Address / Licence & eligibility / Notes for review cards, NO More, Instructor select (no Licence stage), 'Save learner' + Cancel in the sticky bar, empty chips, every control ≥44px, no text under 12px", fresh.h2 === "New learner" && fresh.sub === "Only the name and instructor are required. Everything else can wait." && fresh.cards.join("|") === "Student|Address|Licence & eligibility|Notes for review" && fresh.moreOpen === null && fresh.instructor && !fresh.stage && fresh.bar?.save === "Save learner" && fresh.bar.cancel === "cancel-new-learner" && fresh.bar.position === "sticky" && fresh.chips.join("|") === "Suburb · —|State · —|Postcode · —" && fresh.shortControls.length === 0 && fresh.smallText === 0 && (await noHScroll(s.page)), JSON.stringify({ cards: fresh.cards, bar: fresh.bar, short: fresh.shortControls }));
   writes.length = 0;
   await s.page.click("[data-testid=save-learner]");
   await settle(200);
@@ -3153,6 +3153,100 @@ const draw = async (page, index) => {
   check("edit signed lesson: History says Edited 1 time", /Edited 1 time/.test(await t.page.textContent('[data-testid=history-row]:has-text("2026-10-20")')));
   check("saved signature: no horizontal scroll, no page errors", (await noHScroll(t.page)) && t.errors.length === 0, t.errors.join("|"));
   await t.ctx.close();
+  await s.ctx.close();
+}
+
+// ═══ 28. Learner drafts (Tony 2026-10-22): save incomplete as a draft, review, confirm; a pasted learner block can go straight to a draft ═══
+{
+  const s = await session("tony");
+  await ready(s.page);
+  // 1. New learner, nothing filled in except a wrong date: "Save as draft" works; "Save learner" would not.
+  await s.page.click("[data-testid=new-learner]");
+  await s.page.waitForSelector("[data-testid=save-learner-draft]");
+  await s.page.fill("[data-testid=learner-name]", "QA Draft Jane");
+  await s.page.fill("[data-testid=draft-notes-input]", "licence number unclear on the photo");
+  await s.page.click("[data-testid=save-learner-draft]");
+  await s.page.waitForSelector("[data-testid=draft-banner]");
+  const banner = await s.page.textContent("[data-testid=draft-banner]");
+  check("draft: saved with only a name, the banner says it is not a record yet and shows the notes", /not a record yet/.test(banner) && /licence number unclear on the photo/.test(banner), banner);
+  check("draft: no Start Lesson, no lesson card for a draft", (await s.page.$("[data-testid=start-top]")) === null && (await s.page.$(".card.lesson")) === null);
+  check("draft: the header says Draft", (await s.page.textContent("[data-testid=lesson-no]")).trim() === "Draft");
+  // 2. The list marks it and puts drafts first.
+  await s.page.click("text=Show all learners").catch(() => undefined);
+  await s.page.waitForSelector("[data-testid=draft-chip]");
+  check("draft: the card carries a Draft chip", (await s.page.$$("[data-testid=draft-chip]")).length >= 1);
+  // 3. Review and confirm: a missing name is refused, then it becomes a normal learner.
+  await s.page.click("[data-testid=draft-review]");
+  await s.page.waitForSelector("[data-testid=save-learner]");
+  check("draft: the form's primary button is Confirm learner", (await s.page.textContent("[data-testid=save-learner]")).includes("Confirm learner"));
+  await s.page.fill("[data-testid=learner-name]", "");
+  await s.page.click("[data-testid=save-learner]");
+  check("draft: confirming without a name is refused", (await s.page.$("[data-testid=learner-name-error]")) !== null);
+  await s.page.fill("[data-testid=learner-name]", "QA Draft Jane");
+  await s.page.click("[data-testid=save-learner]");
+  await s.page.waitForSelector("text=confirmed. Ready for Lesson #1");
+  check("draft: after Confirm it is a normal learner again (Start Lesson, no banner)", (await s.page.$("[data-testid=draft-banner]")) === null && (await s.page.$("[data-testid=start-top]")) !== null);
+  // 4. A pasted LEARNER block goes straight to a draft, unclear values noted.
+  await s.page.click("[data-testid=paste-draft-open]");
+  await s.page.fill("[data-testid=paste-draft-text]", "ACTGDS-DRAFT LEARNER\nName: QA Pasted Draft\nPhone: 看不清\nDOB: 2008-01-02\nUnclear: licence number last digit");
+  await s.page.waitForSelector("[data-testid=paste-draft-save-draft]");
+  await s.page.click("[data-testid=paste-draft-save-draft]");
+  await s.page.waitForSelector("text=Saved as a draft: QA Pasted Draft");
+  const list = (await (await fetch(`${B}/api/learners`)).json()).learners.find((l) => l.fullName === "QA Pasted Draft");
+  check("draft: the pasted block is stored as a draft with the unclear value left empty and noted", Boolean(list?.draftAt) && list.phone === null && /Phone: unclear on the paper/.test(list.draftNotes ?? "") && /licence number last digit/.test(list.draftNotes ?? ""), JSON.stringify(list));
+  // 5. A draft takes no lessons, even by API.
+  const r = await postLesson(list.id, { lessonDate: "2026-10-20", startTime: "09:00", finishTime: "10:00", startOdometer: "1", finishOdometer: "2", signLater: true });
+  check("draft: the API refuses a lesson for a draft", r.status === 400 && /still a draft/.test(JSON.stringify(r.body)), JSON.stringify(r.body));
+  check("draft: no horizontal scroll, no page errors", (await noHScroll(s.page)) && s.errors.length === 0, s.errors.join("|"));
+  await s.ctx.close();
+}
+
+// ═══ 29. Saved CSV drafts for the paper import (Tony 2026-10-22): keep a CSV with problems, fix it later, import when clean ═══
+{
+  const header = "date,start_time,finish_time,start_odometer,finish_odometer,taught,assessed_achieved,assessed_not_achieved,location,comments,signature,instructor,prior_instructor,prior_lessons,prior_hours,prior_km";
+  const badCsv = `${header}\n2026-10-01,09:00,10:00,100,130,1,,,,,on_paper,Tony,,,,\n2026-13-99,09:00,10:00,130,160,2,,,,,on_paper,Tony,,,,\n`;
+  const made = await (await fetch(`${B}/api/learners`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ fullName: "QA Tony CSV Draft", instructorId: WHO.tony[0] }) })).json();
+  const s = await session("tony");
+  await ready(s.page);
+  await pick(s.page, "QA Tony CSV Draft");
+  await s.page.waitForSelector("[data-testid=paper-import-open]");
+  await s.page.click("[data-testid=paper-import-open]");
+  await s.page.fill("[data-testid=paper-import-text]", badCsv);
+  await s.page.click("[data-testid=paper-import-check]");
+  await s.page.waitForSelector("[data-testid=paper-import-errors]");
+  const errs = await s.page.textContent("[data-testid=paper-import-errors]");
+  check("csv draft: pasted CSV with a bad row lists 'Row 3: …' with the line itself", errs.includes("Row 3: Date must be a valid date") && errs.includes("2026-13-99"), errs);
+  await s.page.click("[data-testid=paper-import-save-draft]");
+  await s.page.waitForSelector("text=Saved as a draft");
+  const stored = await (await fetch(`${B}/api/learners/${made.learner.id}/import-draft`)).json();
+  check("csv draft: the CSV is stored on the site, errors and all", stored.draft?.csv === badCsv, JSON.stringify(stored).slice(0, 160));
+  // Another visit: the draft is loaded, fixed in the text box, checked and imported.
+  await s.page.reload(); await ready(s.page);
+  await pick(s.page, "QA Tony CSV Draft");
+  await s.page.click("[data-testid=paper-import-open]");
+  await s.page.waitForFunction(() => document.querySelector("[data-testid=paper-import-text]")?.value.includes("2026-13-99"));
+  check("csv draft: reopening brings the saved CSV back and offers Discard draft", (await s.page.$("[data-testid=paper-import-discard-draft]")) !== null);
+  await s.page.fill("[data-testid=paper-import-text]", badCsv.replace("2026-13-99", "2026-10-02"));
+  await s.page.click("[data-testid=paper-import-check]");
+  await s.page.waitForSelector("[data-testid=paper-import-preview]");
+  check("csv draft: after the fix the preview shows 2 lessons", (await s.page.textContent("[data-testid=paper-import-lessons]")) === "2");
+  await s.page.click("[data-testid=paper-import-confirm]");
+  await s.page.waitForSelector("[data-testid=paper-import-open]", { state: "detached" });
+  await settle(800);
+  const after = await (await fetch(`${B}/api/learners/${made.learner.id}/import-draft`)).json();
+  check("csv draft: once imported the saved draft is gone", after.draft === null, JSON.stringify(after));
+  // A draft learner can keep a CSV draft but not import it.
+  const dl = await (await fetch(`${B}/api/learners`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ draft: true, fullName: "QA Tony Draft CSV Learner", instructorId: WHO.tony[0] }) })).json();
+  await s.page.reload(); await ready(s.page);
+  await pick(s.page, "QA Tony Draft CSV Learner");
+  await s.page.waitForSelector("[data-testid=paper-import-open]");
+  await s.page.click("[data-testid=paper-import-open]");
+  await s.page.fill("[data-testid=paper-import-text]", `${header}\n2026-10-01,09:00,10:00,100,130,1,,,,,on_paper,Tony,,,,\n`);
+  check("csv draft: a draft learner has no Check / Confirm, and is told why", (await s.page.$("[data-testid=paper-import-check]")) === null && (await s.page.$("[data-testid=paper-import-draft-learner-note]")) !== null);
+  await s.page.click("[data-testid=paper-import-save-draft]");
+  await s.page.waitForSelector("text=Saved as a draft");
+  check("csv draft: a draft learner can save a CSV draft", (await (await fetch(`${B}/api/learners/${dl.learner.id}/import-draft`)).json()).draft !== null);
+  check("csv draft: no horizontal scroll, no page errors", (await noHScroll(s.page)) && s.errors.length === 0, s.errors.join("|"));
   await s.ctx.close();
 }
 

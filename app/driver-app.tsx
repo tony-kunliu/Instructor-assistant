@@ -279,6 +279,8 @@ export default function DriverApp() {
   /** The Edit form exactly as opened, to tell an untouched save (sent as is) from an edited one. */
   const [openedLearnerDraft, setOpenedLearnerDraft] = useState<LearnerDraft | null>(null);
   const [learnerDraft, setLearnerDraft] = useState<LearnerDraft>(emptyLearner);
+  // Draft learners (Tony 2026-10-22): the "what to check" notes kept with a draft, and whether the open form edits one.
+  const [draftNotesText, setDraftNotesText] = useState("");
   const [status, setStatus] = useState<{ kind: "info" | "error" | "ok" | "warn"; text: string } | null>(null);
   // "Paste from assistant": a draft only pre-fills a form; the instructor still checks, signs and saves (lib/assistant-draft.ts).
   const [pasteOpen, setPasteOpen] = useState(false);
@@ -547,6 +549,7 @@ export default function DriverApp() {
     };
     // Opened as stored (no auto-fill yet): an untouched save must send no change. The panel and PDF show the live value anyway.
     setLearnerDraft(opened);
+    setDraftNotesText(l.draftNotes ?? "");
     setOpenedLearnerDraft(opened);
     setHoursOnTouched(false);
     setEditLearnerId(l.id);
@@ -569,12 +572,79 @@ export default function DriverApp() {
 
   // The sticky bar's Save: an empty name is caught here, inline (same wording as the server); everything else is still
   // validated by the server exactly as before (distinct messages shown in the status line).
+  // Save as draft (new learner) or Save draft (editing one): nothing is required and nothing is refused for being invalid;
+  // the server drops what it cannot use and writes it to the notes. The learner then waits for a review and Confirm.
+  const saveAsDraft = async () => {
+    setSaving(true);
+    setStatus(null);
+    try {
+      if (editingLearner && editLearnerId) {
+        const { instructorId: _owner, ...fields } = learnerDraft;
+        void _owner;
+        const result = await api<{ learner: Learner }>(`/api/learners/${encodeURIComponent(editLearnerId)}`, {
+          method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...fields, draft: true, draftNotes: draftNotesText }),
+        });
+        setLearners((current) => current.map((l) => (l.id === result.learner.id ? result.learner : l)).sort((a, b) => a.fullName.localeCompare(b.fullName)));
+        closeLearnerForm();
+        await loadLearner(result.learner.id);
+        setStatus({ kind: "ok", text: "Draft saved." });
+      } else {
+        const { learner } = await api<{ learner: Learner }>("/api/learners", {
+          method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...learnerDraft, draft: true, draftNotes: draftNotesText }),
+        });
+        storage.set(LAST_INSTRUCTOR_KEY, learner.instructorId);
+        setLearners((current) => [...current, learner].sort((a, b) => a.fullName.localeCompare(b.fullName)));
+        setSummaries((current) => ({ ...current, [learner.id]: emptySummary() }));
+        closeLearnerForm();
+        setLearnerDraft(emptyLearner);
+        await loadLearner(learner.id);
+        setStatus({ kind: "ok", text: "Draft saved. Review it and confirm when it is right." });
+      }
+    } catch (error) {
+      setStatus({ kind: "error", text: (error as Error).message });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Confirm learner: the draft becomes a normal learner, with every rule of a normal learner applied by the server.
+  const confirmDraftLearner = async () => {
+    if (!editLearnerId) return;
+    setSaving(true);
+    setStatus(null);
+    try {
+      const { instructorId: _owner, ...fields } = withSaveEligibility(learnerDraft);
+      void _owner;
+      const result = await api<{ learner: Learner }>(`/api/learners/${encodeURIComponent(editLearnerId)}`, {
+        method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...fields, draft: false }),
+      });
+      setLearners((current) => current.map((l) => (l.id === result.learner.id ? result.learner : l)).sort((a, b) => a.fullName.localeCompare(b.fullName)));
+      closeLearnerForm();
+      await loadLearner(result.learner.id);
+      setStatus({ kind: "ok", text: `${result.learner.fullName} confirmed. Ready for Lesson #1.` });
+    } catch (error) {
+      setStatus({ kind: "error", text: (error as Error).message });
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const submitLearnerForm = () => {
+    if (editingLearner && detail?.learner.draftAt) {
+      if (nameIssue(learnerDraft.fullName) || learnerDraft.fullName.trim() === "Unnamed draft") {
+        setNameError(true);
+        nameInputRef.current?.focus();
+        return;
+      }
+      void confirmDraftLearner();
+      return;
+    }
     if (nameIssue(learnerDraft.fullName)) {
       setNameError(true);
       nameInputRef.current?.focus();
       return;
     }
+    if (!editingLearner && draftNotesText.trim() && !window.confirm("The notes for review are kept only with a draft and will be discarded. Save the learner anyway? (Cancel, then use Save as draft, to keep them.)")) return;
     void (editingLearner ? saveLearnerEdit() : addLearner());
   };
 
@@ -903,6 +973,7 @@ export default function DriverApp() {
     // then the first active instructor — always still changeable via the dropdown.
     const defaultInstructorId = signedInInstructorId ?? storage.get(LAST_INSTRUCTOR_KEY) ?? instructors[0]?.id ?? "";
     setLearnerDraft({ ...emptyLearner, instructorId: instructors.some((i) => i.id === defaultInstructorId) ? defaultInstructorId : "" });
+    setDraftNotesText("");
     setEditingLearner(false);
     setAddingLearner(true);
     setListExpanded(false);
@@ -917,7 +988,7 @@ export default function DriverApp() {
     setPasteProblems([]);
   };
 
-  const applyAssistantDraft = () => {
+  const applyAssistantDraft = async (saveNow = false) => {
     const parsed = parseAssistantDraft(pasteText);
     if (parsed.kind === "none") return setPasteProblems(parsed.problems);
     const notes = [...parsed.problems];
@@ -930,8 +1001,33 @@ export default function DriverApp() {
       const byFirst = instructors.filter((i) => norm(i.fullName).split(" ")[0] === wanted);
       const instructor = !wanted ? undefined : byFull.length === 1 ? byFull[0] : byFull.length === 0 && byFirst.length === 1 ? byFirst[0] : undefined;
       if (wanted && !instructor) notes.push(`Instructor "${f.instructorName}" was not matched to exactly one instructor; pick one in the form.`);
+      const reviewNotes = [f.notes, ...notes.filter((n) => !/^Student name is missing/.test(n))].filter(Boolean).join("\n");
+      if (saveNow) {
+        // Straight to a DRAFT (nothing else is saved): the instructor reviews it later and confirms it.
+        setSaving(true);
+        try {
+          const { learner } = await api<{ learner: Learner }>("/api/learners", {
+            method: "POST", headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              fullName: f.fullName, phone: f.phone, dob: f.dob, licenceNumber: f.licenceNumber, licenceExpiry: f.licenceExpiry, address: f.address,
+              schoolWork: f.schoolWork, transmission: f.transmission, eligibility: f.eligibility, ...(instructor ? { instructorId: instructor.id } : {}),
+              draft: true, draftNotes: reviewNotes,
+            }),
+          });
+          setLearners((current) => [...current, learner].sort((a, b) => a.fullName.localeCompare(b.fullName)));
+          setSummaries((current) => ({ ...current, [learner.id]: emptySummary() }));
+          closePaste();
+          setStatus({ kind: "warn", text: `Saved as a draft: ${learner.fullName}. Open it from the list to review and confirm.` });
+        } catch (error) {
+          setPasteProblems([...notes, (error as Error).message]);
+        } finally {
+          setSaving(false);
+        }
+        return;
+      }
       if (addingLearner && !window.confirm("The learner form is open. Replace what is in it with the assistant's draft?")) return;
       openAddLearner();
+      setDraftNotesText(reviewNotes);
       setLearnerDraft((current) => ({
         ...current, fullName: f.fullName, phone: f.phone, dob: f.dob, licenceNumber: f.licenceNumber, licenceExpiry: f.licenceExpiry,
         address: f.address, schoolWork: f.schoolWork, transmission: f.transmission, eligibility: f.eligibility,
@@ -943,7 +1039,10 @@ export default function DriverApp() {
       return;
     }
     const f = parsed.fields;
-    const matches = matchLearnersByName(learners, f.learnerName);
+    const matches = matchLearnersByName(learners.filter((l) => !l.draftAt), f.learnerName);
+    if (matches.length === 0 && matchLearnersByName(learners.filter((l) => l.draftAt), f.learnerName).length > 0) {
+      return setPasteProblems([...notes, `"${f.learnerName.trim()}" is still a draft. Review and confirm the learner first, then enter the lesson.`]);
+    }
     if (matches.length !== 1) {
       return setPasteProblems([...notes, matches.length
         ? `${matches.length} active learners are called "${f.learnerName.trim()}". Open the right one and enter the lesson there.`
@@ -1021,7 +1120,7 @@ export default function DriverApp() {
   const activeView: PickerView = views.includes(view) ? view : "all";
   // The list = exactly this view's members (search narrows it); the open learner is never injected into a view they don't belong to.
   const viewMembers = viewLearners(learners, archivedLearners ?? [], activeView, signedInInstructorId);
-  const searchResults = filterLearners(viewMembers, { scope: "all", instructorId: signedInInstructorId, query });
+  const searchResults = filterLearners(viewMembers, { scope: "all", instructorId: signedInInstructorId, query }).sort((a, b) => Number(Boolean(b.draftAt)) - Number(Boolean(a.draftAt)));
   const mineCount = viewLearners(learners, [], "mine", signedInInstructorId).length;
   const viewLabel = (v: PickerView) => (v === "mine" ? "Mine" : v === "all" ? "All" : "Archived");
   const viewCount = (v: PickerView) => (v === "mine" ? mineCount : v === "all" ? learners.length : archivedLearners ? archivedLearners.length : null);
@@ -1030,7 +1129,7 @@ export default function DriverApp() {
   // Null only for an archived learner whose summaries fetch failed: that card shows no figures rather than zeros.
   const summaryOf = (l: Learner): LearnerListSummary | null => summaries[l.id] ?? (l.archivedAt === null ? emptySummary() : null);
   const today = localNow().date;
-  const cardsOf = (list: readonly Learner[]) => list.map((l) => { const summary = summaryOf(l); return { learner: l, summary, reminders: summary ? cardReminders(l, summary, today) : [] }; });
+  const cardsOf = (list: readonly Learner[]) => list.map((l) => { const summary = summaryOf(l); return { learner: l, summary, reminders: summary && !l.draftAt ? cardReminders(l, summary, today) : [] }; });
   // A compact list while a learner is open (or the learner form is open): their card, plus "Show all learners", which
   // always works — switching learner while the edit form is open discards that form, as with the former dropdown.
   const openCard = selectedId ? viewMembers.find((l) => l.id === selectedId) : undefined;
@@ -1045,7 +1144,7 @@ export default function DriverApp() {
   const emptyListText = query.trim()
     ? `No matching learners${activeView === "mine" ? ' — try "All"' : ""}.`
     : activeView === "archived" ? "No archived learners." : "No learners here yet.";
-  const panel = detail ? learnerPanel({ archivedAt: detail.learner.archivedAt, completed: detail.progress.completed }) : "active";
+  const panel = detail ? learnerPanel({ archivedAt: detail.learner.archivedAt, completed: detail.progress.completed, draftAt: detail.learner.draftAt ?? null }) : "active";
   const archivedReason = detail ? archiveReasonText(detail.learner.archiveReason, detail.learner.archiveNote) : null;
   const openArchivePanel = () => { setTransferDraft(null); setArchiveDraft({ reason: "", note: "" }); };
   const archivePanel = detail && archiveDraft ? (
@@ -1070,7 +1169,7 @@ export default function DriverApp() {
   // Transfer (3c T1): the learner's own instructor, or anyone active when that instructor is inactive (not in the
   // active-only instructors list). Never for an archived learner (restore first). The server enforces the same rules.
   const homeInactive = Boolean(detail) && instructors.length > 0 && !instructors.some((i) => i.id === detail?.learner.instructorId);
-  const canTransfer = Boolean(detail) && panel !== "archived" && (!signedInInstructorId || signedInInstructorId === detail?.learner.instructorId || homeInactive);
+  const canTransfer = Boolean(detail) && panel !== "archived" && panel !== "draft" && (!signedInInstructorId || signedInInstructorId === detail?.learner.instructorId || homeInactive);
   const transferTargets = detail ? instructors.filter((i) => i.id !== detail.learner.instructorId) : [];
   const openTransferPanel = () => {
     setArchiveDraft(null);
@@ -1248,10 +1347,11 @@ export default function DriverApp() {
               </ul>
             ) : null}
             <div className="paste-actions">
-              <button type="button" className="btn primary" disabled={!pasteText.trim()} onClick={applyAssistantDraft} data-testid="paste-draft-use">Fill in the form</button>
+              <button type="button" className="btn primary" disabled={!pasteText.trim() || saving} onClick={() => void applyAssistantDraft()} data-testid="paste-draft-use">Fill in the form</button>
+              {/^\s*[`*#>\s]*ACTGDS-DRAFT\s+LEARNER/im.test(pasteText) ? <button type="button" className="btn ghost" disabled={saving} onClick={() => void applyAssistantDraft(true)} data-testid="paste-draft-save-draft">Save as draft now</button> : null}
               <button type="button" className="btn ghost" onClick={closePaste}>Cancel</button>
             </div>
-            <p className="hint-note">Nothing is saved from a draft: you check it, then save it (signed now, or later).</p>
+            <p className="hint-note">"Fill in the form" saves nothing: you check it, then save it. "Save as draft now" keeps a learner block as a draft to review later.</p>
           </div>
         ) : (
           <button type="button" className="link paste-link" onClick={() => setPasteOpen(true)} disabled={saving} data-testid="paste-draft-open">Paste from assistant</button>
@@ -1311,7 +1411,7 @@ export default function DriverApp() {
                   <span className="lc-top">
                     <span className="lc-avatar" aria-hidden="true">{initials(l.fullName)}</span>
                     <span className="lc-id">
-                      <span className="lc-name">{l.fullName}</span>
+                      <span className="lc-name">{l.fullName}{l.draftAt ? <span className="lc-draft" data-testid="draft-chip">Draft</span> : null}</span>
                       <span className="lc-meta">{s ? cardMeta(l, s) : "Details unavailable"}</span>
                     </span>
                     <svg className="lc-chev" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true"><path d="m8 5 5 5-5 5" /></svg>
@@ -1515,11 +1615,25 @@ export default function DriverApp() {
               </details>
             ) : null}
           </div>
+          {!editingLearner || detail?.learner.draftAt ? (
+            <section className="lblock fsect" data-testid="fsect-draft-notes">
+              <div className="card-head"><h3>Notes for review</h3><small>kept with a draft only</small></div>
+              <label className="field full"><span>What to check before confirming</span>
+                <textarea rows={3} value={draftNotesText} maxLength={1500} onChange={(e) => setDraftNotesText(e.target.value)} placeholder="e.g. licence number: last digit unclear on the photo" data-testid="draft-notes-input" />
+              </label>
+              <p className="hint-note">&ldquo;Save as draft&rdquo; keeps whatever is filled in, even if it is incomplete or wrong; a value the app cannot use is left out and written to these notes.</p>
+            </section>
+          ) : null}
           {/* One primary action, pinned above the home indicator; un-pinned while a field has focus (globals.css), like the lesson's bar. */}
           <div className="learner-actions" data-testid="learner-actions">
             <button type="button" className="btn save" disabled={saving} onClick={submitLearnerForm} data-testid="save-learner">
-              {saveLabel({ editing: editingLearner, saving })}
+              {saveLabel({ editing: editingLearner, saving, draft: editingLearner && Boolean(detail?.learner.draftAt) })}
             </button>
+            {!editingLearner || detail?.learner.draftAt ? (
+              <button type="button" className="btn ghost save-draft" disabled={saving} onClick={() => void saveAsDraft()} data-testid="save-learner-draft">
+                {editingLearner ? "Save draft" : "Save as draft"}
+              </button>
+            ) : null}
             <button type="button" className="link learner-cancel" disabled={saving} onClick={closeLearnerForm} data-testid={editingLearner ? "cancel-edit-learner" : "cancel-new-learner"}>Cancel</button>
           </div>
         </section>
@@ -1539,7 +1653,7 @@ export default function DriverApp() {
                   <small className="summary-name">{detail.learner.fullName}</small>
                   <span className="summary-meta">{learnerHeaderMeta(detail.learner)}</span>
                 </div>
-                <strong className="summary-next" data-testid="lesson-no">{panel === "completed" ? "CBT&A Completed" : `Lesson #${lessonNo}`}</strong>
+                <strong className="summary-next" data-testid="lesson-no">{panel === "completed" ? "CBT&A Completed" : panel === "draft" ? "Draft" : `Lesson #${lessonNo}`}</strong>
               </div>
               <div className="lc-prog">
                 <div className="lc-prog-head">
@@ -1604,7 +1718,7 @@ export default function DriverApp() {
               Integration ID: <code>{detail.learner.id}</code>
               <button type="button" className="link" onClick={() => void copyIntegrationId(detail.learner.id)}>Copy ID</button>
             </p>
-            <ExportPdfButton key={detail.learner.id} learnerId={detail.learner.id} lessonCount={history.lessons.length} />
+            {panel === "draft" ? null : <ExportPdfButton key={detail.learner.id} learnerId={detail.learner.id} lessonCount={history.lessons.length} />}
             {canEditLearner ? (
               <button type="button" className="btn ghost block edit-learner-btn" disabled={saving} onClick={openEditLearner} data-testid="edit-learner">Edit learner</button>
             ) : null}
@@ -1623,6 +1737,13 @@ export default function DriverApp() {
                   Archive learner…
                 </button>
               )
+            ) : null}
+            {panel === "draft" ? (
+              <div className="lifecycle draft" data-testid="draft-banner">
+                <p><b>Draft</b> — not a record yet. Lessons and imports unlock after you confirm it.</p>
+                {detail.learner.draftNotes ? <p className="draft-notes" data-testid="draft-notes">{detail.learner.draftNotes}</p> : <p className="meta">No notes. Check the details against the original, then confirm.</p>}
+                {canEditLearner ? <button type="button" className="btn primary" disabled={saving} onClick={openEditLearner} data-testid="draft-review">Review and confirm</button> : <p className="meta">Only {detail.learner.instructorName || "the learner's instructor"} can review this draft.</p>}
+              </div>
             ) : null}
             {panel === "archived" ? (
               <div className="lifecycle archived" data-testid="archived-banner">
@@ -1658,8 +1779,8 @@ export default function DriverApp() {
 
           <CompetencyProgressCard progress={detail.progress} completion={detail.completion} invalidated={invalidation} />
 
-          {detail.lessons.length === 0 && panel === "active" ? (
-            <PaperImportPanel key={detail.learner.id} learnerId={detail.learner.id} onImported={() => loadLearner(detail.learner.id)} />
+          {detail.lessons.length === 0 && (panel === "active" || panel === "draft") ? (
+            <PaperImportPanel key={detail.learner.id} learnerId={detail.learner.id} canImport={panel === "active"} onImported={() => loadLearner(detail.learner.id)} />
           ) : null}
 
           {panel === "completed" ? (

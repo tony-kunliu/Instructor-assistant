@@ -13,6 +13,10 @@ export type Instructor = {
 
 export type Learner = {
   id: string;
+  /** Migration 0015: when this learner was saved as a DRAFT (incomplete, to be reviewed and confirmed); null for a normal learner. A draft takes no lessons or imports. */
+  draftAt?: string | null;
+  /** What to check before confirming a draft (unclear or dropped values); null when there is nothing to note. */
+  draftNotes?: string | null;
   instructorId: string;
   instructorName: string;
   /** The instructor's ADI number, needed on the official CBT&A PDF checklist — often not yet filled in. */
@@ -181,6 +185,10 @@ export type CompletionSummary = {
 };
 
 export type LearnerInput = {
+  /** Create: true saves a DRAFT (nothing is rejected for being incomplete or invalid; unusable values are dropped and noted). Edit of a draft: false confirms it. */
+  draft?: unknown;
+  /** Draft only: what to check before confirming (free text). */
+  draftNotes?: unknown;
   fullName?: unknown;
   address?: unknown;
   /** Picked-suggestion parts (D7); all three or none. Validated by lib/address-suggest.ts#validateAddressParts. */
