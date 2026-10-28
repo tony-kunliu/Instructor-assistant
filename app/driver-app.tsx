@@ -46,6 +46,7 @@ import AddressInput from "./address-input.tsx";
 import { addressPartChips, formSubline, moreLockedMessage, moreSection, nameIssue, saveLabel } from "@/lib/learner-form-view.ts";
 import { instructorLabel } from "@/lib/instructor-label.ts";
 import { matchLearnersByName, parseAssistantDraft } from "@/lib/assistant-draft.ts";
+import { trialBanner } from "@/lib/saas/trial-banner.ts";
 import ThemeToggle from "./theme-switch.tsx";
 
 type LessonDraft = {
@@ -236,10 +237,13 @@ const draftKey = (learnerId: string) => `actgds-driver:draft:${learnerId}`;
 const LAST_LEARNER_KEY = "actgds-driver:last-learner";
 const LAST_INSTRUCTOR_KEY = "actgds-driver:last-instructor";
 
+// SaaS edition only: middleware answers every write after the free trial with 402 trial_expired (never sent in private).
+const TRIAL_EXPIRED_MESSAGE = "Your free trial has ended. Your records and PDFs stay available.";
+
 async function api<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, init);
   const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.error || "Request failed.");
+  if (!response.ok) throw new Error(response.status === 402 && data.error === "trial_expired" ? TRIAL_EXPIRED_MESSAGE : data.error || "Request failed.");
   return data as T;
 }
 
@@ -360,6 +364,9 @@ export default function DriverApp() {
   const [logoutUrl, setLogoutUrl] = useState(() => accessLogoutUrl(null));
   useEffect(() => setLogoutUrl(accessLogoutUrl(window.location.origin)), []);
   const [signedInInstructorId, setSignedInInstructorId] = useState<string | null>(null);
+  // SaaS edition (spec 2026-10-21-saas-edition-design §8), from /api/me: every saas-only branch below hangs off `isSaas`.
+  const [appMode, setAppMode] = useState<"private" | "saas">("private");
+  const [trialEndsAt, setTrialEndsAt] = useState<string | null>(null);
   // Nothing identity-dependent (view, learner list) is shown until /api/me has resolved, so a device's leftover state can never flash or pick "All".
   const [ready, setReady] = useState(false);
   const [view, setView] = useState<PickerView>("mine");
@@ -419,13 +426,17 @@ export default function DriverApp() {
         const [learnerData, instructorData, meData] = await Promise.all([
           api<{ learners: Learner[]; summaries: Record<string, LearnerListSummary> }>("/api/learners"),
           api<{ instructors: Instructor[] }>("/api/instructors"),
-          api<{ instructor: { id: string; fullName: string } | null }>("/api/me"),
+          api<{ instructor: { id: string; fullName: string } | null; mode?: "private" | "saas"; trialEndsAt?: string | null }>("/api/me"),
         ]);
         setLearners(learnerData.learners);
         setSummaries((current) => ({ ...current, ...learnerData.summaries }));
         setInstructors(instructorData.instructors);
         setSignedInAs(meData.instructor?.fullName ?? null);
         setSignedInInstructorId(meData.instructor?.id ?? null);
+        if (meData.mode === "saas") {
+          setAppMode("saas");
+          setTrialEndsAt(meData.trialEndsAt ?? null);
+        }
         const start = initialSelection({ signedInInstructorId: meData.instructor?.id ?? null, activeLearners: learnerData.learners, lastLearnerId: storage.get(LAST_LEARNER_KEY) });
         setView(start.view);
         setReady(true);
@@ -1115,9 +1126,13 @@ export default function DriverApp() {
       return { ...current, loggedHours: digits, loggedHoursOn: hoursOnTouched && current.loggedHoursOn ? current.loggedHoursOn : localNow().date };
     });
 
-  // No Access identity (local dev) means "My learners" has no meaning.
-  const views = availableViews(signedInInstructorId);
-  const activeView: PickerView = views.includes(view) ? view : "all";
+  const isSaas = appMode === "saas";
+  // SaaS: the trial line on every render (`clock` re-renders every 15 s); once expired every control that writes is disabled, with the banner saying why.
+  const trial = isSaas ? trialBanner(trialEndsAt ?? "", new Date()) : null;
+  const trialExpired = trial?.kind === "expired";
+  // No Access identity (local dev) means "My learners" has no meaning. SaaS: an account sees only its own learners, so no "All".
+  const views = isSaas ? availableViews(signedInInstructorId).filter((v) => v !== "all") : availableViews(signedInInstructorId);
+  const activeView: PickerView = views.includes(view) ? view : isSaas ? "mine" : "all";
   // The list = exactly this view's members (search narrows it); the open learner is never injected into a view they don't belong to.
   const viewMembers = viewLearners(learners, archivedLearners ?? [], activeView, signedInInstructorId);
   const searchResults = filterLearners(viewMembers, { scope: "all", instructorId: signedInInstructorId, query }).sort((a, b) => Number(Boolean(b.draftAt)) - Number(Boolean(a.draftAt)));
@@ -1142,7 +1157,7 @@ export default function DriverApp() {
   const listDetailsFailed = activeView === "archived" && !archivedSummariesLoaded && archivedSummariesError !== null;
   const viewGlance = glance(cardsOf(viewMembers).filter((c) => c.summary !== null).map((c) => ({ summary: c.summary as LearnerListSummary, reminders: c.reminders })));
   const emptyListText = query.trim()
-    ? `No matching learners${activeView === "mine" ? ' — try "All"' : ""}.`
+    ? `No matching learners${activeView === "mine" && !isSaas ? ' — try "All"' : ""}.`
     : activeView === "archived" ? "No archived learners." : "No learners here yet.";
   const panel = detail ? learnerPanel({ archivedAt: detail.learner.archivedAt, completed: detail.progress.completed, draftAt: detail.learner.draftAt ?? null }) : "active";
   const archivedReason = detail ? archiveReasonText(detail.learner.archiveReason, detail.learner.archiveNote) : null;
@@ -1161,7 +1176,7 @@ export default function DriverApp() {
       </label>
       <div className="archive-actions">
         <button type="button" className="btn ghost" disabled={saving} onClick={() => setArchiveDraft(null)} data-testid="archive-cancel">Cancel</button>
-        <button type="button" className="btn primary" disabled={saving || phase !== "ready"} onClick={() => void setLearnerArchived(true)} data-testid="archive-confirm">Archive learner</button>
+        <button type="button" className="btn primary" disabled={saving || phase !== "ready" || trialExpired} onClick={() => void setLearnerArchived(true)} data-testid="archive-confirm">Archive learner</button>
       </div>
     </div>
   ) : null;
@@ -1169,7 +1184,7 @@ export default function DriverApp() {
   // Transfer (3c T1): the learner's own instructor, or anyone active when that instructor is inactive (not in the
   // active-only instructors list). Never for an archived learner (restore first). The server enforces the same rules.
   const homeInactive = Boolean(detail) && instructors.length > 0 && !instructors.some((i) => i.id === detail?.learner.instructorId);
-  const canTransfer = Boolean(detail) && panel !== "archived" && panel !== "draft" && (!signedInInstructorId || signedInInstructorId === detail?.learner.instructorId || homeInactive);
+  const canTransfer = !isSaas && Boolean(detail) && panel !== "archived" && panel !== "draft" && (!signedInInstructorId || signedInInstructorId === detail?.learner.instructorId || homeInactive);
   const transferTargets = detail ? instructors.filter((i) => i.id !== detail.learner.instructorId) : [];
   const openTransferPanel = () => {
     setArchiveDraft(null);
@@ -1296,8 +1311,9 @@ export default function DriverApp() {
             <small>CBT&amp;A Lesson Checklist</small>
           </div>
           {signedInAs ? (
-            <div className="signed-in-as">
+            <div className={isSaas ? "signed-in-as saas" : "signed-in-as"}>
               <span>Signed in as {signedInAs}</span>
+              {isSaas ? <a href="/account" className="signout-link" data-testid="account-link">Account</a> : null}
               <a href={logoutUrl} className="signout-link" data-testid="signout-link">Sign out</a>
             </div>
           ) : null}
@@ -1309,12 +1325,19 @@ export default function DriverApp() {
             {ready ? <span className="headline-sub" data-testid="view-subline">{viewSubline}</span> : null}
           </div>
           {ready ? (
-            <button type="button" className="btn gold new-learner" onClick={() => (addingLearner ? closeLearnerForm() : openAddLearner())} data-testid="new-learner">
+            <button type="button" className="btn gold new-learner" disabled={trialExpired && !addingLearner} onClick={() => (addingLearner ? closeLearnerForm() : openAddLearner())} data-testid="new-learner">
               {addingLearner ? "Cancel" : "+ New learner"}
             </button>
           ) : null}
         </div>
       </header>
+
+      {trial ? (
+        <a href="/account" className={`trial-banner ${trial.kind}`} data-testid="trial-banner" data-kind={trial.kind}>
+          <span>{trial.text}</span>
+          {trialExpired ? <small data-testid="trial-readonly-note">Adding or changing learners, lessons and signatures is switched off. History and PDF export still work.</small> : null}
+        </a>
+      ) : null}
 
       <section className="card picker" data-selected={selectedId}>
         {!ready ? (
@@ -1354,10 +1377,10 @@ export default function DriverApp() {
             <p className="hint-note">"Fill in the form" saves nothing: you check it, then save it. "Save as draft now" keeps a learner block as a draft to review later.</p>
           </div>
         ) : (
-          <button type="button" className="link paste-link" onClick={() => setPasteOpen(true)} disabled={saving} data-testid="paste-draft-open">Paste from assistant</button>
+          <button type="button" className="link paste-link" onClick={() => setPasteOpen(true)} disabled={saving || trialExpired} data-testid="paste-draft-open">Paste from assistant</button>
         )}
         {unsigned.length && !signQueue ? (
-          <button type="button" className="to-sign" onClick={() => setSignQueue({ startLessonId: null })} data-testid="to-sign-open">
+          <button type="button" className="to-sign" disabled={trialExpired} onClick={() => setSignQueue({ startLessonId: null })} data-testid="to-sign-open">
             To sign: {unsigned.length} {unsigned.length === 1 ? "lesson" : "lessons"}
           </button>
         ) : null}
@@ -1579,7 +1602,7 @@ export default function DriverApp() {
                       <option value="full">Full</option>
                     </select>
                   </label>
-                ) : (
+                ) : isSaas ? null : (
                   <label className="field full"><span>Instructor <span className="req" aria-hidden="true">*</span></span>
                     <select value={learnerDraft.instructorId} onChange={(e) => learnerField("instructorId", e.target.value)}>
                       <option value="">Select instructor…</option>
@@ -1606,7 +1629,7 @@ export default function DriverApp() {
                   ) : null}
                   {more.archive ? (
                     archiveDraft ? archivePanel : (
-                      <button type="button" className="link archive-link" disabled={saving || moreLocked} onClick={openArchivePanel}>
+                      <button type="button" className="link archive-link" disabled={saving || moreLocked || trialExpired} onClick={openArchivePanel}>
                         Archive learner…
                       </button>
                     )
@@ -1626,11 +1649,11 @@ export default function DriverApp() {
           ) : null}
           {/* One primary action, pinned above the home indicator; un-pinned while a field has focus (globals.css), like the lesson's bar. */}
           <div className="learner-actions" data-testid="learner-actions">
-            <button type="button" className="btn save" disabled={saving} onClick={submitLearnerForm} data-testid="save-learner">
+            <button type="button" className="btn save" disabled={saving || trialExpired} onClick={submitLearnerForm} data-testid="save-learner">
               {saveLabel({ editing: editingLearner, saving, draft: editingLearner && Boolean(detail?.learner.draftAt) })}
             </button>
             {!editingLearner || detail?.learner.draftAt ? (
-              <button type="button" className="btn ghost save-draft" disabled={saving} onClick={() => void saveAsDraft()} data-testid="save-learner-draft">
+              <button type="button" className="btn ghost save-draft" disabled={saving || trialExpired} onClick={() => void saveAsDraft()} data-testid="save-learner-draft">
                 {editingLearner ? "Save draft" : "Save as draft"}
               </button>
             ) : null}
@@ -1681,7 +1704,7 @@ export default function DriverApp() {
               <div className="reminders" data-testid="transfer-check">
                 <p className="reminder amber transfer-check" data-tone="amber">
                   <span>{recordsCheckText(recordsCheck.fromName)}</span>
-                  <button type="button" className="btn ghost small" disabled={saving} onClick={() => void markRecordsChecked()} data-testid="transfer-checked">Checked</button>
+                  <button type="button" className="btn ghost small" disabled={saving || trialExpired} onClick={() => void markRecordsChecked()} data-testid="transfer-checked">Checked</button>
                 </p>
               </div>
             ) : null}
@@ -1694,7 +1717,7 @@ export default function DriverApp() {
                     {showBookingLink ? <BookingLink /> : null}
                   </div>
                 ) : null}
-                <button type="button" className="btn huge go" onClick={startLesson}>Start Lesson #{lessonNo}</button>
+                <button type="button" className="btn huge go" disabled={trialExpired} onClick={startLesson}>Start Lesson #{lessonNo}</button>
                 <p className="phase-note">Date and start time are taken from the clock. Competencies and signatures appear after you start.</p>
                 {pastLesson ? (
                   <div className="past-lesson" data-testid="past-lesson">
@@ -1705,12 +1728,12 @@ export default function DriverApp() {
                     </div>
                     {pastLesson.error ? <p className="hint danger" role="alert" data-testid="past-lesson-error">{pastLesson.error}</p> : null}
                     <div className="paste-actions">
-                      <button type="button" className="btn primary" onClick={usePastLesson} data-testid="past-lesson-use">Continue</button>
+                      <button type="button" className="btn primary" disabled={trialExpired} onClick={usePastLesson} data-testid="past-lesson-use">Continue</button>
                       <button type="button" className="btn ghost" onClick={() => setPastLesson(null)}>Cancel</button>
                     </div>
                   </div>
                 ) : (
-                  <button type="button" className="link paste-link" onClick={openPastLesson} data-testid="past-lesson-open">Record a past lesson</button>
+                  <button type="button" className="link paste-link" disabled={trialExpired} onClick={openPastLesson} data-testid="past-lesson-open">Record a past lesson</button>
                 )}
               </div>
             ) : null}
@@ -1720,7 +1743,7 @@ export default function DriverApp() {
             </p>
             {panel === "draft" ? null : <ExportPdfButton key={detail.learner.id} learnerId={detail.learner.id} lessonCount={history.lessons.length} />}
             {canEditLearner ? (
-              <button type="button" className="btn ghost block edit-learner-btn" disabled={saving} onClick={openEditLearner} data-testid="edit-learner">Edit learner</button>
+              <button type="button" className="btn ghost block edit-learner-btn" disabled={saving || trialExpired} onClick={openEditLearner} data-testid="edit-learner">Edit learner</button>
             ) : null}
             {canTransfer && !canEditLearner ? (
               transferDraft ? transferPanel : (
@@ -1733,7 +1756,7 @@ export default function DriverApp() {
                 Edit learner keeps the page-level link exactly as before; the owner finds it under Edit learner > More. */}
             {panel === "active" && !canEditLearner ? (
               archiveDraft ? archivePanel : (
-                <button type="button" className="link archive-link" disabled={saving || phase !== "ready"} onClick={openArchivePanel}>
+                <button type="button" className="link archive-link" disabled={saving || phase !== "ready" || trialExpired} onClick={openArchivePanel}>
                   Archive learner…
                 </button>
               )
@@ -1742,7 +1765,7 @@ export default function DriverApp() {
               <div className="lifecycle draft" data-testid="draft-banner">
                 <p><b>Draft</b> — not a record yet. Lessons and imports unlock after you confirm it.</p>
                 {detail.learner.draftNotes ? <p className="draft-notes" data-testid="draft-notes">{detail.learner.draftNotes}</p> : <p className="meta">No notes. Check the details against the original, then confirm.</p>}
-                {canEditLearner ? <button type="button" className="btn primary" disabled={saving} onClick={openEditLearner} data-testid="draft-review">Review and confirm</button> : <p className="meta">Only {detail.learner.instructorName || "the learner's instructor"} can review this draft.</p>}
+                {canEditLearner ? <button type="button" className="btn primary" disabled={saving || trialExpired} onClick={openEditLearner} data-testid="draft-review">Review and confirm</button> : <p className="meta">Only {detail.learner.instructorName || "the learner's instructor"} can review this draft.</p>}
               </div>
             ) : null}
             {panel === "archived" ? (
@@ -1771,7 +1794,7 @@ export default function DriverApp() {
                     </ol>
                   )}
                 </details>
-                <button type="button" className="btn primary block" disabled={saving} onClick={() => void setLearnerArchived(false)}>Restore learner</button>
+                <button type="button" className="btn primary block" disabled={saving || trialExpired} onClick={() => void setLearnerArchived(false)}>Restore learner</button>
               </div>
             ) : null}
             </div>
@@ -1780,7 +1803,11 @@ export default function DriverApp() {
           <CompetencyProgressCard progress={detail.progress} completion={detail.completion} invalidated={invalidation} />
 
           {detail.lessons.length === 0 && (panel === "active" || panel === "draft") ? (
-            <PaperImportPanel key={detail.learner.id} learnerId={detail.learner.id} canImport={panel === "active"} onImported={() => loadLearner(detail.learner.id)} />
+            trialExpired ? (
+              <p className="status info" data-testid="paper-import-trial-ended">Importing paper records is switched off: your free trial has ended.</p>
+            ) : (
+              <PaperImportPanel key={detail.learner.id} learnerId={detail.learner.id} canImport={panel === "active"} onImported={() => loadLearner(detail.learner.id)} />
+            )
           ) : null}
 
           {panel === "completed" ? (
@@ -1791,7 +1818,7 @@ export default function DriverApp() {
               </p>
               <div className="lifecycle suggest" data-testid="archive-suggestion">
                 <p>You can archive {detail.learner.fullName} to keep your daily list short — nothing is deleted and you can restore any time. Or just leave them active.</p>
-                {archiveDraft ? archivePanel : <button type="button" className="btn ghost small" disabled={saving} onClick={openArchivePanel}>Archive learner…</button>}
+                {archiveDraft ? archivePanel : <button type="button" className="btn ghost small" disabled={saving || trialExpired} onClick={openArchivePanel}>Archive learner…</button>}
               </div>
             </section>
           ) : null}
@@ -1893,11 +1920,11 @@ export default function DriverApp() {
                 <SaveErrorSummary issues={shownSaveIssues} prefix="lesson" attempt={saveAttempt} />
                 {showsSaveBar(phase) ? (
                   <div className="lesson-actions" data-testid="lesson-actions">
-                    <button type="button" className="btn save" disabled={saving} onClick={() => void saveLesson()}>
+                    <button type="button" className="btn save" disabled={saving || trialExpired} onClick={() => void saveLesson()}>
                       {saving ? "Saving…" : `Save Lesson #${lessonNo}`}
                     </button>
                     {!draft.adiSignature && !draft.learnerSignature && !draft.assessedIds.includes(FINAL_DRIVE_23) ? (
-                      <button type="button" className="btn ghost sign-later" disabled={saving} onClick={() => void saveLesson(true)} data-testid="save-sign-later">Save without signatures (sign later)</button>
+                      <button type="button" className="btn ghost sign-later" disabled={saving || trialExpired} onClick={() => void saveLesson(true)} data-testid="save-sign-later">Save without signatures (sign later)</button>
                     ) : null}
                     <button type="button" className="link danger" onClick={discardLesson}>Discard this lesson</button>
                   </div>
@@ -1989,7 +2016,7 @@ export default function DriverApp() {
                           </label>
 
                           <SaveErrorSummary issues={shownEditIssues} prefix="edit" attempt={editAttempt} />
-                          <button type="button" className="btn huge save" disabled={saving} onClick={() => void saveEditLesson()}>
+                          <button type="button" className="btn huge save" disabled={saving || trialExpired} onClick={() => void saveEditLesson()}>
                             {saving ? "Saving…" : "Save changes"}
                           </button>
                           <button type="button" className="link" onClick={cancelEditLesson}>Cancel</button>
@@ -2002,13 +2029,13 @@ export default function DriverApp() {
                         <span className="h-no">#{lesson.lessonNo}</span>
                         {lesson.recordSource === "paper_import" ? <span className="h-paper" data-testid="paper-badge">Paper record</span> : null}
                         {lesson.recordSource === "app" && lesson.signatureStatus === "unsigned" && panel !== "archived" && (!signedInInstructorId || lesson.instructorId === signedInInstructorId) ? (
-                          <button type="button" className="h-unsigned" data-testid="unsigned-badge" onClick={() => setSignQueue({ startLessonId: lesson.id })}>Not signed · Sign now</button>
+                          <button type="button" className="h-unsigned" data-testid="unsigned-badge" disabled={trialExpired} onClick={() => setSignQueue({ startLessonId: lesson.id })}>Not signed · Sign now</button>
                         ) : null}
                         <span>{lesson.lessonDate} · {lesson.startTime ?? "—"}–{lesson.finishTime ?? "—"}</span>
                         {signedInInstructorId && lesson.instructorId !== signedInInstructorId ? (
                           <span className="h-readonly" data-testid="history-readonly">Recorded by {instructors.find((i) => i.id === lesson.instructorId)?.fullName ?? "another instructor"}</span>
                         ) : (
-                          <button type="button" className="link h-edit" onClick={() => void startEditLesson(lesson.id)}>Edit</button>
+                          <button type="button" className="link h-edit" disabled={trialExpired} onClick={() => void startEditLesson(lesson.id)}>Edit</button>
                         )}
                       </div>
                       <div className="h-nums">

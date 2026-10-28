@@ -742,3 +742,41 @@ details.fsect.group .inner > .hint-note { margin: 0; }
 .paper-import-text { width: 100%; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; line-height: 1.4; }
 .paper-import-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 8px 0; }
 .paper-import-line { display: block; margin-top: 2px; font-size: 12px; overflow-wrap: anywhere; opacity: .85; }
+
+/* ── SaaS edition (spec 2026-10-21-saas-edition-design §8). Nothing below matches anything the private edition renders,
+   except the :disabled states of .to-sign / .h-unsigned, which only the SaaS trial-ended state sets. ── */
+.to-sign:disabled, .h-unsigned:disabled { opacity: .45; cursor: not-allowed; }
+/* Trial banner under the top bar: one tap to /account. Gold while the trial runs, amber on the last day, red once read-only. */
+.trial-banner { display: grid; gap: 2px; min-height: 44px; align-content: center; margin: 0 0 var(--space-3); padding: 10px 12px; border-radius: var(--radius-s); background: var(--gold-soft); color: var(--gold-ink); font-size: 14px; font-weight: 700; text-decoration: none; overflow-wrap: anywhere; }
+.trial-banner.last-day { background: var(--warn-soft); color: var(--warn); }
+.trial-banner.expired { background: var(--bad-soft); color: var(--bad); border: 1px solid var(--bad); }
+.trial-banner small { font-size: 13px; font-weight: 600; }
+.trial-banner:focus-visible, .saas-links a:focus-visible, .saas-page a:focus-visible { outline: 2px solid var(--brand-gold); outline-offset: 2px; }
+/* /welcome, /account, /disabled, /terms, /privacy. */
+.saas-form { display: grid; gap: var(--space-4); }
+.saas-form h2 { margin: 0; }
+.saas-page a.btn { display: flex; align-items: center; justify-content: center; text-decoration: none; }
+.saas-lead { margin: 0; font-size: 17px; font-weight: 600; }
+.field .check-row { display: flex; align-items: flex-start; gap: var(--space-3); min-height: 44px; padding: 10px 0; cursor: pointer; }
+.field .check-row input { flex: none; width: 22px; height: 22px; margin: 0; accent-color: var(--brand-gold); }
+.field .check-row span { font-size: 15px; font-weight: 400; color: var(--ink); overflow-wrap: anywhere; }
+.check-row a, .legal a, .saas-back a { color: inherit; text-underline-offset: 2px; }
+.account-facts { display: grid; grid-template-columns: auto 1fr; gap: var(--space-2) var(--space-4); margin: 0; }
+.account-facts dt { font-size: 13px; font-weight: 600; color: var(--muted); }
+.account-facts dd { margin: 0; font-weight: 600; overflow-wrap: anywhere; min-width: 0; }
+.trial-line { margin: 0; padding: 8px 10px; border-radius: var(--radius-s); background: var(--gold-soft); color: var(--gold-ink); font-weight: 700; font-size: 14px; }
+.trial-line.last-day { background: var(--warn-soft); color: var(--warn); }
+.trial-line.expired { background: var(--bad-soft); color: var(--bad); }
+.saas-links { display: flex; flex-wrap: wrap; gap: 0 var(--space-4); align-items: center; }
+.saas-links a { display: inline-flex; align-items: center; min-height: 44px; font-size: 15px; color: var(--ink); text-decoration: underline; text-underline-offset: 3px; }
+.draft-notice { margin: 0 0 var(--space-3); padding: 10px 12px; border-radius: var(--radius-s); border: 1px solid var(--warn); background: var(--warn-soft); color: var(--warn); font-weight: 700; }
+.legal-title { margin: 0 0 var(--space-3); font-size: 26px; line-height: 1.15; }
+.legal { overflow-wrap: anywhere; }
+.legal h2 { margin: var(--space-5) 0 var(--space-2); font-size: 17px; }
+.legal h2:first-of-type { margin-top: var(--space-3); }
+.legal p, .legal ul { margin: 0 0 var(--space-3); line-height: 1.5; }
+.legal ul { padding-left: 20px; }
+.saas-back a { display: inline-flex; align-items: center; min-height: 44px; }
+/* SaaS: "Account" and "Sign out" side by side under the name. */
+.signed-in-as.saas { flex-direction: row; flex-wrap: wrap; justify-content: flex-end; column-gap: var(--space-2); }
+.signed-in-as.saas > span { flex-basis: 100%; }
