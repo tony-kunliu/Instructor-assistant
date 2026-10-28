@@ -122,7 +122,7 @@ middleware, plus scoped lists:
 
 ## 6. SaaS-only schema
 
-- `migrations-saas/0001`–`0013` are byte-identical copies of
+- Every file in `migrations-saas/` except the `9xxx` SaaS-only ones is a byte-identical copy of its file in
   `migrations/`; a test fails on any difference or missing file. Future
   shared migrations are added to both directories in the same change.
 - `migrations-saas/9001_saas_setup.sql`:
