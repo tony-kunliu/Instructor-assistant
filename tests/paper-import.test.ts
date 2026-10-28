@@ -170,7 +170,7 @@ test("text limits", () => {
 
 test("spreadsheet row numbers: header is row 1, skipped blank and all-empty rows still count", () => {
   const text = `${HEADER}\n\n,,,,,,,,,,,\n2026-01-01,,,,,,,,,,bad,Tony\n`;
-  assert.deepEqual(errors(text), [{ row: 4, message: "Signature must be on_paper or unsigned." }]);
+  assert.deepEqual(errors(text), [{ row: 4, message: "Signature must be on_paper or unsigned, not \"bad\"." }]);
 });
 
 test("an all-empty row is skipped like a blank line", () => {
@@ -322,4 +322,9 @@ test("gates are not checked for prior achievements, but later lesson rows are va
   assert.deepEqual(gated, [{ row: 3, message: POST_REVIEW_1_17_LOCK_MESSAGE }]);
   // A competency achieved with a prior instructor can no longer be taught.
   assert.match(errors(csv(prior({ assessed_achieved: "5" }), { date: "2026-01-02", taught: "5" }))[0].message, /already achieved/);
+});
+
+test("an empty signature cell says what to write", () => {
+  const text = `${HEADER}\n2026-01-01,,,,,,,,,,,Tony\n`;
+  assert.deepEqual(errors(text), [{ row: 2, message: "Signature is empty: write on_paper (signed on the paper record) or unsigned." }]);
 });

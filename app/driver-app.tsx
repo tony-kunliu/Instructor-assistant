@@ -281,6 +281,8 @@ export default function DriverApp() {
   const [learnerDraft, setLearnerDraft] = useState<LearnerDraft>(emptyLearner);
   // Draft learners (Tony 2026-10-22): the "what to check" notes kept with a draft, and whether the open form edits one.
   const [draftNotesText, setDraftNotesText] = useState("");
+  // Whether the folded "Save as a draft" section is open: set when the form opens (and by a paste with notes), then by the user.
+  const [draftFoldOpen, setDraftFoldOpen] = useState(false);
   const [status, setStatus] = useState<{ kind: "info" | "error" | "ok" | "warn"; text: string } | null>(null);
   // "Paste from assistant": a draft only pre-fills a form; the instructor still checks, signs and saves (lib/assistant-draft.ts).
   const [pasteOpen, setPasteOpen] = useState(false);
@@ -550,6 +552,7 @@ export default function DriverApp() {
     // Opened as stored (no auto-fill yet): an untouched save must send no change. The panel and PDF show the live value anyway.
     setLearnerDraft(opened);
     setDraftNotesText(l.draftNotes ?? "");
+    setDraftFoldOpen(Boolean(l.draftAt));
     setOpenedLearnerDraft(opened);
     setHoursOnTouched(false);
     setEditLearnerId(l.id);
@@ -974,6 +977,7 @@ export default function DriverApp() {
     const defaultInstructorId = signedInInstructorId ?? storage.get(LAST_INSTRUCTOR_KEY) ?? instructors[0]?.id ?? "";
     setLearnerDraft({ ...emptyLearner, instructorId: instructors.some((i) => i.id === defaultInstructorId) ? defaultInstructorId : "" });
     setDraftNotesText("");
+    setDraftFoldOpen(false);
     setEditingLearner(false);
     setAddingLearner(true);
     setListExpanded(false);
@@ -981,6 +985,9 @@ export default function DriverApp() {
     setNameError(false);
     setStatus(null);
   };
+
+  // The pasted text is a learner block: "Save as draft now" is offered for it.
+  const pasteIsLearner = /^\s*[`*#>\s]*ACTGDS-DRAFT\s+LEARNER/im.test(pasteText);
 
   const closePaste = () => {
     setPasteOpen(false);
@@ -1028,6 +1035,7 @@ export default function DriverApp() {
       if (addingLearner && !window.confirm("The learner form is open. Replace what is in it with the assistant's draft?")) return;
       openAddLearner();
       setDraftNotesText(reviewNotes);
+      setDraftFoldOpen(Boolean(reviewNotes));
       setLearnerDraft((current) => ({
         ...current, fullName: f.fullName, phone: f.phone, dob: f.dob, licenceNumber: f.licenceNumber, licenceExpiry: f.licenceExpiry,
         address: f.address, schoolWork: f.schoolWork, transmission: f.transmission, eligibility: f.eligibility,
@@ -1348,10 +1356,10 @@ export default function DriverApp() {
             ) : null}
             <div className="paste-actions">
               <button type="button" className="btn primary" disabled={!pasteText.trim() || saving} onClick={() => void applyAssistantDraft()} data-testid="paste-draft-use">Fill in the form</button>
-              {/^\s*[`*#>\s]*ACTGDS-DRAFT\s+LEARNER/im.test(pasteText) ? <button type="button" className="btn ghost" disabled={saving} onClick={() => void applyAssistantDraft(true)} data-testid="paste-draft-save-draft">Save as draft now</button> : null}
+              {pasteIsLearner ? <button type="button" className="btn ghost" disabled={saving} onClick={() => void applyAssistantDraft(true)} data-testid="paste-draft-save-draft">Save as draft now</button> : null}
               <button type="button" className="btn ghost" onClick={closePaste}>Cancel</button>
             </div>
-            <p className="hint-note">"Fill in the form" saves nothing: you check it, then save it. "Save as draft now" keeps a learner block as a draft to review later.</p>
+            <p className="hint-note">&ldquo;Fill in the form&rdquo; saves nothing: you check it, then save it.{pasteIsLearner ? " \u201cSave as draft now\u201d keeps this learner as a draft to review later." : ""}</p>
           </div>
         ) : (
           <button type="button" className="link paste-link" onClick={() => setPasteOpen(true)} disabled={saving} data-testid="paste-draft-open">Paste from assistant</button>
@@ -1381,7 +1389,8 @@ export default function DriverApp() {
             </button>
           ))}
         </div>
-        {activeView !== "archived" ? (
+        {/* The glance counts the whole view; while the list is collapsed to one learner (or the form) it is noise above them. */}
+        {activeView !== "archived" && !collapsed ? (
           <p className="glance" data-testid="glance">
             <span><b>{viewGlance.learning}</b> learning</span>
             <span className={viewGlance.withReminder ? "warn" : ""}><b>{viewGlance.withReminder}</b> with a reminder</span>
@@ -1616,24 +1625,24 @@ export default function DriverApp() {
             ) : null}
           </div>
           {!editingLearner || detail?.learner.draftAt ? (
-            <section className="lblock fsect" data-testid="fsect-draft-notes">
-              <div className="card-head"><h3>Notes for review</h3><small>kept with a draft only</small></div>
+            // Drafts are the exception (Tony 2026-10-22: "尽量不用"): folded under the form, open only when editing a draft or notes exist.
+            <details className="lblock draft-fold" data-testid="fsect-draft-notes" open={draftFoldOpen} onToggle={(e) => setDraftFoldOpen((e.currentTarget as HTMLDetailsElement).open)}>
+              <summary data-testid="draft-fold-summary">{editingLearner ? "Draft notes" : "Not ready? Save as a draft"}</summary>
               <label className="field full"><span>What to check before confirming</span>
                 <textarea rows={3} value={draftNotesText} maxLength={1500} onChange={(e) => setDraftNotesText(e.target.value)} placeholder="e.g. licence number: last digit unclear on the photo" data-testid="draft-notes-input" />
               </label>
               <p className="hint-note">&ldquo;Save as draft&rdquo; keeps whatever is filled in, even if it is incomplete or wrong; a value the app cannot use is left out and written to these notes.</p>
-            </section>
+              {/* mouseDown keeps the focus in the notes box: a blur would re-pin the sticky Save bar over this button mid-tap and swallow the tap. */}
+              <button type="button" className="btn ghost block save-draft" disabled={saving} onMouseDown={(e) => e.preventDefault()} onClick={() => void saveAsDraft()} data-testid="save-learner-draft">
+                {editingLearner ? "Save draft" : "Save as draft"}
+              </button>
+            </details>
           ) : null}
           {/* One primary action, pinned above the home indicator; un-pinned while a field has focus (globals.css), like the lesson's bar. */}
           <div className="learner-actions" data-testid="learner-actions">
             <button type="button" className="btn save" disabled={saving} onClick={submitLearnerForm} data-testid="save-learner">
               {saveLabel({ editing: editingLearner, saving, draft: editingLearner && Boolean(detail?.learner.draftAt) })}
             </button>
-            {!editingLearner || detail?.learner.draftAt ? (
-              <button type="button" className="btn ghost save-draft" disabled={saving} onClick={() => void saveAsDraft()} data-testid="save-learner-draft">
-                {editingLearner ? "Save draft" : "Save as draft"}
-              </button>
-            ) : null}
             <button type="button" className="link learner-cancel" disabled={saving} onClick={closeLearnerForm} data-testid={editingLearner ? "cancel-edit-learner" : "cancel-new-learner"}>Cancel</button>
           </div>
         </section>
@@ -1714,10 +1723,12 @@ export default function DriverApp() {
                 )}
               </div>
             ) : null}
-            <p className="meta integration-id">
-              Integration ID: <code>{detail.learner.id}</code>
+            {/* Needed only when linking the learner in the ACTGDS CRM: folded away, one tap to open and copy. */}
+            <details className="meta integration-id" key={`iid-${detail.learner.id}`}>
+              <summary>Integration ID</summary>
+              <code>{detail.learner.id}</code>
               <button type="button" className="link" onClick={() => void copyIntegrationId(detail.learner.id)}>Copy ID</button>
-            </p>
+            </details>
             {panel === "draft" ? null : <ExportPdfButton key={detail.learner.id} learnerId={detail.learner.id} lessonCount={history.lessons.length} />}
             {canEditLearner ? (
               <button type="button" className="btn ghost block edit-learner-btn" disabled={saving} onClick={openEditLearner} data-testid="edit-learner">Edit learner</button>
@@ -2017,8 +2028,11 @@ export default function DriverApp() {
                       </div>
                       <div className="h-odo">Odo {lesson.startOdometer ?? "—"} → {lesson.finishOdometer ?? "—"}{lesson.location ? ` · ${lesson.location}` : ""}</div>
                       {lesson.taught ? <p><b>Taught:</b> {lesson.taught}</p> : null}
-                      {lesson.competenciesAssessed ? <p><b>Assessed:</b> {lesson.competenciesAssessed}</p> : null}
-                      {lesson.achieved ? <p><b>Achieved:</b> {lesson.achieved}</p> : null}
+                      {/* Everything assessed was achieved (the usual case): one line instead of the same list twice. */}
+                      {lesson.competenciesAssessed && lesson.achieved === lesson.competenciesAssessed ? <p><b>Assessed, all achieved:</b> {lesson.competenciesAssessed}</p> : (<>
+                        {lesson.competenciesAssessed ? <p><b>Assessed:</b> {lesson.competenciesAssessed}</p> : null}
+                        {lesson.competenciesAssessed ? <p><b>Achieved:</b> {lesson.achieved || "none"}</p> : null}
+                      </>)}
                       {lesson.comments ? <p><b>Comments:</b> {lesson.comments}</p> : null}
                       {lesson.revisionCount > 0 || lesson.signedLater ? (
                         <p className="h-revisions">
