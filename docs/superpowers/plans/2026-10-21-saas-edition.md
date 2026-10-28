@@ -79,7 +79,7 @@
 ### Task 3: SaaS migrations directory
 
 **Files:**
-- Create: `migrations-saas/0001_init.sql` … `0013_learner_other_licence.sql` (byte copies), `migrations-saas/9001_saas_setup.sql`
+- Create: `migrations-saas/` = a byte copy of every file in `migrations/` (`0001` … `0016` at 2026-10-28), plus `migrations-saas/9001_saas_setup.sql`
 - Modify: `lib/db.ts` — add `openSaasTestD1(): D1Database` (in-memory, applies every `migrations-saas/*.sql` in order)
 - Test: `tests/saas-migrations.test.ts`
 
@@ -108,7 +108,8 @@
 - [ ] **Step 1: Failing tests** (`openSaasTestD1()`, A and B):
   - Onboarding: no instructor + `GET /` → redirect `/welcome`; `GET /welcome`, `/terms`, `/privacy`, `/manifest.webmanifest`, `/icon.png`, `/data/x.json`, `POST /api/welcome` → pass; `GET /api/learners` → 403 `onboarding_required`. Inactive → redirect `/disabled` / API 403 `account_disabled`.
   - Trial (A created `2026-01-01T00:00:00.000Z`, 30 days): `POST /api/learners` at `2026-01-30T23:59:59.999Z` → pass; at `2026-01-31T00:00:00.000Z` → 402; `GET /api/learners/<a>/export` on day 40 → pass.
-  - Route guard: as A, each of `GET /api/learners/<b>`, `PATCH /api/learners/<b>`, `GET|PATCH /api/learners/<b>/lessons/<l>`, `POST /api/learners/<b>/lessons`, `GET /api/learners/<b>/export`, `POST /api/learners/<b>/import`, `GET /api/learners/<b>/lessons/<l>/revisions`, `GET /api/learners/<b>/archive-history`, `/api/learners/%2e%2e/x` and unknown id → 404; same paths with `<a>` → pass; `POST /api/learners/<a>/transfer`, `/transfer/checked`, `PATCH /api/instructors/<b>`, `GET /gps` → 404; `PATCH /api/instructors/<a>` → pass.
+  - Route guard: as A, each of `GET /api/learners/<b>`, `PATCH /api/learners/<b>`, `GET|PATCH /api/learners/<b>/lessons/<l>`, `POST /api/learners/<b>/lessons/<l>/sign`, `GET|PUT /api/learners/<b>/import-draft`, `POST /api/learners/<b>/lessons`, `GET /api/learners/<b>/export`, `POST /api/learners/<b>/import`, `GET /api/learners/<b>/lessons/<l>/revisions`, `GET /api/learners/<b>/archive-history`, `/api/learners/%2e%2e/x` and unknown id → 404; same paths with `<a>` → pass; `POST /api/learners/<a>/transfer`, `/transfer/checked`, `PATCH /api/instructors/<b>`, `GET /gps` → 404; `PATCH /api/instructors/<a>` → pass.
+  - Own-scope endpoints (no learner id, identity from the trusted header only): `GET /api/unsigned-lessons` as A lists only A's unsigned lessons; `GET|PUT /api/me/signature` touches only A's row.
   - Accounts: create then find with `COACH@X.TEST` → same id; second create with same e-mail → same id, row count 1; `刘坤` round-trips through `forwardHeaders` + `/api/me` decoding.
   - `forwardHeaders` drops client `x-instructor-id`, `x-instructor-name`, `x-access-email` and sets only trusted values (`x-access-email` only when `instructor` is null).
 - [ ] **Step 2:** `npm test` → FAIL.
