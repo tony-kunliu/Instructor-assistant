@@ -2,6 +2,7 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import type { Learner, Lesson } from "@/lib/types.ts";
+import { requestErrorMessage } from "@/lib/saas/trial-banner.ts";
 
 type Phase = "idle" | "loading" | "needs-adi-number" | "building" | "confirm-missing" | "error";
 
@@ -11,7 +12,7 @@ type Unconfirmed = { bytes: Uint8Array; filename: string; warning: string; statu
 async function api<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, init);
   const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.error || "Request failed.");
+  if (!response.ok) throw new Error(requestErrorMessage(response.status, data));
   return data as T;
 }
 

@@ -1047,6 +1047,23 @@ export async function listLessonsForExport(db: D1Database, learnerId: string): P
   return results.map(toLesson);
 }
 
+/**
+ * SaaS edition account export: every lesson of every learner (active, archived, draft) of one instructor, in ONE
+ * statement (a per-learner listLessonsForExport would cost one D1 query per learner; Workers Free plan: 50 per
+ * invocation). Same columns and row mapping as listLessonsForExport, ordered by learner, then lesson number, so each
+ * learner's slice is exactly what listLessonsForExport returns for it.
+ */
+export async function listInstructorLessonsForExport(db: D1Database, instructorId: string): Promise<Lesson[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT lessons.*, ub.full_name AS updated_by_instructor_name, ${REVISION_COUNT_SELECT} FROM lessons ${UPDATED_BY_JOIN}
+       WHERE lessons.learner_id IN (SELECT id FROM learners WHERE instructor_id = ?) ORDER BY lessons.learner_id, lessons.lesson_no ASC`,
+    )
+    .bind(instructorId)
+    .all<Row>();
+  return results.map(toLesson);
+}
+
 /** Lesson numbers of this learner's app lessons saved to sign later. */
 async function unsignedAppLessonNos(db: D1Database, learnerId: string): Promise<number[]> {
   const { results } = await db

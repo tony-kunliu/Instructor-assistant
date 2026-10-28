@@ -39,7 +39,9 @@ export function moreSection(input: { editing: boolean; canTransfer: boolean; pan
 }
 
 /** The one-line note under the form title. */
-export function formSubline(editing: boolean): string {
+export function formSubline(editing: boolean, saas = false): string {
+  // SaaS edition: the instructor is always the signed-in account (no field) and there is no Transfer.
+  if (saas) return editing ? "Only the name is required. Archive is under More." : "Only the name is required. Everything else can wait.";
   return editing ? "Only the name is required. Transfer and Archive are under More." : "Only the name and instructor are required. Everything else can wait.";
 }
 

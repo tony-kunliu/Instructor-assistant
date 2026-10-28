@@ -7,10 +7,11 @@ closed PRs; see `TASK.md` for what is in progress.
 
 ## Current Snapshot
 
-- **SaaS edition P0 (2026-10-21):** in Production (#22; PR #109, L3): fail-closed `APP_MODE` (must stay in both vars
-  sections), scoped lists / paper import, saas integration off; private unchanged. P1/P2 not started. Spec/plan:
-  `docs/superpowers/*/2026-10-21-saas-edition*`. No SaaS environment exists.
-- **Instructor picker (2026-10-18):** only Tony (ADI604) and Anna (ADI358) are active in both environments (Staging legacy `ADI604` `3cd3c634-3c63-4251-8eb9-91d104a9d8e9` set `inactive`, data kept; Production Anna ADI `358`). Labels `Tony/Kun Liu (ADI604)` / `Anna/Yaping Qu (ADI358)` (display only) are in Production (#18).
+- **SaaS edition (2026-10-21/28):** P0 in Production (#22): fail-closed `APP_MODE` (must stay in both vars sections). P1 on
+  branch `feature/saas-p1-mode` (`9b5133f..f0bc62e`, L3, final review: ready for `staging`): `migrations-saas/`, `lib/saas/*` gate
+  (onboarding, 30-day trial, ownership guard), pages, `run-saas.sh` QA. **No SaaS environment exists.** It touches shared
+  files (`page.tsx`, `driver-app.tsx`, `globals.css`, `manifest.ts`, `middleware.ts`), so the next Production release needs Tony's go. Spec/plan: `docs/superpowers/*/2026-10-21-saas-edition*`.
+- **Instructors:** only Tony (ADI604) and Anna (ADI358) are active in both environments; display labels live in Production (#18).
 
 - **Production** (all via `Production Release`, all success; run and Worker ids of #12-#20 are in the runs' step
   summaries; rollback target of each run = the previous run's Worker; D1 Time Travel bookmarks only in the summaries).
@@ -24,8 +25,7 @@ closed PRs; see `TASK.md` for what is in progress.
   corrected signed lesson may be left unsigned; Worker `d716940c-62d9-4830-95ad-ac23e8ee6301`. #24 run 39730474484
   (`main` `002b835`; `0015` learner drafts, `0016` `paper_import_drafts`): learner drafts (PR #118), saved CSV drafts
   (PR #119); Worker `83d61f30-0d51-4dbd-be0d-dbe7ff5b529a`, rollback Worker `d716940c-62d9-4830-95ad-ac23e8ee6301`.
-- **Real-device / Tony checks:** iPad layout, route reminders and address suggestions accepted by Tony on real devices (not automated).
-- **GPS phase 1 (PR #84, in Production #18):** `lib/gps` + page `/gps` (synthetic default, Real GPS behind a per-session consent box, nothing uploaded, noindex); qa-browser `gps.mjs`. Design: `docs/superpowers/specs/2026-10-13-gps-tracking-design.md`. A synthetic PASS is not iPhone background-GPS evidence; phase 1b (Tony's real drive on Staging `/gps`) is next.
+- **GPS phase 1 (PR #84, in Production #18):** `lib/gps` + page `/gps` (synthetic default, Real GPS behind a consent box, nothing uploaded). Design: `docs/superpowers/specs/2026-10-13-gps-tracking-design.md`. Phase 1b (Tony's real drive on Staging `/gps`) is next.
 - **Still open:** `scripts/check-signature-row-limits.mjs` not yet run against a deployed
   D1 (Staging only, never Production); notify-tick (lesson notifications) waits for Website
   PR #47 rework and Tony's approval of the new endpoint + secret (Production OFF); intake
@@ -141,8 +141,9 @@ record: `tony-kunliu/actgds.com` Issue #3.
   Vietnamese, Greek, Cyrillic, kana, Hangul, Latin Ext-B, box drawing and some
   symbols print as boxes after the user confirms the warning.
 - Minor learner-edit review follow-ups are in `docs/BACKLOG.md`.
-- SaaS: never deploy a saas environment on P0 alone (per-learner routes get the ownership guard in P1);
-  `worker/scheduled-entry.ts` does not check `APP_MODE` (add when `[env.saas]` is created).
+- SaaS: `worker/scheduled-entry.ts` ignores `APP_MODE` (check it with `[env.saas]`). A shared migration that rebuilds `instructors`
+  needs a `9xxx` companion in `migrations-saas/`. Saas `/gps` 404 is JSON; prerendered not-found pages carry the ACTGDS title.
+  First P2 check: `APP_MODE=saas` without `ACCESS_AUD` must answer 503 (the `middleware.ts` composition has no unit test).
 - qa-browser route-line check failed only on Canberra Sundays (`r3-day` id, correct behaviour); fix on `fix/qa-route-reminder-order`, verify on Sun 2026-10-25.
 - `app/manifest.ts` still carries the pre-redesign `background_color` / `theme_color`
   (`#f4f2ee` / `#1d1d1f`), not the shared tokens (affects the installed-PWA splash only).

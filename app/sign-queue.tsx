@@ -5,6 +5,7 @@
 import { useEffect, useState } from "react";
 import { formatMinutes } from "@/lib/calc.ts";
 import { formatDate } from "@/lib/rules.ts";
+import { requestErrorMessage } from "@/lib/saas/trial-banner.ts";
 import type { Lesson, UnsignedLessonItem } from "@/lib/types.ts";
 import SavedSignature from "./saved-signature.tsx";
 import SignaturePad from "./signature-pad.tsx";
@@ -12,7 +13,7 @@ import SignaturePad from "./signature-pad.tsx";
 async function api<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, init);
   const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.error || "Request failed.");
+  if (!response.ok) throw new Error(requestErrorMessage(response.status, data));
   return data as T;
 }
 
@@ -25,9 +26,11 @@ type Props = {
   /** Signed here, or found already signed elsewhere: either way it leaves the queue. */
   onSigned: (item: UnsignedLessonItem) => void;
   onClose: () => void;
+  /** SaaS edition after the free trial: lessons can be read here but not signed. */
+  readOnly?: boolean;
 };
 
-export default function SignQueue({ items, startLessonId, onSigned, onClose }: Props) {
+export default function SignQueue({ items, startLessonId, onSigned, onClose, readOnly = false }: Props) {
   // A "Sign now" for a lesson that is not in the list (signed meanwhile, another instructor's, archived learner) never falls back to another lesson.
   const missingStart = Boolean(startLessonId) && !items.some((i) => i.lessonId === startLessonId);
   const [currentId, setCurrentId] = useState<string | null>(() => (missingStart ? null : startLessonId ?? items[0]?.lessonId ?? null));
@@ -120,12 +123,13 @@ export default function SignQueue({ items, startLessonId, onSigned, onClose }: P
           ) : !error ? <p className="meta">Loading…</p> : null}
           <p className="hint">Go through this record with the learner. If anything is wrong, correct it in History first, then sign.</p>
           <div className="sigs">
-            <div><SignaturePad label="ADI signature" value={adi} onChange={setAdi} /><SavedSignature value={adi} onUse={setAdi} /></div>
+            <div><SignaturePad label="ADI signature" value={adi} onChange={setAdi} /><SavedSignature value={adi} onUse={setAdi} disabled={readOnly} /></div>
             <SignaturePad label="Learner signature" value={learner} onChange={setLearner} />
           </div>
           {error ? <p className="hint danger" role="alert" data-testid="sign-queue-error">{error}</p> : null}
+          {readOnly ? <p className="hint danger" data-testid="sign-queue-read-only">Your free trial has ended: signing is switched off. Your records and PDFs stay available.</p> : null}
           <div className="sign-actions">
-            <button type="button" className="btn save" disabled={busy || !lesson} onClick={() => void sign()} data-testid="sign-queue-sign">
+            <button type="button" className="btn save" disabled={busy || !lesson || readOnly} onClick={() => void sign()} data-testid="sign-queue-sign">
               {busy ? "Signing…" : `Sign Lesson #${current.lessonNo}`}
             </button>
             {items.length > 1 ? <button type="button" className="btn ghost" disabled={busy} onClick={skip}>Skip</button> : null}

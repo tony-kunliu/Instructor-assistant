@@ -1,9 +1,10 @@
 import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
+import { currentAppMode } from "@/lib/app-mode.ts";
 import { NAVY, THEME_BOOT_SCRIPT } from "@/lib/theme.ts";
 import "./globals.css";
 
-export const metadata: Metadata = {
+const PRIVATE_METADATA: Metadata = {
   title: "ACTGDS Instructor",
   description: "CBT&A Lesson Checklist for ACT Golden Driving School instructors",
   applicationName: "ACTGDS Instructor",
@@ -11,6 +12,19 @@ export const metadata: Metadata = {
   icons: { icon: "/icon.svg", apple: "/icon.svg" },
   robots: { index: false, follow: false },
 };
+
+/** SaaS edition: the product's own name, not the school's (the private edition's metadata is unchanged). */
+const SAAS_METADATA: Metadata = {
+  ...PRIVATE_METADATA,
+  title: "Instructor Assistant",
+  description: "CBT&A lesson records for accredited ACT driving instructors",
+  applicationName: "Instructor Assistant",
+  appleWebApp: { capable: true, title: "Instructor", statusBarStyle: "black-translucent" },
+};
+
+export function generateMetadata(): Metadata {
+  return currentAppMode() === "saas" ? SAAS_METADATA : PRIVATE_METADATA;
+}
 
 export const viewport: Viewport = {
   width: "device-width",
