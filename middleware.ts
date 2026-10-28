@@ -3,8 +3,7 @@ import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { accessIssuer, accessJwks, accessTeamDomain, verifyAccessIdentity } from "./lib/access.ts";
 import { audienceGate, modeGate, resolveAppMode } from "./lib/app-mode.ts";
 import { findInstructorByEmail } from "./lib/repo.ts";
-import { forwardHeaders, saasGate } from "./lib/saas/gate.ts";
-import { parseTrialDays } from "./lib/saas/trial.ts";
+import { saasMiddleware } from "./lib/saas/middleware.ts";
 
 declare global {
   interface CloudflareEnv {
@@ -84,21 +83,6 @@ export async function middleware(request: NextRequest): Promise<NextResponse> {
   forwardedHeaders.set("x-instructor-id", instructor.id);
   forwardedHeaders.set("x-instructor-name", instructor.fullName);
   return NextResponse.next({ request: { headers: forwardedHeaders } });
-}
-
-/** SaaS edition only: every authorization decision is `saasGate`'s; a gate failure (e.g. D1 error) fails closed with 503. */
-async function saasMiddleware(request: NextRequest, env: CloudflareEnv, email: string): Promise<NextResponse> {
-  let result: Awaited<ReturnType<typeof saasGate>>;
-  try {
-    result = await saasGate(env.DB, { email, method: request.method, pathname: request.nextUrl.pathname, now: new Date(), trialDays: parseTrialDays(env.SAAS_TRIAL_DAYS) });
-  } catch (error) {
-    console.error(error);
-    return NextResponse.json({ error: "unavailable" }, { status: 503 });
-  }
-  if (result.kind === "redirect") return NextResponse.redirect(new URL(result.to, request.url));
-  if (result.kind === "error") return NextResponse.json({ error: result.error }, { status: result.status });
-  const instructor = result.instructor ?? null;
-  return NextResponse.next({ request: { headers: forwardHeaders(request, instructor, instructor ? null : email) } });
 }
 
 export const config = {
