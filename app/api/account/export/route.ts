@@ -17,7 +17,7 @@ export async function GET(request: Request) {
   try {
     const now = new Date();
     const data = await buildAccountExport(getD1(), requestScope(request), now);
-    return new Response(JSON.stringify(data, null, 2), {
+    return new Response(JSON.stringify(data), {
       headers: {
         "content-type": "application/json",
         "content-disposition": `attachment; filename="${accountExportFilename(now)}"`,

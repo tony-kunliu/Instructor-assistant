@@ -4,9 +4,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { openSaasTestD1 } from "./helpers/saas-d1.ts";
-import { createLearner, createLesson, setLearnerArchived } from "../lib/repo.ts";
+import type { D1Database, D1PreparedStatement, D1Result } from "../lib/d1-types.ts";
+import { createLearner, createLesson, listLessonsForExport, setLearnerArchived } from "../lib/repo.ts";
 import { createSaasInstructor } from "../lib/saas/accounts.ts";
-import { trialBanner } from "../lib/saas/trial-banner.ts";
+import { requestErrorMessage, TRIAL_ENDED_MESSAGE, trialBanner } from "../lib/saas/trial-banner.ts";
+import { formSubline } from "../lib/learner-form-view.ts";
 import { buildAccountExport, accountExportFilename } from "../lib/saas/account-export.ts";
 
 const HOUR = 60 * 60 * 1000;
@@ -116,4 +118,74 @@ test("accountExportFilename: the date is the Canberra calendar date, not the UTC
   // 2026-10-28T14:30Z is 2026-10-29 01:30 in Canberra (AEDT, UTC+11).
   assert.equal(accountExportFilename(new Date("2026-10-28T14:30:00.000Z")), "instructor-assistant-export-2026-10-29.json");
   assert.equal(accountExportFilename(new Date("2026-10-28T02:00:00.000Z")), "instructor-assistant-export-2026-10-28.json");
+});
+
+test("requestErrorMessage: a 402 trial_expired becomes the friendly text; everything else is unchanged", () => {
+  assert.equal(TRIAL_ENDED_MESSAGE, "Your free trial has ended. Your records and PDFs stay available.");
+  assert.equal(requestErrorMessage(402, { error: "trial_expired" }), TRIAL_ENDED_MESSAGE);
+  // Exactly what the private edition's helpers produced before.
+  assert.equal(requestErrorMessage(400, { error: "Student name is required." }), "Student name is required.");
+  assert.equal(requestErrorMessage(402, { error: "something else" }), "something else");
+  assert.equal(requestErrorMessage(500, {}), "Request failed.");
+  assert.equal(requestErrorMessage(403, { error: "" }), "Request failed.");
+  assert.equal(requestErrorMessage(400, { error: "trial_expired" }), "trial_expired");
+});
+
+test("formSubline in the SaaS edition: no instructor field to fill in, no Transfer under More (private wording unchanged)", () => {
+  assert.equal(formSubline(false, true), "Only the name is required. Everything else can wait.");
+  assert.equal(formSubline(true, true), "Only the name is required. Archive is under More.");
+  assert.equal(formSubline(false), "Only the name and instructor are required. Everything else can wait.");
+  assert.equal(formSubline(true, false), "Only the name is required. Transfer and Archive are under More.");
+});
+
+/** Counts every statement that reaches D1 (each run/first/all, and each statement in a batch), as tests/d1-query-budget.test.ts does. */
+function countingD1(inner: D1Database): { db: D1Database; count: () => number; reset: () => void } {
+  let statements = 0;
+  class Counted implements D1PreparedStatement {
+    readonly inner: D1PreparedStatement;
+    constructor(innerStatement: D1PreparedStatement) { this.inner = innerStatement; }
+    bind(...values: unknown[]): D1PreparedStatement { return new Counted(this.inner.bind(...values)); }
+    first<T = Record<string, unknown>>(colName?: string): Promise<T | null> { statements++; return this.inner.first<T>(colName); }
+    all<T = Record<string, unknown>>(): Promise<D1Result<T>> { statements++; return this.inner.all<T>(); }
+    run<T = Record<string, unknown>>(): Promise<D1Result<T>> { statements++; return this.inner.run<T>(); }
+  }
+  const db: D1Database = {
+    prepare: (query: string) => new Counted(inner.prepare(query)),
+    exec: (query: string) => inner.exec(query),
+    batch: async <T = Record<string, unknown>>(batch: D1PreparedStatement[]) => { statements += batch.length; return inner.batch<T>(batch.map((s) => (s instanceof Counted ? s.inner : s))); },
+  };
+  return { db, count: () => statements, reset: () => { statements = 0; } };
+}
+
+// Workers Free plan: at most 50 D1 queries per invocation (docs/OPERATING_HANDBOOK.md, tests/d1-query-budget.test.ts).
+const EXPORT_QUERY_BUDGET = 5;
+
+test("buildAccountExport: a constant number of D1 statements whatever the number of learners (60 learners), same lessons as listLessonsForExport", async () => {
+  const counted = countingD1(openSaasTestD1());
+  const db = counted.db;
+  const a = await createSaasInstructor(db, { email: "many@x.test", fullName: "QA Many Coach", adiNumber: "ADI-M" });
+  const b = await createSaasInstructor(db, { email: "other@x.test", fullName: "QA Other Coach", adiNumber: "ADI-O" });
+  const other = await createLearner(db, { fullName: "QA Other Learner", instructorId: b.id });
+  await createLesson(db, other.id, { lessonDate: "2026-10-02", startTime: "09:00", finishTime: "10:00", startOdometer: "1", finishOdometer: "2", adiSignature: SIG, learnerSignature: SIG, actingInstructorId: b.id });
+  const ids: string[] = [];
+  for (let i = 0; i < 60; i++) {
+    const learner = await createLearner(db, { fullName: `QA Learner ${String(i).padStart(2, "0")}`, instructorId: a.id });
+    ids.push(learner.id);
+    // Two lessons for some learners, one for others, none for every fifth (empty lesson lists must still be present).
+    const lessons = i % 5 === 0 ? 0 : i % 2 === 0 ? 2 : 1;
+    for (let n = 0; n < lessons; n++) {
+      await createLesson(db, learner.id, { lessonDate: `2026-10-0${n + 1}`, startTime: "09:00", finishTime: "10:00", startOdometer: String(100 + n * 10), finishOdometer: String(110 + n * 10), adiSignature: SIG, learnerSignature: SIG, actingInstructorId: a.id });
+    }
+    if (i % 7 === 0) await setLearnerArchived(db, learner.id, true, { actingInstructorId: a.id });
+  }
+  counted.reset();
+  const exported = await buildAccountExport(db, { kind: "instructor", instructorId: a.id }, NOW);
+  const used = counted.count();
+  assert.ok(used <= EXPORT_QUERY_BUDGET, `the export used ${used} D1 statements for 60 learners (budget ${EXPORT_QUERY_BUDGET})`);
+  assert.equal(exported.learners.length, 60);
+  assert.deepEqual(exported.learners.map((l) => l.learner.id).sort(), [...ids].sort());
+  for (const { learner, lessons } of exported.learners) {
+    assert.deepEqual(lessons, await listLessonsForExport(db, learner.id), `lessons of ${learner.fullName} are exactly listLessonsForExport's`);
+  }
+  assert.ok(!JSON.stringify(exported).includes(other.id) && !JSON.stringify(exported).includes("QA Other"));
 });

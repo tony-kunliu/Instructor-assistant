@@ -18,3 +18,16 @@ export function trialBanner(trialEndsAt: string, now: Date): TrialBanner {
   if (daysLeft === 1) return { kind: "last-day", text: "Free trial: last day", daysLeft };
   return { kind: "active", text: `Free trial: ${daysLeft} days left`, daysLeft };
 }
+
+/** What the app shows when a write is refused because the free trial has ended (middleware: 402 `trial_expired`). */
+export const TRIAL_ENDED_MESSAGE = "Your free trial has ended. Your records and PDFs stay available.";
+
+/**
+ * The message for a failed API response, shared by the client fetch helpers: the server's `error` text, or
+ * "Request failed." — exactly as before — except that a 402 `trial_expired` (SaaS edition only; the private edition
+ * never sends it) becomes TRIAL_ENDED_MESSAGE instead of the raw code.
+ */
+export function requestErrorMessage(status: number, data: { error?: unknown }): string {
+  if (status === 402 && data.error === "trial_expired") return TRIAL_ENDED_MESSAGE;
+  return (data.error as string) || "Request failed.";
+}

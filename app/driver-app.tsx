@@ -46,7 +46,7 @@ import AddressInput from "./address-input.tsx";
 import { addressPartChips, formSubline, moreLockedMessage, moreSection, nameIssue, saveLabel } from "@/lib/learner-form-view.ts";
 import { instructorLabel } from "@/lib/instructor-label.ts";
 import { matchLearnersByName, parseAssistantDraft } from "@/lib/assistant-draft.ts";
-import { trialBanner } from "@/lib/saas/trial-banner.ts";
+import { requestErrorMessage, trialBanner } from "@/lib/saas/trial-banner.ts";
 import ThemeToggle from "./theme-switch.tsx";
 
 type LessonDraft = {
@@ -237,17 +237,16 @@ const draftKey = (learnerId: string) => `actgds-driver:draft:${learnerId}`;
 const LAST_LEARNER_KEY = "actgds-driver:last-learner";
 const LAST_INSTRUCTOR_KEY = "actgds-driver:last-instructor";
 
-// SaaS edition only: middleware answers every write after the free trial with 402 trial_expired (never sent in private).
-const TRIAL_EXPIRED_MESSAGE = "Your free trial has ended. Your records and PDFs stay available.";
-
 async function api<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, init);
   const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(response.status === 402 && data.error === "trial_expired" ? TRIAL_EXPIRED_MESSAGE : data.error || "Request failed.");
+  // A 402 trial_expired (SaaS edition only, never sent in private) reads as a friendly sentence, never the raw code.
+  if (!response.ok) throw new Error(requestErrorMessage(response.status, data));
   return data as T;
 }
 
-export default function DriverApp() {
+/** `mode` comes from the server page (app/page.tsx) so the SaaS edition never flashes the private edition's header; omitted = private. */
+export default function DriverApp({ mode = "private" }: { mode?: "private" | "saas" }) {
   const [learners, setLearners] = useState<Learner[]>([]);
   // Per-learner card data (lessons, hours, competencies, gates) from GET /api/learners; refreshed from the detail of the open learner.
   const [summaries, setSummaries] = useState<Record<string, LearnerListSummary>>({});
@@ -365,7 +364,7 @@ export default function DriverApp() {
   useEffect(() => setLogoutUrl(accessLogoutUrl(window.location.origin)), []);
   const [signedInInstructorId, setSignedInInstructorId] = useState<string | null>(null);
   // SaaS edition (spec 2026-10-21-saas-edition-design §8), from /api/me: every saas-only branch below hangs off `isSaas`.
-  const [appMode, setAppMode] = useState<"private" | "saas">("private");
+  const [appMode, setAppMode] = useState<"private" | "saas">(mode);
   const [trialEndsAt, setTrialEndsAt] = useState<string | null>(null);
   // Nothing identity-dependent (view, learner list) is shown until /api/me has resolved, so a device's leftover state can never flash or pick "All".
   const [ready, setReady] = useState(false);
@@ -1307,7 +1306,7 @@ export default function DriverApp() {
         <div className="brand">
           <img src="/icon.svg" width={34} height={34} alt="" />
           <div className="brand-name">
-            <strong>ACTGDS Instructor</strong>
+            <strong>{isSaas ? "Instructor Assistant" : "ACTGDS Instructor"}</strong>
             <small>CBT&amp;A Lesson Checklist</small>
           </div>
           {signedInAs ? (
@@ -1371,7 +1370,7 @@ export default function DriverApp() {
             ) : null}
             <div className="paste-actions">
               <button type="button" className="btn primary" disabled={!pasteText.trim() || saving} onClick={() => void applyAssistantDraft()} data-testid="paste-draft-use">Fill in the form</button>
-              {/^\s*[`*#>\s]*ACTGDS-DRAFT\s+LEARNER/im.test(pasteText) ? <button type="button" className="btn ghost" disabled={saving} onClick={() => void applyAssistantDraft(true)} data-testid="paste-draft-save-draft">Save as draft now</button> : null}
+              {/^\s*[`*#>\s]*ACTGDS-DRAFT\s+LEARNER/im.test(pasteText) ? <button type="button" className="btn ghost" disabled={saving || trialExpired} onClick={() => void applyAssistantDraft(true)} data-testid="paste-draft-save-draft">Save as draft now</button> : null}
               <button type="button" className="btn ghost" onClick={closePaste}>Cancel</button>
             </div>
             <p className="hint-note">"Fill in the form" saves nothing: you check it, then save it. "Save as draft now" keeps a learner block as a draft to review later.</p>
@@ -1389,6 +1388,7 @@ export default function DriverApp() {
             key={signQueue.startLessonId ?? "queue"}
             items={unsigned}
             startLessonId={signQueue.startLessonId}
+            readOnly={trialExpired}
             onSigned={(item) => {
               setUnsigned((current) => current.filter((i) => i.lessonId !== item.lessonId));
               if (detail?.learner.id === item.learnerId) void refreshDetail(item.learnerId);
@@ -1481,7 +1481,7 @@ export default function DriverApp() {
               (Transfer + Archive, Tony's decision 3) and one primary action in a sticky bottom bar. Same fields, same payloads. */}
           <div className="form-head">
             <h2>{editingLearner ? "Edit learner" : "New learner"}</h2>
-            <p className="form-sub">{formSubline(editingLearner)}</p>
+            <p className="form-sub">{formSubline(editingLearner, isSaas)}</p>
           </div>
           <div className="fsections">
             <section className="lblock fsect" aria-labelledby="fsect-student" data-testid="fsect-student">
@@ -1737,10 +1737,13 @@ export default function DriverApp() {
                 )}
               </div>
             ) : null}
-            <p className="meta integration-id">
-              Integration ID: <code>{detail.learner.id}</code>
-              <button type="button" className="link" onClick={() => void copyIntegrationId(detail.learner.id)}>Copy ID</button>
-            </p>
+            {/* The ACTGDS Website link (Integration ID) is a private-edition feature. */}
+            {isSaas ? null : (
+              <p className="meta integration-id">
+                Integration ID: <code>{detail.learner.id}</code>
+                <button type="button" className="link" onClick={() => void copyIntegrationId(detail.learner.id)}>Copy ID</button>
+              </p>
+            )}
             {panel === "draft" ? null : <ExportPdfButton key={detail.learner.id} learnerId={detail.learner.id} lessonCount={history.lessons.length} />}
             {canEditLearner ? (
               <button type="button" className="btn ghost block edit-learner-btn" disabled={saving || trialExpired} onClick={openEditLearner} data-testid="edit-learner">Edit learner</button>
@@ -1912,7 +1915,7 @@ export default function DriverApp() {
                 <div className="lblock" data-testid="signatures-block">
                   <div className="card-head"><h3>Signatures</h3><small>{draft.assessedIds.includes(FINAL_DRIVE_23) ? "both required to save" : "both now, or both later"}</small></div>
                   <div className="sigs">
-                    <div id="lesson-field-adi-signature"><SignaturePad label="ADI signature" value={draft.adiSignature} onChange={(value) => setField("adiSignature", value)} /><SavedSignature value={draft.adiSignature} onUse={(value) => setField("adiSignature", value)} /></div>
+                    <div id="lesson-field-adi-signature"><SignaturePad label="ADI signature" value={draft.adiSignature} onChange={(value) => setField("adiSignature", value)} /><SavedSignature value={draft.adiSignature} onUse={(value) => setField("adiSignature", value)} disabled={trialExpired} /></div>
                     <div id="lesson-field-learner-signature"><SignaturePad label="Learner signature" value={draft.learnerSignature} onChange={(value) => setField("learnerSignature", value)} /></div>
                   </div>
                 </div>
@@ -2004,7 +2007,7 @@ export default function DriverApp() {
                                   <p className="hint danger">Content changed — both signatures were cleared. Please redraw both before saving (Final Drive 23 is signed when it is saved).</p>
                                 )
                               ) : null}
-                              <div id="edit-field-adi-signature"><SignaturePad label="ADI signature" value={editDraft.adiSignature} onChange={(value) => setEditFieldValue((d) => ({ ...d, adiSignature: value }))} /><SavedSignature value={editDraft.adiSignature} onUse={(value) => setEditFieldValue((d) => ({ ...d, adiSignature: value }))} /></div>
+                              <div id="edit-field-adi-signature"><SignaturePad label="ADI signature" value={editDraft.adiSignature} onChange={(value) => setEditFieldValue((d) => ({ ...d, adiSignature: value }))} /><SavedSignature value={editDraft.adiSignature} onUse={(value) => setEditFieldValue((d) => ({ ...d, adiSignature: value }))} disabled={trialExpired} /></div>
                               <div id="edit-field-learner-signature"><SignaturePad label="Learner signature" value={editDraft.learnerSignature} onChange={(value) => setEditFieldValue((d) => ({ ...d, learnerSignature: value }))} /></div>
 
                             </>
@@ -2103,7 +2106,10 @@ export default function DriverApp() {
         </>
       ) : null}
 
-      <footer className="foot">ACT Golden Driving School · Internal instructor tool<br /><span data-testid="gnaf-attribution">{GNAF_ATTRIBUTION}</span></footer>
+      {/* SaaS: no school line, but the G-NAF attribution stays (licence condition of the street suggestions). */}
+      {isSaas ? (
+        <footer className="foot"><span data-testid="gnaf-attribution">{GNAF_ATTRIBUTION}</span></footer>
+      ) : <footer className="foot">ACT Golden Driving School · Internal instructor tool<br /><span data-testid="gnaf-attribution">{GNAF_ATTRIBUTION}</span></footer>}
     </main>
   );
 }

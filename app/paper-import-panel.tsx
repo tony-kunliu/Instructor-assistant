@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import { formatMinutes } from "@/lib/calc.ts";
 import { parseCsvRecords, type PaperImportPreview } from "@/lib/paper-import.ts";
 import { priorPreviewNote, priorSummaryLine } from "@/lib/prior-record.ts";
+import { requestErrorMessage } from "@/lib/saas/trial-banner.ts";
 
 type RowError = { row: number; message: string };
 type ImportResponse = { mode: "preview" | "commit"; preview: PaperImportPreview; lessonCount?: number };
@@ -30,7 +31,7 @@ const draftUrl = (learnerId: string) => `/api/learners/${encodeURIComponent(lear
 async function draftCall<T>(learnerId: string, init?: RequestInit): Promise<T> {
   const response = await fetch(draftUrl(learnerId), init);
   const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.error || "Request failed.");
+  if (!response.ok) throw new Error(requestErrorMessage(response.status, data));
   return data as T;
 }
 

@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { accessLogoutUrl } from "@/lib/access-logout.ts";
 import { trialBanner } from "@/lib/saas/trial-banner.ts";
 import type { Instructor } from "@/lib/types.ts";
+import SignOutLink from "../sign-out-link.tsx";
 
 type Me = { instructor: { id: string; fullName: string } | null; trialEndsAt?: string | null };
 
@@ -16,9 +16,6 @@ export default function AccountView() {
   const [me, setMe] = useState<Me | null>(null);
   const [adiNumber, setAdiNumber] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // Ends the Cloudflare Access session on this app's own origin and returns to it (see lib/access-logout.ts).
-  const [logoutUrl, setLogoutUrl] = useState(() => accessLogoutUrl(null));
-  useEffect(() => setLogoutUrl(accessLogoutUrl(window.location.origin)), []);
 
   useEffect(() => {
     void (async () => {
@@ -66,7 +63,7 @@ export default function AccountView() {
         <a href="/" data-testid="back-link">Back to learners</a>
         <a href="/terms">Terms</a>
         <a href="/privacy">Privacy Policy</a>
-        <a href={logoutUrl} className="signout-link" data-testid="signout-link">Sign out</a>
+        <SignOutLink />
       </nav>
     </>
   );

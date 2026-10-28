@@ -165,7 +165,18 @@ await section("2 + 4. qa-sam: sign-up through /welcome, then the whole journey",
   const e2 = await errorsShown();
   check("welcome: Continue does not submit until name, ADI number and the accept box are all filled (inline message per missing field, no POST)",
     welcomePosts.length === 0 && e0.length === 3 && e1.length === 2 && !e1.some((t) => /Full name/.test(t)) && e2.length === 1 && /Terms/.test(e2[0]), JSON.stringify({ posts: welcomePosts.length, e0, e1, e2 }));
+  // The tick must really be drawn: element screenshots of the box unticked and ticked must differ. Both are taken after
+  // a first tick has cleared the "please confirm" error (its red invalid border would otherwise be the only difference).
+  const box = page.locator("[data-testid=welcome-accept]");
+  const shotOf = async () => { await page.evaluate(() => document.activeElement?.blur()); await settle(200); return box.screenshot(); };
   await page.check("[data-testid=welcome-accept]");
+  await page.uncheck("[data-testid=welcome-accept]");
+  const unticked = await shotOf();
+  await page.check("[data-testid=welcome-accept]");
+  const ticked = await shotOf();
+  check("welcome: the accept checkbox visibly changes when ticked (element screenshots differ)", (await box.isChecked()) && !unticked.equals(ticked), `${unticked.length} vs ${ticked.length} bytes`);
+  const rowHeight = await page.$eval(".check-row", (e) => e.getBoundingClientRect().height);
+  check("welcome: the accept row is a ≥44px tap target", rowHeight >= 44, String(rowHeight));
   check("welcome: Continue is enabled once the form is complete", !(await page.isDisabled(submit)) && (await errorsShown()).length === 0);
   await previewShot(page, "02-welcome-filled.png", "The profile form filled in and ready to continue.");
 
@@ -181,6 +192,11 @@ await section("2 + 4. qa-sam: sign-up through /welcome, then the whole journey",
   const tabs = await page.$$eval(".view-tab", (b) => b.map((x) => x.textContent.trim()));
   check("home: no instructor picker (no \"All\" view)", !tabs.some((t) => t.startsWith("All")), JSON.stringify(tabs));
   check("home: no /gps link", (await page.$("a[href^='/gps']")) === null);
+  // An outside instructor sees the product name, not the school's internals.
+  const brand = await page.evaluate(() => ({ name: document.querySelector(".brand strong")?.textContent, title: document.title, text: document.body.innerText, foot: document.querySelector("footer.foot")?.textContent ?? "" }));
+  check("home: header and page title say \"Instructor Assistant\"; no \"ACTGDS\" anywhere on the page; footer has no school line but keeps the G-NAF attribution",
+    brand.name === "Instructor Assistant" && brand.title.includes("Instructor Assistant") && !brand.title.includes("ACTGDS") && !brand.text.includes("ACTGDS") && !brand.foot.includes("Golden Driving School") && brand.foot.includes("G-NAF"),
+    JSON.stringify({ name: brand.name, title: brand.title, foot: brand.foot.slice(0, 60), actgds: brand.text.includes("ACTGDS") }));
   check("home: Signed in as the new account, with an Account link", (await page.textContent(".signed-in-as span")) === `Signed in as ${SAM_NAME}` && (await page.$("[data-testid=account-link]")) !== null);
   const overflow = await page.evaluate(() => {
     const width = document.documentElement.clientWidth;
@@ -207,6 +223,8 @@ await section("2 + 4. qa-sam: sign-up through /welcome, then the whole journey",
   if ((await page.$("[data-testid=learner-form]")) === null) await page.click("[data-testid=new-learner]");
   await page.waitForSelector("[data-testid=save-learner]");
   check("new learner form: no instructor picker", (await page.$("text=Select instructor…")) === null && (await page.$("label:has-text('Instructor') select")) === null);
+  const subline = await page.textContent(".form-sub");
+  check("new learner form: the note does not ask for an instructor", !/instructor/i.test(subline ?? ""), subline);
   await page.fill('label:has-text("Student name") input', LEARNER);
   // The action bar is un-pinned while a field has focus (globals.css): leave the field first so the tap lands on Save.
   await page.evaluate(() => document.activeElement?.blur());
@@ -217,6 +235,7 @@ await section("2 + 4. qa-sam: sign-up through /welcome, then the whole journey",
   ids.samLearner = learners.find((l) => l.fullName === LEARNER)?.id;
   check("journey: learner added through the UI belongs to qa-sam", learners.length === 1 && learners[0].instructorId === ids.sam, JSON.stringify(learners.map((l) => [l.fullName, l.instructorId])));
   check("learner page: no Transfer on the page", (await page.$("[data-testid=transfer-open]")) === null);
+  check("learner page: no Integration ID line, no \"ACTGDS\"", (await page.$(".integration-id")) === null && !(await page.evaluate(() => document.body.innerText.includes("ACTGDS"))));
   await page.click("[data-testid=edit-learner]");
   await page.waitForSelector("[data-testid=save-learner]");
   // Open the folded "More" (where the private edition offers Transfer) without a tap the pinned action bar could cover.
@@ -362,6 +381,7 @@ await section("4 (end). qa-sam's own data export contains only qa-sam's records"
     res.status === 200 && /^attachment; filename="instructor-assistant-export-\d{4}-\d{2}-\d{2}\.json"$/.test(res.disposition ?? "") &&
     data?.instructor?.id === ids.sam && data.learners.length === 1 && data.learners[0].learner.fullName === LEARNER && data.learners[0].lessons.length === 2 && !res.text.includes(ids.jo) && !res.text.includes("QA Jo Pupil"),
     `${res.status} ${res.disposition} ${data?.learners?.length} learner(s)`);
+  check("/api/account/export: compact JSON (not pretty-printed)", res.status === 200 && !res.text.includes("\n"), `${res.text.length} chars`);
   await sam.ctx.close();
 });
 
@@ -381,7 +401,8 @@ await section("3 + 7. qa-late (QA 刘坤): Chinese name end to end, then an expi
   const learner = await api(LATE, "/api/learners", { method: "POST", body: { fullName: "QA Late Learner" } });
   ids.lateLearner = learner.json?.learner?.id;
   const lesson = await api(LATE, `/api/learners/${ids.lateLearner}/lessons`, { method: "POST", body: { lessonDate: "2026-10-01", startTime: "09:00", finishTime: "10:00", startOdometer: "1000", finishOdometer: "1020", taughtIds: ["1", "2"], adiSignature: SIG, learnerSignature: SIG } });
-  check(`"${LATE_NAME}": later writes work (learner + lesson created during the trial)`, learner.status === 201 && lesson.status === 201, `${learner.status} ${lesson.status}`);
+  const unsignedLesson = await api(LATE, `/api/learners/${ids.lateLearner}/lessons`, { method: "POST", body: { lessonDate: "2026-10-02", startTime: "09:00", finishTime: "10:00", startOdometer: "1020", finishOdometer: "1030", taughtIds: ["3"], signLater: true } });
+  check(`"${LATE_NAME}": later writes work (learner + lesson created during the trial)`, learner.status === 201 && lesson.status === 201 && unsignedLesson.status === 201, `${learner.status} ${lesson.status} ${unsignedLesson.status}`);
 
   sql(`UPDATE instructors SET created_at = datetime(created_at, '-40 days') WHERE lower(email) = '${LATE}'`);
   await page.addInitScript((id) => localStorage.setItem("actgds-driver:last-learner", id), ids.lateLearner);
@@ -392,6 +413,9 @@ await section("3 + 7. qa-late (QA 刘坤): Chinese name end to end, then an expi
   check("expired trial: banner reads the read-only message", banner === TRIAL_ENDED && (await page.getAttribute("[data-testid=trial-banner]", "data-kind")) === "expired", banner);
   check("expired trial: + New learner, Start Lesson and Edit learner are disabled",
     (await page.isDisabled("[data-testid=new-learner]")) && (await page.isDisabled(".btn.go")) && (await page.isDisabled("[data-testid=edit-learner]")) && (await page.$$eval("[data-testid=history-row] .h-edit", (b) => b.every((x) => x.disabled))));
+  check("expired trial: To sign, Sign now and Paste from assistant are disabled",
+    (await page.isDisabled("[data-testid=to-sign-open]")) && (await page.$$eval("[data-testid=unsigned-badge]", (b) => b.length > 0 && b.every((x) => x.disabled))) && (await page.isDisabled("[data-testid=paste-draft-open]")));
+  check("expired trial: the raw code \"trial_expired\" is never shown", !(await page.evaluate(() => document.body.innerText.includes("trial_expired"))));
   const post = await api(LATE, "/api/learners", { method: "POST", body: { fullName: "QA Late Too Late" } });
   check("expired trial: POST /api/learners → 402 trial_expired", post.status === 402 && post.json?.error === "trial_expired", `${post.status} ${post.text}`);
   const get = await api(LATE, "/api/learners");
@@ -411,6 +435,7 @@ await section("8. qa-off: an inactive account is sent to /disabled", async () =>
   await page.waitForSelector("[data-testid=disabled-page]");
   check("inactive account: pages redirect to /disabled, which shows the disabled message", welcome.status === 201 && new URL(page.url()).pathname === "/disabled" && (await page.textContent("[data-testid=disabled-page]")).includes("This account is disabled. Contact support."), page.url());
   const list = await api(OFF, "/api/learners");
+  check("inactive account: /disabled offers Sign out (the same Cloudflare Access logout link)", ((await page.getAttribute("[data-testid=signout-link]", "href")) ?? "").startsWith("/cdn-cgi/access/logout"));
   check("inactive account: GET /api/learners → 403 account_disabled", list.status === 403 && list.json?.error === "account_disabled", `${list.status} ${list.text}`);
   const terms = await api(OFF, "/terms");
   check("inactive account: /terms still reachable", terms.status === 200);
