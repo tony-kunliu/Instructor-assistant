@@ -1,4 +1,4 @@
-import { mkdirSync, readdirSync, readFileSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
@@ -38,22 +38,6 @@ function openLocalDatabase(file: string): DatabaseSync {
 /** Build a fresh D1-compatible database for tests. Use ":memory:". */
 export function openTestD1(file: string): D1Database {
   return sqliteAsD1(openLocalDatabase(file));
-}
-
-/**
- * Build a fresh in-memory SaaS-edition database for tests: every
- * `migrations-saas/*.sql` applied in filename order (as `wrangler d1
- * migrations apply` does), NOT `SCHEMA_SQL` — so tests see exactly what the
- * separately deployed SaaS D1 gets (spec 2026-10-21-saas-edition-design §6).
- */
-export function openSaasTestD1(): D1Database {
-  const dir = new URL("../migrations-saas/", import.meta.url);
-  const db = new DatabaseSync(":memory:");
-  db.exec("PRAGMA foreign_keys = ON;");
-  for (const name of readdirSync(dir).filter((n) => n.endsWith(".sql")).sort()) {
-    db.exec(readFileSync(new URL(name, dir), "utf8"));
-  }
-  return sqliteAsD1(db);
 }
 
 const globalForDb = globalThis as typeof globalThis & { __actgdsDriverD1?: D1Database };

@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
-import { openSaasTestD1, openTestD1 } from "../lib/db.ts";
+import { openTestD1 } from "../lib/db.ts";
+import { openSaasTestD1 } from "./helpers/saas-d1.ts";
 import type { D1Database } from "../lib/d1-types.ts";
 
 // SaaS edition (spec docs/superpowers/specs/2026-10-21-saas-edition-design.md §6):
@@ -46,7 +47,7 @@ test("SaaS DB: two instructors may share a name; e-mail is unique case-insensiti
   await db.prepare(insert).bind("qa-1", "QA Same Name", "qa.one@x.test").run();
   await db.prepare(insert).bind("qa-2", "QA Same Name", "qa.two@x.test").run();
   await db.prepare(insert).bind("qa-3", "QA Upper", "QA@x.test").run();
-  await assert.rejects(db.prepare(insert).bind("qa-4", "QA Lower", "qa@x.test").run());
+  await assert.rejects(db.prepare(insert).bind("qa-4", "QA Lower", "qa@x.test").run(), /UNIQUE/);
 });
 
 test("private DB is untouched: openTestD1 still has the unique name index", async () => {
