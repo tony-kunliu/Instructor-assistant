@@ -629,7 +629,7 @@ const draw = async (page, index) => {
   const after = await (await fetch(`${B}/api/learners/${learnerId}`)).json();
   const l1 = after.lessons.find((l) => l.lessonNo === 1);
   check("paper edit: saved with blank times and Not signed", l1 && l1.startTime === null && l1.finishTime === null && l1.signatureStatus === "unsigned" && l1.recordSource === "paper_import", JSON.stringify(l1 && [l1.startTime, l1.signatureStatus]));
-  check("paper edit: totals recalculated (0h 30m, 35 km; odometers kept)", (await s.page.textContent("[data-testid=total-km]")) === "35 km" && (await s.page.textContent("[data-testid=total-hours]")).startsWith("0h 30m"), await s.page.textContent("[data-testid=total-hours]"));
+  check("paper edit: totals recalculated (30m, 35 km; odometers kept)", (await s.page.textContent("[data-testid=total-km]")) === "35 km" && (await s.page.textContent("[data-testid=total-hours]")).startsWith("30m"), await s.page.textContent("[data-testid=total-hours]"));
 
   // New App lesson continues numbering and odometer.
   check("paper: next App lesson is #4 with start odometer prefilled 145", (await s.page.textContent("[data-testid=lesson-no]")) === "Lesson #4" && (await s.page.inputValue('input[placeholder="e.g. 45210"]')) === "145");
@@ -2968,7 +2968,7 @@ const draw = async (page, index) => {
   await s.page.click("[data-testid=new-learner]");
   await s.page.waitForSelector(F);
   const fresh = await formState(s.page);
-  check("form 375px New: title + subline, Student / Address / Licence & eligibility / Notes for review cards, NO More, Instructor select (no Licence stage), 'Save learner' + Cancel in the sticky bar, empty chips, every control ≥44px, no text under 12px", fresh.h2 === "New learner" && fresh.sub === "Only the name and instructor are required. Everything else can wait." && fresh.cards.join("|") === "Student|Address|Licence & eligibility|Notes for review" && fresh.moreOpen === null && fresh.instructor && !fresh.stage && fresh.bar?.save === "Save learner" && fresh.bar.cancel === "cancel-new-learner" && fresh.bar.position === "sticky" && fresh.chips.join("|") === "Suburb · —|State · —|Postcode · —" && fresh.shortControls.length === 0 && fresh.smallText === 0 && (await noHScroll(s.page)), JSON.stringify({ cards: fresh.cards, bar: fresh.bar, short: fresh.shortControls }));
+  check("form 375px New: title + subline, Student / Address / Licence & eligibility cards, NO More, Instructor select (no Licence stage), 'Save learner' + Cancel in the sticky bar, empty chips, every control ≥44px, no text under 12px", fresh.h2 === "New learner" && fresh.sub === "Only the name and instructor are required. Everything else can wait." && fresh.cards.join("|") === "Student|Address|Licence & eligibility" && fresh.moreOpen === null && fresh.instructor && !fresh.stage && fresh.bar?.save === "Save learner" && fresh.bar.cancel === "cancel-new-learner" && fresh.bar.position === "sticky" && fresh.chips.join("|") === "Suburb · —|State · —|Postcode · —" && fresh.shortControls.length === 0 && fresh.smallText === 0 && (await noHScroll(s.page)), JSON.stringify({ cards: fresh.cards, bar: fresh.bar, short: fresh.shortControls }));
   writes.length = 0;
   await s.page.click("[data-testid=save-learner]");
   await settle(200);
@@ -3162,8 +3162,10 @@ const draw = async (page, index) => {
   await ready(s.page);
   // 1. New learner, nothing filled in except a wrong date: "Save as draft" works; "Save learner" would not.
   await s.page.click("[data-testid=new-learner]");
-  await s.page.waitForSelector("[data-testid=save-learner-draft]");
+  await s.page.waitForSelector("[data-testid=draft-fold-summary]");
   await s.page.fill("[data-testid=learner-name]", "QA Draft Jane");
+  check("draft: the draft option is folded away by default (drafts are the exception)", !(await s.page.isVisible("[data-testid=draft-notes-input]")));
+  await s.page.click("[data-testid=draft-fold-summary]");
   await s.page.fill("[data-testid=draft-notes-input]", "licence number unclear on the photo");
   await s.page.click("[data-testid=save-learner-draft]");
   await s.page.waitForSelector("[data-testid=draft-banner]");

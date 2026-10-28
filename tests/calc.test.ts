@@ -30,7 +30,8 @@ test("odometer parsing and distance", () => {
 });
 
 test("hour formatting", () => {
-  assert.equal(formatMinutes(0), "0h");
+  assert.equal(formatMinutes(0), "0m");
+  assert.equal(formatMinutes(45), "45m");
   assert.equal(formatMinutes(60), "1h");
   assert.equal(formatMinutes(135), "2h 15m");
   assert.equal(decimalHours(90), "1.5");
