@@ -8,7 +8,7 @@ closed PRs; see `TASK.md` for what is in progress.
 ## Current Snapshot
 
 - **SaaS edition (2026-10-21/28):** P0 in Production (#22): fail-closed `APP_MODE` (must stay in both vars sections). P1 on
-  branch `feature/saas-p1-mode` (`9b5133f..f0bc62e`, L3, final review: ready for `staging`): `migrations-saas/`, `lib/saas/*` gate
+  `staging` (PR #124, L3, reviewed): `migrations-saas/`, `lib/saas/*` gate
   (onboarding, 30-day trial, ownership guard), pages, `run-saas.sh` QA. **No SaaS environment exists.** It touches shared
   files (`page.tsx`, `driver-app.tsx`, `globals.css`, `manifest.ts`, `middleware.ts`), so the next Production release needs Tony's go. Spec/plan: `docs/superpowers/*/2026-10-21-saas-edition*`.
 - **Instructors:** only Tony (ADI604) and Anna (ADI358) are active in both environments; display labels live in Production (#18).
