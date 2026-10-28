@@ -288,7 +288,7 @@ export function planPaperImport(csvText: string, instructors: readonly Pick<Inst
     for (const id of notAchievedList) if (!(id in achievedResults)) achievedResults[id] = "not_achieved";
 
     const signatureRaw = get("signature");
-    if (signatureRaw !== "on_paper" && signatureRaw !== "unsigned") fieldErrors.push("Signature must be on_paper or unsigned.");
+    if (signatureRaw !== "on_paper" && signatureRaw !== "unsigned") fieldErrors.push(signatureRaw ? `Signature must be on_paper or unsigned, not "${signatureRaw.slice(0, 40)}".` : "Signature is empty: write on_paper (signed on the paper record) or unsigned.");
 
     const instructorName = get("instructor");
     const instructor = instructors.find((i) => i.fullName === instructorName && i.status === "active");

@@ -68,6 +68,7 @@ export function nextLessonNo(totals: Totals): number {
 export function formatMinutes(total: number): string {
   const hours = Math.floor(total / 60);
   const minutes = total % 60;
+  if (!hours) return `${minutes}m`; // "45m", "0m": no "0h" in front of a short lesson
   return minutes ? `${hours}h ${minutes}m` : `${hours}h`;
 }
 
