@@ -1632,7 +1632,8 @@ export default function DriverApp() {
                 <textarea rows={3} value={draftNotesText} maxLength={1500} onChange={(e) => setDraftNotesText(e.target.value)} placeholder="e.g. licence number: last digit unclear on the photo" data-testid="draft-notes-input" />
               </label>
               <p className="hint-note">&ldquo;Save as draft&rdquo; keeps whatever is filled in, even if it is incomplete or wrong; a value the app cannot use is left out and written to these notes.</p>
-              <button type="button" className="btn ghost block save-draft" disabled={saving} onClick={() => void saveAsDraft()} data-testid="save-learner-draft">
+              {/* mouseDown keeps the focus in the notes box: a blur would re-pin the sticky Save bar over this button mid-tap and swallow the tap. */}
+              <button type="button" className="btn ghost block save-draft" disabled={saving} onMouseDown={(e) => e.preventDefault()} onClick={() => void saveAsDraft()} data-testid="save-learner-draft">
                 {editingLearner ? "Save draft" : "Save as draft"}
               </button>
             </details>
