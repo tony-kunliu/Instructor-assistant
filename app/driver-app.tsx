@@ -1357,7 +1357,8 @@ export default function DriverApp({ mode = "private" }: { mode?: "private" | "sa
             enterKeyHint="search"
           />
         </label>
-        {pasteOpen ? (
+        {/* "Paste from assistant" reads ACTGDS's own assistant format (ACTGDS-DRAFT): private edition only. */}
+        {isSaas ? null : pasteOpen ? (
           <div className="paste-draft" data-testid="paste-draft">
             <label className="field">
               <span>Paste the assistant&rsquo;s draft (it starts with ACTGDS-DRAFT)</span>

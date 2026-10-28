@@ -39,7 +39,7 @@ export default function Page() {
         </ul>
 
         <h2>5. No warranty</h2>
-        <p>The service is provided &ldquo;as is&rdquo; and &ldquo;as available&rdquo;, without any warranty that it will be uninterrupted, error-free or fit for a particular purpose. Keep your own copies of important records (you can export them at any time from the Account page). To the extent the law allows, [operator name — Tony to add] is not liable for any loss arising from use of the service. Nothing in these terms excludes rights you have under the Australian Consumer Law that cannot be excluded.</p>
+        <p>The service is provided &ldquo;as is&rdquo; and &ldquo;as available&rdquo;, without any warranty that it will be uninterrupted, error-free or fit for a particular purpose. Keep your own copies of important records (while your account is active, including after the free trial, you can export them at any time from the Account page; [how data is returned for disabled accounts — Tony to decide]). To the extent the law allows, [operator name — Tony to add] is not liable for any loss arising from use of the service. Nothing in these terms excludes rights you have under the Australian Consumer Law that cannot be excluded.</p>
 
         <h2>6. Termination</h2>
         <p>You can stop using the service at any time and ask for your account to be deleted. We may suspend or close an account that breaches these terms, or close the service, with reasonable notice where possible. [how account closure and export are handled — Tony to decide]</p>

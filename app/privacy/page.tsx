@@ -28,7 +28,7 @@ export default function Page() {
 
         <h2>3. Where it is stored</h2>
         <p>The service runs on Cloudflare, and your data is stored with Cloudflare. Data region: [data region — Tony to confirm].</p>
-        <p>Sign-in is handled by Cloudflare Access: the e-mail address you sign in with, and the one-time sign-in codes sent to it, are processed by Cloudflare.</p>
+        <p>Sign-in is handled by Cloudflare Access, which processes the e-mail address you sign in with. Sign-in method: [sign-in method — Tony to confirm].</p>
 
         <h2>4. Who can see it</h2>
         <p>Each account sees only its own data. Other instructors using the service cannot see your learners or lessons, and you cannot see theirs.</p>
@@ -38,7 +38,7 @@ export default function Page() {
         <p>You are responsible for having each learner&rsquo;s permission to record their details in the service, and for telling them how their information is used.</p>
 
         <h2>6. Export and deletion</h2>
-        <p>You can download all your data at any time from the Account page (&ldquo;Export my data&rdquo;). To have your account and data deleted, contact us at [contact e-mail — Tony to add].</p>
+        <p>While your account is active (including after the free trial) you can download all your data at any time from the Account page (&ldquo;Export my data&rdquo;). If your account has been disabled: [how data is returned for disabled accounts — Tony to decide]. To have your account and data deleted, contact us at [contact e-mail — Tony to add].</p>
         <p>Accounts whose free trial has ended keep their data for [retention period for expired accounts — Tony to add].</p>
 
         <h2>7. Australian Privacy Act</h2>

@@ -38,6 +38,8 @@ SERVER_PID=""
 cleanup() { [ -n "$SERVER_PID" ] && kill -- "-$SERVER_PID" 2>/dev/null || true; rm -rf "$WORK"; }
 trap cleanup EXIT
 unset APP_MODE SAAS_TRIAL_DAYS ACTGDS_DRIVER_DB
+# The port must be free: otherwise the checks would silently run against whatever already listens there.
+if curl -s -o /dev/null --max-time 5 "http://localhost:$PORT/"; then echo "run-saas.sh: port $PORT is already in use (set QA_PORT)"; exit 1; fi
 
 (cd "$ROOT" && git ls-files -co --exclude-standard | tar -cf - -T -) | tar -xf - -C "$WORK"
 cp -a "$ROOT/node_modules" "$WORK/node_modules"
@@ -64,7 +66,12 @@ npx wrangler d1 migrations apply DB --local >/dev/null
 npx next build >build.log 2>&1 || { tail -30 build.log; exit 1; }
 setsid npx next start -p "$PORT" >server.log 2>&1 &
 SERVER_PID=$!
-for _ in $(seq 1 60); do curl -sf -H "x-qa-email: qa-probe@example.test" "http://localhost:$PORT/api/me" >/dev/null && break; sleep 1; done
+READY=""
+for _ in $(seq 1 60); do curl -sf -H "x-qa-email: qa-probe@example.test" "http://localhost:$PORT/api/me" >/dev/null && { READY=1; break; }; sleep 1; done
+if [ -z "$READY" ] || ! kill -0 "$SERVER_PID" 2>/dev/null; then
+  echo "run-saas.sh: the app server did not start (ready: ${READY:-no}, process alive: $(kill -0 "$SERVER_PID" 2>/dev/null && echo yes || echo no))"
+  echo "--- server.log (tail)"; tail -40 server.log; exit 1
+fi
 export QA_BASE="http://localhost:$PORT" QA_OUT="${QA_OUT:-$WORK/shots}" QA_WORK="$WORK" NPM_GLOBAL="$(npm root -g)"
 export QA_PREVIEW_OUT="${QA_PREVIEW_OUT:-$QA_OUT/preview}"
 mkdir -p "$QA_OUT" "$QA_PREVIEW_OUT"

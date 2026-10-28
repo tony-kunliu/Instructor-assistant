@@ -5,10 +5,12 @@ import { createRequire } from "node:module";
 import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 
+const WORK = process.env.QA_WORK;
+// sql() runs wrangler against QA_WORK's local D1: without it wrangler would use the developer's own .wrangler database.
+if (!WORK) throw new Error("saas.mjs: QA_WORK is not set. Run it through scripts/qa-browser/run-saas.sh (it points QA_WORK at the throw-away copy).");
 const { chromium, devices } = createRequire(import.meta.url)(`${process.env.NPM_GLOBAL}/playwright`);
 const B = process.env.QA_BASE;
 const OUT = process.env.QA_OUT;
-const WORK = process.env.QA_WORK;
 const PREVIEW = process.env.QA_PREVIEW_OUT || `${OUT}/preview`;
 const CHROMIUM = process.env.QA_CHROMIUM || `${process.env.PLAYWRIGHT_BROWSERS_PATH || "/opt/pw-browsers"}/chromium-1194/chrome-linux/chrome`;
 
@@ -23,8 +25,17 @@ const TRIAL_ENDED = "Free trial ended — read-only. Your records and PDFs stay 
 const results = [];
 const check = (name, ok, extra = "") => results.push({ ok: Boolean(ok), line: `${ok ? "PASS" : "FAIL"}  ${name}${extra ? "  — " + extra : ""}` });
 const shots = [];
-// Screenshots must never be committed: the preview folder ignores itself, wherever QA_PREVIEW_OUT points.
-writeFileSync(`${PREVIEW}/.gitignore`, "*\n");
+// Screenshots must never be committed: the preview folder ignores itself, wherever QA_PREVIEW_OUT points. Refuse a
+// folder that is already someone else's (its own different .gitignore, or files git tracks), rather than overwrite it.
+{
+  let existing = null;
+  try { existing = readFileSync(`${PREVIEW}/.gitignore`, "utf8"); } catch { /* none yet */ }
+  if (existing !== null && existing !== "*\n") throw new Error(`saas.mjs: ${PREVIEW}/.gitignore exists with other content; choose an empty QA_PREVIEW_OUT folder.`);
+  let tracked = "";
+  try { tracked = execFileSync("git", ["-C", PREVIEW, "ls-files", "--", "."], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim(); } catch { /* not inside a git work tree */ }
+  if (tracked) throw new Error(`saas.mjs: ${PREVIEW} contains files tracked by git (${tracked.split("\n").slice(0, 3).join(", ")}); choose a folder of its own for QA_PREVIEW_OUT.`);
+  writeFileSync(`${PREVIEW}/.gitignore`, "*\n");
+}
 const browser = await chromium.launch({ executablePath: CHROMIUM });
 const settle = (ms = 400) => new Promise((r) => setTimeout(r, ms));
 
@@ -192,6 +203,7 @@ await section("2 + 4. qa-sam: sign-up through /welcome, then the whole journey",
   const tabs = await page.$$eval(".view-tab", (b) => b.map((x) => x.textContent.trim()));
   check("home: no instructor picker (no \"All\" view)", !tabs.some((t) => t.startsWith("All")), JSON.stringify(tabs));
   check("home: no /gps link", (await page.$("a[href^='/gps']")) === null);
+  check("home: no \"Paste from assistant\" (ACTGDS's own assistant format)", (await page.$("[data-testid=paste-draft-open]")) === null && (await page.$("[data-testid=paste-draft]")) === null);
   // An outside instructor sees the product name, not the school's internals.
   const brand = await page.evaluate(() => ({ name: document.querySelector(".brand strong")?.textContent, title: document.title, text: document.body.innerText, foot: document.querySelector("footer.foot")?.textContent ?? "" }));
   check("home: header and page title say \"Instructor Assistant\"; no \"ACTGDS\" anywhere on the page; footer has no school line but keeps the G-NAF attribution",
@@ -204,6 +216,8 @@ await section("2 + 4. qa-sam: sign-up through /welcome, then the whole journey",
     return { ok: document.documentElement.scrollWidth <= width, detail: `scrollWidth ${document.documentElement.scrollWidth} > ${width}: ${wide.join(", ")}` };
   });
   check("home: no horizontal scroll at iPhone 13 width (390px)", overflow.ok, overflow.ok ? "" : overflow.detail);
+  const appManifest = await api(SAM, "/manifest.webmanifest");
+  check("installed-app manifest (as served) is named \"Instructor Assistant\", no school wording", appManifest.status === 200 && appManifest.json?.name === "Instructor Assistant" && !appManifest.text.includes("ACTGDS") && !appManifest.text.includes("Golden Driving School"), `${appManifest.status} ${appManifest.text.slice(0, 160)}`);
   const gps = await api(SAM, "/gps");
   check("GET /gps → 404 for a signed-up account", gps.status === 404, String(gps.status));
   // With no learners the app opens (and scrolls to) the New learner form; the preview shows the top: banner + empty list.
@@ -319,7 +333,7 @@ await section("5. qa-jo: same display name, but nothing of qa-sam's is reachable
     ["GET", `${L}/lessons/${ids.samLesson}/revisions`], ["POST", `${L}/lessons/${ids.samLesson}/sign`, { adiSignature: SIG, learnerSignature: SIG }],
     ["GET", `${L}/export`], ["GET", `${L}/archive-history`],
     ["GET", `${L}/import-draft`], ["PUT", `${L}/import-draft`, { csv: "date\n" }], ["DELETE", `${L}/import-draft`], ["POST", `${L}/import`, { csv: "date\n" }],
-    ["POST", `${L}/transfer`, { toInstructorId: ids.jo }],
+    ["POST", `${L}/transfer`, { toInstructorId: ids.jo }], ["POST", `${L}/transfer/checked`, {}],
   ];
   const leaks = [];
   for (const [method, path, body] of probes) {
@@ -329,6 +343,21 @@ await section("5. qa-jo: same display name, but nothing of qa-sam's is reachable
   check(`qa-jo: GET/PATCH/POST/PUT/DELETE on qa-sam's learner, lessons, export, import-draft, sign → all 404 (${probes.length} probes)`, leaks.length === 0, leaks.join("; "));
   const own = await Promise.all([L, `${L}/export`, `${L}/lessons/${ids.samLesson}/revisions`, `${L}/import-draft`].map((path) => api(SAM, path)));
   check("control: the same GET paths answer qa-sam itself (200), so the 404s above are the guard", own.every((r) => r.status === 200), own.map((r) => r.status).join(","));
+  // Listings that are not keyed by a learner id: qa-jo's must hold only qa-jo's own rows. An archived learner of qa-sam's
+  // exists first, so the archived listing check has something it could leak. (Both accounts share a display name, so
+  // the instructor listing is checked by id and ADI number.)
+  const archivedSam = await api(SAM, "/api/learners", { method: "POST", body: { fullName: "QA Sam Archived" } });
+  ids.samArchived = archivedSam.json?.learner?.id;
+  const archiveIt = await api(SAM, `/api/learners/${ids.samArchived}`, { method: "PATCH", body: { archived: true } });
+  const samArchivedList = await api(SAM, "/api/learners?status=archived");
+  const joArchivedList = await api(JO, "/api/learners?status=archived");
+  check("qa-jo: GET /api/learners?status=archived holds none of qa-sam's learners (qa-sam has an archived one)",
+    archiveIt.status === 200 && samArchivedList.json?.learners?.some((l) => l.id === ids.samArchived) && joArchivedList.status === 200 && joArchivedList.json.learners.every((l) => l.instructorId === ids.jo) && !joArchivedList.text.includes(ids.samArchived) && !joArchivedList.text.includes("QA Sam"),
+    `${archiveIt.status} ${joArchivedList.status} ${joArchivedList.text.slice(0, 160)}`);
+  const joInstructors = await api(JO, "/api/instructors");
+  check("qa-jo: GET /api/instructors → 200 with exactly qa-jo's own instructor (no qa-sam id or ADI number)",
+    joInstructors.status === 200 && joInstructors.json?.instructors?.length === 1 && joInstructors.json.instructors[0].id === ids.jo && joInstructors.json.instructors[0].adiNumber === "QA-ADI-202" && !joInstructors.text.includes(ids.sam) && !joInstructors.text.includes("QA-ADI-101"),
+    `${joInstructors.status} ${joInstructors.text.slice(0, 200)}`);
   const patchInstructor = await api(JO, `/api/instructors/${ids.sam}`, { method: "PATCH", body: { adiNumber: "QA-HIJACK" } });
   check("qa-jo: PATCH /api/instructors/<qa-sam id> → 404", patchInstructor.status === 404, String(patchInstructor.status));
   const ownTransfer = await api(JO, `/api/learners/${ids.joLearner}/transfer`, { method: "POST", body: { toInstructorId: ids.sam } });
@@ -353,17 +382,22 @@ await section("5. qa-jo: same display name, but nothing of qa-sam's is reachable
 // ═══ 6. Header forging as qa-jo: client-supplied identity / middleware headers have no effect ═══
 await section("6. Header forging as qa-jo: client-supplied identity / middleware headers have no effect", async () => {
   needs(ids.sam, ids.jo, ids.samLearner);
-  const forged = {
-    "x-instructor-id": ids.sam, "x-instructor-name": "forged", "x-access-email": SAM,
-    "x-middleware-request-x-instructor-id": ids.sam, "x-middleware-override-headers": "x-instructor-id", "x-middleware-subrequest": "middleware",
-  };
-  const me = await api(JO, "/api/me", { headers: forged });
-  check("forged headers: GET /api/me is still qa-jo", me.status === 200 && me.json?.instructor?.id === ids.jo && me.json.instructor.fullName === SAM_NAME, `${me.status} ${me.text.slice(0, 160)}`);
-  const list = await api(JO, "/api/learners", { headers: forged });
-  const names = (list.json?.learners ?? []).map((l) => l.fullName);
-  check("forged headers: GET /api/learners is qa-jo's list, without qa-sam's learner", list.status === 200 && !names.includes(LEARNER) && names.includes("QA Jo Pupil") && list.json.learners.every((l) => l.instructorId === ids.jo), `${list.status} ${JSON.stringify(names)}`);
-  const page = await api(JO, "/", { headers: forged });
-  check("forged headers: GET / still renders for qa-jo (no bypass, no error)", page.status === 200, String(page.status));
+  // x-middleware-subrequest in its current (Next >= 13.2, CVE-2025-29927) form: the middleware name repeated up to the
+  // recursion depth (5), for both `middleware` and `src/middleware`. Either would skip middleware if Next honoured it.
+  for (const subrequest of ["middleware:middleware:middleware:middleware:middleware", "src/middleware:src/middleware:src/middleware:src/middleware:src/middleware"]) {
+    const forged = {
+      "x-instructor-id": ids.sam, "x-instructor-name": "forged", "x-access-email": SAM,
+      "x-middleware-request-x-instructor-id": ids.sam, "x-middleware-override-headers": "x-instructor-id", "x-middleware-subrequest": subrequest,
+    };
+    const tag = `(x-middleware-subrequest: ${subrequest.split(":")[0]} ×5)`;
+    const me = await api(JO, "/api/me", { headers: forged });
+    check(`forged headers ${tag}: GET /api/me is still qa-jo`, me.status === 200 && me.json?.instructor?.id === ids.jo && me.json.instructor.fullName === SAM_NAME, `${me.status} ${me.text.slice(0, 160)}`);
+    const list = await api(JO, "/api/learners", { headers: forged });
+    const names = (list.json?.learners ?? []).map((l) => l.fullName);
+    check(`forged headers ${tag}: GET /api/learners is qa-jo's list, without qa-sam's learner`, list.status === 200 && !names.includes(LEARNER) && names.includes("QA Jo Pupil") && list.json.learners.every((l) => l.instructorId === ids.jo), `${list.status} ${JSON.stringify(names)}`);
+    const page = await api(JO, "/", { headers: forged });
+    check(`forged headers ${tag}: GET / still renders for qa-jo (no bypass, no error)`, page.status === 200, String(page.status));
+  }
 });
 
 // ═══ 4 (end). qa-sam's own data export contains only qa-sam's records ═══
@@ -377,9 +411,9 @@ await section("4 (end). qa-sam's own data export contains only qa-sam's records"
   writeFileSync(`${OUT}/sam-export.json`, res.text);
   let data = null;
   try { data = JSON.parse(res.text); } catch { /* checked below */ }
-  check("/api/account/export (from /account): an attachment with this account's learner and lessons only",
+  check("/api/account/export (from /account): an attachment with this account's learners (active + archived) and lessons only",
     res.status === 200 && /^attachment; filename="instructor-assistant-export-\d{4}-\d{2}-\d{2}\.json"$/.test(res.disposition ?? "") &&
-    data?.instructor?.id === ids.sam && data.learners.length === 1 && data.learners[0].learner.fullName === LEARNER && data.learners[0].lessons.length === 2 && !res.text.includes(ids.jo) && !res.text.includes("QA Jo Pupil"),
+    data?.instructor?.id === ids.sam && data.learners.length === 2 && data.learners.find((l) => l.learner.fullName === LEARNER)?.lessons.length === 2 && data.learners.some((l) => l.learner.id === ids.samArchived && l.learner.archivedAt) && !res.text.includes(ids.jo) && !res.text.includes("QA Jo Pupil"),
     `${res.status} ${res.disposition} ${data?.learners?.length} learner(s)`);
   check("/api/account/export: compact JSON (not pretty-printed)", res.status === 200 && !res.text.includes("\n"), `${res.text.length} chars`);
   await sam.ctx.close();
@@ -404,17 +438,26 @@ await section("3 + 7. qa-late (QA 刘坤): Chinese name end to end, then an expi
   const unsignedLesson = await api(LATE, `/api/learners/${ids.lateLearner}/lessons`, { method: "POST", body: { lessonDate: "2026-10-02", startTime: "09:00", finishTime: "10:00", startOdometer: "1020", finishOdometer: "1030", taughtIds: ["3"], signLater: true } });
   check(`"${LATE_NAME}": later writes work (learner + lesson created during the trial)`, learner.status === 201 && lesson.status === 201 && unsignedLesson.status === 201, `${learner.status} ${lesson.status} ${unsignedLesson.status}`);
 
-  sql(`UPDATE instructors SET created_at = datetime(created_at, '-40 days') WHERE lower(email) = '${LATE}'`);
+  // Backdated in the stored ISO format (created_at is written by strftime('%Y-%m-%dT%H:%M:%fZ', 'now')).
+  sql(`UPDATE instructors SET created_at = strftime('%Y-%m-%dT%H:%M:%fZ', created_at, '-40 days') WHERE lower(email) = '${LATE}'`);
+  const backdated = instructorRows(LATE)[0]?.created_at ?? "";
+  const lateMe = await api(LATE, "/api/me");
+  const endsAt = Date.parse(lateMe.json?.trialEndsAt ?? "");
+  const expectedEnd = Date.now() - 10 * 24 * 3600 * 1000;
+  // A real date ~10 days ago, not null/NaN (which the app would also read as "expired" and so hide wrong maths).
+  check("expired trial: created_at stays ISO and /api/me trialEndsAt is a real date about 10 days ago",
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(backdated) && Number.isFinite(endsAt) && Math.abs(endsAt - expectedEnd) < 3600 * 1000,
+    `created_at ${backdated}, trialEndsAt ${lateMe.json?.trialEndsAt}`);
   await page.addInitScript((id) => localStorage.setItem("actgds-driver:last-learner", id), ids.lateLearner);
   await page.reload();
   await ready(page);
   await page.waitForSelector(".summary");
   const banner = (await page.textContent("[data-testid=trial-banner] span"))?.trim();
   check("expired trial: banner reads the read-only message", banner === TRIAL_ENDED && (await page.getAttribute("[data-testid=trial-banner]", "data-kind")) === "expired", banner);
-  check("expired trial: + New learner, Start Lesson and Edit learner are disabled",
+  check("expired trial: + New learner, Start Lesson, Edit learner and History Edit are disabled (saving itself is refused by the API: the 402 check below)",
     (await page.isDisabled("[data-testid=new-learner]")) && (await page.isDisabled(".btn.go")) && (await page.isDisabled("[data-testid=edit-learner]")) && (await page.$$eval("[data-testid=history-row] .h-edit", (b) => b.every((x) => x.disabled))));
-  check("expired trial: To sign, Sign now and Paste from assistant are disabled",
-    (await page.isDisabled("[data-testid=to-sign-open]")) && (await page.$$eval("[data-testid=unsigned-badge]", (b) => b.length > 0 && b.every((x) => x.disabled))) && (await page.isDisabled("[data-testid=paste-draft-open]")));
+  check("expired trial: To sign and Sign now are disabled",
+    (await page.isDisabled("[data-testid=to-sign-open]")) && (await page.$$eval("[data-testid=unsigned-badge]", (b) => b.length > 0 && b.every((x) => x.disabled))));
   check("expired trial: the raw code \"trial_expired\" is never shown", !(await page.evaluate(() => document.body.innerText.includes("trial_expired"))));
   const post = await api(LATE, "/api/learners", { method: "POST", body: { fullName: "QA Late Too Late" } });
   check("expired trial: POST /api/learners → 402 trial_expired", post.status === 402 && post.json?.error === "trial_expired", `${post.status} ${post.text}`);
