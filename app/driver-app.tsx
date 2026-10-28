@@ -281,6 +281,8 @@ export default function DriverApp() {
   const [learnerDraft, setLearnerDraft] = useState<LearnerDraft>(emptyLearner);
   // Draft learners (Tony 2026-10-22): the "what to check" notes kept with a draft, and whether the open form edits one.
   const [draftNotesText, setDraftNotesText] = useState("");
+  // Whether the folded "Save as a draft" section is open: set when the form opens (and by a paste with notes), then by the user.
+  const [draftFoldOpen, setDraftFoldOpen] = useState(false);
   const [status, setStatus] = useState<{ kind: "info" | "error" | "ok" | "warn"; text: string } | null>(null);
   // "Paste from assistant": a draft only pre-fills a form; the instructor still checks, signs and saves (lib/assistant-draft.ts).
   const [pasteOpen, setPasteOpen] = useState(false);
@@ -550,6 +552,7 @@ export default function DriverApp() {
     // Opened as stored (no auto-fill yet): an untouched save must send no change. The panel and PDF show the live value anyway.
     setLearnerDraft(opened);
     setDraftNotesText(l.draftNotes ?? "");
+    setDraftFoldOpen(Boolean(l.draftAt));
     setOpenedLearnerDraft(opened);
     setHoursOnTouched(false);
     setEditLearnerId(l.id);
@@ -974,6 +977,7 @@ export default function DriverApp() {
     const defaultInstructorId = signedInInstructorId ?? storage.get(LAST_INSTRUCTOR_KEY) ?? instructors[0]?.id ?? "";
     setLearnerDraft({ ...emptyLearner, instructorId: instructors.some((i) => i.id === defaultInstructorId) ? defaultInstructorId : "" });
     setDraftNotesText("");
+    setDraftFoldOpen(false);
     setEditingLearner(false);
     setAddingLearner(true);
     setListExpanded(false);
@@ -981,6 +985,9 @@ export default function DriverApp() {
     setNameError(false);
     setStatus(null);
   };
+
+  // The pasted text is a learner block: "Save as draft now" is offered for it.
+  const pasteIsLearner = /^\s*[`*#>\s]*ACTGDS-DRAFT\s+LEARNER/im.test(pasteText);
 
   const closePaste = () => {
     setPasteOpen(false);
@@ -1028,6 +1035,7 @@ export default function DriverApp() {
       if (addingLearner && !window.confirm("The learner form is open. Replace what is in it with the assistant's draft?")) return;
       openAddLearner();
       setDraftNotesText(reviewNotes);
+      setDraftFoldOpen(Boolean(reviewNotes));
       setLearnerDraft((current) => ({
         ...current, fullName: f.fullName, phone: f.phone, dob: f.dob, licenceNumber: f.licenceNumber, licenceExpiry: f.licenceExpiry,
         address: f.address, schoolWork: f.schoolWork, transmission: f.transmission, eligibility: f.eligibility,
@@ -1348,10 +1356,10 @@ export default function DriverApp() {
             ) : null}
             <div className="paste-actions">
               <button type="button" className="btn primary" disabled={!pasteText.trim() || saving} onClick={() => void applyAssistantDraft()} data-testid="paste-draft-use">Fill in the form</button>
-              {/^\s*[`*#>\s]*ACTGDS-DRAFT\s+LEARNER/im.test(pasteText) ? <button type="button" className="btn ghost" disabled={saving} onClick={() => void applyAssistantDraft(true)} data-testid="paste-draft-save-draft">Save as draft now</button> : null}
+              {pasteIsLearner ? <button type="button" className="btn ghost" disabled={saving} onClick={() => void applyAssistantDraft(true)} data-testid="paste-draft-save-draft">Save as draft now</button> : null}
               <button type="button" className="btn ghost" onClick={closePaste}>Cancel</button>
             </div>
-            <p className="hint-note">&ldquo;Fill in the form&rdquo; saves nothing: you check it, then save it.{/^\s*[`*#>\s]*ACTGDS-DRAFT\s+LEARNER/im.test(pasteText) ? " \u201cSave as draft now\u201d keeps this learner as a draft to review later." : ""}</p>
+            <p className="hint-note">&ldquo;Fill in the form&rdquo; saves nothing: you check it, then save it.{pasteIsLearner ? " \u201cSave as draft now\u201d keeps this learner as a draft to review later." : ""}</p>
           </div>
         ) : (
           <button type="button" className="link paste-link" onClick={() => setPasteOpen(true)} disabled={saving} data-testid="paste-draft-open">Paste from assistant</button>
@@ -1618,7 +1626,7 @@ export default function DriverApp() {
           </div>
           {!editingLearner || detail?.learner.draftAt ? (
             // Drafts are the exception (Tony 2026-10-22: "尽量不用"): folded under the form, open only when editing a draft or notes exist.
-            <details className="lblock draft-fold" data-testid="fsect-draft-notes" open={Boolean(editingLearner && detail?.learner.draftAt) || Boolean(draftNotesText.trim()) || undefined}>
+            <details className="lblock draft-fold" data-testid="fsect-draft-notes" open={draftFoldOpen} onToggle={(e) => setDraftFoldOpen((e.currentTarget as HTMLDetailsElement).open)}>
               <summary data-testid="draft-fold-summary">{editingLearner ? "Draft notes" : "Not ready? Save as a draft"}</summary>
               <label className="field full"><span>What to check before confirming</span>
                 <textarea rows={3} value={draftNotesText} maxLength={1500} onChange={(e) => setDraftNotesText(e.target.value)} placeholder="e.g. licence number: last digit unclear on the photo" data-testid="draft-notes-input" />
