@@ -1,7 +1,7 @@
 import type { D1Database } from "../d1-types.ts";
 import { handle, readJson } from "../api.ts";
 import { ValidationError } from "../repo.ts";
-import { trialEndsAt } from "./gate.ts";
+import { trialEndsAt } from "./trial.ts";
 
 /**
  * SaaS edition accounts (spec 2026-10-21-saas-edition-design §4, §7). An instructor row is created only by the
@@ -18,10 +18,11 @@ function normalizeEmail(email: unknown): string {
   return typeof email === "string" ? email.trim().toLowerCase() : "";
 }
 
-/** Trimmed text of 1..max characters (code points), else a ValidationError naming the field. */
+/** Trimmed, well-formed (no lone surrogates) text of 1..max characters (code points), else a ValidationError naming the field. */
 function requiredText(value: unknown, label: string, max: number): string {
   const text = typeof value === "string" ? value.trim() : "";
   if (!text) throw new ValidationError(`${label} is required.`);
+  if (!text.isWellFormed()) throw new ValidationError(`${label} contains invalid characters.`);
   if ([...text].length > max) throw new ValidationError(`${label} must be at most ${max} characters.`);
   return text;
 }

@@ -161,3 +161,13 @@ test("POST /api/welcome: 403 without x-instructor-id and x-access-email; 400 on 
   assert.equal((await postWelcome(db, welcome("c@x.test", "{not json"))).status, 400);
   assert.equal(await count(db), 0);
 });
+
+test("createSaasInstructor rejects a name or ADI number that is not well-formed Unicode (lone surrogate)", async () => {
+  const db = openSaasTestD1();
+  await assert.rejects(createSaasInstructor(db, { email: "s@x.test", fullName: "\ud800x", adiNumber: "1" }), ValidationError);
+  await assert.rejects(createSaasInstructor(db, { email: "s@x.test", fullName: "QA", adiNumber: "1\udc00" }), ValidationError);
+  assert.equal(await count(db), 0);
+  assert.equal((await createSaasInstructor(db, { email: "s@x.test", fullName: "刘坤", adiNumber: "1" })).fullName, "刘坤");
+  const response = await postWelcome(db, welcome("t@x.test", JSON.parse('{"fullName":"\\ud800x","adiNumber":"1"}')));
+  assert.equal(response.status, 400);
+});

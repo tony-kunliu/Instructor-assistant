@@ -9,7 +9,9 @@ import { openSaasTestD1 } from "./helpers/saas-d1.ts";
 import { accessIssuer, accessJwks, accessTeamDomain, verifyAccessIdentity } from "../lib/access.ts";
 import { createLearner, createLesson, getOwnAdiSignature, listUnsignedLessons, setOwnAdiSignature } from "../lib/repo.ts";
 import { createSaasInstructor } from "../lib/saas/accounts.ts";
-import { parseTrialDays, saasGate, trialEndsAt, type GateResult } from "../lib/saas/gate.ts";
+import { saasGate, type GateResult } from "../lib/saas/gate.ts";
+import { parseTrialDays, trialEndsAt } from "../lib/saas/trial.ts";
+import { audienceGate } from "../lib/app-mode.ts";
 
 const CREATED = "2026-01-01T00:00:00.000Z";
 const DAY_10 = new Date("2026-01-10T12:00:00.000Z");
@@ -194,4 +196,20 @@ test("access: team domain from ACCESS_TEAM_DOMAIN (default actgds); one cached J
   const request = new Request("https://saas.example/", { headers: { "cf-access-jwt-assertion": token } });
   await assert.rejects(verifyAccessIdentity(request, jwks, "aud", accessIssuer("saas-team.cloudflareaccess.com")));
   assert.deepEqual(await verifyAccessIdentity(request, jwks, "aud", accessIssuer("actgds.cloudflareaccess.com")), { email: "a@x.test" });
+});
+
+test("parseTrialDays: only whole days 1..3650 are valid; larger, fractional or non-numeric values are 30", () => {
+  assert.equal(parseTrialDays("1"), 1);
+  assert.equal(parseTrialDays("3650"), 3650);
+  for (const bad of ["3651", "9999999999", "30.5", "NaN", "-0", "0", "", " "]) assert.equal(parseTrialDays(bad), 30, bad);
+});
+
+test("audienceGate: saas without ACCESS_AUD fails closed (503) before any JWT check; private keeps its fallback", () => {
+  for (const aud of [undefined, "", "   "]) {
+    assert.deepEqual(audienceGate("saas", aud), { status: 503, message: "Instructor Assistant is misconfigured: SaaS mode requires ACCESS_AUD." }, String(aud));
+  }
+  assert.equal(audienceGate("saas", "saas-aud"), null);
+  assert.equal(audienceGate("private", undefined), null);
+  assert.equal(audienceGate("private", ""), null);
+  assert.equal(audienceGate("private", "aud"), null);
 });

@@ -48,3 +48,15 @@ export function currentAppMode(): AppMode {
   if (mode === "invalid") throw new Error("Invalid APP_MODE: must be exactly \"private\" or \"saas\".");
   return mode;
 }
+
+/**
+ * Middleware decision on the Access audience, before any JWT verification: in `saas` a missing or blank
+ * `ACCESS_AUD` is 503 (never the Staging default audience, which belongs to the private Access app). `private`
+ * keeps today's fallback (null).
+ */
+export function audienceGate(mode: AppMode, aud: unknown): { status: 503; message: string } | null {
+  if (mode === "saas" && !(typeof aud === "string" && aud.trim())) {
+    return { status: 503, message: "Instructor Assistant is misconfigured: SaaS mode requires ACCESS_AUD." };
+  }
+  return null;
+}

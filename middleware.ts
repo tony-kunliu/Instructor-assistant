@@ -1,9 +1,10 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { accessIssuer, accessJwks, accessTeamDomain, verifyAccessIdentity } from "./lib/access.ts";
-import { modeGate, resolveAppMode } from "./lib/app-mode.ts";
+import { audienceGate, modeGate, resolveAppMode } from "./lib/app-mode.ts";
 import { findInstructorByEmail } from "./lib/repo.ts";
-import { forwardHeaders, parseTrialDays, saasGate } from "./lib/saas/gate.ts";
+import { forwardHeaders, saasGate } from "./lib/saas/gate.ts";
+import { parseTrialDays } from "./lib/saas/trial.ts";
 
 declare global {
   interface CloudflareEnv {
@@ -56,6 +57,9 @@ export async function middleware(request: NextRequest): Promise<NextResponse> {
   const gate = modeGate(env.APP_MODE, Boolean(env.DB));
   if (gate) return new NextResponse(gate.message, { status: gate.status });
   if (!env.DB) return NextResponse.next();
+  const saas = resolveAppMode(env.APP_MODE, true) === "saas";
+  const audience = audienceGate(saas ? "saas" : "private", env.ACCESS_AUD);
+  if (audience) return new NextResponse(audience.message, { status: audience.status });
 
   let identity: Awaited<ReturnType<typeof verifyAccessIdentity>>;
   try {
@@ -68,7 +72,7 @@ export async function middleware(request: NextRequest): Promise<NextResponse> {
     return new NextResponse("Cloudflare Access identity required.", { status: 403 });
   }
 
-  if (resolveAppMode(env.APP_MODE, true) === "saas") return saasMiddleware(request, env, identity.email);
+  if (saas) return saasMiddleware(request, env, identity.email);
 
   const instructor = await findInstructorByEmail(env.DB, identity.email);
   if (!instructor) {

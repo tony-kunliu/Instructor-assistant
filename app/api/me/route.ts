@@ -3,7 +3,7 @@ import { handle } from "@/lib/api.ts";
 import { currentAppMode } from "@/lib/app-mode.ts";
 import { getD1 } from "@/lib/db.ts";
 import { saasMeBody } from "@/lib/saas/accounts.ts";
-import { parseTrialDays } from "@/lib/saas/gate.ts";
+import { parseTrialDays } from "@/lib/saas/trial.ts";
 
 export const dynamic = "force-dynamic";
 
