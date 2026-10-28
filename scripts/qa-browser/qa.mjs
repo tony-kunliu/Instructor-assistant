@@ -3162,7 +3162,7 @@ const draw = async (page, index) => {
   await ready(s.page);
   // 1. New learner, nothing filled in except a wrong date: "Save as draft" works; "Save learner" would not.
   await s.page.click("[data-testid=new-learner]");
-  await s.page.waitForSelector("[data-testid=save-learner-draft]");
+  await s.page.waitForSelector("[data-testid=draft-fold-summary]");
   await s.page.fill("[data-testid=learner-name]", "QA Draft Jane");
   check("draft: the draft option is folded away by default (drafts are the exception)", !(await s.page.isVisible("[data-testid=draft-notes-input]")));
   await s.page.click("[data-testid=draft-fold-summary]");
