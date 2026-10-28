@@ -54,7 +54,7 @@ test("derivedStats: duration, km, totals after save and the lesson number are ca
   });
   // Half-derived (time known, km not yet): the known half shows, the totals add only what is known.
   const half = derivedStats({ totals, liveDuration: 45, liveKm: null });
-  assert.equal(half.thisLesson.duration, "0h 45m");
+  assert.equal(half.thisLesson.duration, "45m");
   assert.equal(half.thisLesson.km, "—");
   assert.equal(half.totalAfter.duration, "26h 45m");
   assert.equal(half.totalAfter.km, "412 km");

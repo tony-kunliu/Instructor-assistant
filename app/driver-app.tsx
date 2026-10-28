@@ -1351,7 +1351,7 @@ export default function DriverApp() {
               {/^\s*[`*#>\s]*ACTGDS-DRAFT\s+LEARNER/im.test(pasteText) ? <button type="button" className="btn ghost" disabled={saving} onClick={() => void applyAssistantDraft(true)} data-testid="paste-draft-save-draft">Save as draft now</button> : null}
               <button type="button" className="btn ghost" onClick={closePaste}>Cancel</button>
             </div>
-            <p className="hint-note">"Fill in the form" saves nothing: you check it, then save it. "Save as draft now" keeps a learner block as a draft to review later.</p>
+            <p className="hint-note">&ldquo;Fill in the form&rdquo; saves nothing: you check it, then save it.{/^\s*[`*#>\s]*ACTGDS-DRAFT\s+LEARNER/im.test(pasteText) ? " \u201cSave as draft now\u201d keeps this learner as a draft to review later." : ""}</p>
           </div>
         ) : (
           <button type="button" className="link paste-link" onClick={() => setPasteOpen(true)} disabled={saving} data-testid="paste-draft-open">Paste from assistant</button>
@@ -2019,8 +2019,11 @@ export default function DriverApp() {
                       </div>
                       <div className="h-odo">Odo {lesson.startOdometer ?? "—"} → {lesson.finishOdometer ?? "—"}{lesson.location ? ` · ${lesson.location}` : ""}</div>
                       {lesson.taught ? <p><b>Taught:</b> {lesson.taught}</p> : null}
-                      {lesson.competenciesAssessed ? <p><b>Assessed:</b> {lesson.competenciesAssessed}</p> : null}
-                      {lesson.achieved ? <p><b>Achieved:</b> {lesson.achieved}</p> : null}
+                      {/* Everything assessed was achieved (the usual case): one line instead of the same list twice. */}
+                      {lesson.competenciesAssessed && lesson.achieved === lesson.competenciesAssessed ? <p><b>Assessed, all achieved:</b> {lesson.competenciesAssessed}</p> : (<>
+                        {lesson.competenciesAssessed ? <p><b>Assessed:</b> {lesson.competenciesAssessed}</p> : null}
+                        {lesson.competenciesAssessed ? <p><b>Achieved:</b> {lesson.achieved || "none"}</p> : null}
+                      </>)}
                       {lesson.comments ? <p><b>Comments:</b> {lesson.comments}</p> : null}
                       {lesson.revisionCount > 0 || lesson.signedLater ? (
                         <p className="h-revisions">
