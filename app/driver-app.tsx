@@ -1381,7 +1381,8 @@ export default function DriverApp() {
             </button>
           ))}
         </div>
-        {activeView !== "archived" ? (
+        {/* The glance counts the whole view; while the list is collapsed to one learner (or the form) it is noise above them. */}
+        {activeView !== "archived" && !collapsed ? (
           <p className="glance" data-testid="glance">
             <span><b>{viewGlance.learning}</b> learning</span>
             <span className={viewGlance.withReminder ? "warn" : ""}><b>{viewGlance.withReminder}</b> with a reminder</span>
@@ -1616,24 +1617,23 @@ export default function DriverApp() {
             ) : null}
           </div>
           {!editingLearner || detail?.learner.draftAt ? (
-            <section className="lblock fsect" data-testid="fsect-draft-notes">
-              <div className="card-head"><h3>Notes for review</h3><small>kept with a draft only</small></div>
+            // Drafts are the exception (Tony 2026-10-22: "尽量不用"): folded under the form, open only when editing a draft or notes exist.
+            <details className="lblock draft-fold" data-testid="fsect-draft-notes" open={Boolean(editingLearner && detail?.learner.draftAt) || Boolean(draftNotesText.trim()) || undefined}>
+              <summary data-testid="draft-fold-summary">{editingLearner ? "Draft notes" : "Not ready? Save as a draft"}</summary>
               <label className="field full"><span>What to check before confirming</span>
                 <textarea rows={3} value={draftNotesText} maxLength={1500} onChange={(e) => setDraftNotesText(e.target.value)} placeholder="e.g. licence number: last digit unclear on the photo" data-testid="draft-notes-input" />
               </label>
               <p className="hint-note">&ldquo;Save as draft&rdquo; keeps whatever is filled in, even if it is incomplete or wrong; a value the app cannot use is left out and written to these notes.</p>
-            </section>
+              <button type="button" className="btn ghost block save-draft" disabled={saving} onClick={() => void saveAsDraft()} data-testid="save-learner-draft">
+                {editingLearner ? "Save draft" : "Save as draft"}
+              </button>
+            </details>
           ) : null}
           {/* One primary action, pinned above the home indicator; un-pinned while a field has focus (globals.css), like the lesson's bar. */}
           <div className="learner-actions" data-testid="learner-actions">
             <button type="button" className="btn save" disabled={saving} onClick={submitLearnerForm} data-testid="save-learner">
               {saveLabel({ editing: editingLearner, saving, draft: editingLearner && Boolean(detail?.learner.draftAt) })}
             </button>
-            {!editingLearner || detail?.learner.draftAt ? (
-              <button type="button" className="btn ghost save-draft" disabled={saving} onClick={() => void saveAsDraft()} data-testid="save-learner-draft">
-                {editingLearner ? "Save draft" : "Save as draft"}
-              </button>
-            ) : null}
             <button type="button" className="link learner-cancel" disabled={saving} onClick={closeLearnerForm} data-testid={editingLearner ? "cancel-edit-learner" : "cancel-new-learner"}>Cancel</button>
           </div>
         </section>
@@ -1714,10 +1714,12 @@ export default function DriverApp() {
                 )}
               </div>
             ) : null}
-            <p className="meta integration-id">
-              Integration ID: <code>{detail.learner.id}</code>
+            {/* Needed only when linking the learner in the ACTGDS CRM: folded away, one tap to open and copy. */}
+            <details className="meta integration-id" key={`iid-${detail.learner.id}`}>
+              <summary>Integration ID</summary>
+              <code>{detail.learner.id}</code>
               <button type="button" className="link" onClick={() => void copyIntegrationId(detail.learner.id)}>Copy ID</button>
-            </p>
+            </details>
             {panel === "draft" ? null : <ExportPdfButton key={detail.learner.id} learnerId={detail.learner.id} lessonCount={history.lessons.length} />}
             {canEditLearner ? (
               <button type="button" className="btn ghost block edit-learner-btn" disabled={saving} onClick={openEditLearner} data-testid="edit-learner">Edit learner</button>

@@ -2968,7 +2968,7 @@ const draw = async (page, index) => {
   await s.page.click("[data-testid=new-learner]");
   await s.page.waitForSelector(F);
   const fresh = await formState(s.page);
-  check("form 375px New: title + subline, Student / Address / Licence & eligibility / Notes for review cards, NO More, Instructor select (no Licence stage), 'Save learner' + Cancel in the sticky bar, empty chips, every control ≥44px, no text under 12px", fresh.h2 === "New learner" && fresh.sub === "Only the name and instructor are required. Everything else can wait." && fresh.cards.join("|") === "Student|Address|Licence & eligibility|Notes for review" && fresh.moreOpen === null && fresh.instructor && !fresh.stage && fresh.bar?.save === "Save learner" && fresh.bar.cancel === "cancel-new-learner" && fresh.bar.position === "sticky" && fresh.chips.join("|") === "Suburb · —|State · —|Postcode · —" && fresh.shortControls.length === 0 && fresh.smallText === 0 && (await noHScroll(s.page)), JSON.stringify({ cards: fresh.cards, bar: fresh.bar, short: fresh.shortControls }));
+  check("form 375px New: title + subline, Student / Address / Licence & eligibility cards, NO More, Instructor select (no Licence stage), 'Save learner' + Cancel in the sticky bar, empty chips, every control ≥44px, no text under 12px", fresh.h2 === "New learner" && fresh.sub === "Only the name and instructor are required. Everything else can wait." && fresh.cards.join("|") === "Student|Address|Licence & eligibility" && fresh.moreOpen === null && fresh.instructor && !fresh.stage && fresh.bar?.save === "Save learner" && fresh.bar.cancel === "cancel-new-learner" && fresh.bar.position === "sticky" && fresh.chips.join("|") === "Suburb · —|State · —|Postcode · —" && fresh.shortControls.length === 0 && fresh.smallText === 0 && (await noHScroll(s.page)), JSON.stringify({ cards: fresh.cards, bar: fresh.bar, short: fresh.shortControls }));
   writes.length = 0;
   await s.page.click("[data-testid=save-learner]");
   await settle(200);
@@ -3164,6 +3164,8 @@ const draw = async (page, index) => {
   await s.page.click("[data-testid=new-learner]");
   await s.page.waitForSelector("[data-testid=save-learner-draft]");
   await s.page.fill("[data-testid=learner-name]", "QA Draft Jane");
+  check("draft: the draft option is folded away by default (drafts are the exception)", !(await s.page.isVisible("[data-testid=draft-notes-input]")));
+  await s.page.click("[data-testid=draft-fold-summary]");
   await s.page.fill("[data-testid=draft-notes-input]", "licence number unclear on the photo");
   await s.page.click("[data-testid=save-learner-draft]");
   await s.page.waitForSelector("[data-testid=draft-banner]");
