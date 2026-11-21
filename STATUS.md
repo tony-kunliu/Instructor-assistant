@@ -7,6 +7,8 @@ closed PRs; see `TASK.md` for what is in progress.
 
 ## Current Snapshot
 
+- **Licence photo intake** on `feature/learner-licence-photo`.
+
 - **SaaS edition (2026-10-21/28):** P0 in Production (#22): fail-closed `APP_MODE` (must stay in both vars sections). P1 on
   `staging` (PR #124, L3, reviewed): `migrations-saas/`, `lib/saas/*` gate
   (onboarding, 30-day trial, ownership guard), pages, `run-saas.sh` QA. **No SaaS environment exists.** It touches shared

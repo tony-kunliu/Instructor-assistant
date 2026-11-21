@@ -27,6 +27,8 @@ import { availableViews, initialSelection, learnerPanel, selectionAfterViewChang
 import { priorRecordLine, splitPriorRecords } from "@/lib/prior-record.ts";
 import { revisionChanges, snapshotOfLesson } from "@/lib/revision-diff.ts";
 import type { CompletionSummary, Instructor, Learner, LearnerArchiveEvent, Lesson, LessonRevision, SignatureStatus, UnsignedLessonItem } from "@/lib/types.ts";
+import { mergeLicenceScan } from "@/lib/learner-licence-text.ts";
+import LearnerLicenceScan from "./learner-licence-scan.tsx";
 import CompetencyPicker from "./competency-picker.tsx";
 import CompetencyProgressCard from "./competency-progress.tsx";
 import ExportPdfButton from "./export-pdf-button.tsx";
@@ -1494,6 +1496,12 @@ export default function DriverApp({ mode = "private" }: { mode?: "private" | "sa
             <p className="form-sub">{formSubline(editingLearner, isSaas)}</p>
           </div>
           <div className="fsections">
+            {!isSaas && !editingLearner ? (
+              <LearnerLicenceScan disabled={saving || trialExpired} onScan={(scan) => {
+                if (scan.fullName) setNameError(false);
+                setLearnerDraft((current) => withAutoEligibility(mergeLicenceScan(current, scan)));
+              }} />
+            ) : null}
             <section className="lblock fsect" aria-labelledby="fsect-student" data-testid="fsect-student">
               <div className="card-head"><h3 id="fsect-student">Student</h3><small><span className="req" aria-hidden="true">*</span> required</small></div>
               <div className="grid">

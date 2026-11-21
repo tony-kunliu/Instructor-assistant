@@ -41,3 +41,5 @@ node "$ROOT/scripts/qa-browser/qa.mjs"
 node "$ROOT/scripts/qa-browser/gps.mjs"
 # Installed-app manifests as served (colours = the light tokens), their links and theme-color metas, phone + iPad widths.
 node "$ROOT/scripts/qa-browser/manifest.mjs"
+# Learner intake: browser OCR of a synthetic card, then reviewed creation via the real learner API.
+node "$ROOT/scripts/qa-browser/learner-licence-photo.mjs"

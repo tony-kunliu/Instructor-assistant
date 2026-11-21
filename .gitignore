@@ -34,3 +34,6 @@ npm-debug.log*
 .DS_Store
 coverage/
 test-results/
+
+# Same-origin OCR assets generated from the pinned packages during build
+public/licence-ocr-v7/

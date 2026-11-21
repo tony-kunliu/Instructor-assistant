@@ -791,3 +791,7 @@ details.integration-id[open] > summary { flex-basis: 100%; }
    toggle off a 375/390 px screen. The grid is only as wide as its widest row. */
 .signed-in-as.saas { display: grid; grid-template-columns: auto auto; justify-content: end; column-gap: var(--space-2); }
 .signed-in-as.saas > span { grid-column: 1 / -1; justify-self: end; }
+
+.learner-licence-scan details { margin-top: .5rem; }
+.learner-licence-scan details > summary { min-height: 44px; padding: .65rem 0; cursor: pointer; }
+.learner-licence-scan textarea { width: 100%; }

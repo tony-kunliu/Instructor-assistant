@@ -131,7 +131,7 @@ Tony; the instrument text above stays the reference if the authority's position 
 | | Whether Scan Text appears in Safari web inputs on Tony's iPhone and iPad is a **real-device check** (§13). |
 | D20 | **AI extraction (Claude API through a Worker): not planned** (Tony, Q10: free options only). Reopening it would need a new design section and Tony's approval of a new external service, a secret he sets himself, consent wording and a spend limit. |
 | D21 | **Storing photos: not done** (Q11). It would need R2 object storage (new infrastructure), retention and deletion rules, and identity-document handling under the Privacy Act APPs. Tony already sights the card (CoP 9 a-b), and the app records only the details. |
-| D22 | **Rejected: on-device OCR in the browser (Tesseract.js).** Several MB of WASM and language data on first use, slow on phones, and weak on small text over a patterned card background. Live Text is better and also free. |
+| D22 | **Updated 2026-11-21 for direct photo capture.** New learner offers the camera, recognises locally with versioned, same-origin Tesseract and English language assets, and fills only empty fields. The first scan downloads several MB. The existing Save learner action persists reviewed fields only. Scan Text and manual entry remain available. No licence images or OCR text are persisted. |
 
 ### Cross-cutting
 
