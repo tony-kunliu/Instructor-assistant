@@ -22,6 +22,9 @@ const labels: readonly [ScanField | "given" | "family" | "ignore", RegExp][] = [
 const cardHeader = /^(?:(?:act|australian capital territory)\s+)?(?:(?:learner|provisional|driver|driving|full)\s+){1,3}licen[cs]e\b/i;
 const states = /\b(?:ACT|NSW|VIC|QLD|SA|WA|NT|TAS)\s?\d{4}\b/i;
 const streetStart = /^(?:unit\s+|flat\s+|lot\s+)?\d+[a-z]?(?:[/-]\d+[a-z]?)?\s+\p{L}/iu;
+const cardIdentifierLabel = /\b(?:can\s*[:#=]|(?:card|licen[cs]e|customer)\s*(?:no\.?|number|#))/i;
+const numericAddressChunk = /\d(?:[\d\s\p{P}]*\d)?/gu;
+const idLikeAddressChunk = /(?<![\p{L}\d])[0-9OSBZIQLGA]{2,}(?:[\s\p{P}]+[0-9OSBZIQLGA]{2,})*(?![\p{L}\d])/giu;
 const months = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
 
 function readLabel(line: string) {
@@ -48,7 +51,7 @@ function cardDate(text: string): string | undefined {
 
 function cardName(text: string | undefined, split = false) {
   if (!text || text.length > 100 || !/^[\p{L}][\p{L}\p{M}\s.'’\-]+$/u.test(text)
-    || /\b(?:australia|australian|territory|licen[cs]e|lic|card|learner|provisional|driver|department|transport|government|address|signature|specimen|sample|canberra)\b/i.test(text)) return;
+    || /\b(?:australia|australian|territory|licen[cs]e|lic|card|learner|provisional|driver|department|transport|government|address|signature|specimen|sample|canberra|identification|valid)\b/i.test(text)) return;
   if (split || text.trim().split(/\s+/).length >= 2) return text;
 }
 
@@ -92,9 +95,10 @@ export function parseLearnerLicence(text: string): LicenceScan {
   const header = lines.findIndex((line) => cardHeader.test(line));
   // ACT cards can print the name and address without field labels. Only use neighbouring lines on recognised cards.
   const jurisdiction = /^(?:ACT|AUSTRALIAN CAPITAL TERRITORY)$/i;
-  const nameLine = lines.slice(header + 1, header + 4).find((line) => !jurisdiction.test(line));
-  const unlabelledName = header >= 0 && raw.licenceNumber && nameLine && !readLabel(nameLine)
-    ? cardName(nameLine) : undefined;
+  const unlabelledName = header >= 0 && raw.licenceNumber
+    ? one(lines.slice(header + 1, header + 4).flatMap((line) =>
+      jurisdiction.test(line) || readLabel(line) ? [] : cardName(line) ?? []))
+    : undefined;
   const unlabelledAddresses = header >= 0 && raw.licenceNumber ? lines.flatMap((line, index) => {
     if (!streetStart.test(line)) return [];
     if (states.test(line)) return [line];
@@ -106,9 +110,11 @@ export function parseLearnerLicence(text: string): LicenceScan {
     const end = states.exec(line);
     if (!end) return [];
     const street = line.slice(0, end.index);
-    const numbers = street.match(/\d(?:[\d\s.,/-]*\d)?/g) ?? [];
-    if (/\b(?:card|licen[cs]e)\s*(?:no\.?|number)\b/i.test(street)
-      || [...street.split(/\s+/), ...numbers].some((part) => (part.match(/\d/g)?.length ?? 0) >= 7)) return [];
+    const numbers = street.match(numericAddressChunk) ?? [];
+    const possibleOcrIds = street.match(idLikeAddressChunk) ?? [];
+    if (cardIdentifierLabel.test(street)
+      || numbers.some((part) => (part.match(/\d/g)?.length ?? 0) >= 7)
+      || possibleOcrIds.some((part) => (part.match(/\d/g)?.length ?? 0) >= 5 && part.replace(/[\s\p{P}]/gu, "").length >= 7)) return [];
     return [line.slice(0, end.index + end[0].length)];
   }));
   const fullName = typedName ?? joinedName ?? (!raw.fullName && !raw.given && !raw.family ? unlabelledName : undefined);

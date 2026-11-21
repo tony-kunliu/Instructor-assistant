@@ -4,6 +4,7 @@ import { createRequire } from "node:module";
 const { chromium, devices } = createRequire(import.meta.url)(`${process.env.NPM_GLOBAL}/playwright`);
 const executablePath = process.env.QA_CHROMIUM || `${process.env.PLAYWRIGHT_BROWSERS_PATH || "/opt/pw-browsers"}/chromium-1194/chrome-linux/chrome`;
 const base = process.env.QA_BASE;
+const width = Number(process.env.QA_WIDTH || 375);
 const headers = {
   "x-instructor-id": "a1f3b6c2-2f1a-4b8e-9c6a-1a2b3c4d5e01",
   "x-instructor-name": "Tony",
@@ -17,7 +18,7 @@ assert.ok(existing.ok, await existing.text());
 const browser = await chromium.launch({ executablePath });
 try {
   const { defaultBrowserType: _, ...mobile } = devices["iPhone SE"];
-  const context = await browser.newContext({ ...mobile, viewport: { width: 375, height: 740 }, extraHTTPHeaders: headers });
+  const context = await browser.newContext({ ...mobile, viewport: { width, height: width === 375 ? 740 : 1180 }, extraHTTPHeaders: headers });
   const page = await context.newPage();
   const requests = [];
   const errors = [];
@@ -106,7 +107,7 @@ try {
   assert.equal(await page.getByLabel("Licence number").inputValue(), "55554444");
   assert.equal(requests.filter((request) => request.method === "POST").length, 1);
   assert.deepEqual(errors, []);
-  console.log(`Learner photo scan QA PASS at 375px (${timed.join(", ")}; failed worker cleanup and retry, edited save, no image upload, text fallback)`);
+  console.log(`Learner photo scan QA PASS at ${width}px (${timed.join(", ")}; failed worker cleanup and retry, edited save, no image upload, text fallback)`);
   await context.close();
 } finally {
   await browser.close();
