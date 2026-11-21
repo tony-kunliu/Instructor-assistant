@@ -43,3 +43,4 @@ node "$ROOT/scripts/qa-browser/gps.mjs"
 node "$ROOT/scripts/qa-browser/manifest.mjs"
 # Learner intake: browser OCR of a synthetic card, then reviewed creation via the real learner API.
 node "$ROOT/scripts/qa-browser/learner-licence-photo.mjs"
+QA_WIDTH=820 node "$ROOT/scripts/qa-browser/learner-licence-photo.mjs"

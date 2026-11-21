@@ -277,6 +277,7 @@ export default function DriverApp({ mode = "private" }: { mode?: "private" | "sa
   const [detail, setDetail] = useState<Detail | null>(null);
   const [draft, setDraft] = useState<LessonDraft | null>(null);
   const [addingLearner, setAddingLearner] = useState(false);
+  const [readingLearnerLicence, setReadingLearnerLicence] = useState(false);
   // True while the learner form edits the selected learner (instead of creating one).
   const [editingLearner, setEditingLearner] = useState(false);
   // The learner the open edit form belongs to; the save targets this id, never whoever is selected at save time.
@@ -1497,7 +1498,7 @@ export default function DriverApp({ mode = "private" }: { mode?: "private" | "sa
           </div>
           <div className="fsections">
             {!isSaas && !editingLearner ? (
-              <LearnerLicenceScan disabled={saving || trialExpired} onScan={(scan) => {
+              <LearnerLicenceScan disabled={saving || trialExpired} busy={readingLearnerLicence} onBusyChange={setReadingLearnerLicence} onScan={(scan) => {
                 if (scan.fullName) setNameError(false);
                 setLearnerDraft((current) => withAutoEligibility(mergeLicenceScan(current, scan)));
               }} />
@@ -1665,14 +1666,14 @@ export default function DriverApp({ mode = "private" }: { mode?: "private" | "sa
               </label>
               <p className="hint-note">&ldquo;Save as draft&rdquo; keeps whatever is filled in, even if it is incomplete or wrong; a value the app cannot use is left out and written to these notes.</p>
               {/* mouseDown keeps the focus in the notes box: a blur would re-pin the sticky Save bar over this button mid-tap and swallow the tap. */}
-              <button type="button" className="btn ghost block save-draft" disabled={saving || trialExpired} onMouseDown={(e) => e.preventDefault()} onClick={() => void saveAsDraft()} data-testid="save-learner-draft">
+              <button type="button" className="btn ghost block save-draft" disabled={saving || trialExpired || readingLearnerLicence} onMouseDown={(e) => e.preventDefault()} onClick={() => void saveAsDraft()} data-testid="save-learner-draft">
                 {editingLearner ? "Save draft" : "Save as draft"}
               </button>
             </details>
           ) : null}
           {/* One primary action, pinned above the home indicator; un-pinned while a field has focus (globals.css), like the lesson's bar. */}
           <div className="learner-actions" data-testid="learner-actions">
-            <button type="button" className="btn save" disabled={saving || trialExpired} onClick={submitLearnerForm} data-testid="save-learner">
+            <button type="button" className="btn save" disabled={saving || trialExpired || readingLearnerLicence} onClick={submitLearnerForm} data-testid="save-learner">
               {saveLabel({ editing: editingLearner, saving, draft: editingLearner && Boolean(detail?.learner.draftAt) })}
             </button>
             <button type="button" className="link learner-cancel" disabled={saving} onClick={closeLearnerForm} data-testid={editingLearner ? "cancel-edit-learner" : "cancel-new-learner"}>Cancel</button>

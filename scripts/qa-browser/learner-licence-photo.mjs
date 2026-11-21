@@ -60,8 +60,14 @@ try {
   assert.equal(await capture.getAttribute("capture"), "environment");
   const photo = { name: "fabricated-test-licence.png", mimeType: "image/png", buffer: Buffer.from(image, "base64") };
   const modelPath = "**/licence-ocr-v7/eng.traineddata.gz";
-  await page.route(modelPath, (route) => route.abort());
+  let releaseModel;
+  const modelCanFail = new Promise((resolve) => { releaseModel = resolve; });
+  await page.route(modelPath, async (route) => { await modelCanFail; await route.abort(); });
   await capture.setInputFiles(photo);
+  await page.getByText("Reading licence…", { exact: true }).waitFor();
+  assert.equal(await page.getByTestId("save-learner").isDisabled(), true);
+  assert.equal(await page.getByTestId("save-learner-draft").isDisabled(), true);
+  releaseModel();
   await page.getByText(/Couldn’t read that photo/).waitFor();
   assert.equal(await page.evaluate(() => window.ocrWorkers), 0);
   await page.unroute(modelPath);

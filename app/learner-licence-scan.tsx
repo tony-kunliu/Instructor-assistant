@@ -5,17 +5,21 @@ import { LICENCE_SCAN_FIELDS, parseLearnerLicence, type LicenceScan } from "@/li
 
 type Props = {
   disabled: boolean;
+  busy: boolean;
+  onBusyChange: (busy: boolean) => void;
   onScan: (scan: LicenceScan) => void;
 };
 
-export default function LearnerLicenceScan({ disabled, onScan }: Props) {
+export default function LearnerLicenceScan({ disabled, busy, onBusyChange, onScan }: Props) {
   const input = useRef<HTMLInputElement>(null);
   const pending = useRef<AbortController | null>(null);
-  const [busy, setBusy] = useState(false);
   const [scanText, setScanText] = useState("");
   const [status, setStatus] = useState("");
 
-  useEffect(() => () => pending.current?.abort(), []);
+  useEffect(() => () => {
+    pending.current?.abort();
+    onBusyChange(false);
+  }, [onBusyChange]);
 
   const review = (text: string) => {
     const result = parseLearnerLicence(text);
@@ -33,7 +37,7 @@ export default function LearnerLicenceScan({ disabled, onScan }: Props) {
     pending.current?.abort();
     const controller = new AbortController();
     pending.current = controller;
-    setBusy(true);
+    onBusyChange(true);
     setStatus("Reading the licence on this device…");
     try {
       const { readLearnerLicencePhoto } = await import("@/lib/licence-photo-ocr.ts");
@@ -44,7 +48,7 @@ export default function LearnerLicenceScan({ disabled, onScan }: Props) {
     } finally {
       if (pending.current === controller) {
         pending.current = null;
-        setBusy(false);
+        onBusyChange(false);
       }
     }
   };
@@ -60,6 +64,10 @@ export default function LearnerLicenceScan({ disabled, onScan }: Props) {
       <button className="btn primary block" type="button" disabled={disabled || busy} onClick={() => input.current?.click()}>
         {busy ? "Reading licence…" : "Scan learner licence"}
       </button>
+      {busy ? <button className="btn ghost small" type="button" onClick={() => {
+        pending.current?.abort();
+        setStatus("Scan cancelled. Enter the details below or try again.");
+      }}>Cancel scan</button> : null}
       {status ? <p className="form-sub" role="status" data-testid="licence-scan-status">{status}</p> : null}
       <details>
         <summary>Use iPhone Scan Text or paste text</summary>
