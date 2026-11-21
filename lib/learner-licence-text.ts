@@ -106,8 +106,9 @@ export function parseLearnerLicence(text: string): LicenceScan {
     const end = states.exec(line);
     if (!end) return [];
     const street = line.slice(0, end.index);
+    const numbers = street.match(/\d(?:[\d\s.,/-]*\d)?/g) ?? [];
     if (/\b(?:card|licen[cs]e)\s*(?:no\.?|number)\b/i.test(street)
-      || street.split(/\s+/).some((part) => (part.match(/\d/g)?.length ?? 0) >= 7)) return [];
+      || [...street.split(/\s+/), ...numbers].some((part) => (part.match(/\d/g)?.length ?? 0) >= 7)) return [];
     return [line.slice(0, end.index + end[0].length)];
   }));
   const fullName = typedName ?? joinedName ?? (!raw.fullName && !raw.given && !raw.family ? unlabelledName : undefined);

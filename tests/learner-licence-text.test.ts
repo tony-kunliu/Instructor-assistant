@@ -67,7 +67,11 @@ DOB: 19SEP2007`;
       licenceNumber: "01234567", dob: "2007-09-19", licenceExpiry: "2030-11-28",
     });
   }
-  assert.deepEqual(parseLearnerLicence("Address: 41 Fiction Street 987654321 Belconnen ACT 2617"), {});
+  for (const cardId of ["987654321", "987 654 321", "9 8 7 6 5 4 3 2 1", "987-654-321", "987.654.321"]) {
+    assert.deepEqual(parseLearnerLicence(`Address: 41 Fiction Street ${cardId} Belconnen ACT 2617`), {});
+  }
+  assert.equal(parseLearnerLicence("Address: Unit 14/25 Fiction Street Belconnen ACT 2617").address,
+    "Unit 14/25 Fiction Street Belconnen ACT 2617");
   assert.deepEqual(parseLearnerLicence("Address: 41 Fiction Street Belconnen ACT 2617 Card number: 987654321"), {
     address: "41 Fiction Street Belconnen ACT 2617",
   });
