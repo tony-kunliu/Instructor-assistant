@@ -24,6 +24,14 @@ try {
   const timed = [];
   context.on("request", (request) => requests.push({ method: request.method(), url: request.url(), body: request.postData() }));
   page.on("pageerror", (error) => errors.push(error.message));
+  await page.addInitScript(() => {
+    window.ocrWorkers = 0;
+    const NativeWorker = window.Worker;
+    window.Worker = class extends NativeWorker {
+      constructor(...args) { super(...args); window.ocrWorkers++; }
+      terminate() { window.ocrWorkers--; return super.terminate(); }
+    };
+  });
   await page.goto(base);
   await page.getByTestId("new-learner").click();
 
@@ -49,12 +57,20 @@ try {
   });
   const capture = page.getByTestId("licence-photo");
   assert.equal(await capture.getAttribute("capture"), "environment");
-  await capture.setInputFiles({ name: "fabricated-test-licence.png", mimeType: "image/png", buffer: Buffer.from(image, "base64") });
+  const photo = { name: "fabricated-test-licence.png", mimeType: "image/png", buffer: Buffer.from(image, "base64") };
+  const modelPath = "**/licence-ocr-v7/eng.traineddata.gz";
+  await page.route(modelPath, (route) => route.abort());
+  await capture.setInputFiles(photo);
+  await page.getByText(/Couldn’t read that photo/).waitFor();
+  assert.equal(await page.evaluate(() => window.ocrWorkers), 0);
+  await page.unroute(modelPath);
+  await capture.setInputFiles(photo);
   const start = Date.now();
   await page.getByTestId("licence-scan-status").getByText(/Check the fields against the card/).waitFor({ timeout: 35_000 });
   timed.push(`synthetic photo ${((Date.now() - start) / 1000).toFixed(1)}s`);
   const name = page.getByTestId("learner-name");
   assert.equal(await name.inputValue(), "Jamie Example");
+  assert.equal(await page.evaluate(() => window.ocrWorkers), 0);
   assert.equal(await page.getByLabel("Licence number").inputValue(), "01234567");
   assert.equal(await page.getByLabel("Licence expiry", { exact: true }).inputValue(), "2030-11-28");
   assert.equal(await page.getByLabel("DOB").inputValue(), "2007-09-19");
@@ -90,7 +106,7 @@ try {
   assert.equal(await page.getByLabel("Licence number").inputValue(), "55554444");
   assert.equal(requests.filter((request) => request.method === "POST").length, 1);
   assert.deepEqual(errors, []);
-  console.log(`Learner photo scan QA PASS at 375px (${timed.join(", ")}; edited save, no image upload, text fallback)`);
+  console.log(`Learner photo scan QA PASS at 375px (${timed.join(", ")}; failed worker cleanup and retry, edited save, no image upload, text fallback)`);
   await context.close();
 } finally {
   await browser.close();

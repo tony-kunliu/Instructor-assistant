@@ -35,7 +35,7 @@ function readLabel(line: string) {
 function cardDate(text: string): string | undefined {
   const iso = /^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/.exec(text);
   const numeric = /^(\d{1,2})[./\s-]+(\d{1,2})[./\s-]+(\d{4})$/.exec(text);
-  const named = /^(\d{1,2})[\s/-]+([a-z]{3,9})[\s/-]+(\d{4})$/i.exec(text);
+  const named = /^(\d{1,2})[\s/-]*([a-z]{3,9})[\s/-]*(\d{4})$/i.exec(text);
   const bits = iso ? [iso[1], iso[2], iso[3]] : numeric ? [numeric[3], numeric[2], numeric[1]] : named
     ? [named[3], String(months.indexOf(named[2].slice(0, 3).toLowerCase()) + 1), named[1]] : null;
   if (!bits) return;
@@ -59,8 +59,17 @@ function one(values: readonly string[]) {
 
 /** Suggests only existing learner fields. The original OCR text is never saved. */
 export function parseLearnerLicence(text: string): LicenceScan {
-  const lines = text.slice(0, 6000).normalize("NFKC").split(/\r?\n/)
+  const plain = text.slice(0, 6000).normalize("NFKC").split(/\r?\n/)
     .map((line) => line.trim().replace(/[\t ]+/g, " ")).filter(Boolean);
+  const lines = plain.flatMap((line, index) => {
+    // The card's licence number and expiry are often adjacent columns in OCR.
+    const sideBySide = /^(?:licen[cs]e\s*(?:no\.?|number)|lic\.?\s*no\.?)\s+exp(?:iry|ires)?(?:\s+date)?$/i;
+    if (sideBySide.test(line)) {
+      const values = /^(\d{5,15})\s+(.+)$/.exec(plain[index + 1] ?? "");
+      if (values && cardDate(values[2])) return [`Licence no: ${values[1]}`, `Expiry: ${values[2]}`];
+    }
+    return line.split(/\s+(?=(?:exp(?:iry|ires)?(?:\s+date)?|date\s+of\s+birth|dob|card\s+(?:no\.?|number))\s*[:.]?\s*\d)/i);
+  });
   const raw: Partial<Record<ScanField | "given" | "family", string[]>> = {};
   for (let i = 0; i < lines.length; i++) {
     const labelled = readLabel(lines[i]);
@@ -82,15 +91,21 @@ export function parseLearnerLicence(text: string): LicenceScan {
   const joinedName = given && family ? `${given} ${family}` : undefined;
   const header = lines.findIndex((line) => cardHeader.test(line));
   // ACT cards can print the name and address without field labels. Only use neighbouring lines on recognised cards.
-  const unlabelledName = header >= 0 && raw.licenceNumber && lines[header + 1] && !readLabel(lines[header + 1])
-    ? cardName(lines[header + 1]) : undefined;
+  const jurisdiction = /^(?:ACT|AUSTRALIAN CAPITAL TERRITORY)$/i;
+  const nameLine = lines.slice(header + 1, header + 4).find((line) => !jurisdiction.test(line));
+  const unlabelledName = header >= 0 && raw.licenceNumber && nameLine && !readLabel(nameLine)
+    ? cardName(nameLine) : undefined;
   const unlabelledAddresses = header >= 0 && raw.licenceNumber ? lines.flatMap((line, index) => {
     if (!streetStart.test(line)) return [];
     if (states.test(line)) return [line];
     return lines[index + 1] && states.test(lines[index + 1]) && !readLabel(lines[index + 1])
       ? [`${line} ${lines[index + 1]}`] : [];
   }) : [];
-  const address = one(raw.address ?? unlabelledAddresses);
+  // Isolate the postal endpoint before comparing candidates or handing an address to the form.
+  const address = one((raw.address ?? unlabelledAddresses).flatMap((line) => {
+    const end = states.exec(line);
+    return end ? [line.slice(0, end.index + end[0].length)] : [];
+  }));
   const fullName = typedName ?? joinedName ?? (!raw.fullName && !raw.given && !raw.family ? unlabelledName : undefined);
   const number = one((raw.licenceNumber ?? []).map((value) => value.replace(/\s+/g, "").toUpperCase())
     .filter((value) => /^(?=.*\d)[A-Z0-9]{5,15}$/.test(value)));

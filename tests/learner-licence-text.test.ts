@@ -53,3 +53,20 @@ test("scans fill only empty fields and preserve the assigned instructor and manu
     ...draft, address: "41 Sample Street Belconnen ACT 2617",
   });
 });
+
+test("handles ACT specimen layout, compact dates and adjacent fields with a trailing card ID", () => {
+  const shared = `DRIVER LICENCE
+AUSTRALIAN CAPITAL TERRITORY
+JAMIE EXAMPLE
+41 Fiction Street Belconnen ACT 2617 987654321
+DOB: 19SEP2007`;
+  for (const row of ["LICENCE NO 01234567 EXPIRY 28NOV2030", "LICENCE NO  EXPIRY DATE\n01234567  28NOV2030"]) {
+    assert.deepEqual(parseLearnerLicence(`${shared}\n${row}`), {
+      fullName: "JAMIE EXAMPLE", address: "41 Fiction Street Belconnen ACT 2617",
+      licenceNumber: "01234567", dob: "2007-09-19", licenceExpiry: "2030-11-28",
+    });
+  }
+  assert.deepEqual(parseLearnerLicence("Address: 41 Fiction Street Belconnen ACT 2617 Card number: 987654321"), {
+    address: "41 Fiction Street Belconnen ACT 2617",
+  });
+});
