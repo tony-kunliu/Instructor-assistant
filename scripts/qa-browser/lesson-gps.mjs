@@ -178,13 +178,24 @@ try {
   await startSecond.click();
   assert.equal(await page.evaluate(() => window.lessonGpsTest.watches), watches);
   assert.equal(await page.getByTestId("lesson-gps-running").count(), 0);
+  // A stale ordinary lesson cannot overwrite or discard a GPS replacement.
+  const replacementTab = await context.newPage();
+  await replacementTab.goto(base);
+  const ordinaryDraft = await replacementTab.evaluate((key) => localStorage.getItem(key), localDraftKey);
+  await replacementTab.evaluate((key) => {
+    const current = JSON.parse(localStorage.getItem(key));
+    localStorage.setItem(key, JSON.stringify({ ...current, lessonGps: { id: "replacement-gps-id", instructorId: "qa" } }));
+  }, localDraftKey);
+  await comments.fill("Stale ordinary tab attempt.");
+  await discard.click();
+  await page.getByText(/This lesson draft changed in another tab/).waitFor();
+  assert.match(await page.evaluate((key) => localStorage.getItem(key), localDraftKey), /replacement-gps-id/);
+  await replacementTab.evaluate(({ key, draft }) => localStorage.setItem(key, draft), { key: localDraftKey, draft: ordinaryDraft });
   // An older save must preserve a replacement made while its request is in flight.
   await page.clock.setFixedTime(new Date(startedAt + 230_000));
   await end.click();
   await page.getByLabel("Start odometer (km)").fill("1003");
   await page.getByLabel("Finish odometer (km)").fill("1005");
-  const replacementTab = await context.newPage();
-  await replacementTab.goto(base);
   await page.route(`**/api/learners/${learner.id}/lessons`, async (route) => {
     await replacementTab.evaluate((key) => {
       const current = JSON.parse(localStorage.getItem(key));

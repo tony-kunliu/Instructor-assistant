@@ -492,7 +492,7 @@ export default function DriverApp({ mode = "private" }: { mode?: "private" | "sa
     if (!draft.startTime) return;
     const key = draftKey(selectedId);
     // A stale tab must not recreate a discarded GPS draft or overwrite its replacement.
-    if (draft.lessonGps && storedLessonGpsId(storage.get(key)) !== draft.lessonGps.id) return;
+    if (storedLessonGpsId(storage.get(key)) !== draft.lessonGps?.id) return;
     storage.set(key, JSON.stringify(draft));
   }, [selectedId, draft]);
 
@@ -566,6 +566,11 @@ export default function DriverApp({ mode = "private" }: { mode?: "private" | "sa
   };
 
   const startLesson = () => {
+    if (!draft) return;
+    if (storedLessonGpsId(storage.get(draftKey(selectedId))) !== draft.lessonGps?.id) {
+      setStatus({ kind: "warn", text: staleGpsDraftMessage });
+      return;
+    }
     if (lessonGps) void gpsCapture.current?.remove(lessonGps.id);
     else void gpsCapture.current?.stop();
     setGpsStatus(null);
@@ -573,7 +578,7 @@ export default function DriverApp({ mode = "private" }: { mode?: "private" | "sa
     scrollToLesson.current = true;
     setStatus(null);
     let nextGps: LessonGpsDraft | undefined;
-    if (draft && gpsConsent && appMode === "private" && signedInInstructorId && gpsCapture.current && typeof crypto.randomUUID === "function") {
+    if (gpsConsent && appMode === "private" && signedInInstructorId && gpsCapture.current && typeof crypto.randomUUID === "function") {
       const id = crypto.randomUUID();
       const key = draftKey(selectedId);
       const candidate = { id, instructorId: signedInInstructorId };
@@ -622,7 +627,7 @@ export default function DriverApp({ mode = "private" }: { mode?: "private" | "sa
 
   const discardLesson = () => {
     if (!detail || !window.confirm("Discard this lesson? Nothing will be saved.")) return;
-    if (lessonGps && storedLessonGpsId(storage.get(draftKey(detail.learner.id))) !== lessonGps.id) {
+    if (storedLessonGpsId(storage.get(draftKey(detail.learner.id))) !== draft?.lessonGps?.id) {
       setStatus({ kind: "warn", text: staleGpsDraftMessage });
       return;
     }
@@ -813,7 +818,7 @@ export default function DriverApp({ mode = "private" }: { mode?: "private" | "sa
     if (!detail || !draft) return;
     const key = draftKey(detail.learner.id);
     const draftAtSave = storage.get(key);
-    if (draft.lessonGps && storedLessonGpsId(draftAtSave) !== draft.lessonGps.id) {
+    if (storedLessonGpsId(draftAtSave) !== draft.lessonGps?.id) {
       setStatus({ kind: "warn", text: staleGpsDraftMessage });
       return;
     }
