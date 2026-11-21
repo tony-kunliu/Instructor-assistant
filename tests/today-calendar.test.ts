@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { canberraDay, lessonFromGoogle, type GoogleCalendarEvent } from "../lib/today-calendar.ts";
-import { readGoogleLessons } from "../lib/google-calendar-read.ts";
+import { canberraDay, lessonFromGoogle, previousLessonFor, type GoogleCalendarEvent } from "../lib/today-calendar.ts";
+import { readGoogleLessons, workCalendarForInstructor } from "../lib/google-calendar-read.ts";
 
 const event: GoogleCalendarEvent = {
   id: "lesson",
@@ -29,6 +29,7 @@ test("missing or ambiguous contacts stay empty, and calendar noise is excluded",
   assert.equal(result?.phone, null);
   assert.equal(result?.address, null);
   assert.equal(lessonFromGoogle({ ...event, summary: "Family dinner", description: "" }), null);
+  assert.equal(lessonFromGoogle({ ...event, summary: "English lesson", description: "Cancel https://cal.com/booking/test" }), null);
   assert.equal(lessonFromGoogle({ ...event, status: "cancelled" }), null);
   assert.equal(lessonFromGoogle({ ...event, start: {} }), null);
 });
@@ -59,4 +60,33 @@ test("read-only calendar adapter expands recurring events, handles pages, and re
   assert.equal(new URL(calls[1].url).searchParams.get("singleEvents"), "true");
   assert.equal(new URL(calls[2].url).searchParams.get("pageToken"), "next");
   assert.doesNotMatch(JSON.stringify(result), /test-token|secret|refresh-token|cal\.com/i);
+});
+
+
+test("only the verified owner in a bound private Worker can read the configured calendar", async () => {
+  const env = { DB: {}, GOOGLE_LESSONS_INSTRUCTOR_ID: "owner", GOOGLE_LESSONS_CALENDAR_ID: "primary",
+    GOOGLE_LESSONS_CLIENT_ID: "client", GOOGLE_LESSONS_CLIENT_SECRET: "secret", GOOGLE_LESSONS_REFRESH_TOKEN: "refresh" };
+  let calls = 0;
+  const mocked: typeof fetch = async () => (++calls === 1 ? Response.json({ access_token: "test" }) : Response.json({ items: [event] }));
+  const now = new Date("2026-11-22T01:00:00Z");
+  assert.deepEqual(await workCalendarForInstructor("private", "other", env, now, mocked), { state: "disconnected" });
+  assert.deepEqual(await workCalendarForInstructor("private", "owner", { ...env, DB: undefined }, now, mocked), { state: "disconnected" });
+  assert.deepEqual(await workCalendarForInstructor("saas", "owner", env, now, mocked), { state: "disconnected" });
+  assert.deepEqual(await workCalendarForInstructor("private", null, env, now, mocked), { state: "disconnected" });
+  assert.equal(calls, 0);
+  const own = await workCalendarForInstructor("private", "owner", env, now, mocked);
+  assert.equal(own.state, "connected");
+  assert.equal("lessons" in own && own.lessons?.length, 1);
+  assert.equal(calls, 2);
+});
+
+
+test("an earlier long booking still determines an overlap after a short intervening booking", () => {
+  const a = lessonFromGoogle({ ...event, id: "long", end: { dateTime: "2026-11-22T12:00:00+11:00" } })!;
+  const b = lessonFromGoogle({ ...event, id: "short", start: { dateTime: "2026-11-22T10:00:00+11:00" },
+    end: { dateTime: "2026-11-22T11:00:00+11:00" } })!;
+  const c = lessonFromGoogle({ ...event, id: "next", start: { dateTime: "2026-11-22T11:30:00+11:00" },
+    end: { dateTime: "2026-11-22T12:30:00+11:00" } })!;
+  assert.equal(previousLessonFor([a, b, c], 0), undefined);
+  assert.equal(previousLessonFor([a, b, c], 2)?.id, "long");
 });

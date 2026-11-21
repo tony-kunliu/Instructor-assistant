@@ -41,3 +41,27 @@ export async function readGoogleLessons(connection: CalendarConnection, now: Dat
     incomplete: Boolean(pageToken), refreshedAt: now.toISOString(),
   };
 }
+
+type CalendarEnvironment = {
+  DB?: unknown;
+  GOOGLE_LESSONS_INSTRUCTOR_ID?: string;
+  GOOGLE_LESSONS_CALENDAR_ID?: string;
+  GOOGLE_LESSONS_CLIENT_ID?: string;
+  GOOGLE_LESSONS_CLIENT_SECRET?: string;
+  GOOGLE_LESSONS_REFRESH_TOKEN?: string;
+};
+
+/** An env.DB binding is required so the existing Access middleware cannot use its local pass-through path. */
+export async function workCalendarForInstructor(mode: string, instructor: string | null, env: CalendarEnvironment, now: Date, request = fetch) {
+  const { DB, GOOGLE_LESSONS_INSTRUCTOR_ID: owner, GOOGLE_LESSONS_CALENDAR_ID: calendarId,
+    GOOGLE_LESSONS_CLIENT_ID: clientId, GOOGLE_LESSONS_CLIENT_SECRET: clientSecret,
+    GOOGLE_LESSONS_REFRESH_TOKEN: refreshToken } = env;
+  if (mode !== "private" || !DB || !instructor || instructor !== owner || !calendarId || !clientId || !clientSecret || !refreshToken) {
+    return { state: "disconnected" as const };
+  }
+  try {
+    return { state: "connected" as const, ...await readGoogleLessons({ calendarId, clientId, clientSecret, refreshToken }, now, request) };
+  } catch {
+    return { state: "unavailable" as const };
+  }
+}

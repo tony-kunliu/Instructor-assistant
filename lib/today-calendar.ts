@@ -36,7 +36,6 @@ export function canberraDay(now: Date) {
 
 const emailPattern = /^[A-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i;
 const drivingTitle = /\b(?:driving (?:lesson|assessment|test)|driv(?:er|ing) training|cbt\s*&\s*a)\b|学车|駕駛課|驾驶课|练车/i;
-const lessonTitle = /\blesson\b/i;
 const text = (value: string | undefined, cap = 300) => (value ?? "").trim().slice(0, cap);
 const email = (value: string | undefined) => emailPattern.test(text(value)) ? text(value) : null;
 const cleanLines = (value: string | undefined) => (value ?? "").slice(0, 16_000)
@@ -74,7 +73,7 @@ export function lessonFromGoogle(event: GoogleCalendarEvent): CalendarLesson | n
   if (!event.id || !title || event.status === "cancelled" || (event.eventType && event.eventType !== "default")
     || !startsAt || !endsAt || !Number.isFinite(Date.parse(startsAt)) || !(Date.parse(endsAt) > Date.parse(startsAt))) return null;
   const isBooking = /https:\/\/(?:[\w-]+\.)?cal\.com\//i.test(event.description ?? "");
-  if (!drivingTitle.test(title) && !(isBooking && lessonTitle.test(title))) return null;
+  if (!drivingTitle.test(title)) return null;
 
   const lines = cleanLines(event.description);
   const guests = (event.attendees ?? []).filter(({ organizer, self, resource, responseStatus, email: value }) =>
@@ -91,4 +90,10 @@ export function lessonFromGoogle(event: GoogleCalendarEvent): CalendarLesson | n
     email: identified?.email ?? email(guest?.email),
     address: address && !/^(?:[a-z]+:\/\/|online$)/i.test(address) ? address : null,
   };
+}
+
+/** For overlapping bookings, the latest actual end determines when the next transition can start. */
+export function previousLessonFor(lessons: readonly CalendarLesson[], index: number) {
+  return lessons.slice(0, index).reduce<CalendarLesson | undefined>((latest, candidate) =>
+    !latest || Date.parse(candidate.endsAt) > Date.parse(latest.endsAt) ? candidate : latest, undefined);
 }

@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { localNow } from "@/lib/calc.ts";
 import { gateChips, lastLessonLine, type LearnerListSummary } from "@/lib/learner-card.ts";
 import { learnerLicenceReminder } from "@/lib/rules.ts";
-import type { CalendarLesson } from "@/lib/today-calendar.ts";
+import { previousLessonFor, type CalendarLesson } from "@/lib/today-calendar.ts";
 import type { Learner, Lesson } from "@/lib/types.ts";
 
 type Schedule = { state: "connected"; date: string; lessons: CalendarLesson[]; incomplete: boolean; refreshedAt: string }
@@ -78,7 +78,7 @@ export default function TodayLessons({ learners, summaries, onOpenLearner }: Pro
           {!schedule.lessons.length ? <p>No driving lessons found in today’s calendar.</p> : null}
           <ol className="today-list">
             {schedule.lessons.map((lesson, index) => {
-              const previous = schedule.lessons[index - 1];
+              const previous = previousLessonFor(schedule.lessons, index);
               const minutes = previous ? Math.floor((Date.parse(lesson.startsAt) - Date.parse(previous.endsAt)) / 60_000) : null;
               const learner = learners.find(({ id }) => id === chosen[lesson.id]);
               return (
@@ -96,7 +96,7 @@ export default function TodayLessons({ learners, summaries, onOpenLearner }: Pro
                     {lesson.address && previous?.address && previous.address !== lesson.address
                       ? <a className="btn ghost small" href={directions(lesson.address, previous.address)} target="_blank" rel="noreferrer">Route from previous lesson</a> : null}
                     {lesson.phone ? <a className="btn ghost small" href={`tel:${lesson.phone}`}>Call {lesson.phone}</a> : null}
-                    {lesson.email ? <a className="btn ghost small" href={`mailto:${encodeURIComponent(lesson.email)}`}>Email {lesson.email}</a> : null}
+                    {lesson.email ? <a className="btn ghost small" href={`mailto:${encodeURIComponent(lesson.email).replace("%40", "@")}`}>Email {lesson.email}</a> : null}
                   </div>
                   <label className="field">
                     <span>Learner progress</span>

@@ -36,14 +36,17 @@ try {
   assert.equal(await cards.first().getByRole("link", { name: /Call/ }).getAttribute("href"), "tel:0400000000");
   assert.match(await cards.last().getByRole("link", { name: "Route from previous lesson" }).getAttribute("href"), /origin=Canberra/);
   assert.equal(await cards.first().getByRole("link", { name: /Directions/ }).count(), 1);
+  assert.equal(await cards.first().getByRole("link", { name: /Email/ }).getAttribute("href"), "mailto:learner@example.test");
   assert.equal(await page.getByRole("link", { name: "Public toilet map" }).getAttribute("href"), "https://toiletmap.gov.au/");
   await cards.first().getByLabel("Learner progress").selectOption(learner.id);
   await cards.first().getByText(/0\/22 achieved/).waitFor();
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
+  await page.setViewportSize({ width: 820, height: 1000 });
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
   await cards.first().getByRole("button", { name: "Open learner record" }).click();
   await page.locator(".summary-name").getByText("QA Today Learner", { exact: true }).waitFor();
   assert.deepEqual(errors, []);
-  console.log("Today’s lessons QA PASS at 375px (disconnected state, schedule, contacts, map links, gap, progress and open learner)");
+  console.log("Today’s lessons QA PASS at 375/820px (disconnected state, schedule, contacts, map links, gap, progress and open learner)");
   await context.close();
 } finally {
   await browser.close();
