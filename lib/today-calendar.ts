@@ -37,8 +37,10 @@ export function canberraDay(now: Date) {
 const emailPattern = /^[A-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i;
 const drivingTitle = /\b(?:driving (?:lesson|assessment|test)|driv(?:er|ing) training|cbt\s*&\s*a)\b|学车|駕駛課|驾驶课|练车/i;
 const nonLessonTitle = /\b(?:no|not\s+(?:a|an|the))\s+(?:driving (?:lesson|assessment|test)|driv(?:er|ing) training|cbt\s*&\s*a)\b|(?:取消|不)\s*(?:学车|駕駛課|驾驶课|练车)/i;
-const phoneLabel = /^(?:[\p{L}\s]+\s\/\s)?(?:mobile|phone|phone number|telephone|contact number)\s*:\s*/iu;
+const learnerPhoneLabel = /^(?:learner|student|customer|client|invitee)(?:['’]s)?\s+(?:mobile|phone|phone number|telephone|contact number)\s*:\s*/i;
+const bookingPhoneLabel = /^mobile\s*\/\s*phone\s*:\s*/i;
 const pickupLabel = /^(?:pick.?up address|meeting address)\s*:\s*/i;
+const fieldLabel = /^[\p{L}][\p{L}\p{M}\s/'’.-]{0,45}:/u;
 const text = (value: string | undefined, cap = 300) => (value ?? "").trim().slice(0, cap);
 const email = (value: string | undefined) => emailPattern.test(text(value)) ? text(value) : null;
 const cleanLines = (value: string | undefined) => (value ?? "").slice(0, 16_000)
@@ -47,8 +49,11 @@ const cleanLines = (value: string | undefined) => (value ?? "").slice(0, 16_000)
   .split(/\r?\n/).map((line) => line.trim());
 
 function labelledValues(lines: string[], label: RegExp) {
-  return lines.flatMap((line, i) => label.test(line)
-    ? [line.replace(label, "").trim() || (lines[i + 1] ?? "")] : []);
+  return lines.flatMap((line, i) => {
+    if (!label.test(line)) return [];
+    const next = lines[i + 1] ?? "";
+    return [line.replace(label, "").trim() || (fieldLabel.test(next) ? "" : next)];
+  });
 }
 
 function calGuest(lines: string[]) {
@@ -71,7 +76,8 @@ function phoneNumber(value: string): string | null {
 
 function pickupAddress(value: string | undefined): string | null {
   const address = text(value, 260);
-  return address && !/^(?:[a-z]+:\/\/|www\.|online$)/i.test(address) ? address : null;
+  return address && !fieldLabel.test(address) && !phoneNumber(address)
+    && !email(address) && !/^(?:[a-z]+:\/\/|www\.|online$)/i.test(address) ? address : null;
 }
 
 export function lessonFromGoogle(event: GoogleCalendarEvent): CalendarLesson | null {
@@ -90,9 +96,12 @@ export function lessonFromGoogle(event: GoogleCalendarEvent): CalendarLesson | n
   const guest = guests.length === 1 ? guests[0] : undefined;
   const titleName = title.match(/\b(?:driving lesson|driving assessment)\s+with\s+([^|]+)$/i)?.[1];
   const name = text(identified?.name ?? guest?.displayName ?? titleName, 120) || null;
-  const phoneValues = labelledValues(lines, phoneLabel).map(phoneNumber);
-  const phone = phoneValues.every((value) => value && value.replace(/^\+61/, "0") === phoneValues[0]?.replace(/^\+61/, "0"))
-    ? phoneValues[0] ?? null : null;
+  const labelledLearnerPhones = labelledValues(lines, learnerPhoneLabel);
+  const phoneValues = (labelledLearnerPhones.length ? labelledLearnerPhones
+    : identified ? labelledValues(lines, bookingPhoneLabel) : []).map(phoneNumber);
+  const firstPhone = phoneValues[0] ?? null;
+  const phone = firstPhone && phoneValues.every((value) => value?.replace(/^\+61/, "0") === firstPhone.replace(/^\+61/, "0"))
+    ? firstPhone : null;
   const pickup = [...new Set(labelledValues(lines, pickupLabel).map(pickupAddress).filter(Boolean))];
   const address = pickup.length > 1 ? null : pickup[0] ?? pickupAddress(event.location)
     ?? pickupAddress(labelledValues(lines, /^where\s*:\s*/i)[0]);
