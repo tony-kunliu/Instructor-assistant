@@ -77,6 +77,10 @@ DOB: 19SEP2007`;
     "Unit 14/25 Fiction Street Belconnen ACT 2617");
   assert.equal(parseLearnerLicence("Address: 41 1st Avenue Belconnen ACT 2617").address,
     "41 1st Avenue Belconnen ACT 2617");
+  for (const prefix of ["98765-4321", "98765/4321", "9876-54321", "9876-4321"]) {
+    assert.equal(parseLearnerLicence(`Address: ${prefix} Fiction Street Belconnen ACT 2617`).address, undefined);
+    assert.equal(parseLearnerLicence(`DRIVER LICENCE\nJAMIE EXAMPLE\n${prefix} Fiction Street Belconnen ACT 2617\nLicence No: 01234567`).address, undefined);
+  }
   assert.deepEqual(parseLearnerLicence("Address: 41 Fiction Street Belconnen ACT 2617 Card number: 987654321"), {
     address: "41 Fiction Street Belconnen ACT 2617",
   });

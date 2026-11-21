@@ -21,8 +21,8 @@ const labels: readonly [ScanField | "given" | "family" | "ignore", RegExp][] = [
 ];
 const cardHeader = /^(?:(?:act|australian capital territory)\s+)?(?:(?:learner|provisional|driver|driving|full)\s+){1,3}licen[cs]e\b/i;
 const states = /\b(?:ACT|NSW|VIC|QLD|SA|WA|NT|TAS)\s?\d{4}\b/i;
-const streetNumber = /^(?:unit\s+|flat\s+|lot\s+)?\d{1,5}[a-z]?(?:[/-]\d{1,5}[a-z]?)?\s+(?=\p{L}|\d{1,2}(?:st|nd|rd|th)\b)/iu;
-const cardIdentifierLabel = /\b(?:can(?:\s*[:#=]|\s+[A-Z]*\d)|(?:card|licen[cs]e|customer)\s*(?:no\.?|number|#))/i;
+const streetNumber = /^(?:unit\s+|flat\s+|lot\s+)?\d{1,4}[a-z]?(?:[/-]\d{1,4}[a-z]?)?\s+(?=\p{L}|\d{1,2}(?:st|nd|rd|th)\b)/iu;
+const cardIdentifierLabel = /\b(?:can\b|(?:card|licen[cs]e|customer)\s*(?:no\.?|number|#))/i;
 const months = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
 
 function readLabel(line: string) {
@@ -108,9 +108,11 @@ export function parseLearnerLicence(text: string): LicenceScan {
     const end = states.exec(line);
     if (!end) return [];
     const street = line.slice(0, end.index);
-    const streetWords = street.replace(streetNumber, "").replace(/^\d{1,2}(?:st|nd|rd|th)\s+/i, "");
+    const prefix = street.match(streetNumber)?.[0];
+    if (!prefix || (prefix.match(/\d/g)?.length ?? 0) > 6) return [];
+    const streetWords = street.slice(prefix.length).replace(/^\d{1,2}(?:st|nd|rd|th)\s+/i, "");
     // Leave uncertain OCR addresses empty so the coach can enter the verified address.
-    if (!streetNumber.test(street) || cardIdentifierLabel.test(street) || /\d/.test(streetWords)) return [];
+    if (cardIdentifierLabel.test(street) || /\d/.test(streetWords)) return [];
     return [line.slice(0, end.index + end[0].length)];
   }));
   const fullName = typedName ?? joinedName ?? (!raw.fullName && !raw.given && !raw.family ? unlabelledName : undefined);
