@@ -1,6 +1,6 @@
 # STATUS.md
 
-_Last updated: 2026-10-21_ (Production and Staging D1 at migration `0016`; release #24 live)
+_Last updated: 2026-11-22_ (Production and Staging D1 at migration `0016`; release #24 live)
 
 This file describes **current state only**. History lives in git log and
 closed PRs; see `TASK.md` for what is in progress.
@@ -25,7 +25,8 @@ closed PRs; see `TASK.md` for what is in progress.
   corrected signed lesson may be left unsigned; Worker `d716940c-62d9-4830-95ad-ac23e8ee6301`. #24 run 39730474484
   (`main` `002b835`; `0015` learner drafts, `0016` `paper_import_drafts`): learner drafts (PR #118), saved CSV drafts
   (PR #119); Worker `83d61f30-0d51-4dbd-be0d-dbe7ff5b529a`, rollback Worker `d716940c-62d9-4830-95ad-ac23e8ee6301`.
-- **GPS phase 1 (PR #84, in Production #18):** `lib/gps` + page `/gps` (synthetic default, Real GPS behind a consent box, nothing uploaded). Design: `docs/superpowers/specs/2026-10-13-gps-tracking-design.md`. Phase 1b (Tony's real drive on Staging `/gps`) is next.
+- **Lesson GPS:** opt-in Start / End → editable CBT&A GPS notes implemented on `feature/lesson-gps-checklist`.
+  Raw fixes are device-local. PR #130 is a draft. iPhone `/gps` self-test (2026-11-22, 3m 24s): foreground 99.5%, background 14.6%, 90s gap during a page freeze. Background capture blocks release.
 - **Still open:** `scripts/check-signature-row-limits.mjs` not yet run against a deployed
   D1 (Staging only, never Production); notify-tick (lesson notifications) waits for Website
   PR #47 rework and Tony's approval of the new endpoint + secret (Production OFF); intake
