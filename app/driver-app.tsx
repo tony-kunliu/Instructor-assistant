@@ -241,6 +241,7 @@ function storedLessonGpsId(value: string | null): string | undefined {
   if (!value) return undefined;
   try { return (JSON.parse(value) as LessonDraft | null)?.lessonGps?.id; } catch { return undefined; }
 }
+const staleGpsDraftMessage = "This lesson draft changed in another tab. Reopen the learner to see the current draft.";
 const LAST_LEARNER_KEY = "actgds-driver:last-learner";
 const LAST_INSTRUCTOR_KEY = "actgds-driver:last-instructor";
 
@@ -544,6 +545,10 @@ export default function DriverApp({ mode = "private" }: { mode?: "private" | "sa
 
   const setField = (key: Exclude<keyof LessonDraft, "lessonGps">, value: string) => {
     if (key === "startTime" && !value && draft && lessonGps) {
+      if (storedLessonGpsId(storage.get(draftKey(selectedId))) !== lessonGps.id) {
+        setStatus({ kind: "warn", text: staleGpsDraftMessage });
+        return;
+      }
       void gpsCapture.current?.remove(lessonGps.id);
       setGpsStatus(null);
       const reset = { ...draft, startTime: "", lessonGps: undefined };
@@ -617,6 +622,10 @@ export default function DriverApp({ mode = "private" }: { mode?: "private" | "sa
 
   const discardLesson = () => {
     if (!detail || !window.confirm("Discard this lesson? Nothing will be saved.")) return;
+    if (lessonGps && storedLessonGpsId(storage.get(draftKey(detail.learner.id))) !== lessonGps.id) {
+      setStatus({ kind: "warn", text: staleGpsDraftMessage });
+      return;
+    }
     if (lessonGps) void gpsCapture.current?.remove(lessonGps.id);
     setGpsStatus(null);
     storage.remove(draftKey(detail.learner.id));
@@ -805,7 +814,7 @@ export default function DriverApp({ mode = "private" }: { mode?: "private" | "sa
     const key = draftKey(detail.learner.id);
     const draftAtSave = storage.get(key);
     if (draft.lessonGps && storedLessonGpsId(draftAtSave) !== draft.lessonGps.id) {
-      setStatus({ kind: "warn", text: "This lesson draft changed in another tab. Reopen the learner to see the current draft." });
+      setStatus({ kind: "warn", text: staleGpsDraftMessage });
       return;
     }
     const problems = validateLessonDraftFields(draft, "new", { signLater });

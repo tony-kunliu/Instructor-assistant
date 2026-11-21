@@ -138,6 +138,16 @@ try {
   await other.waitForFunction((key) => localStorage.getItem(key) === null, localDraftKey);
   await comments.fill("Stale tab text must stay local.");
   assert.equal(await page.evaluate((key) => localStorage.getItem(key), localDraftKey), null);
+  await other.evaluate((key) => localStorage.setItem(key, JSON.stringify({
+    lessonDate: "2026-10-20", startTime: "10:00", finishTime: "",
+    comments: "Replacement draft survives stale tab controls.",
+  })), localDraftKey);
+  await discard.click();
+  await page.getByText(/This lesson draft changed in another tab/).waitFor();
+  await page.getByText("Edit date / times").click();
+  await page.locator("#lesson-field-times").fill("");
+  assert.match(await page.evaluate((key) => localStorage.getItem(key), localDraftKey), /Replacement draft survives/);
+  await other.evaluate((key) => localStorage.removeItem(key), localDraftKey);
   await other.close();
   await page.reload();
 
