@@ -829,6 +829,10 @@ export default function DriverApp({ mode = "private" }: { mode?: "private" | "sa
       setStatus({ kind: "warn", text: staleGpsDraftMessage });
       return;
     }
+    if (lessonGps?.savedLessonNo !== undefined) {
+      setStatus({ kind: "warn", text: `Lesson #${lessonGps.savedLessonNo} already exists. Use the lesson history to apply these draft edits to the saved lesson.` });
+      return;
+    }
     const problems = validateLessonDraftFields(draft, "new", { signLater });
     if (problems.length) {
       setSaveIssues({ source: "client", issues: problems, snapshot: draft, signLater });
@@ -847,21 +851,26 @@ export default function DriverApp({ mode = "private" }: { mode?: "private" | "sa
       );
       const latestDraft = storage.get(key);
       const savedDraftIsCurrent = latestDraft === draftAtSave;
+      let replacement: Partial<LessonDraft> | undefined;
+      if (!savedDraftIsCurrent && latestDraft) {
+        try { replacement = JSON.parse(latestDraft); } catch { /* Keep the latest stored value untouched. */ }
+      }
+      const sameSession = replacement?.lessonGps && replacement.lessonGps.id === lessonGps?.id;
+      if (sameSession && replacement?.lessonGps) {
+        replacement.lessonGps.savedLessonNo = result.lesson.lessonNo;
+        storage.set(key, JSON.stringify(replacement));
+      }
       if (savedDraftIsCurrent) storage.remove(key);
-      if (lessonGps && (savedDraftIsCurrent || storedLessonGpsId(latestDraft) !== lessonGps.id)) void gpsCapture.current?.remove(lessonGps.id);
+      if (lessonGps && !sameSession) void gpsCapture.current?.remove(lessonGps.id);
       setGpsStatus((current) => current?.id === lessonGps?.id ? null : current);
       setSaveIssues(null);
       const next: Detail = { ...detail, totals: result.totals, progress: result.progress, completion: result.completion, lessons: [result.lesson, ...detail.lessons] };
       setSummaries((current) => ({ ...current, [detail.learner.id]: summaryFromDetail(next) }));
       if (result.lesson.signatureStatus === "unsigned") loadUnsigned();
       if (selectedRef.current !== detail.learner.id) return;
-      loadedDraftStorage.current = savedDraftIsCurrent ? null : latestDraft;
+      loadedDraftStorage.current = storage.get(key);
       setDetail(next);
       const fresh = freshLesson(result.totals.lastFinishOdometer);
-      let replacement: Partial<LessonDraft> | undefined;
-      if (!savedDraftIsCurrent && latestDraft) {
-        try { replacement = JSON.parse(latestDraft); } catch { /* Keep the latest stored value untouched. */ }
-      }
       setDraft({ ...fresh, ...replacement });
       if (result.lesson.signatureStatus === "unsigned") {
         setStatus({ kind: "warn", text: `Lesson #${result.lesson.lessonNo} saved, not signed yet. Sign it later from "To sign" at the top.` });

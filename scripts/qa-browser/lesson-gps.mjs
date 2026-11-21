@@ -212,6 +212,29 @@ try {
   await page.getByText(/Lesson #2 saved/).waitFor();
   assert.equal(await comments.inputValue(), "Newer lesson from another tab.");
   assert.match(await page.evaluate((key) => localStorage.getItem(key), localDraftKey), /Newer lesson from another tab/);
+  await page.unroute(`**/api/learners/${learner.id}/lessons`);
+  await discard.click();
+  await consent.check();
+  await page.getByRole("button", { name: "Start Lesson #3", exact: true }).click();
+  await page.clock.setFixedTime(new Date(startedAt + 300_000));
+  await end.click();
+  await page.getByLabel("Start odometer (km)").fill("1005");
+  await page.getByLabel("Finish odometer (km)").fill("1006");
+  let posts = 0;
+  await page.route(`**/api/learners/${learner.id}/lessons`, async (route) => {
+    posts++;
+    await replacementTab.evaluate((key) => {
+      const current = JSON.parse(localStorage.getItem(key));
+      localStorage.setItem(key, JSON.stringify({ ...current, comments: "Newer edits to the same GPS session." }));
+    }, localDraftKey);
+    await route.continue();
+  });
+  await page.getByTestId("save-sign-later").click();
+  await page.getByText(/Lesson #3 saved/).waitFor();
+  assert.match(await comments.inputValue(), /Newer edits to the same GPS session/);
+  await page.getByTestId("save-sign-later").click();
+  await page.getByText(/Lesson #3 already exists/).waitFor();
+  assert.equal(posts, 1);
   assert.deepEqual(pageErrors, []);
   console.log("Lesson GPS QA: PASS (opt-in, capture, junction, checklist, persisted edit, local cleanup, denied permission, second tab, replacement, concurrent save and reset at 375px)");
   await context.close();

@@ -5,6 +5,8 @@ export type LessonGpsDraft = {
   id: string;
   instructorId: string;
   endedAt?: number;
+  /** The lesson was saved while another tab was still editing this session. */
+  savedLessonNo?: number;
   /** Undefined while reading the recording, null when no useful fixes were captured. */
   notes?: LessonGpsNotes | null;
   commentsEdited?: boolean;
