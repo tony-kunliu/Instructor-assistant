@@ -41,3 +41,5 @@ node "$ROOT/scripts/qa-browser/qa.mjs"
 node "$ROOT/scripts/qa-browser/gps.mjs"
 # Installed-app manifests as served (colours = the light tokens), their links and theme-color metas, phone + iPad widths.
 node "$ROOT/scripts/qa-browser/manifest.mjs"
+# Today: unconfigured state, then a synthetic calendar day with contact, navigation and learner preparation.
+node "$ROOT/scripts/qa-browser/today-lessons.mjs"
