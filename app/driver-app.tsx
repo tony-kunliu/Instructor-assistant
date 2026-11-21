@@ -283,6 +283,7 @@ export default function DriverApp({ mode = "private" }: { mode?: "private" | "sa
   const [detail, setDetail] = useState<Detail | null>(null);
   const [draft, setDraft] = useState<LessonDraft | null>(null);
   const gpsCapture = useRef<LessonGpsCapture | null>(null);
+  const loadedDraftStorage = useRef<string | null>(null);
   const [gpsConsent, setGpsConsent] = useState(false);
   const [gpsStatus, setGpsStatus] = useState<{ id: string; text: string } | null>(null);
   const [addingLearner, setAddingLearner] = useState(false);
@@ -430,6 +431,7 @@ export default function DriverApp({ mode = "private" }: { mode?: "private" | "sa
       setDetail(data);
       setSummaries((current) => ({ ...current, [id]: summaryFromDetail(data) }));
       const saved = storage.get(draftKey(id));
+      loadedDraftStorage.current = saved;
       setDraft(saved ? { ...freshLesson(data.totals.lastFinishOdometer), ...JSON.parse(saved) } : freshLesson(data.totals.lastFinishOdometer));
     } catch (error) {
       setStatus({ kind: "error", text: (error as Error).message });
@@ -491,9 +493,11 @@ export default function DriverApp({ mode = "private" }: { mode?: "private" | "sa
     if (!selectedId || !draft) return;
     if (!draft.startTime) return;
     const key = draftKey(selectedId);
-    // A stale tab must not recreate a discarded GPS draft or overwrite its replacement.
-    if (storedLessonGpsId(storage.get(key)) !== draft.lessonGps?.id) return;
-    storage.set(key, JSON.stringify(draft));
+    // Compare the full draft because another tab can finish or edit the same GPS session.
+    if (storage.get(key) !== loadedDraftStorage.current) return;
+    const json = JSON.stringify(draft);
+    storage.set(key, json);
+    loadedDraftStorage.current = storage.get(key);
   }, [selectedId, draft]);
 
   // GPS is a private-edition opt-in. The raw points stay in a separate device-only draft store.
@@ -522,12 +526,12 @@ export default function DriverApp({ mode = "private" }: { mode?: "private" | "sa
   const lessonGps = appMode === "private" && draft?.lessonGps?.instructorId === signedInInstructorId ? draft?.lessonGps : undefined;
   const finishTime = draft?.finishTime;
   useEffect(() => {
-    if (!lessonGps || lessonGps.notes !== undefined || !finishTime || !gpsCapture.current) return;
+    if (saving || !lessonGps || lessonGps.notes !== undefined || !finishTime || !gpsCapture.current) return;
     let cancelled = false;
     const id = lessonGps.id;
     const key = draftKey(selectedId);
     void gpsCapture.current.collect(id, lessonGps.endedAt ?? Date.now()).then((notes) => {
-      if (cancelled || storedLessonGpsId(storage.get(key)) !== id) return;
+      if (cancelled || storage.get(key) !== loadedDraftStorage.current || storedLessonGpsId(loadedDraftStorage.current) !== id) return;
       setDraft((current) => {
         if (!current || current.lessonGps?.id !== id) return current;
         const needsReview = Boolean(current.adiSignature || current.learnerSignature);
@@ -535,7 +539,7 @@ export default function DriverApp({ mode = "private" }: { mode?: "private" | "sa
       });
     });
     return () => { cancelled = true; };
-  }, [lessonGps, finishTime, selectedId]);
+  }, [lessonGps, finishTime, selectedId, saving]);
 
   // Tick the elapsed-time display while a lesson is running.
   useEffect(() => {
@@ -545,7 +549,7 @@ export default function DriverApp({ mode = "private" }: { mode?: "private" | "sa
 
   const setField = (key: Exclude<keyof LessonDraft, "lessonGps">, value: string) => {
     if (key === "startTime" && !value && draft && lessonGps) {
-      if (storedLessonGpsId(storage.get(draftKey(selectedId))) !== lessonGps.id) {
+      if (storage.get(draftKey(selectedId)) !== loadedDraftStorage.current) {
         setStatus({ kind: "warn", text: staleGpsDraftMessage });
         return;
       }
@@ -553,6 +557,7 @@ export default function DriverApp({ mode = "private" }: { mode?: "private" | "sa
       setGpsStatus(null);
       const reset = { ...draft, startTime: "", lessonGps: undefined };
       storage.set(draftKey(selectedId), JSON.stringify(reset));
+      loadedDraftStorage.current = storage.get(draftKey(selectedId));
       setDraft(reset);
       return;
     }
@@ -567,7 +572,7 @@ export default function DriverApp({ mode = "private" }: { mode?: "private" | "sa
 
   const startLesson = () => {
     if (!draft) return;
-    if (storedLessonGpsId(storage.get(draftKey(selectedId))) !== draft.lessonGps?.id) {
+    if (storage.get(draftKey(selectedId)) !== loadedDraftStorage.current) {
       setStatus({ kind: "warn", text: staleGpsDraftMessage });
       return;
     }
@@ -584,7 +589,8 @@ export default function DriverApp({ mode = "private" }: { mode?: "private" | "sa
       const candidate = { id, instructorId: signedInInstructorId };
       const firstDraft = { ...draft, lessonDate: now.date, startTime: now.time, finishTime: "", lessonGps: candidate };
       storage.set(key, JSON.stringify(firstDraft));
-      if (storedLessonGpsId(storage.get(key)) === id) {
+      loadedDraftStorage.current = storage.get(key);
+      if (storedLessonGpsId(loadedDraftStorage.current) === id) {
         nextGps = candidate;
         setGpsStatus({ id, text: "Waiting for GPS…" });
         gpsCapture.current.start(id, (text) => setGpsStatus((current) =>
@@ -627,13 +633,14 @@ export default function DriverApp({ mode = "private" }: { mode?: "private" | "sa
 
   const discardLesson = () => {
     if (!detail || !window.confirm("Discard this lesson? Nothing will be saved.")) return;
-    if (storedLessonGpsId(storage.get(draftKey(detail.learner.id))) !== draft?.lessonGps?.id) {
+    if (storage.get(draftKey(detail.learner.id)) !== loadedDraftStorage.current) {
       setStatus({ kind: "warn", text: staleGpsDraftMessage });
       return;
     }
     if (lessonGps) void gpsCapture.current?.remove(lessonGps.id);
     setGpsStatus(null);
     storage.remove(draftKey(detail.learner.id));
+    loadedDraftStorage.current = null;
     setDraft(freshLesson(detail.totals.lastFinishOdometer));
     setSaveIssues(null);
     setStatus(null);
@@ -818,7 +825,7 @@ export default function DriverApp({ mode = "private" }: { mode?: "private" | "sa
     if (!detail || !draft) return;
     const key = draftKey(detail.learner.id);
     const draftAtSave = storage.get(key);
-    if (storedLessonGpsId(draftAtSave) !== draft.lessonGps?.id) {
+    if (draftAtSave !== loadedDraftStorage.current) {
       setStatus({ kind: "warn", text: staleGpsDraftMessage });
       return;
     }
@@ -839,16 +846,16 @@ export default function DriverApp({ mode = "private" }: { mode?: "private" | "sa
         { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...fields, comments, signLater }) },
       );
       const latestDraft = storage.get(key);
-      const savedDraftIsCurrent = latestDraft === draftAtSave
-        || (lessonGps && storedLessonGpsId(latestDraft) === lessonGps.id);
+      const savedDraftIsCurrent = latestDraft === draftAtSave;
       if (savedDraftIsCurrent) storage.remove(key);
-      if (lessonGps) void gpsCapture.current?.remove(lessonGps.id);
+      if (lessonGps && (savedDraftIsCurrent || storedLessonGpsId(latestDraft) !== lessonGps.id)) void gpsCapture.current?.remove(lessonGps.id);
       setGpsStatus((current) => current?.id === lessonGps?.id ? null : current);
       setSaveIssues(null);
       const next: Detail = { ...detail, totals: result.totals, progress: result.progress, completion: result.completion, lessons: [result.lesson, ...detail.lessons] };
       setSummaries((current) => ({ ...current, [detail.learner.id]: summaryFromDetail(next) }));
       if (result.lesson.signatureStatus === "unsigned") loadUnsigned();
       if (selectedRef.current !== detail.learner.id) return;
+      loadedDraftStorage.current = savedDraftIsCurrent ? null : latestDraft;
       setDetail(next);
       const fresh = freshLesson(result.totals.lastFinishOdometer);
       let replacement: Partial<LessonDraft> | undefined;

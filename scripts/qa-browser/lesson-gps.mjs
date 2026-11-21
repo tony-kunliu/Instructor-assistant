@@ -133,8 +133,12 @@ try {
   await other.getByRole("button", { name: "End Lesson", exact: true }).click();
   await page.waitForFunction(() => !window.lessonGpsTest.active);
   await other.getByTestId("lesson-gps-review").getByText(/1 possible roundabout pass/).waitFor();
-  await other.getByRole("button", { name: "Discard this lesson", exact: true }).click();
   const localDraftKey = `actgds-driver:draft:${learner.id}`;
+  const finishedDraft = await other.evaluate((key) => localStorage.getItem(key), localDraftKey);
+  assert.ok(JSON.parse(finishedDraft).finishTime);
+  await comments.fill("An older tab cannot reopen the finished checklist.");
+  assert.equal(await page.evaluate((key) => localStorage.getItem(key), localDraftKey), finishedDraft);
+  await other.getByRole("button", { name: "Discard this lesson", exact: true }).click();
   await other.waitForFunction((key) => localStorage.getItem(key) === null, localDraftKey);
   await comments.fill("Stale tab text must stay local.");
   assert.equal(await page.evaluate((key) => localStorage.getItem(key), localDraftKey), null);
