@@ -63,12 +63,12 @@ export function parseLearnerLicence(text: string): LicenceScan {
     .map((line) => line.trim().replace(/[\t ]+/g, " ")).filter(Boolean);
   const lines = plain.flatMap((line, index) => {
     // The card's licence number and expiry are often adjacent columns in OCR.
-    const sideBySide = /^(?:licen[cs]e\s*(?:no\.?|number)|lic\.?\s*no\.?)\s+exp(?:iry|ires)?(?:\s+date)?$/i;
+    const sideBySide = /^(?:licen[cs]e\s*(?:no\.?|number)|lic\.?\s*no\.?)\s+(?:licen[cs]e\s+)?exp(?:iry|ires)?(?:\s+date)?$/i;
     if (sideBySide.test(line)) {
       const values = /^(\d{5,15})\s+(.+)$/.exec(plain[index + 1] ?? "");
       if (values && cardDate(values[2])) return [`Licence no: ${values[1]}`, `Expiry: ${values[2]}`];
     }
-    return line.split(/\s+(?=(?:exp(?:iry|ires)?(?:\s+date)?|date\s+of\s+birth|dob|card\s+(?:no\.?|number))\s*[:.]?\s*\d)/i);
+    return line.split(/\s+(?=(?:(?:licen[cs]e\s+)?exp(?:iry|ires)?(?:\s+date)?|date\s+of\s+birth|dob|card\s+(?:no\.?|number))\s*[:.]?\s*\d)/i);
   });
   const raw: Partial<Record<ScanField | "given" | "family", string[]>> = {};
   for (let i = 0; i < lines.length; i++) {
@@ -104,7 +104,11 @@ export function parseLearnerLicence(text: string): LicenceScan {
   // Isolate the postal endpoint before comparing candidates or handing an address to the form.
   const address = one((raw.address ?? unlabelledAddresses).flatMap((line) => {
     const end = states.exec(line);
-    return end ? [line.slice(0, end.index + end[0].length)] : [];
+    if (!end) return [];
+    const street = line.slice(0, end.index);
+    if (/\b(?:card|licen[cs]e)\s*(?:no\.?|number)\b/i.test(street)
+      || street.split(/\s+/).some((part) => (part.match(/\d/g)?.length ?? 0) >= 7)) return [];
+    return [line.slice(0, end.index + end[0].length)];
   }));
   const fullName = typedName ?? joinedName ?? (!raw.fullName && !raw.given && !raw.family ? unlabelledName : undefined);
   const number = one((raw.licenceNumber ?? []).map((value) => value.replace(/\s+/g, "").toUpperCase())

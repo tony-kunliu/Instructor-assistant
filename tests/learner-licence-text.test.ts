@@ -60,12 +60,14 @@ AUSTRALIAN CAPITAL TERRITORY
 JAMIE EXAMPLE
 41 Fiction Street Belconnen ACT 2617 987654321
 DOB: 19SEP2007`;
-  for (const row of ["LICENCE NO 01234567 EXPIRY 28NOV2030", "LICENCE NO  EXPIRY DATE\n01234567  28NOV2030"]) {
+  for (const row of ["LICENCE NO 01234567 EXPIRY 28NOV2030", "LICENCE NO  EXPIRY DATE\n01234567  28NOV2030",
+    "Licence No. 01234567 Licence Expiry 28NOV2030", "Licence No. Licence Expiry\n01234567 28NOV2030"]) {
     assert.deepEqual(parseLearnerLicence(`${shared}\n${row}`), {
       fullName: "JAMIE EXAMPLE", address: "41 Fiction Street Belconnen ACT 2617",
       licenceNumber: "01234567", dob: "2007-09-19", licenceExpiry: "2030-11-28",
     });
   }
+  assert.deepEqual(parseLearnerLicence("Address: 41 Fiction Street 987654321 Belconnen ACT 2617"), {});
   assert.deepEqual(parseLearnerLicence("Address: 41 Fiction Street Belconnen ACT 2617 Card number: 987654321"), {
     address: "41 Fiction Street Belconnen ACT 2617",
   });

@@ -63,12 +63,17 @@ function job<T>(worker: Worker, action: Job, payload: object, signal: AbortSigna
 export async function readLearnerLicencePhoto(file: File, callerSignal: AbortSignal): Promise<string> {
   callerSignal.throwIfAborted();
   if (file.size > 20 * 1024 * 1024) throw new Error("Photo is too large");
-  const signal = AbortSignal.any([callerSignal, AbortSignal.timeout(OCR_TIMEOUT_MS)]);
-  const buffer = await preparePhoto(file, signal);
-  signal.throwIfAborted();
-  const assets = new URL(OCR_ASSETS, window.location.origin).href;
-  const worker = new Worker(`${assets}/worker.min.js`);
+  const controller = new AbortController();
+  const signal = controller.signal;
+  const cancel = () => controller.abort(callerSignal.reason);
+  callerSignal.addEventListener("abort", cancel, { once: true });
+  const timeout = setTimeout(() => controller.abort(new Error("Scan timed out")), OCR_TIMEOUT_MS);
+  let worker: Worker | undefined;
   try {
+    const buffer = await preparePhoto(file, signal);
+    signal.throwIfAborted();
+    const assets = new URL(OCR_ASSETS, window.location.origin).href;
+    worker = new Worker(`${assets}/worker.min.js`);
     const langs = ["eng"];
     await job(worker, "load", { options: { lstmOnly: true, corePath: assets } }, signal);
     await job(worker, "loadLanguage", { langs, options: { langPath: assets, cacheMethod: "none", gzip: true, lstmOnly: true } }, signal);
@@ -79,6 +84,8 @@ export async function readLearnerLicencePhoto(file: File, callerSignal: AbortSig
     );
     return result.confidence >= 40 ? result.text : "";
   } finally {
-    worker.terminate();
+    clearTimeout(timeout);
+    callerSignal.removeEventListener("abort", cancel);
+    worker?.terminate();
   }
 }
