@@ -42,6 +42,15 @@ test("day bounds handle Canberra daylight-saving without using the server's time
   assert.equal((Date.parse(spring.until) - Date.parse(spring.from)) / 3_600_000, 23);
 });
 
+test("conflicting phone fields and non-lessons are excluded, and explicit pickup survives a meeting URL", () => {
+  const details = "Phone: 0400 000 001\nPhone: 0400 000 002\nPickup address: 24 Test Road, Canberra";
+  const result = lessonFromGoogle({ ...event, description: details, location: "https://meet.example.test/test" });
+  assert.equal(result?.phone, null);
+  assert.equal(result?.address, "24 Test Road, Canberra");
+  assert.equal(lessonFromGoogle({ ...event, description: "Phone: 0400 000 001\nMobile: +61 400 000 001" })?.phone, "0400000001");
+  assert.equal(lessonFromGoogle({ ...event, summary: "No driving lesson — personal appointment" }), null);
+});
+
 test("read-only calendar adapter expands recurring events, handles pages, and removes yesterday's overlapping event", async () => {
   const calls: { url: string; method: string; cached?: string }[] = [];
   const mocked: typeof fetch = async (input, init) => {
