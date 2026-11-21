@@ -65,7 +65,10 @@ export default function LearnerLicenceScan({ disabled, busy, onBusyChange, onSca
         {busy ? "Reading licence…" : "Scan learner licence"}
       </button>
       {busy ? <button className="btn ghost small" type="button" onClick={() => {
-        pending.current?.abort();
+        const controller = pending.current;
+        pending.current = null;
+        controller?.abort();
+        onBusyChange(false);
         setStatus("Scan cancelled. Enter the details below or try again.");
       }}>Cancel scan</button> : null}
       {status ? <p className="form-sub" role="status" data-testid="licence-scan-status">{status}</p> : null}
