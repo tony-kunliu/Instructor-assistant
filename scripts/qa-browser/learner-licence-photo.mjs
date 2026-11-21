@@ -71,18 +71,20 @@ try {
   await page.getByText(/Couldn’t read that photo/).waitFor();
   assert.equal(await page.evaluate(() => window.ocrWorkers), 0);
   await page.unroute(modelPath);
-  let releaseDecode;
-  const modelCanResume = new Promise((resolve) => { releaseDecode = resolve; });
-  await page.route(modelPath, async (route) => { await modelCanResume; await route.abort().catch(() => {}); });
-  const modelRequested = page.waitForRequest(modelPath);
+  await page.evaluate(() => {
+    const decode = HTMLImageElement.prototype.decode;
+    HTMLImageElement.prototype.decode = function () {
+      HTMLImageElement.prototype.decode = decode;
+      return new Promise((resolve) => { window.releaseLicenceDecode = resolve; });
+    };
+  });
   await capture.setInputFiles(photo);
-  await modelRequested;
+  await page.waitForFunction(() => typeof window.releaseLicenceDecode === "function");
   await page.getByRole("button", { name: "Cancel scan", exact: true }).click();
   await page.getByText(/Scan cancelled/).waitFor();
   assert.equal(await page.getByTestId("save-learner").isEnabled(), true);
   assert.equal(await page.getByTestId("save-learner-draft").isEnabled(), true);
-  releaseDecode();
-  await page.unroute(modelPath);
+  await page.evaluate(() => window.releaseLicenceDecode());
   await capture.setInputFiles(photo);
   const start = Date.now();
   await page.getByTestId("licence-scan-status").getByText(/Check the fields against the card/).waitFor({ timeout: 35_000 });
