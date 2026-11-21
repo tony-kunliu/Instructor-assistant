@@ -68,12 +68,15 @@ DOB: 19SEP2007`;
     });
   }
   for (const cardId of ["987654321", "987 654 321", "9 8 7 6 5 4 3 2 1", "987-654-321", "987.654.321",
-    "987 – 654 – 321", "987: 654: 321", "9B7 65A 32I", "CAN: AB123456"]) {
+    "987 – 654 – 321", "987: 654: 321", "9B7 65A 32I", "CAN: AB123456",
+    "9 8 7 B 6 5 4 3 2", "9821B3T19", "CAN ABC123456"]) {
     assert.deepEqual(parseLearnerLicence(`Address: 41 Fiction Street ${cardId} Belconnen ACT 2617`), {});
     assert.equal(parseLearnerLicence(`DRIVER LICENCE\nJAMIE EXAMPLE\n41 Fiction Street ${cardId} Belconnen ACT 2617\nLicence No: 01234567`).address, undefined);
   }
   assert.equal(parseLearnerLicence("Address: Unit 14/25 Fiction Street Belconnen ACT 2617").address,
     "Unit 14/25 Fiction Street Belconnen ACT 2617");
+  assert.equal(parseLearnerLicence("Address: 41 1st Avenue Belconnen ACT 2617").address,
+    "41 1st Avenue Belconnen ACT 2617");
   assert.deepEqual(parseLearnerLicence("Address: 41 Fiction Street Belconnen ACT 2617 Card number: 987654321"), {
     address: "41 Fiction Street Belconnen ACT 2617",
   });
