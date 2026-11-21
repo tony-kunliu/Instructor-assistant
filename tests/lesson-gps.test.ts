@@ -67,7 +67,7 @@ test("the lesson recap uses an actual ACT junction and redacts raw GPS and the d
 
 test("automatic notes preserve the instructor's text, honour a review edit and fit the existing limit", () => {
   const capture = { id: "local", instructorId: "adi", notes: { line: "GPS estimates", details: ["Signal A"], incomplete: false } };
-  assert.equal(lessonCommentsWithGps("My teaching notes", capture), "My teaching notes\nGPS estimates\nSignal A");
+  assert.equal(lessonCommentsWithGps("My teaching notes", capture), "My teaching notes\nGPS estimates");
   assert.equal(lessonCommentsWithGps("Reviewed note", { ...capture, commentsEdited: true }), "Reviewed note");
   assert.equal(lessonCommentsWithGps("Already signed", { ...capture, needsReview: true }), "Already signed");
   assert.equal(lessonCommentsWithGps("Still preparing", { ...capture, notes: undefined }), "Still preparing");

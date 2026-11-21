@@ -14,10 +14,8 @@ export type LessonGpsDraft = {
 
 export function appendLessonGpsNotes(comments: string, notes: LessonGpsNotes, maxLength: number): string | null {
   const separator = comments.trim() ? "\n" : "";
-  const full = notes.details.length ? `${notes.line}\n${notes.details.join("\n")}` : notes.line;
   if (comments.length + separator.length + notes.line.length > maxLength) return null;
-  if (comments.length + separator.length + full.length <= maxLength) return `${comments}${separator}${full}`;
-  // Preserve the teacher's original entry and the totals. Long lessons can exceed the comments field's limit.
+  // Detailed junction times and names are for local review. Comments appear on the official PDF.
   return `${comments}${separator}${notes.line}`;
 }
 

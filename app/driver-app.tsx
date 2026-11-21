@@ -237,6 +237,10 @@ const storage = {
   },
 };
 const draftKey = (learnerId: string) => `actgds-driver:draft:${learnerId}`;
+function storedLessonGpsId(value: string | null): string | undefined {
+  if (!value) return undefined;
+  try { return (JSON.parse(value) as LessonDraft | null)?.lessonGps?.id; } catch { return undefined; }
+}
 const LAST_LEARNER_KEY = "actgds-driver:last-learner";
 const LAST_INSTRUCTOR_KEY = "actgds-driver:last-instructor";
 
@@ -484,7 +488,11 @@ export default function DriverApp({ mode = "private" }: { mode?: "private" | "sa
   // Keep the in-progress lesson on this device in case the page reloads mid-lesson.
   useEffect(() => {
     if (!selectedId || !draft) return;
-    if (draft.startTime) storage.set(draftKey(selectedId), JSON.stringify(draft));
+    if (!draft.startTime) return;
+    const key = draftKey(selectedId);
+    // A stale tab must not recreate a discarded GPS draft or overwrite its replacement.
+    if (draft.lessonGps && storedLessonGpsId(storage.get(key)) !== draft.lessonGps.id) return;
+    storage.set(key, JSON.stringify(draft));
   }, [selectedId, draft]);
 
   // GPS is a private-edition opt-in. The raw points stay in a separate device-only draft store.
@@ -516,8 +524,9 @@ export default function DriverApp({ mode = "private" }: { mode?: "private" | "sa
     if (!lessonGps || lessonGps.notes !== undefined || !finishTime || !gpsCapture.current) return;
     let cancelled = false;
     const id = lessonGps.id;
+    const key = draftKey(selectedId);
     void gpsCapture.current.collect(id, lessonGps.endedAt ?? Date.now()).then((notes) => {
-      if (cancelled) return;
+      if (cancelled || storedLessonGpsId(storage.get(key)) !== id) return;
       setDraft((current) => {
         if (!current || current.lessonGps?.id !== id) return current;
         const needsReview = Boolean(current.adiSignature || current.learnerSignature);
@@ -525,7 +534,7 @@ export default function DriverApp({ mode = "private" }: { mode?: "private" | "sa
       });
     });
     return () => { cancelled = true; };
-  }, [lessonGps, finishTime]);
+  }, [lessonGps, finishTime, selectedId]);
 
   // Tick the elapsed-time display while a lesson is running.
   useEffect(() => {
@@ -559,13 +568,19 @@ export default function DriverApp({ mode = "private" }: { mode?: "private" | "sa
     scrollToLesson.current = true;
     setStatus(null);
     let nextGps: LessonGpsDraft | undefined;
-    if (gpsConsent && appMode === "private" && signedInInstructorId && gpsCapture.current && typeof crypto.randomUUID === "function") {
+    if (draft && gpsConsent && appMode === "private" && signedInInstructorId && gpsCapture.current && typeof crypto.randomUUID === "function") {
       const id = crypto.randomUUID();
-      nextGps = { id, instructorId: signedInInstructorId };
-      setGpsStatus({ id, text: "Waiting for GPS…" });
-      gpsCapture.current.start(id, (text) => setGpsStatus((current) =>
-        current?.id !== id || current.text === text ? current : { id, text },
-      ));
+      const key = draftKey(selectedId);
+      const candidate = { id, instructorId: signedInInstructorId };
+      const firstDraft = { ...draft, lessonDate: now.date, startTime: now.time, finishTime: "", lessonGps: candidate };
+      storage.set(key, JSON.stringify(firstDraft));
+      if (storedLessonGpsId(storage.get(key)) === id) {
+        nextGps = candidate;
+        setGpsStatus({ id, text: "Waiting for GPS…" });
+        gpsCapture.current.start(id, (text) => setGpsStatus((current) =>
+          current?.id !== id || current.text === text ? current : { id, text },
+        ));
+      }
     }
     setGpsConsent(false);
     setDraft((current) => (current ? { ...current, lessonDate: now.date, startTime: now.time, finishTime: "", lessonGps: nextGps } : current));
@@ -787,6 +802,12 @@ export default function DriverApp({ mode = "private" }: { mode?: "private" | "sa
 
   const saveLesson = async (signLater = false) => {
     if (!detail || !draft) return;
+    const key = draftKey(detail.learner.id);
+    const draftAtSave = storage.get(key);
+    if (draft.lessonGps && storedLessonGpsId(draftAtSave) !== draft.lessonGps.id) {
+      setStatus({ kind: "warn", text: "This lesson draft changed in another tab. Reopen the learner to see the current draft." });
+      return;
+    }
     const problems = validateLessonDraftFields(draft, "new", { signLater });
     if (problems.length) {
       setSaveIssues({ source: "client", issues: problems, snapshot: draft, signLater });
@@ -803,7 +824,10 @@ export default function DriverApp({ mode = "private" }: { mode?: "private" | "sa
         `/api/learners/${encodeURIComponent(detail.learner.id)}/lessons`,
         { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...fields, comments, signLater }) },
       );
-      storage.remove(draftKey(detail.learner.id));
+      const latestDraft = storage.get(key);
+      const savedDraftIsCurrent = latestDraft === draftAtSave
+        || (lessonGps && storedLessonGpsId(latestDraft) === lessonGps.id);
+      if (savedDraftIsCurrent) storage.remove(key);
       if (lessonGps) void gpsCapture.current?.remove(lessonGps.id);
       setGpsStatus((current) => current?.id === lessonGps?.id ? null : current);
       setSaveIssues(null);
@@ -812,7 +836,12 @@ export default function DriverApp({ mode = "private" }: { mode?: "private" | "sa
       if (result.lesson.signatureStatus === "unsigned") loadUnsigned();
       if (selectedRef.current !== detail.learner.id) return;
       setDetail(next);
-      setDraft(freshLesson(result.totals.lastFinishOdometer));
+      const fresh = freshLesson(result.totals.lastFinishOdometer);
+      let replacement: Partial<LessonDraft> | undefined;
+      if (!savedDraftIsCurrent && latestDraft) {
+        try { replacement = JSON.parse(latestDraft); } catch { /* Keep the latest stored value untouched. */ }
+      }
+      setDraft({ ...fresh, ...replacement });
       if (result.lesson.signatureStatus === "unsigned") {
         setStatus({ kind: "warn", text: `Lesson #${result.lesson.lessonNo} saved, not signed yet. Sign it later from "To sign" at the top.` });
       } else setStatus({ kind: "ok", text: `Lesson #${result.lesson.lessonNo} saved.` });

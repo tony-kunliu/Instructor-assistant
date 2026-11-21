@@ -74,7 +74,8 @@ try {
   await review.getByText(/1 possible roundabout pass/).waitFor();
   assert.deepEqual(await page.evaluate(() => [window.lessonGpsTest.active, window.lessonGpsTest.clears]), [false, 1]);
   assert.match(await comments.inputValue(), /^Coach note from during the lesson\.\nGPS estimates \(partial,/);
-  assert.match(await comments.inputValue(), /Coulter Drive/);
+  assert.doesNotMatch(await comments.inputValue(), /Coulter Drive/);
+  assert.match(await review.textContent(), /Coulter Drive/);
   assert.equal(await page.getByTestId("competency-block").locator("[aria-pressed=true]").count(), 0);
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
 
@@ -133,6 +134,10 @@ try {
   await page.waitForFunction(() => !window.lessonGpsTest.active);
   await other.getByTestId("lesson-gps-review").getByText(/1 possible roundabout pass/).waitFor();
   await other.getByRole("button", { name: "Discard this lesson", exact: true }).click();
+  const localDraftKey = `actgds-driver:draft:${learner.id}`;
+  await other.waitForFunction((key) => localStorage.getItem(key) === null, localDraftKey);
+  await comments.fill("Stale tab text must stay local.");
+  assert.equal(await page.evaluate((key) => localStorage.getItem(key), localDraftKey), null);
   await other.close();
   await page.reload();
 
@@ -163,8 +168,27 @@ try {
   await startSecond.click();
   assert.equal(await page.evaluate(() => window.lessonGpsTest.watches), watches);
   assert.equal(await page.getByTestId("lesson-gps-running").count(), 0);
+  // An older save must preserve a replacement made while its request is in flight.
+  await page.clock.setFixedTime(new Date(startedAt + 230_000));
+  await end.click();
+  await page.getByLabel("Start odometer (km)").fill("1003");
+  await page.getByLabel("Finish odometer (km)").fill("1005");
+  const replacementTab = await context.newPage();
+  await replacementTab.goto(base);
+  await page.route(`**/api/learners/${learner.id}/lessons`, async (route) => {
+    await replacementTab.evaluate((key) => {
+      const current = JSON.parse(localStorage.getItem(key));
+      localStorage.setItem(key, JSON.stringify({ ...current, startTime: "13:00", finishTime: "14:00",
+        comments: "Newer lesson from another tab." }));
+    }, localDraftKey);
+    await route.continue();
+  });
+  await page.getByTestId("save-sign-later").click();
+  await page.getByText(/Lesson #2 saved/).waitFor();
+  assert.equal(await comments.inputValue(), "Newer lesson from another tab.");
+  assert.match(await page.evaluate((key) => localStorage.getItem(key), localDraftKey), /Newer lesson from another tab/);
   assert.deepEqual(pageErrors, []);
-  console.log("Lesson GPS QA: PASS (opt-in, capture, junction, checklist, persisted edit, local cleanup, denied permission, second tab, replacement and reset at 375px)");
+  console.log("Lesson GPS QA: PASS (opt-in, capture, junction, checklist, persisted edit, local cleanup, denied permission, second tab, replacement, concurrent save and reset at 375px)");
   await context.close();
 } finally {
   await browser.close();
