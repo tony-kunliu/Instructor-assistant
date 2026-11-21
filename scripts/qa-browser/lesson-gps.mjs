@@ -50,7 +50,7 @@ try {
   const end = page.getByRole("button", { name: "End Lesson", exact: true });
   const consent = page.getByTestId("lesson-gps-consent");
   const review = page.getByTestId("lesson-gps-review");
-  const comments = page.getByLabel("Comments", { exact: true });
+  const comments = page.getByTestId("notes-block").locator("textarea");
   const startedAt = Date.parse("2026-10-20T01:00:00Z");
   await page.clock.setFixedTime(new Date(startedAt));
   await page.goto(base);
