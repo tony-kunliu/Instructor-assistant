@@ -17,6 +17,8 @@ import {
 import { CORE_COMPETENCY_IDS, FINAL_DRIVE_23, REVIEW_1_17, REVIEW_1_22, invalidationNotice, type AssessmentResult, type LearnerProgress, type MilestoneInvalidation } from "@/lib/competency.ts";
 import { cardMeta, cardReminders, collapsedCards, emptySummary, gateChips, glance, initials, lastLessonLine, listCollapsed, optionLabel, summaryFromProgress, type LearnerListSummary } from "@/lib/learner-card.ts";
 import { derivedStats, learnerHeaderMeta, lessonDateLine, lessonPhase, odometerCarriedNote, showsSaveBar } from "@/lib/lesson-view.ts";
+import { LessonGpsCapture } from "@/lib/gps/lesson-capture.ts";
+import { lessonCommentsWithGps, type LessonGpsDraft } from "@/lib/gps/lesson-gps-draft.ts";
 import { accessLogoutUrl } from "@/lib/access-logout.ts";
 import { ARCHIVE_REASONS, archiveReasonText, MAX_ARCHIVE_NOTE_LENGTH } from "@/lib/archive-reasons.ts";
 import { filterLearners } from "@/lib/learner-filter.ts";
@@ -62,6 +64,7 @@ type LessonDraft = {
   comments: string;
   adiSignature: string;
   learnerSignature: string;
+  lessonGps?: LessonGpsDraft;
 };
 
 type LearnerDraft = {
@@ -274,6 +277,9 @@ export default function DriverApp({ mode = "private" }: { mode?: "private" | "sa
   const [selectedId, setSelectedId] = useState("");
   const [detail, setDetail] = useState<Detail | null>(null);
   const [draft, setDraft] = useState<LessonDraft | null>(null);
+  const gpsCapture = useRef<LessonGpsCapture | null>(null);
+  const [gpsConsent, setGpsConsent] = useState(false);
+  const [gpsStatus, setGpsStatus] = useState<{ id: string; text: string } | null>(null);
   const [addingLearner, setAddingLearner] = useState(false);
   // True while the learner form edits the selected learner (instead of creating one).
   const [editingLearner, setEditingLearner] = useState(false);
@@ -393,6 +399,11 @@ export default function DriverApp({ mode = "private" }: { mode?: "private" | "sa
   const totals = detail?.totals ?? EMPTY_TOTALS;
 
   const loadLearner = useCallback(async (id: string) => {
+    if (id !== selectedRef.current) {
+      void gpsCapture.current?.stop();
+      setGpsConsent(false);
+      setGpsStatus(null);
+    }
     selectedRef.current = id;
     setSaveIssues(null);
     setSelectedId(id);
@@ -476,20 +487,88 @@ export default function DriverApp({ mode = "private" }: { mode?: "private" | "sa
     if (draft.startTime) storage.set(draftKey(selectedId), JSON.stringify(draft));
   }, [selectedId, draft]);
 
+  // GPS is a private-edition opt-in. The raw points stay in a separate device-only draft store.
+  useEffect(() => {
+    if (appMode !== "private" || !signedInInstructorId) return;
+    const capture = gpsCapture.current ??= new LessonGpsCapture();
+    void capture.prune();
+    const stopIfEndedInAnotherTab = (event: StorageEvent) => {
+      if (!event.key || event.key !== draftKey(selectedRef.current) || !event.oldValue) return;
+      try {
+        const previous = JSON.parse(event.oldValue) as LessonDraft;
+        const current = event.newValue ? JSON.parse(event.newValue) as LessonDraft : null;
+        if (previous.lessonGps && (!current || current.finishTime || current.lessonGps?.id !== previous.lessonGps.id)) {
+          void capture.stop(previous.lessonGps.id);
+          setGpsStatus((status) => status?.id === previous.lessonGps?.id ? null : status);
+        }
+      } catch { /* Ignore storage unavailable to this lesson draft. */ }
+    };
+    window.addEventListener("storage", stopIfEndedInAnotherTab);
+    return () => {
+      window.removeEventListener("storage", stopIfEndedInAnotherTab);
+      void capture.stop();
+    };
+  }, [appMode, signedInInstructorId]);
+
+  const lessonGps = appMode === "private" && draft?.lessonGps?.instructorId === signedInInstructorId ? draft?.lessonGps : undefined;
+  const finishTime = draft?.finishTime;
+  useEffect(() => {
+    if (!lessonGps || lessonGps.notes !== undefined || !finishTime || !gpsCapture.current) return;
+    let cancelled = false;
+    const id = lessonGps.id;
+    void gpsCapture.current.collect(id, lessonGps.endedAt ?? Date.now()).then((notes) => {
+      if (cancelled) return;
+      setDraft((current) => {
+        if (!current || current.lessonGps?.id !== id) return current;
+        const needsReview = Boolean(current.adiSignature || current.learnerSignature);
+        return { ...current, lessonGps: { ...current.lessonGps, notes, needsReview } };
+      });
+    });
+    return () => { cancelled = true; };
+  }, [lessonGps, finishTime]);
+
   // Tick the elapsed-time display while a lesson is running.
   useEffect(() => {
     const timer = window.setInterval(() => setClock(localNow().time), 15_000);
     return () => window.clearInterval(timer);
   }, []);
 
-  const setField = (key: keyof LessonDraft, value: string) =>
-    setDraft((current) => (current ? { ...current, [key]: value } : current));
+  const setField = (key: Exclude<keyof LessonDraft, "lessonGps">, value: string) => {
+    if (key === "startTime" && !value && draft && lessonGps) {
+      void gpsCapture.current?.remove(lessonGps.id);
+      setGpsStatus(null);
+      const reset = { ...draft, startTime: "", lessonGps: undefined };
+      storage.set(draftKey(selectedId), JSON.stringify(reset));
+      setDraft(reset);
+      return;
+    }
+    if (key === "finishTime" && value && lessonGps && !lessonGps.endedAt) {
+      void gpsCapture.current?.stop(lessonGps.id);
+      const endedAt = Date.now();
+      setDraft((current) => current ? { ...current, finishTime: value, lessonGps: { ...lessonGps, endedAt } } : current);
+      return;
+    }
+    setDraft((current) => current ? { ...current, [key]: value } : current);
+  };
 
   const startLesson = () => {
+    if (lessonGps) void gpsCapture.current?.remove(lessonGps.id);
+    else void gpsCapture.current?.stop();
+    setGpsStatus(null);
     const now = localNow();
     scrollToLesson.current = true;
     setStatus(null);
-    setDraft((current) => (current ? { ...current, lessonDate: now.date, startTime: now.time, finishTime: "" } : current));
+    let nextGps: LessonGpsDraft | undefined;
+    if (gpsConsent && appMode === "private" && signedInInstructorId && gpsCapture.current && typeof crypto.randomUUID === "function") {
+      const id = crypto.randomUUID();
+      nextGps = { id, instructorId: signedInInstructorId };
+      setGpsStatus({ id, text: "Waiting for GPS…" });
+      gpsCapture.current.start(id, (text) => setGpsStatus((current) =>
+        current?.id !== id || current.text === text ? current : { id, text },
+      ));
+    }
+    setGpsConsent(false);
+    setDraft((current) => (current ? { ...current, lessonDate: now.date, startTime: now.time, finishTime: "", lessonGps: nextGps } : current));
   };
 
   // Record a past lesson (Tony 2026-10-22): a lesson written up afterwards takes its date and times as typed, not from
@@ -512,11 +591,19 @@ export default function DriverApp({ mode = "private" }: { mode?: "private" | "sa
 
   const endLesson = () => {
     focusFinishOdo.current = true;
-    setDraft((current) => (current ? { ...current, finishTime: localNow().time } : current));
+    const endedAt = Date.now();
+    const finishTime = localNow().time;
+    if (lessonGps) void gpsCapture.current?.stop(lessonGps.id);
+    setDraft((current) => (current ? {
+      ...current, finishTime,
+      lessonGps: lessonGps ? { ...lessonGps, endedAt } : current.lessonGps,
+    } : current));
   };
 
   const discardLesson = () => {
     if (!detail || !window.confirm("Discard this lesson? Nothing will be saved.")) return;
+    if (lessonGps) void gpsCapture.current?.remove(lessonGps.id);
+    setGpsStatus(null);
     storage.remove(draftKey(detail.learner.id));
     setDraft(freshLesson(detail.totals.lastFinishOdometer));
     setSaveIssues(null);
@@ -709,22 +796,29 @@ export default function DriverApp({ mode = "private" }: { mode?: "private" | "sa
     setSaving(true);
     setStatus(null);
     try {
+      const { lessonGps: _localCapture, ...fields } = draft;
+      // Only save the text shown in the checklist. A slow GPS read cannot add notes after signing or saving.
+      const comments = lessonCommentsWithGps(fields.comments, lessonGps);
       const result = await api<{ lesson: Lesson; totals: Totals; progress: LearnerProgress; completion: CompletionSummary | null }>(
         `/api/learners/${encodeURIComponent(detail.learner.id)}/lessons`,
-        { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...draft, signLater }) },
+        { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...fields, comments, signLater }) },
       );
       storage.remove(draftKey(detail.learner.id));
+      if (lessonGps) void gpsCapture.current?.remove(lessonGps.id);
+      setGpsStatus((current) => current?.id === lessonGps?.id ? null : current);
       setSaveIssues(null);
       const next: Detail = { ...detail, totals: result.totals, progress: result.progress, completion: result.completion, lessons: [result.lesson, ...detail.lessons] };
-      setDetail(next);
       setSummaries((current) => ({ ...current, [detail.learner.id]: summaryFromDetail(next) }));
+      if (result.lesson.signatureStatus === "unsigned") loadUnsigned();
+      if (selectedRef.current !== detail.learner.id) return;
+      setDetail(next);
       setDraft(freshLesson(result.totals.lastFinishOdometer));
       if (result.lesson.signatureStatus === "unsigned") {
-        loadUnsigned();
         setStatus({ kind: "warn", text: `Lesson #${result.lesson.lessonNo} saved, not signed yet. Sign it later from "To sign" at the top.` });
       } else setStatus({ kind: "ok", text: `Lesson #${result.lesson.lessonNo} saved.` });
       window.scrollTo({ top: 0, behavior: "smooth" });
     } catch (error) {
+      if (selectedRef.current !== detail.learner.id) return;
       setSaveIssues({ source: "server", issues: [issueFromServerMessage((error as Error).message)], snapshot: draft });
       setSaveAttempt((n) => n + 1);
     } finally {
@@ -855,6 +949,9 @@ export default function DriverApp({ mode = "private" }: { mode?: "private" | "sa
   };
 
   const clearSelection = () => {
+    void gpsCapture.current?.stop();
+    setGpsConsent(false);
+    setGpsStatus(null);
     selectedRef.current = "";
     setSelectedId("");
     setDetail(null);
@@ -1070,9 +1167,14 @@ export default function DriverApp({ mode = "private" }: { mode?: "private" | "sa
     if (!f.lessonDate || !f.startTime) return setPasteProblems([...notes, "A lesson draft needs its Date and Start time. Add them and paste again."]);
     const learner = matches[0];
     let running = learner.id === selectedId && Boolean(draft?.startTime);
+    let replacedGps = learner.id === selectedId ? lessonGps : undefined;
     try {
       const existing = storage.get(draftKey(learner.id));
-      if (existing && (JSON.parse(existing) as Partial<LessonDraft>).startTime) running = true;
+      if (existing) {
+        const previousDraft = JSON.parse(existing) as Partial<LessonDraft>;
+        if (previousDraft.startTime) running = true;
+        if (previousDraft.lessonGps?.instructorId === signedInInstructorId) replacedGps ??= previousDraft.lessonGps;
+      }
     } catch { running = true; }
     if (running && !window.confirm(`${learner.fullName} already has a lesson in progress on this device. Replace it with the assistant's draft?`)) return;
     const saved: Partial<LessonDraft> = {
@@ -1085,6 +1187,10 @@ export default function DriverApp({ mode = "private" }: { mode?: "private" | "sa
     const json = JSON.stringify(saved);
     storage.set(draftKey(learner.id), json);
     if (storage.get(draftKey(learner.id)) !== json) return setPasteProblems(["This device would not keep the draft (browser storage is blocked or full). Nothing was changed."]);
+    if (replacedGps) {
+      void gpsCapture.current?.remove(replacedGps.id);
+      setGpsStatus((current) => current?.id === replacedGps.id ? null : current);
+    }
     if (activeView === "archived") chooseView("mine");
     pickLearner(learner.id);
     closePaste();
@@ -1321,7 +1427,7 @@ export default function DriverApp({ mode = "private" }: { mode?: "private" | "sa
             <div className={isSaas ? "signed-in-as saas" : "signed-in-as"}>
               <span>Signed in as {signedInAs}</span>
               {isSaas ? <a href="/account" className="signout-link" data-testid="account-link">Account</a> : null}
-              <a href={logoutUrl} className="signout-link" data-testid="signout-link">Sign out</a>
+              <a href={logoutUrl} className="signout-link" data-testid="signout-link" onClick={() => void gpsCapture.current?.stop()}>Sign out</a>
             </div>
           ) : null}
           <ThemeToggle />
@@ -1727,6 +1833,14 @@ export default function DriverApp({ mode = "private" }: { mode?: "private" | "sa
                     {showBookingLink ? <BookingLink /> : null}
                   </div>
                 ) : null}
+                {!isSaas && signedInInstructorId && !pastLesson ? (
+                  <label className="lesson-gps-choice">
+                    <input type="checkbox" checked={gpsConsent} onChange={(event) => setGpsConsent(event.target.checked)} data-testid="lesson-gps-consent" />
+                    <span>Record GPS with the learner&rsquo;s agreement
+                      <small>Review the estimates before saving. Raw locations stay on this device and are cleared when you save, discard, or next open the app after a day.</small>
+                    </span>
+                  </label>
+                ) : null}
                 <button type="button" className="btn huge go" disabled={trialExpired} onClick={startLesson}>Start Lesson #{lessonNo}</button>
                 <p className="phase-note">Date and start time are taken from the clock. Competencies and signatures appear after you start.</p>
                 {pastLesson ? (
@@ -1859,6 +1973,7 @@ export default function DriverApp({ mode = "private" }: { mode?: "private" | "sa
                 <>
                   <button type="button" className="btn huge stop" onClick={endLesson}>End Lesson</button>
                   <p className="phase-note">Finish odometer unlocks after End Lesson.</p>
+                  {lessonGps ? <p className="phase-note" role="status" data-testid="lesson-gps-running">{lessonGps.endedAt ? "GPS recording has stopped. Review the saved points when you end the lesson." : gpsStatus?.id === lessonGps.id ? gpsStatus.text : "GPS was interrupted. Any saved points will be reviewed when you end the lesson."}</p> : null}
                 </>
               ) : null}
             </div>
@@ -1897,7 +2012,7 @@ export default function DriverApp({ mode = "private" }: { mode?: "private" | "sa
             {phase !== "ready" ? (
               <>
                 <div className="lblock" id="lesson-field-competency" data-testid="competency-block">
-                  <div className="card-head"><h3>Competencies</h3><small>Tap a number · official CBT&amp;A list</small></div>
+                  <div className="card-head"><h3>{phase === "ended" ? "CBT&A checklist" : "Competencies"}</h3><small>Tap a number · official CBT&amp;A list</small></div>
                   <CompetencyPicker
                     progress={detail.progress}
                     taughtIds={draft.taughtIds}
@@ -1918,9 +2033,39 @@ export default function DriverApp({ mode = "private" }: { mode?: "private" | "sa
                 ) : null}
 
                 <div className="lblock" data-testid="notes-block">
+                  {phase === "ended" && lessonGps ? (
+                    <div className="lesson-gps-review" role="status" data-testid="lesson-gps-review">
+                      {lessonGps.notes === undefined ? "Preparing GPS notes… You can save without them." : lessonGps.notes === null ? "No usable GPS route was captured. You can still finish the checklist." : (
+                        <>
+                          <p>{lessonGps.notes.line}</p>
+                          {lessonGps.needsReview ? (
+                            <>
+                              <small>GPS notes arrived after a signature. Clear the signatures before adding the notes.</small>
+                              <button type="button" className="btn ghost small" disabled={Boolean(draft.adiSignature || draft.learnerSignature)} onClick={() => setDraft((current) => current?.lessonGps?.id === lessonGps.id ? { ...current, lessonGps: { ...lessonGps, needsReview: false, commentsEdited: false } } : current)}>Add GPS notes to Comments</button>
+                            </>
+                          ) : (
+                            <small>{lessonGps.commentsEdited ? "Review your edited Comments before saving." : lessonCommentsWithGps(draft.comments, lessonGps) === draft.comments ? "Comments are full. You can copy the GPS notes you want to keep." : "Review or edit the GPS notes in Comments before saving."}</small>
+                          )}
+                          {lessonGps.notes.details.length ? (
+                            <details>
+                              <summary>Review detected junctions</summary>
+                              <ul>{lessonGps.notes.details.map((line, index) => <li key={index}>{line}</li>)}</ul>
+                            </details>
+                          ) : null}
+                          <small><a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">© OpenStreetMap contributors</a></small>
+                        </>
+                      )}
+                    </div>
+                  ) : null}
                   <div className="grid">
                     <label className="field full"><span>Location</span><input value={draft.location} onChange={(e) => setField("location", e.target.value)} placeholder="Belconnen, Gungahlin…" /></label>
-                    <label className="field full"><span>Comments</span><textarea rows={2} value={draft.comments} onChange={(e) => setField("comments", e.target.value)} /></label>
+                    <label className="field full"><span>Comments</span><textarea rows={2} value={lessonCommentsWithGps(draft.comments, lessonGps)} onChange={(event) => {
+                      const comments = event.target.value;
+                      setDraft((current) => current ? {
+                        ...current, comments,
+                        lessonGps: lessonGps?.notes ? { ...lessonGps, commentsEdited: true } : current.lessonGps,
+                      } : current);
+                    }} /></label>
                   </div>
                 </div>
 

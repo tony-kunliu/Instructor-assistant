@@ -80,6 +80,13 @@ restriction, which does not apply: this app sends no mail). Source:
 data.gov.au, "Geocoded National Address File (G-NAF)". The attribution is also
 shown in the app footer and in the data file's header.
 
+Lesson GPS uses a local ACT junction index from the Geofabrik ACT extract
+(2026-11-01), © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright),
+licensed under ODbL 1.0. The adapted index is provided at
+`public/openstreetmap/act-junctions-2026-11-01.json`. Regenerate it with
+`python scripts/build-act-junctions.py ACT_EXTRACT.osm.pbf YYYY-MM-DD` (requires osmium)
+and update the recap import to the new dated filename.
+
 ## Production Safety
 
 Production deploy always requires Tony's explicit, separate authorization —
