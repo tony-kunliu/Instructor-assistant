@@ -6,11 +6,18 @@ on:
       - experiments/ios-gps/**
       - .github/workflows/ios-gps-prototype.yml
 
+  pull_request:
+    branches: [staging]
+    paths:
+      - experiments/ios-gps/**
+      - .github/workflows/ios-gps-prototype.yml
+
 permissions:
   contents: read
 
 jobs:
   build:
+    if: github.event_name == 'push' || (github.head_ref == 'feature/ios-gps-prototype' && github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: macos-15
     timeout-minutes: 15
     defaults:
