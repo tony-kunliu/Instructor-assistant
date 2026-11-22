@@ -34,9 +34,10 @@ try {
   await page.route("**/api/today-lessons", (route) => {
     refreshes += 1;
     if (refreshes === 2) return route.fulfill({ status: 503, json: { state: "unavailable" } });
-    const lessons = refreshes === 1 ? events : [{ ...events[0], address: "Mitchell, ACT" }, events[1], overlap];
+    const recoveredLessons = [{ ...events[0], address: "Mitchell, ACT" }, events[1], overlap];
+    const lessons = refreshes === 1 ? events : refreshes === 5 ? [] : recoveredLessons;
     return route.fulfill({ json: {
-      state: "connected", date: "2026-11-22", lessons, incomplete: false, refreshedAt: new Date().toISOString(),
+      state: "connected", date: "2026-11-22", lessons, incomplete: refreshes === 4 || refreshes === 5, refreshedAt: new Date().toISOString(),
     } });
   });
   const refresh = page.getByRole("button", { name: "Refresh", exact: true });
@@ -62,6 +63,23 @@ try {
   assert.equal(await cards.last().getByRole("link", { name: "Route from previous lesson" }).count(), 0);
   assert.equal(await cards.last().getByRole("link", { name: "Directions", exact: true }).count(), 1);
 
+  const partial = page.getByRole("status").filter({ hasText: "Check Google Calendar for the full schedule." });
+  await refresh.click();
+  await partial.waitFor();
+  assert.equal(await cards.count(), 3);
+  assert.equal(await page.getByText(/min between bookings/).count(), 0);
+  assert.equal(await page.getByRole("link", { name: "Route from previous lesson" }).count(), 0);
+  await cards.last().getByText("10 min overlap", { exact: true }).waitFor();
+  assert.equal(await cards.nth(1).getByRole("link", { name: "Directions", exact: true }).count(), 1);
+
+  await refresh.click();
+  await partial.waitFor();
+  assert.equal(await cards.count(), 0);
+  assert.equal(await page.getByText("No driving lessons found in today’s calendar.", { exact: true }).count(), 0);
+
+  await refresh.click();
+  await cards.nth(1).getByText("20 min between bookings", { exact: true }).waitFor();
+  await partial.waitFor({ state: "hidden" });
   await cards.first().getByLabel("Learner progress").selectOption(learner.id);
   await cards.first().getByText(/0\/22 achieved/).waitFor();
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
@@ -70,7 +88,7 @@ try {
   await cards.first().getByRole("button", { name: "Open learner record" }).click();
   await page.locator(".summary-name").getByText("QA Today Learner", { exact: true }).waitFor();
   assert.deepEqual(errors, []);
-  console.log("Today’s lessons QA PASS at 375/820px (disconnected state, schedule, contacts, overlap routing, outage and retry, progress and open learner)");
+  console.log("Today’s lessons QA PASS at 375/820px (schedule, overlap, outage and retry, incomplete calendar, learner progress)");
   await context.close();
 } finally {
   await browser.close();

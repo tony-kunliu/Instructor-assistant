@@ -74,18 +74,19 @@ export default function TodayLessons({ learners, summaries, onOpenLearner }: Pro
       {schedule?.state === "unavailable" ? <p role="status">Google Calendar is unavailable. Try Refresh.</p> : null}
       {schedule?.state === "connected" ? (
         <>
-          {schedule.incomplete ? <p role="status">Some calendar events could not be included.</p> : null}
-          {!schedule.lessons.length ? <p>No driving lessons found in today’s calendar.</p> : null}
+          {schedule.incomplete ? <p role="status">Some calendar events could not be included. Check Google Calendar for the full schedule.</p> : null}
+          {!schedule.incomplete && !schedule.lessons.length ? <p>No driving lessons found in today’s calendar.</p> : null}
           <ol className="today-list">
             {schedule.lessons.map((lesson, index) => {
               const previous = previousLessonFor(schedule.lessons, index);
               const minutes = previous ? Math.floor((Date.parse(lesson.startsAt) - Date.parse(previous.endsAt)) / 60_000) : null;
+              const showGap = !schedule.incomplete && minutes !== null && minutes >= 0;
               const learner = learners.find(({ id }) => id === chosen[lesson.id]);
               return (
                 <li key={lesson.id} className="today-lesson" data-testid="today-lesson">
                   <p className="today-time">
                     {localNow(new Date(lesson.startsAt)).time}–{localNow(new Date(lesson.endsAt)).time}
-                    {minutes !== null ? <small className={minutes < 0 ? "warn" : undefined}>
+                    {minutes !== null && (minutes < 0 || showGap) ? <small className={minutes < 0 ? "warn" : undefined}>
                       {minutes < 0 ? `${Math.abs(minutes)} min overlap` : `${minutes} min between bookings`}
                     </small> : null}
                   </p>
@@ -93,7 +94,7 @@ export default function TodayLessons({ learners, summaries, onOpenLearner }: Pro
                   {lesson.address ? <p>{lesson.address}</p> : <p>Pickup address missing from booking.</p>}
                   <div className="today-links">
                     {lesson.address ? <a className="btn ghost small" href={directions(lesson.address)} target="_blank" rel="noreferrer">Directions</a> : null}
-                    {minutes !== null && minutes >= 0 && lesson.address && previous?.address && previous.address !== lesson.address
+                    {showGap && lesson.address && previous?.address && previous.address !== lesson.address
                       ? <a className="btn ghost small" href={directions(lesson.address, previous.address)} target="_blank" rel="noreferrer">Route from previous lesson</a> : null}
                     {lesson.phone ? <a className="btn ghost small" href={`tel:${lesson.phone}`}>Call {lesson.phone}</a> : null}
                     {lesson.email ? <a className="btn ghost small" href={`mailto:${encodeURIComponent(lesson.email).replace("%40", "@")}`}>Email {lesson.email}</a> : null}
