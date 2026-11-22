@@ -7,7 +7,7 @@ lives in git log and closed PRs, not here.
 
 **SaaS edition P1 (2026-10-28):** `Current Task:` Completed, merged to `staging` (PR #124, L3, reviewed). `Next Recommended Task:` P2 (plan Task 6): Tony makes a Zero Trust team + Access app (One-time PIN, Everyone, ~30-day session), picks the hostname; then the agent adds `[env.saas]`, creates the D1, migrates and deploys. `Waiting on Other Repo:` NONE. `Tony Manual Action Required:` P2 steps; fill the 9 bracketed placeholders in /terms and /privacy; decide the product name; ask Access Canberra about using the CBT&A list commercially. Release gate: the next Production release carries shared-file changes and needs Tony's go.
 
-**Learner licence intake (PR #131):** Local scan into New learner. Chromium cancel/retry passed at 375×740 and 820×1180. Local browser QA waits for D1 before seeding as the owner. Release still requires testing the camera picker and a real ACT card on iPhone.
+**Learner licence intake (PR #131):** Local scan into New learner. Unrecognised month words leave dates blank. Chromium cancel/retry passed at 375×740 and 820×1180. Release requires testing the camera picker and a real ACT card on iPhone.
 
 **Current Task:** P4 GPS phase 1, isolated default-OFF GPS recorder (`feature/gps-p4-recorder`) — **Merged to `staging` (PR #84, 62923cf), deployed to Staging** (L2 isolated: new `/gps` page + pure `lib/gps`; no D1, migration, API or lesson change; nothing uploaded). Delivered / not-done list: `docs/superpowers/specs/2026-10-13-gps-tracking-design.md` §8-§9. Reviewed per Handbook §2 L2 (PASS, 7 Minors fixed).
 

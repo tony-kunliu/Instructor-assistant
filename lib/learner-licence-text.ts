@@ -23,7 +23,7 @@ const cardHeader = /^(?:(?:act|australian capital territory)\s+)?(?:(?:learner|p
 const states = /\b(?:ACT|NSW|VIC|QLD|SA|WA|NT|TAS)\s?\d{4}\b/i;
 const streetNumber = /^(?:unit\s+|flat\s+|lot\s+)?\d{1,4}[a-z]?(?:[/-]\d{1,4}[a-z]?)?\s+(?=\p{L}|\d{1,2}(?:st|nd|rd|th)\b)/iu;
 const cardIdentifierLabel = /\b(?:can\b|(?:card|licen[cs]e|customer)\s*(?:no\.?|number|#))/i;
-const months = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+const months = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"];
 
 function readLabel(line: string) {
   for (const [key, re] of labels) {
@@ -37,8 +37,9 @@ function cardDate(text: string): string | undefined {
   const iso = /^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/.exec(text);
   const numeric = /^(\d{1,2})[./\s-]+(\d{1,2})[./\s-]+(\d{4})$/.exec(text);
   const named = /^(\d{1,2})[\s/-]*([a-z]{3,9})[\s/-]*(\d{4})$/i.exec(text);
+  const monthName = named?.[2].toLowerCase().replace(/^sept$/, "sep");
   const bits = iso ? [iso[1], iso[2], iso[3]] : numeric ? [numeric[3], numeric[2], numeric[1]] : named
-    ? [named[3], String(months.indexOf(named[2].slice(0, 3).toLowerCase()) + 1), named[1]] : null;
+    ? [named[3], String(months.findIndex((month) => month === monthName || month.slice(0, 3) === monthName) + 1), named[1]] : null;
   if (!bits) return;
   const [year, month, day] = bits.map(Number);
   if (year < 1900 || year > 2099) return;

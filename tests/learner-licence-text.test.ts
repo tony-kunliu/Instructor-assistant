@@ -54,6 +54,15 @@ test("scans fill only empty fields and preserve the assigned instructor and manu
   });
 });
 
+test("accepts printed month names without guessing corrupted OCR month words", () => {
+  for (const date of ["19 SEP 2007", "19Sept2007", "19 September 2007"]) {
+    assert.deepEqual(parseLearnerLicence(`DOB: ${date}\nExpiry: 28 November 2030`), {
+      dob: "2007-09-19", licenceExpiry: "2030-11-28",
+    });
+  }
+  assert.deepEqual(parseLearnerLicence("DOB: 19 Septernber 2007\nExpiry: 28Novemher2030"), {});
+});
+
 test("handles ACT specimen layout, compact dates and adjacent fields with a trailing card ID", () => {
   const shared = `DRIVER LICENCE
 AUSTRALIAN CAPITAL TERRITORY
