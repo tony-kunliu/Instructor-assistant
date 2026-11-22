@@ -20,8 +20,8 @@ For development-device installation, open the generated project in Xcode.
 Use automatic signing with the approved Apple development team and a unique
 bundle identifier, then run the scheme on the connected development iPhone.
 Follow [Apple's device setup instructions](https://developer.apple.com/documentation/xcode/running-your-app-on-simulated-or-physical-devices)
-for pairing and Developer Mode. GitHub Actions compiles without signing on
-pushes to the prototype branch.
+for pairing and Developer Mode. GitHub Actions runs the summary checks and
+compiles the exact prototype pull request head without signing.
 
 ## Test
 

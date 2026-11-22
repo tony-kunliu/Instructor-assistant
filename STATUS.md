@@ -7,7 +7,7 @@ closed PRs; see `TASK.md` for what is in progress.
 
 ## Current Snapshot
 
-- **iOS GPS self-test (#133):** Unsigned device compile passed. Draft tracks sample and callback timing. Signing and iPhone installation pending.
+- **iOS GPS self-test (#133):** Unsigned device build and synthetic summary checks. Signing and iPhone installation pending.
 
 - **SaaS edition (2026-10-21/28):** P0 in Production (#22): fail-closed `APP_MODE` (must stay in both vars sections). P1 on
   `staging` (PR #124, L3, reviewed): `migrations-saas/`, `lib/saas/*` gate

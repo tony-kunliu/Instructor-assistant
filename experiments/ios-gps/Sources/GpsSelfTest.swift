@@ -6,35 +6,6 @@ private enum TestPhase: String, Hashable {
     case anotherApp = "Switch apps"
 }
 
-private struct PhaseSummary: Encodable {
-    let activeMs: Int
-    let uncoveredMs: Int
-    let longestGapMs: Int
-    let fixesSampled: Int
-    let fixesDeliveredDuringPhase: Int
-}
-
-private struct SelfTestSummary: Encodable {
-    let activeMs: Int
-    let locked: PhaseSummary?
-    let anotherApp: PhaseSummary?
-
-    enum CodingKeys: String, CodingKey {
-        case activeMs, locked, anotherApp
-    }
-
-    func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(activeMs, forKey: .activeMs)
-        try container.encode(locked, forKey: .locked)
-        try container.encode(anotherApp, forKey: .anotherApp)
-    }
-}
-
-private func milliseconds(_ duration: TimeInterval) -> Int {
-    Int((max(0, duration) * 1_000).rounded())
-}
-
 private final class Recorder: NSObject, ObservableObject, CLLocationManagerDelegate {
     @Published private(set) var recording = false
     @Published private(set) var waitingForPermission = false
@@ -112,33 +83,12 @@ private final class Recorder: NSObject, ObservableObject, CLLocationManagerDeleg
         guard let start = startedAt, recording else { return }
         let end = Date()
         stopUpdates()
-        let dates = firstDeliveryByFixTime.keys.filter { $0 <= end }.sorted()
-        let edges = [start] + dates + [end]
-        let gaps = zip(edges, edges.dropFirst()).compactMap { pair -> DateInterval? in
-            let (from, to) = pair
-            guard to.timeIntervalSince(from) > 15 else { return nil }
-            return DateInterval(start: from, end: to)
-        }
-        func summarize(_ phase: TestPhase) -> PhaseSummary? {
-            guard let window = windows[phase] else { return nil }
-            let overlaps = gaps.compactMap { $0.intersection(with: window)?.duration }
-            let sampledInPhase = dates.filter { $0 >= window.start && $0 < window.end }
-            let deliveredInPhase = sampledInPhase.filter { fixTime in
-                guard let delivery = firstDeliveryByFixTime[fixTime] else { return false }
-                return delivery >= window.start && delivery < window.end
-            }.count
-            return PhaseSummary(
-                activeMs: milliseconds(window.duration),
-                uncoveredMs: milliseconds(overlaps.reduce(0, +)),
-                longestGapMs: milliseconds(overlaps.max() ?? 0),
-                fixesSampled: sampledInPhase.count,
-                fixesDeliveredDuringPhase: deliveredInPhase
-            )
-        }
-        let result = SelfTestSummary(
-            activeMs: milliseconds(end.timeIntervalSince(start)),
-            locked: summarize(.locked),
-            anotherApp: summarize(.anotherApp)
+        let result = summarizeGpsSelfTest(
+            start: start,
+            end: end,
+            locked: windows[.locked],
+            anotherApp: windows[.anotherApp],
+            firstDeliveryByFixTime: firstDeliveryByFixTime
         )
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]

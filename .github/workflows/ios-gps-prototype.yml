@@ -1,11 +1,5 @@
 name: iOS GPS Prototype
 on:
-  push:
-    branches: [feature/ios-gps-prototype]
-    paths:
-      - experiments/ios-gps/**
-      - .github/workflows/ios-gps-prototype.yml
-
   pull_request:
     branches: [staging]
     paths:
@@ -17,7 +11,7 @@ permissions:
 
 jobs:
   build:
-    if: github.event_name == 'push' || (github.head_ref == 'feature/ios-gps-prototype' && github.event.pull_request.head.repo.full_name == github.repository)
+    if: github.head_ref == 'feature/ios-gps-prototype' && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: macos-15
     timeout-minutes: 15
     defaults:
@@ -25,6 +19,14 @@ jobs:
         working-directory: experiments/ios-gps
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Verify the GPS summary with synthetic timestamps
+        run: |
+          checks="$(mktemp -d)"
+          trap 'rm -rf "$checks"' EXIT
+          swiftc Sources/GpsSelfTestSummary.swift Tests/GpsSelfTestSummaryChecks.swift -o "$checks/gps-summary-checks"
+          "$checks/gps-summary-checks"
       - name: Generate the Xcode project
         run: |
           brew install xcodegen
