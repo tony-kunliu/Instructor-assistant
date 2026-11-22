@@ -19,7 +19,8 @@ xcodebuild -project GpsSelfTest.xcodeproj -scheme GpsSelfTest \
 For development-device installation, open the generated project in Xcode,
 select the approved Apple development team and a bundle identifier registered
 to that team, and run the scheme on a registered iPhone. GitHub Actions
-compiles without signing. Treat its result as a compile check.
+compiles without signing on pushes to the prototype branch. Use that result
+as a compile check before device signing.
 
 ## Test
 
