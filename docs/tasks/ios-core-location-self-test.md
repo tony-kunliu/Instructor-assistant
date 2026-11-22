@@ -23,6 +23,18 @@ Use a personal outing with no learner or lesson. Use the phone controls only whi
 
 Report coverage and longest sampling gap separately for the locked and other-app phases. Use fix timestamps, count gaps over 15 seconds, exclude explicit pauses, and classify coverage with the existing web diagnostic definitions in `lib/gps/analysis.ts`. Report interrupted or unmarked phases as inconclusive. As a comparison with the existing web diagnostic, aim for at least 95% coverage and no gap over 30 seconds in **each** background phase. This is a prototype test target. Any production decision still needs the checks listed on PR #130, including exact-build QA of the lesson flow.
 
+## Evaluate the aggregate result
+
+`evaluateNativeSelfTest` in `lib/gps/native-acceptance.ts` applies the web diagnostic thresholds separately to the two marked background windows. Its input carries the overall active duration (`activeMs`) and a `locked` and `anotherApp` window, each with `activeMs`, `uncoveredMs` and `longestGapMs` in milliseconds. Pass `null` for an unmarked or interrupted window. Compute aggregate gaps from fix times before passing the summary. The evaluator needs no coordinates or fix timestamps. To evaluate an exported aggregate file from the repository root with Node 22.13 or later:
+
+```sh
+node --experimental-strip-types --input-type=module -e '
+  import { readFileSync } from "node:fs";
+  import { evaluateNativeSelfTest } from "./lib/gps/native-acceptance.ts";
+  console.log(JSON.stringify(evaluateNativeSelfTest(JSON.parse(readFileSync(0, "utf8"))), null, 2));
+' < summary.json
+```
+
 ## Handoff
 
 - Current task: Partial. Test protocol recorded. Native compile, signing, installation and field evidence are still open. The current Linux runtime lacks Xcode and an iOS device.
