@@ -7,7 +7,7 @@ closed PRs; see `TASK.md` for what is in progress.
 
 ## Current Snapshot
 
-- **Licence photo intake** on `feature/learner-licence-photo`.
+- **Licence photo #131:** Chromium cancel/retry passed.
 
 - **SaaS edition (2026-10-21/28):** P0 in Production (#22): fail-closed `APP_MODE` (must stay in both vars sections). P1 on
   `staging` (PR #124, L3, reviewed): `migrations-saas/`, `lib/saas/*` gate

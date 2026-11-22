@@ -59,6 +59,7 @@ try {
   const capture = page.getByTestId("licence-photo");
   assert.equal(await capture.getAttribute("capture"), "environment");
   const photo = { name: "fabricated-test-licence.png", mimeType: "image/png", buffer: Buffer.from(image, "base64") };
+  const name = page.getByTestId("learner-name");
   const modelPath = "**/licence-ocr-v7/eng.traineddata.gz";
   let releaseModel;
   const modelCanFail = new Promise((resolve) => { releaseModel = resolve; });
@@ -85,11 +86,35 @@ try {
   assert.equal(await page.getByTestId("save-learner").isEnabled(), true);
   assert.equal(await page.getByTestId("save-learner-draft").isEnabled(), true);
   await page.evaluate(() => window.releaseLicenceDecode());
+
+  // Cancel at the recognition boundary after the real OCR worker has initialized.
+  // Hold this one message so even a fast machine can't finish before Cancel is clicked.
+  await page.evaluate(() => {
+    const postMessage = Worker.prototype.postMessage;
+    Worker.prototype.postMessage = function (message, ...args) {
+      if (message.action === "recognize") {
+        Worker.prototype.postMessage = postMessage;
+        window.licenceRecognitionReached = true;
+        return;
+      }
+      return postMessage.call(this, message, ...args);
+    };
+  });
+  await capture.setInputFiles(photo);
+  await page.waitForFunction(() => window.licenceRecognitionReached === true);
+  assert.equal(await page.evaluate(() => window.ocrWorkers), 1);
+  await page.getByRole("button", { name: "Cancel scan", exact: true }).click();
+  await page.getByText(/Scan cancelled/).waitFor();
+  await page.waitForFunction(() => window.ocrWorkers === 0);
+  assert.equal(await name.inputValue(), "");
+  assert.equal(await page.getByLabel("Licence number").inputValue(), "");
+  assert.equal(await page.getByTestId("save-learner").isEnabled(), true);
+  assert.equal(await page.getByTestId("save-learner-draft").isEnabled(), true);
+
   await capture.setInputFiles(photo);
   const start = Date.now();
   await page.getByTestId("licence-scan-status").getByText(/Check the fields against the card/).waitFor({ timeout: 35_000 });
   timed.push(`synthetic photo ${((Date.now() - start) / 1000).toFixed(1)}s`);
-  const name = page.getByTestId("learner-name");
   assert.equal(await name.inputValue(), "Jamie Example");
   assert.equal(await page.evaluate(() => window.ocrWorkers), 0);
   assert.equal(await page.getByLabel("Licence number").inputValue(), "01234567");
@@ -127,7 +152,7 @@ try {
   assert.equal(await page.getByLabel("Licence number").inputValue(), "55554444");
   assert.equal(requests.filter((request) => request.method === "POST").length, 1);
   assert.deepEqual(errors, []);
-  console.log(`Learner photo scan QA PASS at ${width}px (${timed.join(", ")}; failed worker cleanup and retry, edited save, no image upload, text fallback)`);
+  console.log(`Learner photo scan QA PASS at ${width}px (${timed.join(", ")}; worker cleanup after failure and cancellation, retry, edited save, no image upload, text fallback)`);
   await context.close();
 } finally {
   await browser.close();
