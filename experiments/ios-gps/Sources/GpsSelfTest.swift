@@ -10,6 +10,8 @@ private struct PhaseSummary: Encodable {
     let activeMs: Int
     let uncoveredMs: Int
     let longestGapMs: Int
+    let fixesSampled: Int
+    let fixesDeliveredDuringPhase: Int
 }
 
 private struct SelfTestSummary: Encodable {
@@ -45,7 +47,7 @@ private final class Recorder: NSObject, ObservableObject, CLLocationManagerDeleg
     private var backgroundStart: Date?
     private var windows: [TestPhase: DateInterval] = [:]
     private var startedAt: Date?
-    private var fixTimes: Set<Date> = []
+    private var firstDeliveryByFixTime: [Date: Date] = [:]
 
     override init() {
         super.init()
@@ -76,7 +78,7 @@ private final class Recorder: NSObject, ObservableObject, CLLocationManagerDeleg
         armedPhase = nil
         backgroundStart = nil
         windows.removeAll()
-        fixTimes.removeAll()
+        firstDeliveryByFixTime.removeAll()
         fixCount = 0
         recording = true
         status = "Recording"
@@ -110,7 +112,7 @@ private final class Recorder: NSObject, ObservableObject, CLLocationManagerDeleg
         guard let start = startedAt, recording else { return }
         let end = Date()
         stopUpdates()
-        let dates = fixTimes.filter { $0 <= end }.sorted()
+        let dates = firstDeliveryByFixTime.keys.filter { $0 <= end }.sorted()
         let edges = [start] + dates + [end]
         let gaps = zip(edges, edges.dropFirst()).compactMap { pair -> DateInterval? in
             let (from, to) = pair
@@ -120,10 +122,17 @@ private final class Recorder: NSObject, ObservableObject, CLLocationManagerDeleg
         func summarize(_ phase: TestPhase) -> PhaseSummary? {
             guard let window = windows[phase] else { return nil }
             let overlaps = gaps.compactMap { $0.intersection(with: window)?.duration }
+            let sampledInPhase = dates.filter { $0 >= window.start && $0 < window.end }
+            let deliveredInPhase = sampledInPhase.filter { fixTime in
+                guard let delivery = firstDeliveryByFixTime[fixTime] else { return false }
+                return delivery >= window.start && delivery < window.end
+            }.count
             return PhaseSummary(
                 activeMs: milliseconds(window.duration),
                 uncoveredMs: milliseconds(overlaps.reduce(0, +)),
-                longestGapMs: milliseconds(overlaps.max() ?? 0)
+                longestGapMs: milliseconds(overlaps.max() ?? 0),
+                fixesSampled: sampledInPhase.count,
+                fixesDeliveredDuringPhase: deliveredInPhase
             )
         }
         let result = SelfTestSummary(
@@ -140,7 +149,7 @@ private final class Recorder: NSObject, ObservableObject, CLLocationManagerDeleg
         } catch {
             status = "The summary could not be created."
         }
-        fixTimes.removeAll()
+        firstDeliveryByFixTime.removeAll()
     }
 
     private func stopUpdates() {
@@ -159,7 +168,7 @@ private final class Recorder: NSObject, ObservableObject, CLLocationManagerDeleg
             }
         case .denied, .restricted:
             stopUpdates()
-            fixTimes.removeAll()
+            firstDeliveryByFixTime.removeAll()
             status = "Location access is off. Allow location in Settings and try again."
         default:
             break
@@ -171,9 +180,11 @@ private final class Recorder: NSObject, ObservableObject, CLLocationManagerDeleg
         let receivedAt = Date()
         for location in locations where location.horizontalAccuracy >= 0 &&
             location.timestamp >= start && location.timestamp <= receivedAt {
-            fixTimes.insert(location.timestamp)
+            if firstDeliveryByFixTime[location.timestamp] == nil {
+                firstDeliveryByFixTime[location.timestamp] = receivedAt
+            }
         }
-        fixCount = fixTimes.count
+        fixCount = firstDeliveryByFixTime.count
     }
 
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {

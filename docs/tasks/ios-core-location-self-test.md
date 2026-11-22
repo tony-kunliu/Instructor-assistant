@@ -37,7 +37,7 @@ node --experimental-strip-types --input-type=module -e '
 
 ## Handoff
 
-- Current task: Partial. Test protocol recorded. Native compile, signing, installation and field evidence are still open. The current Linux runtime lacks Xcode and an iOS device.
-- Next: build the isolated prototype on an authorized macOS/Xcode environment and complete the pre-handoff checks above. Request the single personal drive only once the signed build can be installed.
+- Current task: Partial. Xcode compiled the unsigned arm64 app on GitHub Actions at `ba3b855`. The prototype reports sample and callback delivery counts per marked phase. Signing, installation and field evidence are still open.
+- Next: use an approved Apple development team and a Mac with Xcode to sign and install on a development iPhone. Complete the pre-handoff checks before requesting the single personal drive.
 - Waiting on other repo: None.
-- Tony action: None for this step.
+- Tony action: confirm the signing route if no approved development Mac is available.
