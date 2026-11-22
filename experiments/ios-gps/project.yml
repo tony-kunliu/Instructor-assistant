@@ -1,0 +1,30 @@
+name: GpsSelfTest
+options:
+  deploymentTarget:
+    iOS: "17.0"
+targets:
+  GpsSelfTest:
+    type: application
+    platform: iOS
+    sources: [Sources]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.actgds.gps-self-test
+        SWIFT_VERSION: "5.0"
+        TARGETED_DEVICE_FAMILY: "1"
+        CURRENT_PROJECT_VERSION: "1"
+        MARKETING_VERSION: "0.1"
+    info:
+      path: Generated/Info.plist
+      properties:
+        CFBundleDisplayName: GPS Self-Test
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        NSLocationWhenInUseUsageDescription: Record GPS timing during this self-test, including when you lock the screen or switch apps.
+        UIBackgroundModes: [location]
+        UILaunchScreen: {}
+schemes:
+  GpsSelfTest:
+    build:
+      targets:
+        GpsSelfTest: all

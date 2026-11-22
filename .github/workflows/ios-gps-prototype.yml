@@ -1,0 +1,26 @@
+name: iOS GPS Prototype
+on:
+  push:
+    branches: [feature/ios-gps-prototype]
+    paths:
+      - experiments/ios-gps/**
+      - .github/workflows/ios-gps-prototype.yml
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: experiments/ios-gps
+    steps:
+      - uses: actions/checkout@v4
+      - name: Generate the Xcode project
+        run: |
+          brew install xcodegen
+          xcodegen generate
+      - name: Compile the iPhone app without signing
+        run: xcodebuild -project GpsSelfTest.xcodeproj -scheme GpsSelfTest -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build
