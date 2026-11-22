@@ -2,10 +2,14 @@ import { canberraDay, lessonFromGoogle, type CalendarLesson, type GoogleCalendar
 
 export type CalendarConnection = { clientId: string; clientSecret: string; refreshToken: string; calendarId: string };
 
+const CALENDAR_REFRESH_TIMEOUT_MS = 7_000;
+
 export async function readGoogleLessons(connection: CalendarConnection, now: Date, request = fetch) {
   const { date, from, until } = canberraDay(now);
+  // The refresh has one deadline, including token exchange and pagination.
+  const signal = AbortSignal.timeout(CALENDAR_REFRESH_TIMEOUT_MS);
   const token = await request("https://oauth2.googleapis.com/token", {
-    method: "POST", cache: "no-store", signal: AbortSignal.timeout(7000),
+    method: "POST", cache: "no-store", signal,
     body: new URLSearchParams({
       grant_type: "refresh_token", client_id: connection.clientId,
       client_secret: connection.clientSecret, refresh_token: connection.refreshToken,
@@ -25,7 +29,7 @@ export async function readGoogleLessons(connection: CalendarConnection, now: Dat
   do {
     if (pageToken) query.set("pageToken", pageToken);
     const response = await request(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(connection.calendarId)}/events?${query}`, {
-      headers: { authorization: `Bearer ${auth.access_token}` }, cache: "no-store", signal: AbortSignal.timeout(7000),
+      headers: { authorization: `Bearer ${auth.access_token}` }, cache: "no-store", signal,
     });
     if (!response.ok) throw new Error("Calendar unavailable");
     const { items, nextPageToken } = await response.json() as { items?: GoogleCalendarEvent[]; nextPageToken?: string };
