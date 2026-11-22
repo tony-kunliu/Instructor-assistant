@@ -16,12 +16,10 @@ xcodebuild -project GpsSelfTest.xcodeproj -scheme GpsSelfTest \
   -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build
 ```
 
-For development-device installation, open the generated project in Xcode.
-Use automatic signing with the approved Apple development team and a unique
-bundle identifier, then run the scheme on the connected development iPhone.
-Follow [Apple's device setup instructions](https://developer.apple.com/documentation/xcode/running-your-app-on-simulated-or-physical-devices)
-for pairing and Developer Mode. GitHub Actions runs the summary checks and
-compiles the exact prototype pull request head without signing.
+For development-device installation, download the `ios-gps-xcode-project-…`
+artifact from the successful GitHub Actions run or open the locally generated
+project. GitHub Actions builds the standalone project before uploading it,
+without signing. Follow [device setup](DEVICE-SETUP.md) to sign and run it.
 
 ## Test
 

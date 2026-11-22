@@ -7,7 +7,7 @@ lives in git log and closed PRs, not here.
 
 **SaaS edition P1 (2026-10-28):** `Current Task:` Completed, merged to `staging` (PR #124, L3, reviewed). `Next Recommended Task:` P2 (plan Task 6): Tony makes a Zero Trust team + Access app (One-time PIN, Everyone, ~30-day session), picks the hostname; then the agent adds `[env.saas]`, creates the D1, migrates and deploys. `Waiting on Other Repo:` NONE. `Tony Manual Action Required:` P2 steps; fill the 9 bracketed placeholders in /terms and /privacy; decide the product name; ask Access Canberra about using the CBT&A list commercially. Release gate: the next Production release carries shared-file changes and needs Tony's go.
 
-**iOS GPS self-test (#133):** Partial. The draft runs native summary checks with synthetic timestamps before an unsigned build. Next: sign and verify iPhone install using an approved development Mac. Waiting on other repo: NONE. Signing route confirmation requested.
+**iOS GPS self-test (#133):** Partial. CI builds and packages the standalone Xcode project. Next: open the artifact on the development Mac, sign and verify iPhone installation. Waiting on other repo: NONE. Tony action: local Apple signing and device pairing.
 
 **Current Task:** P4 GPS phase 1, isolated default-OFF GPS recorder (`feature/gps-p4-recorder`) — **Merged to `staging` (PR #84, 62923cf), deployed to Staging** (L2 isolated: new `/gps` page + pure `lib/gps`; no D1, migration, API or lesson change; nothing uploaded). Delivered / not-done list: `docs/superpowers/specs/2026-10-13-gps-tracking-design.md` §8-§9. Reviewed per Handbook §2 L2 (PASS, 7 Minors fixed).
 

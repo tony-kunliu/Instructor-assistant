@@ -31,5 +31,22 @@ jobs:
         run: |
           brew install xcodegen
           xcodegen generate
-      - name: Compile the iPhone app without signing
-        run: xcodebuild -project GpsSelfTest.xcodeproj -scheme GpsSelfTest -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build
+      - name: Prepare the standalone Xcode project
+        run: |
+          project="$RUNNER_TEMP/GpsSelfTest"
+          mkdir -p "$project"
+          cp -R GpsSelfTest.xcodeproj Generated Sources "$project/"
+          cp DEVICE-SETUP.md "$project/"
+          git rev-parse HEAD > "$project/SOURCE-COMMIT.txt"
+      - name: Compile the packaged iPhone project without signing
+        run: |
+          xcodebuild -project "$RUNNER_TEMP/GpsSelfTest/GpsSelfTest.xcodeproj" \
+            -scheme GpsSelfTest -destination 'generic/platform=iOS' \
+            -derivedDataPath "$RUNNER_TEMP/gps-derived-data" CODE_SIGNING_ALLOWED=NO build
+      - name: Upload the verified Xcode project
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-gps-xcode-project-${{ github.event.pull_request.head.sha }}
+          path: ${{ runner.temp }}/GpsSelfTest/
+          if-no-files-found: error
+          retention-days: 14
