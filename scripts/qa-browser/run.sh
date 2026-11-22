@@ -9,8 +9,8 @@
 # is replaced by a stub that trusts x-instructor-* request headers so the
 # browser can act as Tony or Anna — the real Cloudflare Access check is NOT
 # exercised here (that stays a minimal real-login smoke test on Staging).
-# Needs Playwright (global npm install) with Chromium under
-# $PLAYWRIGHT_BROWSERS_PATH (default /opt/pw-browsers).
+# Uses Playwright from the global npm root by default. Set NPM_GLOBAL to a
+# different node_modules directory, or QA_CHROMIUM to a specific browser binary.
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 PORT="${QA_PORT:-3100}"
@@ -53,7 +53,7 @@ if ! curl -sf "http://localhost:$PORT/api/qa-ready" >/dev/null; then
   echo "Local D1 did not become ready" >&2
   exit 1
 fi
-export QA_BASE="http://localhost:$PORT" QA_OUT="${QA_OUT:-$WORK/shots}" NPM_GLOBAL="$(npm root -g)"
+export QA_BASE="http://localhost:$PORT" QA_OUT="${QA_OUT:-$WORK/shots}" NPM_GLOBAL="${NPM_GLOBAL:-$(npm root -g)}"
 mkdir -p "$QA_OUT"
 node "$ROOT/scripts/qa-browser/seed.mjs"
 node "$ROOT/scripts/qa-browser/qa.mjs"
