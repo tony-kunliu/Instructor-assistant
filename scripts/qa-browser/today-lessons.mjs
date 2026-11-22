@@ -26,11 +26,15 @@ try {
     id: "qa-2", title: "Driving lesson", name: "QA Other Booking", address: "Belconnen, ACT",
     phone: null, email: null, startsAt: "2026-11-22T10:20:00+11:00", endsAt: "2026-11-22T11:20:00+11:00",
   }];
+  const overlap = {
+    id: "qa-3", title: "Driving lesson", name: "QA Overlapping Booking", address: "Gungahlin, ACT",
+    phone: null, email: null, startsAt: "2026-11-22T11:10:00+11:00", endsAt: "2026-11-22T12:10:00+11:00",
+  };
   let refreshes = 0;
   await page.route("**/api/today-lessons", (route) => {
     refreshes += 1;
     if (refreshes === 2) return route.fulfill({ status: 503, json: { state: "unavailable" } });
-    const lessons = refreshes === 1 ? events : [{ ...events[0], address: "Mitchell, ACT" }, events[1]];
+    const lessons = refreshes === 1 ? events : [{ ...events[0], address: "Mitchell, ACT" }, events[1], overlap];
     return route.fulfill({ json: {
       state: "connected", date: "2026-11-22", lessons, incomplete: false, refreshedAt: new Date().toISOString(),
     } });
@@ -53,7 +57,10 @@ try {
   await refresh.click();
   await cards.first().getByText("Mitchell, ACT", { exact: true }).waitFor();
   await outage.waitFor({ state: "hidden" });
-  assert.equal(await cards.count(), 2);
+  assert.equal(await cards.count(), 3);
+  await cards.last().getByText("10 min overlap", { exact: true }).waitFor();
+  assert.equal(await cards.last().getByRole("link", { name: "Route from previous lesson" }).count(), 0);
+  assert.equal(await cards.last().getByRole("link", { name: "Directions", exact: true }).count(), 1);
 
   await cards.first().getByLabel("Learner progress").selectOption(learner.id);
   await cards.first().getByText(/0\/22 achieved/).waitFor();
@@ -63,7 +70,7 @@ try {
   await cards.first().getByRole("button", { name: "Open learner record" }).click();
   await page.locator(".summary-name").getByText("QA Today Learner", { exact: true }).waitFor();
   assert.deepEqual(errors, []);
-  console.log("Today’s lessons QA PASS at 375/820px (disconnected state, schedule, contacts, outage and retry, progress and open learner)");
+  console.log("Today’s lessons QA PASS at 375/820px (disconnected state, schedule, contacts, overlap routing, outage and retry, progress and open learner)");
   await context.close();
 } finally {
   await browser.close();

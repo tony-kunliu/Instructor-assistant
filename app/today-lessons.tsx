@@ -93,7 +93,7 @@ export default function TodayLessons({ learners, summaries, onOpenLearner }: Pro
                   {lesson.address ? <p>{lesson.address}</p> : <p>Pickup address missing from booking.</p>}
                   <div className="today-links">
                     {lesson.address ? <a className="btn ghost small" href={directions(lesson.address)} target="_blank" rel="noreferrer">Directions</a> : null}
-                    {lesson.address && previous?.address && previous.address !== lesson.address
+                    {minutes !== null && minutes >= 0 && lesson.address && previous?.address && previous.address !== lesson.address
                       ? <a className="btn ghost small" href={directions(lesson.address, previous.address)} target="_blank" rel="noreferrer">Route from previous lesson</a> : null}
                     {lesson.phone ? <a className="btn ghost small" href={`tel:${lesson.phone}`}>Call {lesson.phone}</a> : null}
                     {lesson.email ? <a className="btn ghost small" href={`mailto:${encodeURIComponent(lesson.email).replace("%40", "@")}`}>Email {lesson.email}</a> : null}
