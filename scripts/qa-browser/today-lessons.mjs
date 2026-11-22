@@ -26,10 +26,17 @@ try {
     id: "qa-2", title: "Driving lesson", name: "QA Other Booking", address: "Belconnen, ACT",
     phone: null, email: null, startsAt: "2026-11-22T10:20:00+11:00", endsAt: "2026-11-22T11:20:00+11:00",
   }];
-  await page.route("**/api/today-lessons", (route) => route.fulfill({ json: {
-    state: "connected", date: "2026-11-22", lessons: events, incomplete: false, refreshedAt: new Date().toISOString(),
-  } }));
-  await page.getByRole("button", { name: "Refresh", exact: true }).click();
+  let refreshes = 0;
+  await page.route("**/api/today-lessons", (route) => {
+    refreshes += 1;
+    if (refreshes === 2) return route.fulfill({ status: 503, json: { state: "unavailable" } });
+    const lessons = refreshes === 1 ? events : [{ ...events[0], address: "Mitchell, ACT" }, events[1]];
+    return route.fulfill({ json: {
+      state: "connected", date: "2026-11-22", lessons, incomplete: false, refreshedAt: new Date().toISOString(),
+    } });
+  });
+  const refresh = page.getByRole("button", { name: "Refresh", exact: true });
+  await refresh.click();
   const cards = page.getByTestId("today-lesson");
   await cards.last().getByText("20 min between bookings", { exact: true }).waitFor();
   assert.equal(await cards.count(), 2);
@@ -38,6 +45,16 @@ try {
   assert.equal(await cards.first().getByRole("link", { name: /Directions/ }).count(), 1);
   assert.equal(await cards.first().getByRole("link", { name: /Email/ }).getAttribute("href"), "mailto:learner@example.test");
   assert.equal(await page.getByRole("link", { name: "Public toilet map" }).getAttribute("href"), "https://toiletmap.gov.au/");
+
+  await refresh.click();
+  const outage = page.getByText("Google Calendar is unavailable. Try Refresh.", { exact: true });
+  await outage.waitFor();
+  assert.equal(await cards.count(), 0);
+  await refresh.click();
+  await cards.first().getByText("Mitchell, ACT", { exact: true }).waitFor();
+  await outage.waitFor({ state: "hidden" });
+  assert.equal(await cards.count(), 2);
+
   await cards.first().getByLabel("Learner progress").selectOption(learner.id);
   await cards.first().getByText(/0\/22 achieved/).waitFor();
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
@@ -46,7 +63,7 @@ try {
   await cards.first().getByRole("button", { name: "Open learner record" }).click();
   await page.locator(".summary-name").getByText("QA Today Learner", { exact: true }).waitFor();
   assert.deepEqual(errors, []);
-  console.log("Today’s lessons QA PASS at 375/820px (disconnected state, schedule, contacts, map links, gap, progress and open learner)");
+  console.log("Today’s lessons QA PASS at 375/820px (disconnected state, schedule, contacts, outage and retry, progress and open learner)");
   await context.close();
 } finally {
   await browser.close();
