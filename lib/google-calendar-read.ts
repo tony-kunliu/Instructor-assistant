@@ -3,6 +3,7 @@ import { canberraDay, lessonFromGoogle, type CalendarLesson, type GoogleCalendar
 export type CalendarConnection = { clientId: string; clientSecret: string; refreshToken: string; calendarId: string };
 
 const CALENDAR_REFRESH_TIMEOUT_MS = 7_000;
+const CALENDAR_PAGE_LIMIT = 5;
 
 export async function readGoogleLessons(connection: CalendarConnection, now: Date, request = fetch) {
   const { date, from, until } = canberraDay(now);
@@ -24,10 +25,14 @@ export async function readGoogleLessons(connection: CalendarConnection, now: Dat
     fields: "nextPageToken,items(id,summary,status,eventType,start,end,description,location,organizer(email),attendees(email,displayName,organizer,self,resource,responseStatus))",
   });
   const lessons = new Map<string, CalendarLesson>();
+  const requestedPageTokens = new Set<string>();
   let pages = 0;
   let pageToken: string | undefined;
   do {
-    if (pageToken) query.set("pageToken", pageToken);
+    if (pageToken) {
+      requestedPageTokens.add(pageToken);
+      query.set("pageToken", pageToken);
+    }
     const response = await request(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(connection.calendarId)}/events?${query}`, {
       headers: { authorization: `Bearer ${auth.access_token}` }, cache: "no-store", signal,
     });
@@ -39,7 +44,7 @@ export async function readGoogleLessons(connection: CalendarConnection, now: Dat
     }
     pageToken = nextPageToken;
     pages++;
-  } while (pageToken && pages < 5);
+  } while (pageToken && pages < CALENDAR_PAGE_LIMIT && !requestedPageTokens.has(pageToken));
   return {
     date, lessons: [...lessons.values()].sort((a, b) => Date.parse(a.startsAt) - Date.parse(b.startsAt)),
     incomplete: Boolean(pageToken), refreshedAt: now.toISOString(),

@@ -2,6 +2,16 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { workCalendarForInstructor } from "../lib/google-calendar-read.ts";
 
+const env = {
+  DB: {},
+  GOOGLE_LESSONS_INSTRUCTOR_ID: "qa-owner",
+  GOOGLE_LESSONS_CALENDAR_ID: "qa-calendar",
+  GOOGLE_LESSONS_CLIENT_ID: "qa-id",
+  GOOGLE_LESSONS_CLIENT_SECRET: "qa-secret",
+  GOOGLE_LESSONS_REFRESH_TOKEN: "qa-refresh",
+};
+const now = new Date("2026-11-22T00:00:00Z");
+
 test("a calendar refresh shares one deadline across OAuth and every events page", async () => {
   const signals: AbortSignal[] = [];
   const request: typeof fetch = async (_input, init) => {
@@ -11,18 +21,52 @@ test("a calendar refresh shares one deadline across OAuth and every events page"
     if (signals.length === 2) return Response.json({ items: [], nextPageToken: "second-page" });
     throw new DOMException("The operation timed out.", "TimeoutError");
   };
-  const env = {
-    DB: {},
-    GOOGLE_LESSONS_INSTRUCTOR_ID: "qa-owner",
-    GOOGLE_LESSONS_CALENDAR_ID: "qa-calendar",
-    GOOGLE_LESSONS_CLIENT_ID: "qa-id",
-    GOOGLE_LESSONS_CLIENT_SECRET: "qa-secret",
-    GOOGLE_LESSONS_REFRESH_TOKEN: "qa-refresh",
-  };
-
-  const result = await workCalendarForInstructor("private", "qa-owner", env, new Date("2026-11-22T00:00:00Z"), request);
+  const result = await workCalendarForInstructor("private", "qa-owner", env, now, request);
 
   assert.equal(signals.length, 3);
   assert.ok(signals.every((signal) => signal === signals[0]));
   assert.deepEqual(result, { state: "unavailable" });
 });
+
+test("a repeated Calendar page token preserves known lessons and marks the list incomplete", async () => {
+  const requested: Array<string | null> = [];
+  const request: typeof fetch = async (input) => {
+    const url = new URL(String(input));
+    if (url.hostname === "oauth2.googleapis.com") return Response.json({ access_token: "test-token" });
+    const token = url.searchParams.get("pageToken");
+    requested.push(token);
+    if (requested.length > 3) throw new Error("Repeated Calendar request");
+    return Response.json({
+      nextPageToken: token === "first" ? "second" : "first",
+      items: [{
+        id: token ?? "initial",
+        summary: "Driving lesson",
+        start: { dateTime: "2026-11-22T09:00:00+11:00" },
+        end: { dateTime: "2026-11-22T10:00:00+11:00" },
+      }],
+    });
+  };
+
+  const result = await workCalendarForInstructor("private", "qa-owner", env, now, request);
+  assert.deepEqual(requested, [null, "first", "second"]);
+  assert.equal(result.state, "connected");
+  assert.equal(result.incomplete, true);
+  assert.deepEqual(result.lessons.map(({ id }) => id), ["initial", "first", "second"]);
+});
+
+for (const hasMore of [false, true]) {
+  test(`the fifth Calendar page is ${hasMore ? "incomplete when a sixth exists" : "complete when no more pages exist"}`, async () => {
+    let pages = 0;
+    const request: typeof fetch = async (input) => {
+      const url = new URL(String(input));
+      if (url.hostname === "oauth2.googleapis.com") return Response.json({ access_token: "test-token" });
+      pages++;
+      return Response.json({ items: [], nextPageToken: pages < 5 || hasMore ? `page-${pages + 1}` : undefined });
+    };
+
+    const result = await workCalendarForInstructor("private", "qa-owner", env, now, request);
+    assert.equal(pages, 5);
+    assert.equal(result.state, "connected");
+    assert.equal(result.incomplete, hasMore);
+  });
+}
