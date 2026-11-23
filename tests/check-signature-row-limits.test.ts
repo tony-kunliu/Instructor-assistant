@@ -7,7 +7,7 @@ const script = fileURLToPath(new URL("../scripts/check-signature-row-limits.mjs"
 const remoteAck = "I_ACKNOWLEDGE_PERMANENT_SYNTHETIC_LEARNER_AND_LESSON_DATA";
 const instructorId = "00000000-0000-4000-8000-000000000001";
 
-function run(baseUrl: string, overrides: NodeJS.ProcessEnv = {}) {
+function run(baseUrl: string, overrides: Record<string, string | undefined> = {}) {
   const env: NodeJS.ProcessEnv = {
     ...process.env,
     BASE_URL: baseUrl,
