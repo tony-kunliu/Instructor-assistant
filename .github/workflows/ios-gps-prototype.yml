@@ -1,0 +1,52 @@
+name: iOS GPS Prototype
+on:
+  pull_request:
+    branches: [staging]
+    paths:
+      - experiments/ios-gps/**
+      - .github/workflows/ios-gps-prototype.yml
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    if: github.head_ref == 'feature/ios-gps-prototype' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: macos-15
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: experiments/ios-gps
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Verify the GPS summary with synthetic timestamps
+        run: |
+          checks="$(mktemp -d)"
+          trap 'rm -rf "$checks"' EXIT
+          swiftc Sources/GpsSelfTestSummary.swift Tests/GpsSelfTestSummaryChecks.swift -o "$checks/gps-summary-checks"
+          "$checks/gps-summary-checks"
+      - name: Generate the Xcode project
+        run: |
+          brew install xcodegen
+          xcodegen generate
+      - name: Prepare the standalone Xcode project
+        run: |
+          project="$RUNNER_TEMP/GpsSelfTest"
+          mkdir -p "$project"
+          cp -R GpsSelfTest.xcodeproj Generated Sources "$project/"
+          cp DEVICE-SETUP.md "$project/"
+          git rev-parse HEAD > "$project/SOURCE-COMMIT.txt"
+      - name: Compile the packaged iPhone project without signing
+        run: |
+          xcodebuild -project "$RUNNER_TEMP/GpsSelfTest/GpsSelfTest.xcodeproj" \
+            -scheme GpsSelfTest -destination 'generic/platform=iOS' \
+            -derivedDataPath "$RUNNER_TEMP/gps-derived-data" CODE_SIGNING_ALLOWED=NO build
+      - name: Upload the verified Xcode project
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-gps-xcode-project-${{ github.event.pull_request.head.sha }}
+          path: ${{ runner.temp }}/GpsSelfTest/
+          if-no-files-found: error
+          retention-days: 14
