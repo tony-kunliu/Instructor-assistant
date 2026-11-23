@@ -41,6 +41,8 @@ const learnerPhoneLabel = /^(?:learner|student|customer|client|invitee)(?:['’]
 const bookingPhoneLabel = /^mobile\s*\/\s*phone\s*:\s*/i;
 const pickupLabel = /^(?:pick.?up address|meeting address)\s*:\s*/i;
 const fieldLabel = /^[\p{L}][\p{L}\p{M}\s/'’.-]{0,45}:/u;
+const contactFieldLabel = /^(?:phone(?: number)?|mobile(?: number)?|e-?mail(?: address)?|learner(?:['’]s)?\s+(?:mobile|phone(?: number)?|contact)|student(?:['’]s)?\s+(?:mobile|phone(?: number)?|contact)|contact(?: number)?)\s*:?$/iu;
+const isFieldLabel = (value: string) => fieldLabel.test(value) || contactFieldLabel.test(value);
 const text = (value: string | undefined, cap = 300) => (value ?? "").trim().slice(0, cap);
 const email = (value: string | undefined) => emailPattern.test(text(value)) ? text(value) : null;
 const cleanLines = (value: string | undefined) => (value ?? "").slice(0, 16_000)
@@ -52,7 +54,7 @@ function labelledValues(lines: string[], label: RegExp) {
   return lines.flatMap((line, i) => {
     if (!label.test(line)) return [];
     const next = lines[i + 1] ?? "";
-    return [line.replace(label, "").trim() || (fieldLabel.test(next) ? "" : next)];
+    return [line.replace(label, "").trim() || (isFieldLabel(next) ? "" : next)];
   });
 }
 
@@ -76,7 +78,7 @@ function phoneNumber(value: string): string | null {
 
 function pickupAddress(value: string | undefined): string | null {
   const address = text(value, 260);
-  return address && !fieldLabel.test(address) && !phoneNumber(address)
+  return address && !isFieldLabel(address) && !phoneNumber(address)
     && !email(address) && !/^(?:[a-z]+:\/\/|www\.|online$)/i.test(address) ? address : null;
 }
 
