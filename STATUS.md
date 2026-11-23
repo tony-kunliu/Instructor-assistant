@@ -21,6 +21,8 @@ This is the current-state snapshot. Historical detail and release receipts remai
 ## Repository and CI
 
 - Main's released source is `618c6bed647d406b6b2775f4518a82afcfb6cb75` (Release #25). Staging is a moving integration branch; fetch its current head before an operation and do not store its ordinary moving SHA as durable state.
+- **PR #136 — post-merge memory reconciliation:** documentation-only and open to Staging. The Integration V1 environment wording correction at commit `3d632e0` passed exact-HEAD CI [45230233413](https://github.com/tony-kunliu/Instructor-assistant/actions/runs/45230233413). The latest branch HEAD/CI are tracked by PR #136; fresh L1 factual review is pending (ACTGDS Issue #3 comment [7109082562](https://github.com/tony-kunliu/actgds.com/issues/3#issuecomment-7109082562)). No merge or environment action has occurred.
+
 - Main CI and Production Release #25 PASS; latest post-merge Staging CI [45211072624](https://github.com/tony-kunliu/Instructor-assistant/actions/runs/45211072624) PASS. Feature PR run links and exact code/test SHAs are listed above.
 - Workers Builds must run Memory Guard, typecheck, `npm test`, production build and Memory Guard again. `npm test` uses `--experimental-strip-types`. Workers Builds runs without Poppler utilities, so Poppler-only tests skip unless `REQUIRE_POPPLER=1` is explicitly set by the separate CI workflow.
 - Standard flow: `feature/* → staging → main → Production`. Each promotion requires its own review, test and environment gates.
