@@ -20,8 +20,8 @@ concurrency:
 
 jobs:
   monitor:
-    runs-on: ubuntu-latest
-    timeout-minutes: 2
+    runs-on: ubuntu-slim
+    timeout-minutes: 1
     steps:
       - name: Inspect repository health (read-only)
         env:
