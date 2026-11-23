@@ -6,7 +6,7 @@ Current state only; history in git log and closed PRs; active work in `TASK.md`.
 
 ## Current Snapshot
 
-- **Licence photo #131:** OCR timeout/cancel guards; Browser QA triggers cover public assets and OCR build inputs. Exact-head CI passed; Browser QA pending on `360a2c7`.
+- **Licence photo #131:** OCR timeout/cancel guards; Browser QA triggers cover public assets and OCR build inputs. CI and Browser QA passed on `360a2c7` at 375/820px.
 - **SaaS:** P0 (#109) in Production; P1 (#124) on Staging; no SaaS environment exists.
 - **Instructors:** Tony (ADI604) and Anna (ADI358) are active in both environments; labels are in Production (#18).
 - **Production:** Release #25 run `40698196068` on main `618c6bed` succeeded; no migration. Worker version `a46d73fa-0349-4517-a4da-9b09004c4403`; anonymous GET verification passed. Rollback target and D1 restore point are in the run summary.
