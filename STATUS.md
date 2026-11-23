@@ -7,7 +7,7 @@ closed PRs; see `TASK.md` for what is in progress.
 
 ## Current Snapshot
 
-- **Today’s lessons #132 (feature branch only):** Multiline pickup parsing now stops at adjacent phone/email labels and falls back to a valid event location. Regression tests added; not merged or deployed. Code/test commit `77cbc93` passed CI run `45100677193` (Memory Guard, type check, tests and build). Subsequent commits only update project memory; exact-head L3 re-review remains pending.
+- **Today’s lessons #132 (feature branch only):** Pickup parsing also recognises slash-separated `Mobile / Phone` labels, preventing the label from becoming a Directions destination; a valid event location remains the fallback. Regression tests added; not merged or deployed. Code/test commit `3218f24` passed CI run `45120480260` (908/908 tests, type check, build and both Memory Guard checks). Exact-head L3 re-review remains pending.
 - **iOS GPS hold:** PR #133 remains a draft with its unsigned Xcode build artifact retained. Tony will arrange his own signing, installation and device test; no external tester or reminder. PR #130 remains a draft with continuous background recording acceptance as a release gate.
 
 - **SaaS edition (2026-10-21/28):** P0 in Production (#22): fail-closed `APP_MODE` (must stay in both vars sections). P1 on
