@@ -2,9 +2,9 @@
 
 _Last updated: 2026-11-23_
 
-**Current Task:** PR #131 learner licence photo intake — Partial. Commit `c08a67e` makes the 30 s timeout abort pending image decode, canvas conversion and OCR buffer preparation. Two focused unit tests passed locally. Memory docs were corrected in `658fc7d`; exact-HEAD GitHub CI run `45105871600` passed Memory Guard, Poppler, typecheck, full tests, build and post-build Guard. The timeout-during-decode Chromium regression is added but not yet executed.
+**Current Task:** PR #131 learner licence photo intake — Partial. Commit `c08a67e` makes the 30 s timeout abort pending image decode, canvas conversion and OCR buffer preparation; two focused unit tests passed locally. Added `.github/workflows/qa-browser.yml` to run isolated browser QA on feature-branch pushes (Ubuntu 24.04, Playwright 1.56.1, Poppler; no secrets or live data). Exact head `8e6a141` CI run `45113181340` passed Memory Guard, Poppler, typecheck, full tests, build and post-build Guard. Browser QA run `45113177144` is still in progress at 375/820 px. Earlier runner failures were environment-only: unsupported Ubuntu 26.04, then missing `pdftotext`; both were corrected in the workflow.
 
-**Next Recommended Task:** Execute focused Chromium QA at 375 px and 820 px, then obtain a fresh independent L3 review of the final head. Do not merge before both gates pass.
+**Next Recommended Task:** Verify Browser QA completes, then obtain a fresh independent L3 review of the final head from Muse (read-only). Do not merge before both gates pass.
 
 **Waiting on Other Repo:** NONE.
 
