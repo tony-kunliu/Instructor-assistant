@@ -2,9 +2,9 @@
 
 _Last updated: 2026-11-23_
 
-**Current Task:** PR #131 learner licence photo intake — Partial. Commit `c08a67e` makes the 30 s timeout abort pending image decode, canvas conversion and OCR buffer preparation. Two focused unit tests passed locally. The first hosted CI attempt stopped at Memory Guard because STATUS.md and TASK.md exceeded their size limits; later CI steps were skipped. The timeout-during-decode Chromium regression is added but not yet executed.
+**Current Task:** PR #131 learner licence photo intake — Partial. Commit `c08a67e` makes the 30 s timeout abort pending image decode, canvas conversion and OCR buffer preparation. Two focused unit tests passed locally. Memory docs were corrected in `658fc7d`; exact-HEAD GitHub CI run `45105871600` passed Memory Guard, Poppler, typecheck, full tests, build and post-build Guard. The timeout-during-decode Chromium regression is added but not yet executed.
 
-**Next Recommended Task:** Re-run exact-HEAD CI after this memory correction, then execute the focused Chromium QA at 375 px and 820 px and obtain a fresh independent L3 review of the final SHA. Do not merge before those gates pass.
+**Next Recommended Task:** Execute focused Chromium QA at 375 px and 820 px, then obtain a fresh independent L3 review of the final head. Do not merge before both gates pass.
 
 **Waiting on Other Repo:** NONE.
 
