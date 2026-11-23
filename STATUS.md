@@ -7,7 +7,7 @@ closed PRs; see `TASK.md` for what is in progress.
 
 ## Current Snapshot
 
-- **Today’s lessons #132 (feature branch only):** pickup/contact parsing now rejects adjacent phone/email labels, validates candidate locations before selecting a Maps destination, and excludes explicitly negative lesson titles. Learner phone extraction requires a positively identified learner field or supported booking template. Five existing PR review threads were checked against the current implementation and committed regression cases, then resolved. Exact HEAD `49b19eeb7fb62a029e4883f00ea3544685f7d467`; CI run `45120879144` passed (908 tests, type check, build and both Memory Guard checks). Fresh-context L3 review remains pending; not merged or deployed.
+- **Today’s lessons #132 (feature branch only):** pickup/contact parsing rejects adjacent phone/email labels, validates candidate locations before selecting a Maps destination, excludes explicitly negative lesson titles, and requires positively identified learner contact fields. Five existing PR review threads were verified against current implementation and committed regression cases, then resolved. Implementation/test SHA `49b19eeb7fb62a029e4883f00ea3544685f7d467` passed CI run `45120879144` (908 tests, typecheck, build and both Memory Guard checks). Later commits `6e2fc17` and `052e07d` are documentation-only; no code changed after the tested SHA. Read the live PR for current exact HEAD. Fresh-context L3 review remains required; not merged or deployed.
 - **iOS GPS hold:** PR #133 remains a draft with its unsigned Xcode build artifact retained. Tony will arrange his own signing, installation and device test; no external tester or reminder. PR #130 remains a draft with continuous background recording acceptance as a release gate.
 
 - **SaaS edition (2026-10-21/28):** P0 in Production (#22): fail-closed `APP_MODE` (must stay in both vars sections). P1 on
@@ -113,10 +113,8 @@ closed PRs; see `TASK.md` for what is in progress.
   Tony's separate explicit authorization; the V1 rollout itself is done.
 - ACTGDS side (not this repo): My Driving (student page) is live in Production (released by Work). Tony's display polish list (readable competency
   names, separate "achieved this lesson" vs overall progress, show "not
-  achieved", lesson number and cumulative totals in the Admin Instructor
-  Assistant card, clearer manual lesson-note block, less double entry,
-  consistent language) goes to Work. "Synced at" = when ACTGDS received the
-  event (correct).
+  achieved", lesson number and cumulative totals in the Admin Instructor Assistant card, clearer manual lesson-note block, less double entry,
+  consistent language) goes to Work. "Synced at" = when ACTGDS received the event (correct).
 
 Detail: `docs/integrations/actgds-instructor-assistant-v1.md`; coordination
 record: `tony-kunliu/actgds.com` Issue #3.
