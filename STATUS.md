@@ -29,7 +29,7 @@ This is the current-state snapshot. Historical detail and release receipts remai
 
 **Staging**
 - Worker `instructor-assistant`; D1 migration level last recorded as `0013`.
-- Cloudflare Access enabled; Integration V1 enabled only in the non-Production environment.
+- Cloudflare Access enabled; Integration V1 is enabled in Staging and Production (with the production endpoint/configuration kept separate).
 - Verify the live Worker commit before treating a candidate as deployed; current GitHub evidence cannot establish the mapping.
 
 **Production**
