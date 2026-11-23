@@ -53,6 +53,17 @@ test("conflicting phone fields and non-lessons are excluded, and explicit pickup
   })?.phone, "0400000002");
   assert.equal(lessonFromGoogle({ ...event, description: "Instructor contact\nPhone: 0400 000 001" })?.phone, null);
   assert.equal(lessonFromGoogle({ ...event, description: "Pickup address:\nPhone: 0400 000 001" })?.address, event.location);
+  for (const description of [
+    "Pickup address:\nPhone: 0400 000 001\nEmail: learner@example.test",
+    "Pickup address:\nPhone\n0400 000 001\nEmail address\nlearner@example.test",
+  ]) {
+    assert.equal(lessonFromGoogle({ ...event, location: "Canberra, ACT", description })?.address, "Canberra, ACT");
+  }
+  assert.equal(lessonFromGoogle({
+    ...event,
+    location: "https://meet.example.test/test",
+    description: "Pickup address:\n24 Test Road, Canberra\nPhone\n0400 000 001\nEmail\nlearner@example.test",
+  })?.address, "24 Test Road, Canberra");
   assert.equal(lessonFromGoogle({ ...event, summary: "No driving lesson — personal appointment" }), null);
 });
 
