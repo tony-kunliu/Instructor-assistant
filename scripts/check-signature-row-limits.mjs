@@ -51,7 +51,7 @@ if (targetUrl.username || targetUrl.password || targetUrl.search || targetUrl.ha
   process.exit(2);
 }
 
-const host = targetUrl.hostname.toLowerCase();
+const host = targetUrl.hostname.toLowerCase().replace(/\.$/, "");
 const isLoopback = new Set(["localhost", "127.0.0.1", "[::1]"]).has(host);
 const isKnownProductionHost =
   host === "actgds.com" ||
