@@ -1,0 +1,55 @@
+name: Today Lessons Browser QA
+
+on:
+  push:
+    branches: ["feature/today-lessons"]
+    paths:
+      - "app/api/today-lessons/**"
+      - "app/today-lessons.tsx"
+      - "app/driver-app.tsx"
+      - "lib/google-calendar-read.ts"
+      - "lib/today-calendar.ts"
+      - "scripts/qa-browser/today-lessons.mjs"
+      - "scripts/qa-browser/run-today-lessons.sh"
+      - "tests/today-calendar.test.ts"
+      - ".github/workflows/today-lessons-browser-qa.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: today-lessons-browser-qa-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  browser-qa:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.13"
+          cache: "npm"
+
+      - name: Install application dependencies
+        run: npm ci
+
+      - name: Install pinned Playwright browser
+        run: |
+          npm install --global playwright@1.56.1
+          playwright install --with-deps chromium
+
+      - name: Export Playwright paths
+        shell: bash
+        run: |
+          global_root="$(npm root -g)"
+          echo "NPM_GLOBAL=$global_root" >> "$GITHUB_ENV"
+          browser_path="$(node -e 'const { chromium } = require(process.argv[1]); process.stdout.write(chromium.executablePath())' "$global_root/playwright")"
+          echo "QA_CHROMIUM=$browser_path" >> "$GITHUB_ENV"
+
+      - name: Run isolated Today’s lessons browser QA
+        run: bash scripts/qa-browser/run-today-lessons.sh
