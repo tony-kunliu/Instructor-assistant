@@ -4,7 +4,7 @@ _Last updated: 2026-11-24_
 
 This file describes the current task only. Completed work history lives in Git history and closed PRs.
 
-**Current Task:** Project-memory accuracy refresh — **Completed on `feature/project-memory-sync-2026-11-24`**. Reconciled the root snapshot and handoff with remote Main/Staging refs, exact open PR heads, CI and Browser QA runs, Production Release #25 logs and recorded D1 migration levels. Documentation-only; no application code, database, account, calendar, learner data, configuration or deployment changed. The first CI attempt failed only because STATUS.md omitted Memory Guard's required Integration tokens; the snapshot now states the SaaS no-environment boundary and the existing V1/Production contract limits explicitly. A new CI run is pending. Proposed in a PR to `staging`; not merged.
+**Current Task:** Harden the manual Staging D1 signature-row-limit check — Completed on `chore/signature-row-limit-remote-guard-2026-11-24`. The script now parses the target URL, rejects malformed/credential-bearing URLs, known Production hosts and remote HTTP, and requires an exact explicit acknowledgement for every non-loopback target because the check permanently creates a synthetic learner and lesson and may emit an Integration V1 event. Added subprocess regression tests for each refusal path. No remote request, D1 write or Integration event was made.
 
 **Active delivery gates:**
 
@@ -13,8 +13,8 @@ This file describes the current task only. Completed work history lives in Git h
 - **PR #130 — lesson GPS:** Draft; CI PASS. Background recording through lock screen and app switching remains an unmet release gate.
 - **PR #133 — isolated iOS GPS:** Draft; CI and Xcode project build PASS. Artifact 14810301175 is unsigned and not installable as supplied. Tony will arrange signing/install and his own test when available.
 
-**Next Recommended Task:** Independently verify the factual accuracy of this project-memory refresh PR and its Memory Guard/CI result. Merge to Staging only after review and required checks pass. Do not merge Main/Staging wholesale: they are diverged. Then continue the already-requested exact-HEAD L3 reviews for PR #132 and #131; do not change those candidate branches while review is pending.
+**Next Recommended Task:** Obtain an independent L2 review of this guard and its subprocess tests; merge to Staging only after exact-HEAD CI and review pass. The real Staging signature-row check remains a separate, deliberate remote write and must not be run automatically: it creates permanent synthetic records and may emit an Integration V1 event. Do not merge Main/Staging wholesale; they remain diverged. Continue PR #132/#131 only after their already-requested exact-HEAD L3 reviews return.
 
-**Waiting on Other Repo:** NONE for this documentation task. Review coordination is recorded in ACTGDS Issue #3; no shared contract or cross-repo interface change is proposed.
+**Waiting on Other Repo:** NONE. The existing Integration V1 contract/receiver is unchanged; no cross-repo interface, endpoint or secret was changed.
 
-**Tony Manual Action Required:** NONE for this documentation task. Later, Tony will arrange signing/installation and his personal test of the unsigned iOS prototype. PR #131 still needs real iPhone camera / ACT card acceptance before release.
+**Tony Manual Action Required:** NONE for this code PR. The Staging signature-row exercise remains unrun; its remote-write acknowledgement is intentionally required before any operator runs it. Later, Tony will arrange signing/installation and his personal iOS prototype test; PR #131 still needs real iPhone camera / ACT card acceptance before release.
