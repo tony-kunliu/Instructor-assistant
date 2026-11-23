@@ -34,7 +34,9 @@ try {
   await page.route("**/api/today-lessons", (route) => {
     refreshes += 1;
     if (refreshes === 2) return route.fulfill({ status: 503, json: { state: "unavailable" } });
-    const recoveredLessons = [{ ...events[0], address: "Mitchell, ACT" }, events[1], overlap];
+    const firstBooking = { ...events[0], address: "Mitchell, ACT" };
+    if (refreshes === 6) firstBooking.email = "replacement@example.test";
+    const recoveredLessons = [firstBooking, events[1], overlap];
     const lessons = refreshes === 1 ? events : refreshes === 5 ? [] : recoveredLessons;
     return route.fulfill({ json: {
       state: "connected", date: "2026-11-22", lessons, incomplete: refreshes === 4 || refreshes === 5, refreshedAt: new Date().toISOString(),
@@ -50,6 +52,9 @@ try {
   assert.equal(await cards.first().getByRole("link", { name: /Directions/ }).count(), 1);
   assert.equal(await cards.first().getByRole("link", { name: /Email/ }).getAttribute("href"), "mailto:learner@example.test");
   assert.equal(await page.getByRole("link", { name: "Public toilet map" }).getAttribute("href"), "https://toiletmap.gov.au/");
+  const firstLearner = cards.first().getByLabel("Learner progress");
+  await firstLearner.selectOption(learner.id);
+  await cards.first().getByText(/0\/22 achieved/).waitFor();
 
   await refresh.click();
   const outage = page.getByText("Google Calendar is unavailable. Try Refresh.", { exact: true });
@@ -62,6 +67,7 @@ try {
   await cards.last().getByText("10 min overlap", { exact: true }).waitFor();
   assert.equal(await cards.last().getByRole("link", { name: "Route from previous lesson" }).count(), 0);
   assert.equal(await cards.last().getByRole("link", { name: "Directions", exact: true }).count(), 1);
+  assert.equal(await firstLearner.inputValue(), learner.id);
 
   const partial = page.getByRole("status").filter({ hasText: "Check Google Calendar for the full schedule." });
   await refresh.click();
@@ -80,7 +86,10 @@ try {
   await refresh.click();
   await cards.nth(1).getByText("20 min between bookings", { exact: true }).waitFor();
   await partial.waitFor({ state: "hidden" });
-  await cards.first().getByLabel("Learner progress").selectOption(learner.id);
+  await cards.first().getByRole("link", { name: "Email replacement@example.test" }).waitFor();
+  assert.equal(await firstLearner.inputValue(), "");
+  assert.equal(await cards.first().getByRole("button", { name: "Open learner record" }).count(), 0);
+  await firstLearner.selectOption(learner.id);
   await cards.first().getByText(/0\/22 achieved/).waitFor();
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
   await page.setViewportSize({ width: 820, height: 1000 });
@@ -88,7 +97,7 @@ try {
   await cards.first().getByRole("button", { name: "Open learner record" }).click();
   await page.locator(".summary-name").getByText("QA Today Learner", { exact: true }).waitFor();
   assert.deepEqual(errors, []);
-  console.log("Today’s lessons QA PASS at 375/820px (schedule, overlap, outage and retry, incomplete calendar, learner progress)");
+  console.log("Today’s lessons QA PASS at 375/820px (schedule, outage and retry, overlap, partial calendar, learner reselection)");
   await context.close();
 } finally {
   await browser.close();

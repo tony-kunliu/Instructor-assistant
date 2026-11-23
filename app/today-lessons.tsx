@@ -10,6 +10,7 @@ import type { Learner, Lesson } from "@/lib/types.ts";
 type Schedule = { state: "connected"; date: string; lessons: CalendarLesson[]; incomplete: boolean; refreshedAt: string }
   | { state: "disconnected" | "unavailable" };
 type Props = { learners: Learner[]; summaries: Record<string, LearnerListSummary>; onOpenLearner: (id: string) => void };
+type LearnerSelection = { learnerId: string; bookingIdentity: string };
 
 function directions(address: string, origin?: string | null) {
   const params = new URLSearchParams({ api: "1", destination: address, travelmode: "driving" });
@@ -50,7 +51,7 @@ function LearnerPrep({ learner, summary, onOpen }: { learner: Learner; summary?:
 export default function TodayLessons({ learners, summaries, onOpenLearner }: Props) {
   const [schedule, setSchedule] = useState<Schedule | null>(null);
   const [version, setVersion] = useState(0);
-  const [chosen, setChosen] = useState<Record<string, string>>({});
+  const [chosen, setChosen] = useState<Record<string, LearnerSelection>>({});
   useEffect(() => {
     const controller = new AbortController();
     void fetch("/api/today-lessons", { cache: "no-store", signal: controller.signal })
@@ -81,7 +82,13 @@ export default function TodayLessons({ learners, summaries, onOpenLearner }: Pro
               const previous = previousLessonFor(schedule.lessons, index);
               const minutes = previous ? Math.floor((Date.parse(lesson.startsAt) - Date.parse(previous.endsAt)) / 60_000) : null;
               const showGap = !schedule.incomplete && minutes !== null && minutes >= 0;
-              const learner = learners.find(({ id }) => id === chosen[lesson.id]);
+              // A calendar event can keep its ID when the guest changes. With no contact details, reselect after refresh.
+              const bookingIdentity = lesson.name || lesson.email || lesson.phone
+                ? JSON.stringify([lesson.title, lesson.name, lesson.email, lesson.phone])
+                : String(version);
+              const selection = chosen[lesson.id];
+              const learner = selection?.bookingIdentity === bookingIdentity
+                ? learners.find(({ id }) => id === selection.learnerId) : undefined;
               return (
                 <li key={lesson.id} className="today-lesson" data-testid="today-lesson">
                   <p className="today-time">
@@ -102,8 +109,8 @@ export default function TodayLessons({ learners, summaries, onOpenLearner }: Pro
                   <label className="field">
                     <span>Learner progress</span>
                     <select value={learner?.id ?? ""} onChange={(event) => {
-                      const id = event.target.value;
-                      setChosen((current) => ({ ...current, [lesson.id]: id }));
+                      const learnerId = event.target.value;
+                      setChosen((current) => ({ ...current, [lesson.id]: { learnerId, bookingIdentity } }));
                     }}>
                       <option value="">Choose the learner</option>
                       {learners.map(({ id, fullName }) => <option key={id} value={id}>{fullName}</option>)}
