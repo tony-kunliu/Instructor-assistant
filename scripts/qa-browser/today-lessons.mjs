@@ -33,13 +33,14 @@ try {
   let refreshes = 0;
   await page.route("**/api/today-lessons", (route) => {
     refreshes += 1;
-    if (refreshes === 2) return route.fulfill({ status: 503, json: { state: "unavailable" } });
+    if (refreshes === 2) return route.fulfill({ status: 502, json: { error: "Bad gateway" } });
+    if (refreshes === 3) return route.fulfill({ json: { state: "connected" } });
     const firstBooking = { ...events[0], address: "Mitchell, ACT" };
-    if (refreshes === 6) firstBooking.email = "replacement@example.test";
+    if (refreshes === 7) firstBooking.email = "replacement@example.test";
     const recoveredLessons = [firstBooking, events[1], overlap];
-    const lessons = refreshes === 1 ? events : refreshes === 5 ? [] : recoveredLessons;
+    const lessons = refreshes === 1 ? events : refreshes === 6 ? [] : recoveredLessons;
     return route.fulfill({ json: {
-      state: "connected", date: "2026-11-22", lessons, incomplete: refreshes === 4 || refreshes === 5, refreshedAt: new Date().toISOString(),
+      state: "connected", date: "2026-11-22", lessons, incomplete: refreshes === 5 || refreshes === 6, refreshedAt: new Date().toISOString(),
     } });
   });
   const refresh = page.getByRole("button", { name: "Refresh", exact: true });
@@ -58,6 +59,11 @@ try {
 
   await refresh.click();
   const outage = page.getByText("Google Calendar is unavailable. Try Refresh.", { exact: true });
+  await outage.waitFor();
+  assert.equal(await cards.count(), 0);
+  const malformed = page.waitForResponse((response) => response.url().endsWith("/api/today-lessons") && response.ok());
+  await refresh.click();
+  await malformed;
   await outage.waitFor();
   assert.equal(await cards.count(), 0);
   await refresh.click();
@@ -97,7 +103,7 @@ try {
   await cards.first().getByRole("button", { name: "Open learner record" }).click();
   await page.locator(".summary-name").getByText("QA Today Learner", { exact: true }).waitFor();
   assert.deepEqual(errors, []);
-  console.log("Today’s lessons QA PASS at 375/820px (schedule, outage and retry, overlap, partial calendar, learner reselection)");
+  console.log("Today’s lessons QA PASS at 375/820px (gateway failure, malformed response, retry, overlap, partial calendar, learner reselection)");
   await context.close();
 } finally {
   await browser.close();

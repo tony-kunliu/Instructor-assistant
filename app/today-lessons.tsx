@@ -55,7 +55,12 @@ export default function TodayLessons({ learners, summaries, onOpenLearner }: Pro
   useEffect(() => {
     const controller = new AbortController();
     void fetch("/api/today-lessons", { cache: "no-store", signal: controller.signal })
-      .then((response) => response.json() as Promise<Schedule>)
+      .then(async (response) => {
+        if (!response.ok) throw new Error("Calendar unavailable");
+        const data = await response.json() as Schedule | null;
+        if (data?.state === "disconnected" || (data?.state === "connected" && Array.isArray(data.lessons))) return data;
+        throw new Error("Invalid calendar response");
+      })
       .then((data) => { if (!controller.signal.aborted) setSchedule(data); })
       .catch(() => { if (!controller.signal.aborted) setSchedule({ state: "unavailable" }); });
     return () => controller.abort();
