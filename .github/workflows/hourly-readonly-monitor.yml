@@ -1,0 +1,134 @@
+name: Hourly Read-only Monitor
+
+on:
+  schedule:
+    - cron: "17 * * * *"
+  workflow_dispatch:
+  pull_request:
+    branches: [staging, main]
+    paths:
+      - ".github/workflows/hourly-readonly-monitor.yml"
+
+permissions:
+  actions: read
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: hourly-readonly-monitor-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  monitor:
+    runs-on: ubuntu-slim
+    timeout-minutes: 1
+    steps:
+      - name: Inspect repository health (read-only)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPOSITORY: ${{ github.repository }}
+          GH_RUN_ID: ${{ github.run_id }}
+        run: |
+          node --input-type=module <<'NODE'
+          import { appendFileSync } from "node:fs";
+
+          const [owner, repo] = process.env.GH_REPOSITORY.split("/");
+          const token = process.env.GH_TOKEN;
+          const currentRunId = Number(process.env.GH_RUN_ID);
+          const api = async (path) => {
+            const response = await fetch(`https://api.github.com/repos/${owner}/${repo}${path}`, {
+              headers: {
+                Authorization: `Bearer ${token}`,
+                Accept: "application/vnd.github+json",
+                "X-GitHub-Api-Version": "2022-11-28"
+              }
+            });
+            if (!response.ok) {
+              throw new Error(`GitHub API ${response.status} for ${path}: ${await response.text()}`);
+            }
+            return response.json();
+          };
+
+          const [runsData, prs, comparison] = await Promise.all([
+            api("/actions/runs?per_page=100"),
+            api("/pulls?state=open&per_page=100"),
+            api("/compare/main...staging")
+          ]);
+
+          const runs = runsData.workflow_runs ?? [];
+          const monitorPath = ".github/workflows/hourly-readonly-monitor.yml";
+          const previousMonitor = runs
+            .filter(r => r.id !== currentRunId && r.status === "completed"
+              && (r.path ?? "").split("@")[0].endsWith(monitorPath))
+            .sort((a, b) => Date.parse(b.run_started_at ?? b.created_at) - Date.parse(a.run_started_at ?? a.created_at))[0];
+
+          const baseline = previousMonitor
+            ? Date.parse(previousMonitor.run_started_at ?? previousMonitor.created_at)
+            : Date.now() - 65 * 60 * 1000;
+
+          const materialFailures = runs.filter(r => {
+            const name = (r.name ?? "").toLowerCase();
+            const browserOrMobileQa = /playwright|browser|e2e|mobile|ios|gps|qa/.test(name);
+            const relevantScope = browserOrMobileQa
+              || r.event === "pull_request"
+              || ["main", "staging"].includes(r.head_branch);
+            return Date.parse(r.updated_at ?? r.created_at) > baseline
+              && ["failure", "timed_out", "action_required"].includes(r.conclusion)
+              && relevantScope;
+          });
+
+          const releaseRisks = prs.filter(pr =>
+            pr.base?.ref === "main"
+            && Date.parse(pr.updated_at ?? pr.created_at) > baseline
+          );
+
+          const openMainPrs = prs.filter(pr => pr.base?.ref === "main");
+          const stamp = new Date().toISOString();
+          const lines = [
+            "# Hourly read-only repository monitor",
+            "",
+            `- Checked: ${stamp}`,
+            `- Comparison baseline: ${previousMonitor ? (previousMonitor.run_started_at ?? previousMonitor.created_at) : "first run; last 65 minutes"}`,
+            `- Staging vs main: ${comparison.status}; staging ahead by ${comparison.ahead_by ?? "?"}, behind by ${comparison.behind_by ?? "?"} commits`,
+            `- Open PRs targeting main: ${openMainPrs.length}`,
+            ""
+          ];
+
+          if (materialFailures.length) {
+            lines.push("## New material workflow failures");
+            for (const run of materialFailures) {
+              lines.push(`- ${run.name} — ${run.conclusion} — branch ${run.head_branch} — [run #${run.run_number}](${run.html_url})`);
+            }
+            lines.push("");
+          } else {
+            lines.push("## New material workflow failures", "", "- None detected since the previous monitor run.", "");
+          }
+
+          if (releaseRisks.length) {
+            lines.push("## Newly updated PRs targeting main (release review required)");
+            for (const pr of releaseRisks) {
+              lines.push(`- [#${pr.number} ${pr.title}](${pr.html_url}) — ${pr.head?.ref} → main`);
+            }
+            lines.push("");
+          } else {
+            lines.push("## Newly updated PRs targeting main", "", "- None detected since the previous monitor run.", "");
+          }
+
+          if (openMainPrs.length) {
+            lines.push("## Current open main-target PRs");
+            for (const pr of openMainPrs) {
+              lines.push(`- [#${pr.number} ${pr.title}](${pr.html_url}) — ${pr.head?.ref} → main`);
+            }
+            lines.push("");
+          }
+
+          appendFileSync(process.env.GITHUB_STEP_SUMMARY, lines.join("\n") + "\n");
+
+          if (materialFailures.length || releaseRisks.length) {
+            const count = materialFailures.length + releaseRisks.length;
+            console.log(`::error::Detected ${count} new material CI/E2E failure(s) or main-release risk update(s).`);
+            process.exitCode = 1;
+          } else {
+            console.log("Read-only monitor completed: no new material alerts.");
+          }
+          NODE
