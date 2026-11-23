@@ -41,7 +41,7 @@ const learnerPhoneLabel = /^(?:learner|student|customer|client|invitee)(?:['’]
 const bookingPhoneLabel = /^mobile\s*\/\s*phone\s*:\s*/i;
 const pickupLabel = /^(?:pick.?up address|meeting address)\s*:\s*/i;
 const fieldLabel = /^[\p{L}][\p{L}\p{M}\s/'’.-]{0,45}:/u;
-const contactFieldLabel = /^(?:phone(?: number)?|mobile(?: number)?|e-?mail(?: address)?|learner(?:['’]s)?\s+(?:mobile|phone(?: number)?|contact)|student(?:['’]s)?\s+(?:mobile|phone(?: number)?|contact)|contact(?: number)?)\s*:?$/iu;
+const contactFieldLabel = /^(?:phone(?: number)?|mobile(?: number)?|mobile\s*\/\s*phone|e-?mail(?: address)?|learner(?:['’]s)?\s+(?:mobile|phone(?: number)?|contact)|student(?:['’]s)?\s+(?:mobile|phone(?: number)?|contact)|contact(?: number)?)\s*:?$/iu;
 const isFieldLabel = (value: string) => fieldLabel.test(value) || contactFieldLabel.test(value);
 const text = (value: string | undefined, cap = 300) => (value ?? "").trim().slice(0, cap);
 const email = (value: string | undefined) => emailPattern.test(text(value)) ? text(value) : null;
