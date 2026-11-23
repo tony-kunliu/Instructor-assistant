@@ -66,11 +66,16 @@ jobs:
             ? Date.parse(previousMonitor.run_started_at ?? previousMonitor.created_at)
             : Date.now() - 65 * 60 * 1000;
 
-          const materialFailures = runs.filter(r =>
-            Date.parse(r.updated_at ?? r.created_at) > baseline
-            && ["failure", "timed_out", "action_required"].includes(r.conclusion)
-            && (r.event === "pull_request" || ["main", "staging"].includes(r.head_branch))
-          );
+          const materialFailures = runs.filter(r => {
+            const name = (r.name ?? "").toLowerCase();
+            const browserOrMobileQa = /playwright|browser|e2e|mobile|ios|gps|qa/.test(name);
+            const relevantScope = browserOrMobileQa
+              || r.event === "pull_request"
+              || ["main", "staging"].includes(r.head_branch);
+            return Date.parse(r.updated_at ?? r.created_at) > baseline
+              && ["failure", "timed_out", "action_required"].includes(r.conclusion)
+              && relevantScope;
+          });
 
           const releaseRisks = prs.filter(pr =>
             pr.base?.ref === "main"
