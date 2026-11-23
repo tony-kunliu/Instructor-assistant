@@ -1,13 +1,14 @@
 # STATUS.md
 
-_Last updated: 2026-10-21_ (Production and Staging D1 at migration `0016`; release #24 live)
+_Last updated: 2026-11-23_ (Production and Staging D1 at migration `0016`; release #24 live)
 
 This file describes **current state only**. History lives in git log and
 closed PRs; see `TASK.md` for what is in progress.
 
 ## Current Snapshot
 
-- **Today’s lessons #132:** Recovers from bad replies.
+- **Today’s lessons #132 (feature branch only):** Multiline pickup parsing now stops at adjacent phone/email labels and falls back to a valid event location. Regression tests added; not merged or deployed. Exact-head CI and independent L3 re-review remain pending.
+- **iOS GPS hold:** PR #133 remains a draft with its unsigned Xcode build artifact retained. Tony will arrange his own signing, installation and device test; no external tester or reminder. PR #130 remains a draft with continuous background recording acceptance as a release gate.
 
 - **SaaS edition (2026-10-21/28):** P0 in Production (#22): fail-closed `APP_MODE` (must stay in both vars sections). P1 on
   `staging` (PR #124, L3, reviewed): `migrations-saas/`, `lib/saas/*` gate
