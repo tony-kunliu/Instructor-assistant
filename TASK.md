@@ -2,7 +2,7 @@
 
 _Last updated: 2026-11-23_
 
-**Current Task:** iOS Core Location self-test PR #133 — Partial. The standalone SwiftUI/Core Location project compiled unsigned for generic iOS on source `7c1f13651b5f413a034b62ddd6700900ee8dab75`. GitHub CI run [44989249762](https://github.com/tony-kunliu/Instructor-assistant/actions/runs/44989249762) and Xcode build run [44989249829](https://github.com/tony-kunliu/Instructor-assistant/actions/runs/44989249829) passed. The verified project artifact is ID `14741550719` (8,611 bytes), expires `2026-12-06T05:24:55Z`. It is unsigned; no iPhone installation or native field test has occurred.
+**Current Task:** iOS Core Location self-test PR #133 — Partial. The standalone SwiftUI/Core Location project compiled unsigned for generic iOS on source `1f6591b67fed6c5a88514d6f721d4b7cb21566ac`. Exact-source GitHub CI run [45158620979](https://github.com/tony-kunliu/Instructor-assistant/actions/runs/45158620979) and Xcode build run [45158620930](https://github.com/tony-kunliu/Instructor-assistant/actions/runs/45158620930) passed. The verified project artifact is ID `14810301175` (8,611 bytes), expires `2026-12-07T10:43:57Z`. It is unsigned; no iPhone installation or native field test has occurred.
 
 **Next Recommended Task:** Wait for Tony to arrange the approved Apple signing and installation route. Once an installable build exists, Tony will perform his own single approximately 20-minute personal test covering foreground, lock screen, another app and foreground recovery. Then evaluate only the aggregate summary. Do not seek external testers, send reminders, or lower PR #130’s continuous-background-recording release gate.
 

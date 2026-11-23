@@ -4,7 +4,7 @@
 
 The web diagnostic measured 99.5% foreground coverage and 14.6% background coverage in Tony’s personal test, with an approximately 90-second gap during page suspension. These results apply only to the web diagnostic and do not prove native background continuity. PR #130 still requires evidence of continuous capture in the actual lesson workflow before release.
 
-The native prototype is now packaged as an unsigned Xcode project. On source commit `7c1f13651b5f413a034b62ddd6700900ee8dab75`, GitHub CI run `44989249762` and Xcode build run `44989249829` both succeeded. The artifact is ID `14741550719` (8,611 bytes), created 2026-11-22 and expiring 2026-12-06 05:24:55 UTC. It contains the standalone project but is not signed or installable until an approved Apple development team signs it. No iPhone installation or native field result exists.
+The native prototype is now packaged as an unsigned Xcode project. On source commit `1f6591b67fed6c5a88514d6f721d4b7cb21566ac`, exact-source GitHub CI run `45158620979` and Xcode build run `45158620930` both succeeded. The artifact is ID `14810301175` (8,611 bytes), created 2026-11-23 and expiring 2026-12-07 10:43:57 UTC. It contains the standalone project but is not signed or installable until an approved Apple development team signs it. No iPhone installation or native field result exists.
 
 Tony will arrange his own signing, installation and device test when available. Do not seek an external tester or send reminders. PR #130 remains Draft and its continuous-background-recording release gate is unchanged.
 
@@ -41,7 +41,7 @@ node --experimental-strip-types --input-type=module -e '
 
 ## Handoff
 
-- Current task: Partial. Unsigned Xcode project compiled on source `7c1f13651b5f413a034b62ddd6700900ee8dab75`; CI `44989249762` and Xcode build `44989249829` passed. Artifact `14741550719` expires 2026-12-06 05:24:55 UTC. No signing, installation or native field evidence.
+- Current task: Partial. Unsigned Xcode project compiled on source `1f6591b67fed6c5a88514d6f721d4b7cb21566ac`; exact-source CI `45158620979` and Xcode build `45158620930` passed. Artifact `14810301175` expires 2026-12-07 10:43:57 UTC. No signing, installation or native field evidence.
 - Next: wait for Tony to arrange approved signing and installation. Once the app is installable, Tony will perform one approximately 20-minute personal test; then evaluate the aggregate summary with `evaluateNativeSelfTest`.
 - Waiting on other repo: None.
 - Tony action: none requested now; Tony will arrange signing, installation and the personal test when available. Do not seek external testers or send reminders.
