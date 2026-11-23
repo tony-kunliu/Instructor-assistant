@@ -76,7 +76,7 @@ if (!isLoopback && process.env.CONFIRM_REMOTE_WRITE !== REMOTE_WRITE_ACK) {
 
 const headers = { "content-type": "application/json", "x-instructor-id": INSTRUCTOR_ID, ...JSON.parse(process.env.EXTRA_HEADERS || "{}") };
 const call = async (path, method = "GET", body) => {
-  const response = await fetch(BASE + path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
+  const response = await fetch(BASE + path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body), redirect: "error" });
   const text = await response.text();
   let data;
   try { data = JSON.parse(text); } catch { data = { raw: text.slice(0, 300) }; }
