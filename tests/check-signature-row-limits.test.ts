@@ -30,6 +30,22 @@ test("remote targets fail closed without an explicit permanent-write acknowledge
   assert.match(result.stderr, new RegExp(remoteAck));
 });
 
+test("a non-exact remote-write acknowledgement is rejected", () => {
+  const result = run("https://instructor-assistant.example.workers.dev", {
+    CONFIRM_REMOTE_WRITE: "yes",
+  });
+  assert.equal(result.status, 2);
+  assert.match(result.stderr, /Refusing remote write/i);
+});
+
+test("unsupported URL protocols are rejected", () => {
+  const result = run("ftp://staging.example.workers.dev", {
+    CONFIRM_REMOTE_WRITE: remoteAck,
+  });
+  assert.equal(result.status, 2);
+  assert.match(result.stderr, /unsupported BASE_URL protocol/i);
+});
+
 test("known Production hosts are refused even when remote-write acknowledgement is supplied", () => {
   for (const baseUrl of [
     "https://instructor-assistant-production.example.workers.dev",
