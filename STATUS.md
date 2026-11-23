@@ -1,13 +1,13 @@
 # STATUS.md
 
-_Last updated: 2026-11-23_ (Production and Staging D1 at migration `0016`; release #24 live)
+_Last updated: 2026-11-24_ (Production and Staging D1 at migration `0016`; release #24 live)
 
 This file describes **current state only**. History lives in git log and
 closed PRs; see `TASK.md` for what is in progress.
 
 ## Current Snapshot
 
-- **Today’s lessons #132 (feature branch only):** pickup/contact parsing rejects adjacent phone/email labels, validates candidate locations before selecting a Maps destination, excludes explicitly negative lesson titles, and requires positively identified learner contact fields. Five existing PR review threads were verified against current implementation and committed regression cases, then resolved. Implementation/test SHA `49b19eeb7fb62a029e4883f00ea3544685f7d467` passed CI run `45120879144` (908 tests, typecheck, build and both Memory Guard checks). Later commits `6e2fc17` and `052e07d` are documentation-only; no code changed after the tested SHA. Read the live PR for current exact HEAD. Fresh-context L3 review remains required; not merged or deployed.
+- **Today’s lessons #132 (feature only):** hardened calendar parsing for ambiguous contacts, unsafe locations and negative titles; five review threads resolved with regression tests. Implementation/test SHA `49b19eeb7fb62a029e4883f00ea3544685f7d467` passed CI `45120879144` (908 tests). Added isolated Browser QA runner/workflow; run `45182250537` passed on code SHA `333947b2aa55d47fe30f81705fcb9d13de09ac5d` at 375/820px (outage, malformed response, retry, overlap, partial results, learner reselection). Exact-HEAD CI `45182263993` passed (908 tests, typecheck, build, Memory Guard). No live calendar/OAuth/data access; fresh independent review remains pending. Not merged/deployed.
 - **iOS GPS hold:** PR #133 remains a draft with its unsigned Xcode build artifact retained. Tony will arrange his own signing, installation and device test; no external tester or reminder. PR #130 remains a draft with continuous background recording acceptance as a release gate.
 
 - **SaaS edition (2026-10-21/28):** P0 in Production (#22): fail-closed `APP_MODE` (must stay in both vars sections). P1 on
