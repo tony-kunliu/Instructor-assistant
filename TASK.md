@@ -4,7 +4,7 @@ _Last updated: 2026-11-24_
 
 This file describes the current task only. Completed work history lives in Git history and closed PRs.
 
-**Current Task:** Post-merge project-memory reconciliation — **Partial** on `feature/post-staging-memory-reconcile-2026-11-24`. The root snapshot now records PR #134 (documentation refresh) and PR #135 (read-only monitor) as merged to Staging, the successful post-merge CI run [45211072624](https://github.com/tony-kunliu/Instructor-assistant/actions/runs/45211072624), the current 17/12 Main–Staging divergence, and the verified current iOS artifact. This is documentation-only. The branch is not merged; its own CI and independent factual review are still required. No application code, database, account, calendar, learner data, credentials, OAuth, shared contract, configuration or deployment changed.
+**Current Task:** Post-merge project-memory reconciliation — **Partial** on `feature/post-staging-memory-reconcile-2026-11-24`. The root snapshot records PR #134 and #135 merged to Staging, post-merge CI [45211072624](https://github.com/tony-kunliu/Instructor-assistant/actions/runs/45211072624) SUCCESS, 17/12 Main–Staging divergence, and the verified current iOS artifact. A factual ambiguity about Integration V1 was corrected at commit `3d632e0`; exact-HEAD CI [45230233413](https://github.com/tony-kunliu/Instructor-assistant/actions/runs/45230233413) passed Memory Guard before/after build, typecheck, tests and production build. This task-memory update is being committed on the same documentation-only branch; see PR #136 for the current exact HEAD and CI. Fresh independent L1 factual review remains pending (ACTGDS Issue #3 comment [7109082562](https://github.com/tony-kunliu/actgds.com/issues/3#issuecomment-7109082562)). No application code, database, account, calendar, learner data, credentials, OAuth, shared contract, configuration or deployment changed.
 
 **Active delivery gates:**
 
@@ -14,7 +14,7 @@ This file describes the current task only. Completed work history lives in Git h
 - **PR #133 — isolated iOS GPS:** Draft; exact-HEAD CI and Xcode project build PASS. Current artifact `14809843453` is unsigned and not installable as supplied. Tony will arrange signing/install and his own test when available.
 - **PR #135 — read-only monitor:** merged to Staging only. The hourly schedule is inactive until the workflow is on default branch `main`; no Main promotion or Production effect is claimed.
 
-**Next Recommended Task:** Obtain the already-requested fresh independent L3 review of PR #132 at its exact current HEAD. Do not change that candidate while review is pending. Then continue the exact-HEAD L3 review of PR #131. Keep PR #130's GPS continuity gate and PR #133's personal-device acceptance boundary unchanged.
+**Next Recommended Task:** Finish the fresh independent L1 factual review of PR #136 and, if it passes, merge this documentation-only change to Staging under the existing authorization and verify post-merge CI/Memory Guard. Then resume the already-requested fresh exact-HEAD L3 review of PR #132; do not change that candidate while review is pending. Keep PR #130's GPS continuity gate and PR #133's personal-device acceptance boundary unchanged.
 
 **Waiting on Other Repo:** NONE for this documentation task. No shared contract or cross-repo interface change is proposed.
 
