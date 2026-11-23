@@ -4,7 +4,7 @@
 
 The web diagnostic measured 99.5% foreground coverage and 14.6% background coverage in Tony’s personal test, with an approximately 90-second gap during page suspension. These results apply only to the web diagnostic and do not prove native background continuity. PR #130 still requires evidence of continuous capture in the actual lesson workflow before release.
 
-The native prototype is packaged as an unsigned Xcode project. Its Swift/Xcode source SHA `6f9d1b93672c3fc45fe01f6cd8351582ed8101da` passed GitHub CI run `45160071619` and Xcode project build run `45160071574`. Latest PR HEAD `0ad345f569e9003a165e7781d5e7c30e8f4741d1` is documentation-only; no new CI/check run is recorded for that SHA, and no Swift source, Xcode project definition or iOS build workflow changed. The current artifact is ID `14809843453` (8,612 bytes), SHA-256 `0426c851f35fab78654fe8a087d7f420482fb603f972202928bb5cd116765d9d`, created 2026-11-23 and expiring 2026-12-07 10:53:40 UTC. It contains the standalone project but is not signed or installable until an approved Apple development team signs it. No iPhone installation or native field result exists.
+The native prototype is packaged as an unsigned Xcode project. Its Swift/Xcode source SHA `6f9d1b93672c3fc45fe01f6cd8351582ed8101da` passed GitHub CI run `45160071619` and Xcode project build run `45160071574`. Subsequent PR commits update documentation only; no new CI/check run is recorded for those documentation-only commits, and no Swift source, Xcode project definition or iOS build workflow changed. The current artifact is ID `14809843453` (8,612 bytes), SHA-256 `0426c851f35fab78654fe8a087d7f420482fb603f972202928bb5cd116765d9d`, created 2026-11-23 and expiring 2026-12-07 10:53:40 UTC. It contains the standalone project but is not signed or installable until an approved Apple development team signs it. No iPhone installation or native field result exists.
 
 Tony will arrange his own signing, installation and device test when available. Do not seek an external tester or send reminders. PR #130 remains Draft and its continuous-background-recording release gate is unchanged.
 
@@ -41,7 +41,7 @@ node --experimental-strip-types --input-type=module -e '
 
 ## Handoff
 
-- Current task: Partial. Prototype source `6f9d1b93672c3fc45fe01f6cd8351582ed8101da` passed CI `45160071619` and Xcode build `45160071574`; current PR HEAD `0ad345f569e9003a165e7781d5e7c30e8f4741d1` is documentation-only with no new CI/check run recorded. Artifact `14809843453` (8,612 bytes; SHA-256 `0426c851f35fab78654fe8a087d7f420482fb603f972202928bb5cd116765d9d`) expires 2026-12-07 10:53:40 UTC. No signing, installation or native field evidence.
+- Current task: Partial. Prototype source `6f9d1b93672c3fc45fe01f6cd8351582ed8101da` passed CI `45160071619` and Xcode build `45160071574`; subsequent PR commits are documentation-only with no new CI/check run recorded. Artifact `14809843453` (8,612 bytes; SHA-256 `0426c851f35fab78654fe8a087d7f420482fb603f972202928bb5cd116765d9d`) expires 2026-12-07 10:53:40 UTC. No signing, installation or native field evidence.
 - Next: wait for Tony to arrange approved signing and installation. Once the app is installable, Tony will perform one approximately 20-minute personal test; then evaluate the aggregate summary with `evaluateNativeSelfTest`.
 - Waiting on other repo: None.
 - Tony action: none requested now; Tony will arrange signing, installation and the personal test when available. Do not seek external testers or send reminders.
