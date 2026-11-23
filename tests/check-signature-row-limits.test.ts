@@ -12,9 +12,10 @@ function run(baseUrl, overrides = {}) {
     ...process.env,
     BASE_URL: baseUrl,
     INSTRUCTOR_ID: instructorId,
-    ...overrides,
   };
   delete env.EXTRA_HEADERS;
+  delete env.CONFIRM_REMOTE_WRITE;
+  Object.assign(env, overrides);
   return spawnSync(process.execPath, [script], {
     env,
     encoding: "utf8",
