@@ -1,19 +1,19 @@
 # STATUS.md
 
-_Last updated: 2026-11-23_ (Production release #25 verified; no migration in #25)
+_Last updated: 2026-11-24_ (Production release #25 verified; no migration in #25)
 
 Current state only; history in git log and closed PRs; active work in `TASK.md`.
 
 ## Current Snapshot
 
-- **PR #132 calendar:** HEAD `f631cea`; CI `45135467719` PASS. Code/test `49b19ee`; three later commits are docs-only. Five review threads closed; fresh L3 review pending (Issue #3 comments `7094977645`, `7096925471`). No OAuth, live calendar or deployment.
-- **PR #131 licence photo:** HEAD `977e357`; CI `45118098357` PASS. Browser QA `45116531936` PASS at code `360a2c7`; three later commits are docs-only. Fresh L3 review pending (Issue #3 comment `7093882548`); iPhone camera and ACT licence acceptance remain pre-release gates.
+- **PR #132 calendar:** HEAD `b8b8da5`; exact-HEAD CI `45183065859` PASS. Focused Browser QA `45182250537` PASS on code SHA `333947b2` at 375/820px. Five review threads closed. Fresh-context L3 review requested for this exact HEAD in ACTGDS Issue #3 comment `7110650174`; prior request `7094977645` was pinned to older `f631cea`. PR base remains `1d14f989`, behind current Staging `8647703`; reconcile the branch and rerun exact gates before any Staging merge. No real OAuth, calendar or learner data access.
+- **PR #131 licence photo:** HEAD `977e357`; exact-HEAD CI `45118098357` PASS. Browser QA `45116531936` PASS at code `360a2c7` (375/820px); subsequent commits are documentation-only. Fresh L3 review pending at exact HEAD (Issue #3 comment `7093882548`); real iPhone camera and ACT licence acceptance remain pre-release gates. Base `1d14f989` predates current Staging `8647703`; reconcile and rerun gates before Staging merge.
 - **PR #130 lesson GPS:** Draft, HEAD `a8337ff`, CI `44960761857` PASS. Web iPhone diagnostic: 99.5% foreground, 14.6% background, approximately 90-second page-suspension gap. Continuous background, lock-screen and app-switch acceptance remain release gates; L3 findings and consent/export decisions remain open.
-- **PR #133 iOS GPS:** Draft; last verified unsigned Xcode artifact built from source `1f6591b` with exact-source CI `45158620979` and Xcode build `45158620930` PASS. Artifact `14810301175` (8,611 bytes) expires 2026-12-07 10:43:57 UTC. A later docs-only handoff refresh is on the PR branch with CI pending; the artifact remains unsigned and not installable. Tony will arrange signing, installation and his own test; no external tester or reminder.
+- **PR #133 iOS GPS:** Draft; exact-HEAD CI `45160071619` and Xcode project build `45160071574` PASS on source `6f9d1b93672c3fc45fe01f6cd8351582ed8101da`. Current artifact `14809843453` (8,612 bytes; SHA-256 `0426c851f35fab78654fe8a087d7f420482fb603f972202928bb5cd116765d9d`), expires 2026-12-07 10:53:40 UTC. Unsigned Xcode project, not an installable IPA. Tony will arrange approved signing/installation and his own test; no external tester or reminder.
 - **SaaS:** P0 (#109) in Production; P1 (#124) on Staging; no SaaS environment.
 - **Instructors:** Tony (ADI604) and Anna (ADI358) are active in both environments; labels are in Production (#18).
 - **Production:** Release #25 run `40698196068` on main `618c6bed` succeeded with no migration. Worker `a46d73fa-0349-4517-a4da-9b09004c4403`; rollback and D1 restore point are in the run summary.
-- **Staging:** latest recorded CI `40719012415` PASS; the live Worker commit mapping is not independently exposed by current GitHub evidence.
+- **Staging:** current HEAD `8647703bb6dd07eda83164dabf732ded3a50c29f`; post-merge CI `45211072624` PASS. Worker-to-commit mapping remains unverified.
 - **Real-device checks:** iPad layout, route reminders and address suggestions accepted by Tony (not automated).
 - **Still open:** Staging-only signature-row limit check; notify-tick awaits Website PR #47 and Tony’s endpoint/secret approval (Production OFF); docs/tasks memory scheme, Memory Guard follow-up and `docs/BACKLOG.md`.
 
