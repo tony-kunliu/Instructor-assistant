@@ -2566,7 +2566,7 @@ const draw = async (page, index) => {
   // Save: the new learner opens with every panel, as before.
   await s.page.click("[data-testid=new-learner]");
   await s.page.waitForSelector("[data-testid=learner-form]");
-  await s.page.fill("[data-testid=learner-form] input >> nth=0", "QA Theme Saved");
+  await s.page.getByTestId("learner-name").fill("QA Theme Saved");
   await s.page.click("[data-testid=save-learner]");
   await s.page.waitForSelector('.status.ok:has-text("added")');
   await s.page.waitForSelector(".card.summary");

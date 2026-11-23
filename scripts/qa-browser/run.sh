@@ -9,8 +9,8 @@
 # is replaced by a stub that trusts x-instructor-* request headers so the
 # browser can act as Tony or Anna — the real Cloudflare Access check is NOT
 # exercised here (that stays a minimal real-login smoke test on Staging).
-# Needs Playwright (global npm install) with Chromium under
-# $PLAYWRIGHT_BROWSERS_PATH (default /opt/pw-browsers).
+# Uses Playwright from the global npm root by default. Set NPM_GLOBAL to a
+# different node_modules directory, or QA_CHROMIUM to a specific browser binary.
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 PORT="${QA_PORT:-3100}"
@@ -27,13 +27,33 @@ import { NextResponse } from "next/server";
 export function middleware() { return NextResponse.next(); }
 export const config = { matcher: "/((?!_next/static|_next/image).*)" };
 STUB
+# Require the local D1 binding before seeding. A successful application
+# response can otherwise come from the SQLite fallback while D1 starts.
+mkdir -p app/api/qa-ready
+cat > app/api/qa-ready/route.ts <<'READY'
+import { getCloudflareContext } from "@opennextjs/cloudflare";
+export const dynamic = "force-dynamic";
+export function GET() {
+  try {
+    if (getCloudflareContext().env.DB) return new Response(null, { status: 204 });
+  } catch {
+    // The local Cloudflare context has not been initialized yet.
+  }
+  return new Response(null, { status: 503 });
+}
+READY
 sed -i 's/^ACTGDS_INTEGRATION_ENABLED = "true"/ACTGDS_INTEGRATION_ENABLED = "false"/; s#^ACTGDS_WEBHOOK_URL = .*#ACTGDS_WEBHOOK_URL = ""#' wrangler.toml
 npx wrangler d1 migrations apply DB --local >/dev/null
 npx next build >build.log 2>&1 || { tail -30 build.log; exit 1; }
 setsid npx next start -p "$PORT" >server.log 2>&1 &
 SERVER_PID=$!
-for _ in $(seq 1 40); do curl -sf "http://localhost:$PORT/api/instructors" >/dev/null && break; sleep 1; done
-export QA_BASE="http://localhost:$PORT" QA_OUT="${QA_OUT:-$WORK/shots}" NPM_GLOBAL="$(npm root -g)"
+for _ in $(seq 1 40); do curl -sf "http://localhost:$PORT/api/qa-ready" >/dev/null && break; sleep 1; done
+if ! curl -sf "http://localhost:$PORT/api/qa-ready" >/dev/null; then
+  tail -30 server.log
+  echo "Local D1 did not become ready" >&2
+  exit 1
+fi
+export QA_BASE="http://localhost:$PORT" QA_OUT="${QA_OUT:-$WORK/shots}" NPM_GLOBAL="${NPM_GLOBAL:-$(npm root -g)}"
 mkdir -p "$QA_OUT"
 node "$ROOT/scripts/qa-browser/seed.mjs"
 node "$ROOT/scripts/qa-browser/qa.mjs"
@@ -41,3 +61,6 @@ node "$ROOT/scripts/qa-browser/qa.mjs"
 node "$ROOT/scripts/qa-browser/gps.mjs"
 # Installed-app manifests as served (colours = the light tokens), their links and theme-color metas, phone + iPad widths.
 node "$ROOT/scripts/qa-browser/manifest.mjs"
+# Learner intake: browser OCR of a synthetic card, then reviewed creation via the real learner API.
+node "$ROOT/scripts/qa-browser/learner-licence-photo.mjs"
+QA_WIDTH=820 node "$ROOT/scripts/qa-browser/learner-licence-photo.mjs"

@@ -20,11 +20,13 @@
   },
   "dependencies": {
     "@pdf-lib/fontkit": "1.1.1",
+    "@tesseract.js-data/eng": "1.0.0",
     "jose": "^6.2.12",
     "next": "16.3.6",
     "pdf-lib": "1.17.1",
     "react": "19.2.6",
-    "react-dom": "19.2.6"
+    "react-dom": "19.2.6",
+    "tesseract.js": "7.0.0"
   },
   "devDependencies": {
     "@opennextjs/cloudflare": "1.20.6",
