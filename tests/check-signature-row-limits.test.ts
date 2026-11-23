@@ -50,6 +50,7 @@ test("known Production hosts are refused even when remote-write acknowledgement 
   for (const baseUrl of [
     "https://instructor-assistant-production.example.workers.dev",
     "https://actgds.com/staging",
+    "https://actgds.com./staging",
     "https://www.actgds.com/",
   ]) {
     const result = run(baseUrl, { CONFIRM_REMOTE_WRITE: remoteAck });
