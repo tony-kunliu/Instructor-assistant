@@ -4,7 +4,7 @@ _Last updated: 2026-11-24_
 
 This file describes the current task only. Completed work history lives in Git history and closed PRs.
 
-**Current Task:** Project-memory accuracy refresh — **Completed on `feature/project-memory-sync-2026-11-24`**. Reconciled the root snapshot and handoff with remote Main/Staging refs, exact open PR heads, CI and Browser QA runs, Production Release #25 logs and recorded D1 migration levels. Documentation-only; no application code, database, account, calendar, learner data, configuration or deployment changed. Proposed in a PR to `staging`; not merged.
+**Current Task:** Project-memory accuracy refresh — **Completed on `feature/project-memory-sync-2026-11-24`**. Reconciled the root snapshot and handoff with remote Main/Staging refs, exact open PR heads, CI and Browser QA runs, Production Release #25 logs and recorded D1 migration levels. Documentation-only; no application code, database, account, calendar, learner data, configuration or deployment changed. The first CI attempt failed only because STATUS.md omitted Memory Guard's required Integration tokens; the snapshot now states the SaaS no-environment boundary and the existing V1/Production contract limits explicitly. A new CI run is pending. Proposed in a PR to `staging`; not merged.
 
 **Active delivery gates:**
 
