@@ -46,7 +46,9 @@ This is the current-state snapshot. Historical detail and release receipts remai
 
 - Contract: `actgds-instructor-assistant/v1`, event `lesson.upserted`.
 - Canonical schema SHA256: `c43d28164bb1c5c0e316e2d2f1cee77ad627508ef7dca4d58516adab8852b7e6`.
-- Cross-repo compatibility and non-Production E2E QA: PASS. Production Integration V1 is enabled; no contract change is part of the current PRs.
+- Cross-repo compatibility PASS; coordinated non-Production Integration V1 QA PASS (ACTGDS Issue #3 comment 5880411046).
+- Integration enabled: YES in Staging and Production. SaaS has no environment: Integration enabled: NO there, and migration 0005 not applied to any SaaS D1.
+- Migration 0005 is applied in Staging and Production for V1. Production rollout is not authorized for any contract change; the V1 rollout itself is complete.
 - The systems keep separate databases. Cross-system identity uses only a human-linked, versioned `learner_id`; never auto-match by name, phone or email. See `docs/integrations/` and ACTGDS Issue #3.
 
 ## Known Issues
