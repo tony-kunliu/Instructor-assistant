@@ -16,18 +16,7 @@ closed PRs; see `TASK.md` for what is in progress.
   files (`page.tsx`, `driver-app.tsx`, `globals.css`, `manifest.ts`, `middleware.ts`), so the next Production release needs Tony's go. Spec/plan: `docs/superpowers/*/2026-10-21-saas-edition*`.
 - **Instructors:** only Tony (ADI604) and Anna (ADI358) are active in both environments; display labels live in Production (#18).
 
-- **Production** (all via `Production Release`, all success; run and Worker ids of #12-#20 are in the runs' step
-  summaries; rollback target of each run = the previous run's Worker; D1 Time Travel bookmarks only in the summaries).
-  #12-#17: transfer, intake P1-P3 (`0011`-`0013`), iPad, R10a, list/lesson redesign, theme toggle. #18-#20: picker
-  labels, GPS phase 1, ACTGDS Instructor name, phone top bar. #21 run 39662454901 (`main` `869cfb5`; no migration):
-  Start Lesson in the summary (PR #105), Paste from assistant (PR #106); Worker `949fba77-cb1c-458c-b996-89b0b996a602`,
-  rollback Worker `3cde58e1-1c34-4d8a-b208-780b6b0ab5f1`. #22 run 39672461921 (`main` `4f60f99`; no migration): SaaS P0
-  (PR #109) and PR #108 (two L3 reviews): record a past lesson; save now, sign later (To sign queue, `signLesson`;
-  FD23 only signed, after every earlier app lesson is signed); Worker, rollback Worker, bookmark: the run's summary.
-  #23 run 39680183179 (`main` `438a8f8`; `0014` `instructors.adi_signature`): saved ADI signature, own tap only (PR #115); a
-  corrected signed lesson may be left unsigned; Worker `d716940c-62d9-4830-95ad-ac23e8ee6301`. #24 run 39730474484
-  (`main` `002b835`; `0015` learner drafts, `0016` `paper_import_drafts`): learner drafts (PR #118), saved CSV drafts
-  (PR #119); Worker `83d61f30-0d51-4dbd-be0d-dbe7ff5b529a`, rollback Worker `d716940c-62d9-4830-95ad-ac23e8ee6301`.
+- **Production:** release #24 is the latest recorded release (`main` `002b835`; run `39730474484`), D1 migrations `0015`–`0016`, Worker `83d61f30-0d51-4dbd-be0d-dbe7ff5b529a`, rollback Worker `d716940c-62d9-4830-95ad-ac23e8ee6301`. Older release and restore-point details remain in the corresponding workflow summaries.
 - **GPS phase 1 (PR #84, in Production #18):** `lib/gps` + page `/gps` (synthetic default, Real GPS behind a consent box, nothing uploaded). Design: `docs/superpowers/specs/2026-10-13-gps-tracking-design.md`. Phase 1b (Tony's real drive on Staging `/gps`) is next.
 - **Still open:** `scripts/check-signature-row-limits.mjs` not yet run against a deployed
   D1 (Staging only, never Production); notify-tick (lesson notifications) waits for Website
