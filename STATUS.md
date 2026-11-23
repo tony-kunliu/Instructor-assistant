@@ -7,14 +7,14 @@ closed PRs; see `TASK.md` for what is in progress.
 
 ## Current Snapshot
 
-- **Today’s lessons #132 (feature branch only):** Pickup parsing also recognises slash-separated `Mobile / Phone` labels, preventing the label from becoming a Directions destination; a valid event location remains the fallback. Regression tests added; not merged or deployed. Code/test commit `3218f24` passed CI run `45120480260` (908/908 tests, type check, build and both Memory Guard checks). Exact-head L3 re-review remains pending.
+- **Today’s lessons #132 (feature branch only):** pickup/contact parsing now rejects adjacent phone/email labels, validates candidate locations before selecting a Maps destination, and excludes explicitly negative lesson titles. Learner phone extraction requires a positively identified learner field or supported booking template. Five existing PR review threads were checked against the current implementation and committed regression cases, then resolved. Exact HEAD `49b19eeb7fb62a029e4883f00ea3544685f7d467`; CI run `45120879144` passed (908 tests, type check, build and both Memory Guard checks). Fresh-context L3 review remains pending; not merged or deployed.
 - **iOS GPS hold:** PR #133 remains a draft with its unsigned Xcode build artifact retained. Tony will arrange his own signing, installation and device test; no external tester or reminder. PR #130 remains a draft with continuous background recording acceptance as a release gate.
 
 - **SaaS edition (2026-10-21/28):** P0 in Production (#22): fail-closed `APP_MODE` (must stay in both vars sections). P1 on
   `staging` (PR #124, L3, reviewed): `migrations-saas/`, `lib/saas/*` gate
   (onboarding, 30-day trial, ownership guard), pages, `run-saas.sh` QA. **No SaaS environment exists.** It touches shared
   files (`page.tsx`, `driver-app.tsx`, `globals.css`, `manifest.ts`, `middleware.ts`), so the next Production release needs Tony's go. Spec/plan: `docs/superpowers/*/2026-10-21-saas-edition*`.
-- **Instructors:** only Tony (ADI604) and Anna (ADI358) are active in both environments; display labels live in Production (#18).
+- **Instructors:** only Tony (ADI604) and Anna (ADI358) are active in both environments; display labels are in Production (#18).
 
 - **Production:** release #24 is the latest recorded release (`main` `002b835`; run `39730474484`), D1 migrations `0015`–`0016`, Worker `83d61f30-0d51-4dbd-be0d-dbe7ff5b529a`, rollback Worker `d716940c-62d9-4830-95ad-ac23e8ee6301`. Older release and restore-point details remain in the corresponding workflow summaries.
 - **GPS phase 1 (PR #84, in Production #18):** `lib/gps` + page `/gps` (synthetic default, Real GPS behind a consent box, nothing uploaded). Design: `docs/superpowers/specs/2026-10-13-gps-tracking-design.md`. Phase 1b (Tony's real drive on Staging `/gps`) is next.
@@ -58,15 +58,14 @@ closed PRs; see `TASK.md` for what is in progress.
 - Releases: manual workflow `Production Release`
   (`.github/workflows/production-release.yml`, `main` only,
   `confirm=production`); token only in GitHub Secrets; each run records the
-  rollback version and a D1 Time Travel restore point. See
-  `docs/RELEASE_B_RUNBOOK.md`.
+  rollback version and a D1 Time Travel restore point. See `docs/RELEASE_B_RUNBOOK.md`.
 - D1 migration level: `0012`. Cloudflare Access: enabled (Tony + Anna only).
 - Integration enabled: **YES**, `ACTGDS_INTEGRATION_ENV=production`, Receiver
   `https://actgds.com/api/integrations/instructor-assistant/events`,
   `ACTGDS_WEBHOOK_SECRET` set by Tony. Outbox Cron `*/5`. No backfill.
 - Real end-to-end link verified 2026-10-10 (detail: git history, actgds.com Issue #3).
 - `APP_MODE = "private"` in `[vars]` and `[env.production.vars]` is required (missing → 503
-  everywhere); pinned by `tests/wrangler-app-mode.test.ts`.
+  everywhere); pinned in `tests/wrangler-app-mode.test.ts`.
 
 ## Current Product
 
