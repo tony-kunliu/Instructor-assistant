@@ -2,13 +2,17 @@
 
 ## Status
 
-The web diagnostic measured 99.5% foreground coverage and 14.6% background coverage in Tony’s personal test, with a roughly 90-second gap during page suspension. These observations apply to the web diagnostic only. PR #130 still requires evidence of continuous capture in the actual lesson workflow before release. This note prepares the isolated native test. No installable native build or native field result exists in the evidence reviewed.
+The web diagnostic measured 99.5% foreground coverage and 14.6% background coverage in Tony’s personal test, with an approximately 90-second gap during page suspension. These results apply only to the web diagnostic and do not prove native background continuity. PR #130 still requires evidence of continuous capture in the actual lesson workflow before release.
+
+The native prototype is now packaged as an unsigned Xcode project. On source commit `7c1f13651b5f413a034b62ddd6700900ee8dab75`, GitHub CI run `44989249762` and Xcode build run `44989249829` both succeeded. The artifact is ID `14741550719` (8,611 bytes), created 2026-11-22 and expiring 2026-12-06 05:24:55 UTC. It contains the standalone project but is not signed or installable until an approved Apple development team signs it. No iPhone installation or native field result exists.
+
+Tony will arrange his own signing, installation and device test when available. Do not seek an external tester or send reminders. PR #130 remains Draft and its continuous-background-recording release gate is unchanged.
 
 ## Prototype acceptance before handoff
 
 - Use a standalone, signed iPhone app with Core Location background updates configured. Start only after the tester taps Start and grants the necessary system permission. The app displays recording state, shows a clear permission error, and stops updates on Stop. Keep capture on-device and use no app account, learner record, network upload, or shared storage with Instructor Assistant.
 - Capture fix time separately from callback time so late delivery cannot be mistaken for a sampling gap. Record phase boundaries and changes to authorization. Restrict exports to counts, durations, coverage and gap metrics. Keep coordinates and route details out of exported diagnostics and GitHub.
-- Before inviting Tony, install and launch the exact build on a development device, verify Start/Stop and the permission-denied path, and confirm an export contains no coordinates. Record the build identifier, source commit, iOS version and device model. Establish a signed installation route through existing approved tooling.
+- Do not ask Tony to test until a signed, installable build exists. The signing and installation route must use an approved Apple development team. Before the personal drive, verify Start/Stop and permission-denied behavior and confirm the exported aggregate contains no coordinates. Record the exact source/build identifier, iOS version and device model.
 
 ## One personal drive, about 20 minutes
 
@@ -37,7 +41,7 @@ node --experimental-strip-types --input-type=module -e '
 
 ## Handoff
 
-- Current task: Partial. Xcode compiled the unsigned arm64 app on GitHub Actions at `ba3b855`. The prototype reports sample and callback delivery counts per marked phase. Signing, installation and field evidence are still open.
-- Next: use an approved Apple development team and a Mac with Xcode to sign and install on a development iPhone. Complete the pre-handoff checks before requesting the single personal drive.
+- Current task: Partial. Unsigned Xcode project compiled on source `7c1f13651b5f413a034b62ddd6700900ee8dab75`; CI `44989249762` and Xcode build `44989249829` passed. Artifact `14741550719` expires 2026-12-06 05:24:55 UTC. No signing, installation or native field evidence.
+- Next: wait for Tony to arrange approved signing and installation. Once the app is installable, Tony will perform one approximately 20-minute personal test; then evaluate the aggregate summary with `evaluateNativeSelfTest`.
 - Waiting on other repo: None.
-- Tony action: confirm the signing route if no approved development Mac is available.
+- Tony action: none requested now; Tony will arrange signing, installation and the personal test when available. Do not seek external testers or send reminders.

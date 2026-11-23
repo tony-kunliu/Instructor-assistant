@@ -1,46 +1,26 @@
 # STATUS.md
 
-_Last updated: 2026-10-21_ (Production and Staging D1 at migration `0016`; release #24 live)
+_Last updated: 2026-11-23_ (Production release #25 verified; no migration in #25)
 
-This file describes **current state only**. History lives in git log and
-closed PRs; see `TASK.md` for what is in progress.
+Current state only; history in git log and closed PRs; active work in `TASK.md`.
 
 ## Current Snapshot
 
-- **iOS GPS self-test (#133):** CI packages the Xcode project. Signing and iPhone installation pending.
-
-- **SaaS edition (2026-10-21/28):** P0 in Production (#22): fail-closed `APP_MODE` (must stay in both vars sections). P1 on
-  `staging` (PR #124, L3, reviewed): `migrations-saas/`, `lib/saas/*` gate
-  (onboarding, 30-day trial, ownership guard), pages, `run-saas.sh` QA. **No SaaS environment exists.** It touches shared
-  files (`page.tsx`, `driver-app.tsx`, `globals.css`, `manifest.ts`, `middleware.ts`), so the next Production release needs Tony's go. Spec/plan: `docs/superpowers/*/2026-10-21-saas-edition*`.
-- **Instructors:** only Tony (ADI604) and Anna (ADI358) are active in both environments; display labels live in Production (#18).
-
-- **Production** (all via `Production Release`, all success; run and Worker ids of #12-#20 are in the runs' step
-  summaries; rollback target of each run = the previous run's Worker; D1 Time Travel bookmarks only in the summaries).
-  #12-#17: transfer, intake P1-P3 (`0011`-`0013`), iPad, R10a, list/lesson redesign, theme toggle. #18-#20: picker
-  labels, GPS phase 1, ACTGDS Instructor name, phone top bar. #21 run 39662454901 (`main` `869cfb5`; no migration):
-  Start Lesson in the summary (PR #105), Paste from assistant (PR #106); Worker `949fba77-cb1c-458c-b996-89b0b996a602`,
-  rollback Worker `3cde58e1-1c34-4d8a-b208-780b6b0ab5f1`. #22 run 39672461921 (`main` `4f60f99`; no migration): SaaS P0
-  (PR #109) and PR #108 (two L3 reviews): record a past lesson; save now, sign later (To sign queue, `signLesson`;
-  FD23 only signed, after every earlier app lesson is signed); Worker, rollback Worker, bookmark: the run's summary.
-  #23 run 39680183179 (`main` `438a8f8`; `0014` `instructors.adi_signature`): saved ADI signature, own tap only (PR #115); a
-  corrected signed lesson may be left unsigned; Worker `d716940c-62d9-4830-95ad-ac23e8ee6301`. #24 run 39730474484
-  (`main` `002b835`; `0015` learner drafts, `0016` `paper_import_drafts`): learner drafts (PR #118), saved CSV drafts
-  (PR #119); Worker `83d61f30-0d51-4dbd-be0d-dbe7ff5b529a`, rollback Worker `d716940c-62d9-4830-95ad-ac23e8ee6301`.
-- **GPS:** Web self-test complete. Native source on `feature/ios-gps-prototype`. Compile, signing and device verification are open. See `docs/tasks/ios-core-location-self-test.md`.
-- **Still open:** `scripts/check-signature-row-limits.mjs` not yet run against a deployed
-  D1 (Staging only, never Production); notify-tick (lesson notifications) waits for Website
-  PR #47 rework and Tony's approval of the new endpoint + secret (Production OFF); intake
-  P4; `docs/tasks` memory scheme + Memory Guard changes (Handbook §9); items in
-  `docs/BACKLOG.md`.
+- **PR #132 calendar:** HEAD `f631cea`; CI `45135467719` PASS. Code/test `49b19ee`; three later commits are docs-only. Five review threads closed; fresh L3 review pending (Issue #3 comments `7094977645`, `7096925471`). No OAuth, live calendar or deployment.
+- **PR #131 licence photo:** HEAD `977e357`; CI `45118098357` PASS. Browser QA `45116531936` PASS at code `360a2c7`; three later commits are docs-only. Fresh L3 review pending (Issue #3 comment `7093882548`); iPhone camera and ACT licence acceptance remain pre-release gates.
+- **PR #130 lesson GPS:** Draft, HEAD `a8337ff`, CI `44960761857` PASS. Web iPhone diagnostic: 99.5% foreground, 14.6% background, approximately 90-second page-suspension gap. Continuous background, lock-screen and app-switch acceptance remain release gates; L3 findings and consent/export decisions remain open.
+- **PR #133 iOS GPS:** Draft, HEAD `7c1f136`; CI `44989249762` and unsigned Xcode build `44989249829` PASS. Artifact `14741550719` (8,611 bytes) expires 2026-12-06 05:24:55 UTC; it is not installable until signed. Tony will arrange signing, installation and his own test; no external tester or reminder.
+- **SaaS:** P0 (#109) in Production; P1 (#124) on Staging; no SaaS environment.
+- **Instructors:** Tony (ADI604) and Anna (ADI358) are active in both environments; labels are in Production (#18).
+- **Production:** Release #25 run `40698196068` on main `618c6bed` succeeded with no migration. Worker `a46d73fa-0349-4517-a4da-9b09004c4403`; rollback and D1 restore point are in the run summary.
+- **Staging:** latest recorded CI `40719012415` PASS; the live Worker commit mapping is not independently exposed by current GitHub evidence.
+- **Real-device checks:** iPad layout, route reminders and address suggestions accepted by Tony (not automated).
+- **Still open:** Staging-only signature-row limit check; notify-tick awaits Website PR #47 and Tony’s endpoint/secret approval (Production OFF); docs/tasks memory scheme, Memory Guard follow-up and `docs/BACKLOG.md`.
 
 ## Repository
 
-- **main:** everything released to Production up to #14; `git fetch` for its head.
-  Release B source `d47350bcb65fa46d3135d1dbeec52882f7012886`; rollback baseline before
-  Release A `8bae4e4c211a78b2e682d8b04744f102fa1a4328`.
-- **staging:** same product code as `main` (`main` also carries 3 workflow files merged
-  there directly). Its HEAD moves; do not record an exact SHA here.
+- **main:** Production release #25 source `618c6bed647d406b6b2775f4518a82afcfb6cb75`; run `40698196068` succeeded. Fetch the remote head before work.
+- **staging:** moving integration branch; fetch its current head before any merge or deployment. Do not persist an ordinary moving SHA here.
 
 ## CI
 
