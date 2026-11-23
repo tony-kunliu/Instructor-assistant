@@ -791,3 +791,12 @@ details.integration-id[open] > summary { flex-basis: 100%; }
    toggle off a 375/390 px screen. The grid is only as wide as its widest row. */
 .signed-in-as.saas { display: grid; grid-template-columns: auto auto; justify-content: end; column-gap: var(--space-2); }
 .signed-in-as.saas > span { grid-column: 1 / -1; justify-self: end; }
+
+.today-lessons { padding: 1rem; overflow-wrap: anywhere; }
+.today-list { list-style: none; margin: .5rem 0 1rem; padding: 0; }
+.today-lesson { border-top: 1px solid var(--line); padding: .75rem 0; }
+.today-lesson h3, .today-lesson p { margin: 0 0 .4rem; }
+.today-time { font-weight: 700; display: flex; gap: .4rem 1rem; flex-wrap: wrap; }
+.today-time small { font-weight: 500; }
+.today-links { display: flex; flex-wrap: wrap; gap: .35rem; margin: .55rem 0; }
+.today-last-note { white-space: pre-wrap; }

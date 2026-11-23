@@ -48,6 +48,7 @@ import { instructorLabel } from "@/lib/instructor-label.ts";
 import { matchLearnersByName, parseAssistantDraft } from "@/lib/assistant-draft.ts";
 import { requestErrorMessage, trialBanner } from "@/lib/saas/trial-banner.ts";
 import ThemeToggle from "./theme-switch.tsx";
+import TodayLessons from "./today-lessons.tsx";
 
 type LessonDraft = {
   lessonDate: string;
@@ -248,6 +249,7 @@ async function api<T>(url: string, init?: RequestInit): Promise<T> {
 /** `mode` comes from the server page (app/page.tsx) so the SaaS edition never flashes the private edition's header; omitted = private. */
 export default function DriverApp({ mode = "private" }: { mode?: "private" | "saas" }) {
   const [learners, setLearners] = useState<Learner[]>([]);
+  const [showToday, setShowToday] = useState(false);
   // Per-learner card data (lessons, hours, competencies, gates) from GET /api/learners; refreshed from the detail of the open learner.
   const [summaries, setSummaries] = useState<Record<string, LearnerListSummary>>({});
   // With a learner open, the list shows only their card until "Show all learners" (or a search / view change) expands it.
@@ -1344,6 +1346,19 @@ export default function DriverApp({ mode = "private" }: { mode?: "private" | "sa
           <span>{trial.text}</span>
           {trialExpired ? <small data-testid="trial-readonly-note">Adding or changing learners, lessons and signatures is switched off. History and PDF export still work.</small> : null}
         </a>
+      ) : null}
+
+      {ready && !isSaas && signedInInstructorId && !addingLearner ? (
+        <>
+          <button type="button" className="btn ghost block" aria-expanded={showToday} onClick={() => setShowToday((current) => !current)}>
+            {showToday ? "Hide today’s lessons" : "Today’s lessons"}
+          </button>
+          {showToday ? <TodayLessons
+            learners={learners.filter((learner) => learner.instructorId === signedInInstructorId && !learner.archivedAt && !learner.draftAt)}
+            summaries={summaries}
+            onOpenLearner={(id) => { setShowToday(false); chooseView("mine"); pickLearner(id); }}
+          /> : null}
+        </>
       ) : null}
 
       <section className="card picker" data-selected={selectedId}>

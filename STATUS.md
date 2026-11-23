@@ -1,30 +1,22 @@
 # STATUS.md
 
-_Last updated: 2026-10-21_ (Production and Staging D1 at migration `0016`; release #24 live)
+_Last updated: 2026-11-24_ (Production and Staging D1 at migration `0016`; release #24 live)
 
 This file describes **current state only**. History lives in git log and
 closed PRs; see `TASK.md` for what is in progress.
 
 ## Current Snapshot
 
+- **Today’s lessons #132 (feature only):** hardened calendar parsing for ambiguous contacts, unsafe locations and negative titles; five review threads resolved with regression tests. Implementation/test SHA `49b19eeb7fb62a029e4883f00ea3544685f7d467` passed CI `45120879144` (908 tests). Added isolated Browser QA runner/workflow; run `45182250537` passed on code SHA `333947b2aa55d47fe30f81705fcb9d13de09ac5d` at 375/820px (outage, malformed response, retry, overlap, partial results, learner reselection). Exact-HEAD CI `45182263993` passed (908 tests, typecheck, build, Memory Guard). No live calendar/OAuth/data access; fresh independent review remains pending. Not merged/deployed.
+- **iOS GPS hold:** PR #133 remains a draft with its unsigned Xcode build artifact retained. Tony will arrange his own signing, installation and device test; no external tester or reminder. PR #130 remains a draft with continuous background recording acceptance as a release gate.
+
 - **SaaS edition (2026-10-21/28):** P0 in Production (#22): fail-closed `APP_MODE` (must stay in both vars sections). P1 on
   `staging` (PR #124, L3, reviewed): `migrations-saas/`, `lib/saas/*` gate
   (onboarding, 30-day trial, ownership guard), pages, `run-saas.sh` QA. **No SaaS environment exists.** It touches shared
   files (`page.tsx`, `driver-app.tsx`, `globals.css`, `manifest.ts`, `middleware.ts`), so the next Production release needs Tony's go. Spec/plan: `docs/superpowers/*/2026-10-21-saas-edition*`.
-- **Instructors:** only Tony (ADI604) and Anna (ADI358) are active in both environments; display labels live in Production (#18).
+- **Instructors:** only Tony (ADI604) and Anna (ADI358) are active in both environments; display labels are in Production (#18).
 
-- **Production** (all via `Production Release`, all success; run and Worker ids of #12-#20 are in the runs' step
-  summaries; rollback target of each run = the previous run's Worker; D1 Time Travel bookmarks only in the summaries).
-  #12-#17: transfer, intake P1-P3 (`0011`-`0013`), iPad, R10a, list/lesson redesign, theme toggle. #18-#20: picker
-  labels, GPS phase 1, ACTGDS Instructor name, phone top bar. #21 run 39662454901 (`main` `869cfb5`; no migration):
-  Start Lesson in the summary (PR #105), Paste from assistant (PR #106); Worker `949fba77-cb1c-458c-b996-89b0b996a602`,
-  rollback Worker `3cde58e1-1c34-4d8a-b208-780b6b0ab5f1`. #22 run 39672461921 (`main` `4f60f99`; no migration): SaaS P0
-  (PR #109) and PR #108 (two L3 reviews): record a past lesson; save now, sign later (To sign queue, `signLesson`;
-  FD23 only signed, after every earlier app lesson is signed); Worker, rollback Worker, bookmark: the run's summary.
-  #23 run 39680183179 (`main` `438a8f8`; `0014` `instructors.adi_signature`): saved ADI signature, own tap only (PR #115); a
-  corrected signed lesson may be left unsigned; Worker `d716940c-62d9-4830-95ad-ac23e8ee6301`. #24 run 39730474484
-  (`main` `002b835`; `0015` learner drafts, `0016` `paper_import_drafts`): learner drafts (PR #118), saved CSV drafts
-  (PR #119); Worker `83d61f30-0d51-4dbd-be0d-dbe7ff5b529a`, rollback Worker `d716940c-62d9-4830-95ad-ac23e8ee6301`.
+- **Production:** release #24 is the latest recorded release (`main` `002b835`; run `39730474484`), D1 migrations `0015`–`0016`, Worker `83d61f30-0d51-4dbd-be0d-dbe7ff5b529a`, rollback Worker `d716940c-62d9-4830-95ad-ac23e8ee6301`. Older release and restore-point details remain in the corresponding workflow summaries.
 - **GPS phase 1 (PR #84, in Production #18):** `lib/gps` + page `/gps` (synthetic default, Real GPS behind a consent box, nothing uploaded). Design: `docs/superpowers/specs/2026-10-13-gps-tracking-design.md`. Phase 1b (Tony's real drive on Staging `/gps`) is next.
 - **Still open:** `scripts/check-signature-row-limits.mjs` not yet run against a deployed
   D1 (Staging only, never Production); notify-tick (lesson notifications) waits for Website
@@ -66,15 +58,14 @@ closed PRs; see `TASK.md` for what is in progress.
 - Releases: manual workflow `Production Release`
   (`.github/workflows/production-release.yml`, `main` only,
   `confirm=production`); token only in GitHub Secrets; each run records the
-  rollback version and a D1 Time Travel restore point. See
-  `docs/RELEASE_B_RUNBOOK.md`.
+  rollback version and a D1 Time Travel restore point. See `docs/RELEASE_B_RUNBOOK.md`.
 - D1 migration level: `0012`. Cloudflare Access: enabled (Tony + Anna only).
 - Integration enabled: **YES**, `ACTGDS_INTEGRATION_ENV=production`, Receiver
   `https://actgds.com/api/integrations/instructor-assistant/events`,
   `ACTGDS_WEBHOOK_SECRET` set by Tony. Outbox Cron `*/5`. No backfill.
 - Real end-to-end link verified 2026-10-10 (detail: git history, actgds.com Issue #3).
 - `APP_MODE = "private"` in `[vars]` and `[env.production.vars]` is required (missing → 503
-  everywhere); pinned by `tests/wrangler-app-mode.test.ts`.
+  everywhere); pinned in `tests/wrangler-app-mode.test.ts`.
 
 ## Current Product
 
@@ -122,10 +113,8 @@ closed PRs; see `TASK.md` for what is in progress.
   Tony's separate explicit authorization; the V1 rollout itself is done.
 - ACTGDS side (not this repo): My Driving (student page) is live in Production (released by Work). Tony's display polish list (readable competency
   names, separate "achieved this lesson" vs overall progress, show "not
-  achieved", lesson number and cumulative totals in the Admin Instructor
-  Assistant card, clearer manual lesson-note block, less double entry,
-  consistent language) goes to Work. "Synced at" = when ACTGDS received the
-  event (correct).
+  achieved", lesson number and cumulative totals in the Admin Instructor Assistant card, clearer manual lesson-note block, less double entry,
+  consistent language) goes to Work. "Synced at" = when ACTGDS received the event (correct).
 
 Detail: `docs/integrations/actgds-instructor-assistant-v1.md`; coordination
 record: `tony-kunliu/actgds.com` Issue #3.
