@@ -87,6 +87,28 @@ try {
   assert.equal(await page.getByTestId("save-learner-draft").isEnabled(), true);
   await page.evaluate(() => window.releaseLicenceDecode());
 
+  // The 30s timeout must also release a pending image decode, not only OCR worker jobs.
+  await page.evaluate(() => {
+    const originalSetTimeout = window.setTimeout.bind(window);
+    window.restoreLicenceTimeout = () => { window.setTimeout = originalSetTimeout; };
+    window.setTimeout = (handler, delay, ...args) =>
+      originalSetTimeout(handler, delay === 30_000 ? 50 : delay, ...args);
+    const decode = HTMLImageElement.prototype.decode;
+    HTMLImageElement.prototype.decode = function () {
+      HTMLImageElement.prototype.decode = decode;
+      return new Promise((resolve) => { window.releaseLicenceTimeoutDecode = resolve; });
+    };
+  });
+  await capture.setInputFiles(photo);
+  await page.getByText(/Couldn’t read that photo/).waitFor();
+  assert.equal(await page.getByTestId("save-learner").isEnabled(), true);
+  assert.equal(await page.getByTestId("save-learner-draft").isEnabled(), true);
+  assert.equal(await page.evaluate(() => window.ocrWorkers), 0);
+  await page.evaluate(() => {
+    window.restoreLicenceTimeout();
+    window.releaseLicenceTimeoutDecode();
+  });
+
   // Cancel at the recognition boundary after the real OCR worker has initialized.
   // Hold this one message so even a fast machine can't finish before Cancel is clicked.
   await page.evaluate(() => {

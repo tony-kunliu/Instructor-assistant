@@ -1,3 +1,34 @@
+export function waitForAbortable<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
+  signal.throwIfAborted();
+  return new Promise<T>((resolve, reject) => {
+    let settled = false;
+    const cleanup = () => signal.removeEventListener("abort", onAbort);
+    const onAbort = () => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(signal.reason ?? new Error("Aborted"));
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+    promise.then(
+      (value) => {
+        if (settled) return;
+        if (signal.aborted) return onAbort();
+        settled = true;
+        cleanup();
+        resolve(value);
+      },
+      (error) => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        reject(error);
+      },
+    );
+    if (signal.aborted) onAbort();
+  });
+}
+
 const OCR_ASSETS = "/licence-ocr-v7";
 const MAX_SIDE = 1800;
 const OCR_TIMEOUT_MS = 30_000;
@@ -8,7 +39,7 @@ async function preparePhoto(file: File, signal: AbortSignal) {
   try {
     const image = new Image();
     image.src = url;
-    await image.decode();
+    await waitForAbortable(image.decode(), signal);
     signal.throwIfAborted();
     const scale = Math.min(MAX_SIDE / Math.max(image.naturalWidth, image.naturalHeight), 1);
     canvas.width = Math.round(image.naturalWidth * scale);
@@ -18,10 +49,10 @@ async function preparePhoto(file: File, signal: AbortSignal) {
     context.fillStyle = "white";
     context.fillRect(0, 0, canvas.width, canvas.height);
     context.drawImage(image, 0, 0, canvas.width, canvas.height);
-    const picture = await new Promise<Blob>((resolve, reject) => {
+    const picture = await waitForAbortable(new Promise<Blob>((resolve, reject) => {
       canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error("Unreadable photo")));
-    });
-    return picture.arrayBuffer();
+    }), signal);
+    return waitForAbortable(picture.arrayBuffer(), signal);
   } finally {
     URL.revokeObjectURL(url);
     canvas.width = 0;
