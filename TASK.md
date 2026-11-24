@@ -1,16 +1,20 @@
 # TASK.md
 
-_Last updated: 2026-11-23_
+_Last updated: 2026-11-24_
 
-**Current Task:** PR #131 learner licence photo intake — Partial. Added Browser QA trigger coverage for `public/**`, `next.config.ts`, and `scripts/prepare-licence-ocr.ts`, so changes to the OCR asset pipeline cannot skip browser E2E. Commit `360a2c7356afad9ae96aa6a604b3ddd5cb582b18`. CI run [45116536144](https://github.com/tony-kunliu/Instructor-assistant/actions/runs/45116536144) passed Memory Guard, Poppler, typecheck, full tests, production build and post-build Guard. Browser QA run [45116531936](https://github.com/tony-kunliu/Instructor-assistant/actions/runs/45116531936) passed on the same SHA: 242/242 core GPS checks, 26/26 manifest checks, and learner-photo scan QA passed at both 375px and 820px. The preceding Browser QA run [45113177144](https://github.com/tony-kunliu/Instructor-assistant/actions/runs/45113177144) passed at 375px and 820px, including OCR cancellation, timeout, retry, reviewed save, no image upload and text fallback.
+This file describes the current task only. Completed work history lives in Git history and closed PRs.
 
-**Next Recommended Task:** Obtain a fresh independent L3 review of the latest PR #131 HEAD. Do not merge before that review passes.
+**Current Task:** Project-memory accuracy refresh — **Completed on `feature/project-memory-sync-2026-11-24`**. Reconciled the root snapshot and handoff with remote Main/Staging refs, exact open PR heads, CI and Browser QA runs, Production Release #25 logs and recorded D1 migration levels. Documentation-only; no application code, database, account, calendar, learner data, configuration or deployment changed. The first CI attempt failed only because STATUS.md omitted Memory Guard's required Integration tokens; the snapshot now states the SaaS no-environment boundary and the existing V1/Production contract limits explicitly. A new CI run is pending. Proposed in a PR to `staging`; not merged.
 
-**Waiting on Other Repo:** NONE.
+**Active delivery gates:**
 
-**Tony Manual Action Required:** Before release, accept a genuine ACT learner licence camera scan on iPhone. Tony will arrange the iOS GPS self-test personally; no external tester or reminder. PR #130 remains Draft until background continuous recording, lock-screen and app-switch acceptance. PR #133 remains Draft and unsigned.
+- **PR #132 — Today’s lessons:** HEAD `b8b8da504fc82507f51b914b1d6d053e85944991`; exact-HEAD CI PASS; focused Browser QA PASS at `333947b`, with only project-memory docs changed afterwards. Fresh L3 review of exact HEAD is pending (ACTGDS Issue #3 comment 7102354803). No live Google OAuth/calendar access.
+- **PR #131 — licence photo:** HEAD `977e357998eaf4394e2ca268b03f993f61ba70bf`; exact-HEAD CI PASS; Browser QA PASS at `360a2c7`, with only project-memory docs changed afterwards. Fresh L3 review of exact HEAD is pending (Issue #3 comment 7093882548). Real iPhone camera / ACT card acceptance remains before release.
+- **PR #130 — lesson GPS:** Draft; CI PASS. Background recording through lock screen and app switching remains an unmet release gate.
+- **PR #133 — isolated iOS GPS:** Draft; CI and Xcode project build PASS. Artifact 14810301175 is unsigned and not installable as supplied. Tony will arrange signing/install and his own test when available.
 
-**Other active PR gates:**
-- PR #132 calendar: CI passed on `a4c5f248`; the L3 verdict is pinned to `34c41aa`, not the current HEAD. Exact-head review and approved read-only Google Calendar Staging verification remain outstanding; no real OAuth configured.
-- PR #130 GPS: Draft; CI passed on `a8337ff`; background continuous recording, lock-screen and app-switch acceptance remain required.
-- PR #133 iOS GPS: Draft; CI and unsigned macOS build passed on `7c1f136`; signing, installation and Tony's test remain.
+**Next Recommended Task:** Independently verify the factual accuracy of this project-memory refresh PR and its Memory Guard/CI result. Merge to Staging only after review and required checks pass. Do not merge Main/Staging wholesale: they are diverged. Then continue the already-requested exact-HEAD L3 reviews for PR #132 and #131; do not change those candidate branches while review is pending.
+
+**Waiting on Other Repo:** NONE for this documentation task. Review coordination is recorded in ACTGDS Issue #3; no shared contract or cross-repo interface change is proposed.
+
+**Tony Manual Action Required:** NONE for this documentation task. Later, Tony will arrange signing/installation and his personal test of the unsigned iOS prototype. PR #131 still needs real iPhone camera / ACT card acceptance before release.
