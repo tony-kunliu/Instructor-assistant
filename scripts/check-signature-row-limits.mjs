@@ -23,6 +23,8 @@
 //                   setups) and used as the learner's instructor
 //   EXTRA_HEADERS   optional JSON object of extra request headers (e.g.
 //                   Cloudflare Access service-token headers for Staging)
+//   CONFIRM_REMOTE_WRITE  required for any non-loopback target; exact value:
+//                   I_ACKNOWLEDGE_PERMANENT_SYNTHETIC_LEARNER_AND_LESSON_DATA
 //   LEARNER_ID      optional: reuse an existing learner instead of creating one
 //   SIG_LENGTH      optional, default 690000 (must stay ≤ 700000)
 
@@ -33,14 +35,48 @@ if (!BASE || !INSTRUCTOR_ID) {
   console.error("BASE_URL and INSTRUCTOR_ID are required (see the header of this file).");
   process.exit(2);
 }
-if (/actgds|production/i.test(BASE) && !/staging|localhost|127\.0\.0\.1/i.test(BASE)) {
-  console.error(`Refusing to run against what looks like Production: ${BASE}`);
+let targetUrl;
+try {
+  targetUrl = new URL(BASE);
+} catch {
+  console.error(`Refusing invalid BASE_URL: ${BASE}`);
+  process.exit(2);
+}
+if (!["http:", "https:"].includes(targetUrl.protocol)) {
+  console.error(`Refusing unsupported BASE_URL protocol: ${targetUrl.protocol}`);
+  process.exit(2);
+}
+if (targetUrl.username || targetUrl.password || targetUrl.search || targetUrl.hash) {
+  console.error("Refusing BASE_URL credentials, query strings or fragments; use EXTRA_HEADERS for access credentials.");
+  process.exit(2);
+}
+
+const host = targetUrl.hostname.toLowerCase().replace(/\.$/, "");
+const isLoopback = new Set(["localhost", "127.0.0.1", "[::1]"]).has(host);
+const isKnownProductionHost =
+  host === "actgds.com" ||
+  host.endsWith(".actgds.com") ||
+  /(^|[-.])production($|[-.])/i.test(host);
+if (isKnownProductionHost) {
+  console.error(`Refusing to run against a known Production host: ${host}`);
+  process.exit(2);
+}
+if (!isLoopback && targetUrl.protocol !== "https:") {
+  console.error("Refusing remote HTTP; non-loopback targets must use HTTPS.");
+  process.exit(2);
+}
+const REMOTE_WRITE_ACK = "I_ACKNOWLEDGE_PERMANENT_SYNTHETIC_LEARNER_AND_LESSON_DATA";
+if (!isLoopback && process.env.CONFIRM_REMOTE_WRITE !== REMOTE_WRITE_ACK) {
+  console.error(
+    "Refusing remote write: this check permanently creates a synthetic learner and lesson and may emit an Integration V1 event. " +
+    "For a deliberately selected non-Production Staging target, set CONFIRM_REMOTE_WRITE=" + REMOTE_WRITE_ACK,
+  );
   process.exit(2);
 }
 
 const headers = { "content-type": "application/json", "x-instructor-id": INSTRUCTOR_ID, ...JSON.parse(process.env.EXTRA_HEADERS || "{}") };
 const call = async (path, method = "GET", body) => {
-  const response = await fetch(BASE + path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
+  const response = await fetch(BASE + path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body), redirect: "error" });
   const text = await response.text();
   let data;
   try { data = JSON.parse(text); } catch { data = { raw: text.slice(0, 300) }; }

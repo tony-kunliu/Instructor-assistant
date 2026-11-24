@@ -1,25 +1,29 @@
 # STATUS.md
 
-_Last updated: 2026-11-24_ (Production Release #25 verified; feature work remains on PR branches)
+_Last updated: 2026-11-24_ (Production Release #25 verified; PR #134 and #135 merged to Staging; PR #130–#133 remain unpromoted)
 
 This is the current-state snapshot. Historical detail and release receipts remain in Git history, GitHub Actions logs and the coordination issue. Fetch moving branch heads when needed. A CI pass alone is not proof of a live deployment.
 
 ## Current Snapshot
 
 - **Production:** Main source `618c6bed647d406b6b2775f4518a82afcfb6cb75`. Main CI [40698195421](https://github.com/tony-kunliu/Instructor-assistant/actions/runs/40698195421) and Production Release #25 [40698196068](https://github.com/tony-kunliu/Instructor-assistant/actions/runs/40698196068) succeeded. Release #25 deployed Worker version `a46d73fa-0349-4517-a4da-9b09004c4403`; its log reports no migrations to apply. Production D1 is at `0016`, applied by Release #24 [39730474484](https://github.com/tony-kunliu/Instructor-assistant/actions/runs/39730474484).
-- **Staging:** last recorded Staging CI [40719012415](https://github.com/tony-kunliu/Instructor-assistant/actions/runs/40719012415) succeeded; D1 migration level is last recorded as `0013`. Current GitHub evidence does not expose a reliable live Worker-to-commit mapping.
-- **Branch relationship:** `main` and `staging` are diverged: Staging has 15 commits not in Main, Main has 12 commits not in Staging, and 61 paths differ. They are not synchronized; do not merge them wholesale.
+- **Staging:** post-merge CI [45211072624](https://github.com/tony-kunliu/Instructor-assistant/actions/runs/45211072624) succeeded after PR #134 and #135 merged. D1 migration level remains last recorded as `0013`. Current GitHub evidence does not expose a reliable live Worker-to-commit mapping.
+- **Branch relationship:** `main` and `staging` are diverged: Staging has 17 commits not in Main and Main has 12 commits not in Staging. They are not synchronized; do not merge them wholesale.
+- **Staging-only monitor (PR #135):** merged 2026-11-23 (merge commit `8647703bb6dd07eda83164dabf732ded3a50c29f`). The workflow uses read-only GitHub permissions (`actions`, `contents`, `pull-requests`) and performs no checkout, repository writes, deployment, migration or learner-data access. Its hourly schedule is not active while the workflow exists only on `staging`; scheduled workflows require the default branch `main`. Main and Production are unchanged. No formal PR review submission is recorded; any future Main promotion remains separately gated.
+- **Project-memory PR #134:** merged to Staging 2026-11-23 (merge commit `897d4a9c185d39a21393129cc5980df7855f3c8e`). It changed documentation only; the post-merge Staging CI above passed.
 - **PR #132 — Today’s lessons:** HEAD `b8b8da504fc82507f51b914b1d6d053e85944991`; CI [45183065859](https://github.com/tony-kunliu/Instructor-assistant/actions/runs/45183065859) PASS. Browser QA [45182250537](https://github.com/tony-kunliu/Instructor-assistant/actions/runs/45182250537) PASS at code SHA `333947b2aa55d47fe30f81705fcb9d13de09ac5d`; only `STATUS.md` and `TASK.md` changed afterwards. Fresh L3 review of exact HEAD is pending (ACTGDS Issue #3 comment [7102354803](https://github.com/tony-kunliu/actgds.com/issues/3#issuecomment-7102354803)). No live OAuth or calendar access.
 - **PR #131 — licence photo:** HEAD `977e357998eaf4394e2ca268b03f993f61ba70bf`; CI [45118098357](https://github.com/tony-kunliu/Instructor-assistant/actions/runs/45118098357) PASS. Browser QA [45116531936](https://github.com/tony-kunliu/Instructor-assistant/actions/runs/45116531936) PASS at code SHA `360a2c7356afad9ae96aa6a604b3ddd5cb582b18`; only `STATUS.md` and `TASK.md` changed afterwards. Fresh L3 review of exact HEAD is pending (Issue #3 comment [7093882548](https://github.com/tony-kunliu/actgds.com/issues/3#issuecomment-7093882548)). Real iPhone camera / ACT card acceptance remains before release.
 - **PR #130 — lesson GPS:** HEAD `a8337ff85936a68a43ad1a4114a4cad6240002e7`; CI [44960761857](https://github.com/tony-kunliu/Instructor-assistant/actions/runs/44960761857) PASS; Draft. Continuous recording through lock screen and app switching is not accepted. Keep lesson integration out of release.
-- **PR #133 — isolated iOS GPS:** HEAD `6f9d1b93672c3fc45fe01f6cd8351582ed8101da`; CI [45160071619](https://github.com/tony-kunliu/Instructor-assistant/actions/runs/45160071619) and Xcode project build [45160071574](https://github.com/tony-kunliu/Instructor-assistant/actions/runs/45160071574) PASS. Artifact `14810301175` is an 8,611-byte **unsigned Xcode project**, not an installable signed app; expires `2026-12-07T10:43:57Z`. Tony will arrange signing, installation and his own test when available; no external tester or reminder.
+- **PR #133 — isolated iOS GPS:** current PR HEAD `2e910012a64988be936beaf33e8f9899f06cd38a`; prototype code/build source SHA `6f9d1b93672c3fc45fe01f6cd8351582ed8101da`; CI [45160071619](https://github.com/tony-kunliu/Instructor-assistant/actions/runs/45160071619) and Xcode project build [45160071574](https://github.com/tony-kunliu/Instructor-assistant/actions/runs/45160071574) PASS. Verified current artifact `14809843453` is an 8,612-byte **unsigned Xcode project**, not an installable signed app; SHA-256 `0426c851f35fab78654fe8a087d7f420482fb603f972202928bb5cd116765d9d`; expires `2026-12-07T10:53:40Z`. Tony will arrange signing, installation and his own test when available; no external tester or reminder.
 - **GPS evidence boundary:** the 22 Nov web iPhone test recorded 99.5% foreground coverage, 14.6% background coverage and an approximately 90-second gap while the page was frozen. This is web-only evidence, not native Core Location or lesson-workflow acceptance.
-- No PR #130–#133 change has been merged or deployed to Staging/Production. No real calendar, real learner data, new OAuth scope, shared contract or cross-repository interface was changed.
+- No PR #130–#133 application change has been merged or deployed to Staging/Production. PR #134 and #135 are documentation/monitor changes only. No real calendar, real learner data, new OAuth scope, shared contract or cross-repository interface was changed.
 
 ## Repository and CI
 
 - Main's released source is `618c6bed647d406b6b2775f4518a82afcfb6cb75` (Release #25). Staging is a moving integration branch; fetch its current head before an operation and do not store its ordinary moving SHA as durable state.
-- Main CI and Production Release #25 PASS; last recorded Staging CI PASS. Feature PR run links and exact code/test SHAs are listed above.
+- **PR #136 — post-merge memory reconciliation:** documentation-only and open to Staging. The Integration V1 environment wording correction at commit `3d632e0` passed exact-HEAD CI [45230233413](https://github.com/tony-kunliu/Instructor-assistant/actions/runs/45230233413). The latest branch HEAD/CI are tracked by PR #136; fresh L1 factual review is pending (ACTGDS Issue #3 comment [7109082562](https://github.com/tony-kunliu/actgds.com/issues/3#issuecomment-7109082562)). No merge or environment action has occurred.
+
+- Main CI and Production Release #25 PASS; latest post-merge Staging CI [45211072624](https://github.com/tony-kunliu/Instructor-assistant/actions/runs/45211072624) PASS. Feature PR run links and exact code/test SHAs are listed above.
 - Workers Builds must run Memory Guard, typecheck, `npm test`, production build and Memory Guard again. `npm test` uses `--experimental-strip-types`. Workers Builds runs without Poppler utilities, so Poppler-only tests skip unless `REQUIRE_POPPLER=1` is explicitly set by the separate CI workflow.
 - Standard flow: `feature/* → staging → main → Production`. Each promotion requires its own review, test and environment gates.
 
@@ -27,7 +31,7 @@ This is the current-state snapshot. Historical detail and release receipts remai
 
 **Staging**
 - Worker `instructor-assistant`; D1 migration level last recorded as `0013`.
-- Cloudflare Access enabled; Integration V1 enabled only in the non-Production environment.
+- Cloudflare Access enabled; Integration V1 is enabled in Staging and Production (with the production endpoint/configuration kept separate).
 - Verify the live Worker commit before treating a candidate as deployed; current GitHub evidence cannot establish the mapping.
 
 **Production**
