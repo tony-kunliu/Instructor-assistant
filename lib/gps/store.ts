@@ -83,9 +83,11 @@ const done = (tx: IDBTransaction): Promise<void> => new Promise((resolve, reject
 /** Browser IndexedDB store: one transaction per flush, so a kill loses at most the unflushed tail. */
 export class IndexedDbStore implements SampleStore {
   #db: Promise<IDBDatabase> | null = null;
+  private readonly name: string;
+  constructor(name = DB_NAME) { this.name = name; }
   #open(): Promise<IDBDatabase> {
     this.#db ??= new Promise((resolve, reject) => {
-      const open = indexedDB.open(DB_NAME, 1);
+      const open = indexedDB.open(this.name, 1);
       open.onupgradeneeded = () => {
         const db = open.result;
         db.createObjectStore("meta", { keyPath: "id" });

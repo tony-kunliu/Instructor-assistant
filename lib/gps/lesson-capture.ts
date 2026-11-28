@@ -1,0 +1,127 @@
+import { deviceDeps } from "./browser.ts";
+import { lessonGpsNotes, type LessonGpsNotes } from "./lesson-gps-notes.ts";
+import { describeGeoError, Recorder, recoverSession } from "./recorder.ts";
+import { IndexedDbStore, type SampleStore } from "./store.ts";
+
+const DRAFT_RETENTION_MS = 24 * 60 * 60 * 1000;
+
+export class LessonGpsCapture {
+  private readonly store: SampleStore;
+  private active: { id: string; recorder: Recorder; off: () => void; release: () => void } | null = null;
+  private readonly stopping = new Map<string, Promise<void>>();
+  private readonly results = new Map<string, Promise<LessonGpsNotes | null>>();
+
+  constructor(store: SampleStore = new IndexedDbStore("ia-lesson-gps")) {
+    this.store = store;
+  }
+
+  /**
+   * Serialise with any session still stopping before starting a new recorder: wait until its watch
+   * is cleared and its Web Lock released, so two watches never run at once. (start() used to
+   * fire-and-forget the previous stop, so a new recorder could start while the old watch was still
+   * live.) Awaiting the in-flight stops also serialises two start() calls made in quick succession:
+   * the second one stops the first one's session before recording under its own id.
+   */
+  async start(id: string, onStatus: (text: string) => void): Promise<void> {
+    await Promise.all(this.stopping.values());
+    await this.stop();
+    try {
+      if (typeof navigator === "undefined" || !navigator.locks) {
+        onStatus("GPS is unavailable in this browser. The lesson can continue.");
+        return;
+      }
+      const recorder = new Recorder(deviceDeps(this.store, () => id));
+      const off = recorder.subscribe(() => {
+        const snapshot = recorder.snapshot();
+        onStatus(describeGeoError(snapshot.geoError) ?? (snapshot.samples ? "GPS recording on this device." : "Waiting for GPS…"));
+      });
+      let release = () => {};
+      const unlocked = new Promise<void>((resolve) => { release = resolve; });
+      this.active = { id, recorder, off, release };
+      const fail = () => {
+        if (this.active?.id !== id) return;
+        onStatus("GPS is unavailable. The lesson can continue.");
+        void this.stop(id);
+      };
+      void this.withLock(id, async () => {
+        if (this.active?.id !== id) return;
+        void recorder.start().catch(fail);
+        await unlocked;
+      }).catch(fail);
+    } catch {
+      onStatus("GPS is unavailable. The lesson can continue.");
+    }
+  }
+
+  stop(id = this.active?.id): Promise<void> {
+    if (!id) return Promise.resolve();
+    const existing = this.stopping.get(id);
+    if (existing) return existing;
+    if (this.active?.id !== id) return Promise.resolve();
+    const { recorder, off, release } = this.active;
+    this.active = null;
+    off();
+    const stopped = recorder.stop().then(() => undefined, () => undefined).finally(() => {
+      release();
+      this.stopping.delete(id);
+    });
+    this.stopping.set(id, stopped);
+    return stopped;
+  }
+
+  /**
+   * Derive the lesson notes for a session. Idempotent: the first collect stamps `collectedAt` on the stored
+   * session, so a second collect (same tab, another tab, or after a reload) re-derives the same notes from
+   * the same stored fixes and never creates a second lesson record by itself. The lesson record itself is
+   * guarded separately by the draft's `savedLessonNo` + revision check at save time.
+   *
+   * The per-id cache assumes a session's `endedAt` never changes once set: a session is ended once, and
+   * the same id is never re-ended at a different time, so caching by id alone cannot serve notes derived
+   * for a different end time.
+   */
+  collect(id: string, endedAt: number): Promise<LessonGpsNotes | null> {
+    const existing = this.results.get(id);
+    if (existing) return existing;
+    const result = this.read(id, endedAt).catch(() => null);
+    this.results.set(id, result);
+    return result;
+  }
+
+  private async withLock<T>(id: string, work: () => Promise<T>): Promise<T> {
+    // Old browsers can still clean up their device store but do not start new private-edition GPS sessions.
+    return typeof navigator !== "undefined" && navigator.locks ? navigator.locks.request(`ia-lesson-gps:${id}`, work) : work();
+  }
+
+  private async read(id: string, endedAt: number) {
+    await this.stop(id);
+    const data = await this.withLock(id, async () => {
+      const saved = await this.store.load(id);
+      if (saved && saved.meta.stoppedAt === undefined) {
+        await recoverSession(this.store, id, endedAt);
+        return this.store.load(id);
+      }
+      return saved;
+    });
+    if (!data) return null;
+    const notes = lessonGpsNotes(data, endedAt - (data.meta.stoppedAt ?? 0) > 1_000);
+    if (notes && data.meta.collectedAt === undefined) {
+      await this.withLock(id, () => this.store.putMeta({ ...data.meta, collectedAt: Date.now() })).catch(() => undefined);
+    }
+    return notes;
+  }
+
+  async remove(id: string) {
+    await this.stop(id);
+    this.results.delete(id);
+    await this.withLock(id, () => this.store.deleteSession(id)).catch(() => undefined);
+  }
+
+  async prune() {
+    try {
+      const cutoff = Date.now() - DRAFT_RETENTION_MS;
+      for (const session of await this.store.listSessions()) {
+        if (session.startedAt < cutoff) await this.withLock(session.id, () => this.store.deleteSession(session.id));
+      }
+    } catch { /* Location remains optional on devices without IndexedDB. */ }
+  }
+}
