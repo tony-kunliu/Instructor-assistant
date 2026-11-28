@@ -1,151 +1,66 @@
 # STATUS.md
 
-_Last updated: 2026-10-21_ (Production and Staging D1 at migration `0016`; release #24 live)
+_Last updated: 2026-11-28_ (Lesson GPS v2 committed locally on `feature/lesson-gps-v2`; Production Release #25 verified 2026-11-24; feature work remains on PR branches)
 
-This file describes **current state only**. History lives in git log and
-closed PRs; see `TASK.md` for what is in progress.
+This is the current-state snapshot. Historical detail and release receipts remain in Git history, GitHub Actions logs and the coordination issue. Fetch moving branch heads when needed. A CI pass alone is not proof of a live deployment.
 
 ## Current Snapshot
 
-- **SaaS edition P0 (2026-10-21):** in Production (#22; PR #109, L3): fail-closed `APP_MODE` (must stay in both vars
-  sections), scoped lists / paper import, saas integration off; private unchanged. P1/P2 not started. Spec/plan:
-  `docs/superpowers/*/2026-10-21-saas-edition*`. No SaaS environment exists.
-- **Instructor picker (2026-10-18):** only Tony (ADI604) and Anna (ADI358) are active in both environments (Staging legacy `ADI604` `3cd3c634-3c63-4251-8eb9-91d104a9d8e9` set `inactive`, data kept; Production Anna ADI `358`). Labels `Tony/Kun Liu (ADI604)` / `Anna/Yaping Qu (ADI358)` (display only) are in Production (#18).
+- **Production:** Main source `618c6bed647d406b6b2775f4518a82afcfb6cb75`. Main CI [40698195421](https://github.com/tony-kunliu/Instructor-assistant/actions/runs/40698195421) and Production Release #25 [40698196068](https://github.com/tony-kunliu/Instructor-assistant/actions/runs/40698196068) succeeded. Release #25 deployed Worker version `a46d73fa-0349-4517-a4da-9b09004c4403`; its log reports no migrations to apply. Production D1 is at `0016`, applied by Release #24 [39730474484](https://github.com/tony-kunliu/Instructor-assistant/actions/runs/39730474484).
+- **Staging:** last recorded Staging CI [40719012415](https://github.com/tony-kunliu/Instructor-assistant/actions/runs/40719012415) succeeded; D1 migration level is last recorded as `0013`. Current GitHub evidence does not expose a reliable live Worker-to-commit mapping.
+- **Branch relationship:** `main` and `staging` are diverged: Staging has 15 commits not in Main, Main has 12 commits not in Staging, and 61 paths differ. They are not synchronized; do not merge them wholesale.
+- **PR #132 — Today’s lessons:** HEAD `b8b8da504fc82507f51b914b1d6d053e85944991`; CI [45183065859](https://github.com/tony-kunliu/Instructor-assistant/actions/runs/45183065859) PASS. Browser QA [45182250537](https://github.com/tony-kunliu/Instructor-assistant/actions/runs/45182250537) PASS at code SHA `333947b2aa55d47fe30f81705fcb9d13de09ac5d`; only `STATUS.md` and `TASK.md` changed afterwards. Fresh L3 review of exact HEAD is pending (ACTGDS Issue #3 comment [7102354803](https://github.com/tony-kunliu/actgds.com/issues/3#issuecomment-7102354803)). No live OAuth or calendar access.
+- **PR #131 — licence photo:** HEAD `977e357998eaf4394e2ca268b03f993f61ba70bf`; CI [45118098357](https://github.com/tony-kunliu/Instructor-assistant/actions/runs/45118098357) PASS. Browser QA [45116531936](https://github.com/tony-kunliu/Instructor-assistant/actions/runs/45116531936) PASS at code SHA `360a2c7356afad9ae96aa6a604b3ddd5cb582b18`; only `STATUS.md` and `TASK.md` changed afterwards. Fresh L3 review of exact HEAD is pending (Issue #3 comment [7093882548](https://github.com/tony-kunliu/actgds.com/issues/3#issuecomment-7093882548)). Real iPhone camera / ACT card acceptance remains before release.
+- **PR #130 — lesson GPS:** HEAD `a8337ff85936a68a43ad1a4114a4cad6240002e7`; CI [44960761857](https://github.com/tony-kunliu/Instructor-assistant/actions/runs/44960761857) PASS; Draft. Continuous recording through lock screen and app switching is not accepted. Keep lesson integration out of release. Superseded by `feature/lesson-gps-v2` (below); recommend closing once the v2 PR is open.
+- **Lesson GPS v2 — branch `feature/lesson-gps-v2`, commit `812d5be`, local only (not pushed):** ports #130's lesson-GPS core with the cross-tab draft lifecycle rewritten (CAS envelope + tombstones, tab ownership, idempotent collect, Web Lock save); turn detection (left/right, moving U-turns), junction list, signal waits, speed stats; new manoeuvre detection (reversing, three-point turns, possible lane changes, stops/moving-off with approach deceleration); GPS notes with a time-ordered evidence trail and a route summary for the form's Location column; competency suggestion list (11 of 22, pure data — instructor confirms, never auto-Achieves). Design doc `docs/gps-cbt-mapping.md` is written against ACT form 10,044 (7/2002); the PDF export was verified against the same template (no discrepancy). Tests 929 pass, tsc clean, `cf:build` passes. Not merged, not deployed. Still needs: independent review, a PR to staging, the suggestion tick UI (next step), and the real-iPhone GPS test (background recording is the known unmet gate).
+- **PR #133 — isolated iOS GPS:** HEAD `6f9d1b93672c3fc45fe01f6cd8351582ed8101da`; CI [45160071619](https://github.com/tony-kunliu/Instructor-assistant/actions/runs/45160071619) and Xcode project build [45160071574](https://github.com/tony-kunliu/Instructor-assistant/actions/runs/45160071574) PASS. Artifact `14810301175` is an 8,611-byte **unsigned Xcode project**, not an installable signed app; expires `2026-12-07T10:43:57Z`. Tony will arrange signing, installation and his own test when available; no external tester or reminder.
+- **GPS evidence boundary:** the 22 Nov web iPhone test recorded 99.5% foreground coverage, 14.6% background coverage and an approximately 90-second gap while the page was frozen. This is web-only evidence, not native Core Location or lesson-workflow acceptance.
+- No PR #130–#133 change has been merged or deployed to Staging/Production. No real calendar, real learner data, new OAuth scope, shared contract or cross-repository interface was changed.
 
-- **Production** (all via `Production Release`, all success; run and Worker ids of #12-#20 are in the runs' step
-  summaries; rollback target of each run = the previous run's Worker; D1 Time Travel bookmarks only in the summaries).
-  #12-#17: transfer, intake P1-P3 (`0011`-`0013`), iPad, R10a, list/lesson redesign, theme toggle. #18-#20: picker
-  labels, GPS phase 1, ACTGDS Instructor name, phone top bar. #21 run 39662454901 (`main` `869cfb5`; no migration):
-  Start Lesson in the summary (PR #105), Paste from assistant (PR #106); Worker `949fba77-cb1c-458c-b996-89b0b996a602`,
-  rollback Worker `3cde58e1-1c34-4d8a-b208-780b6b0ab5f1`. #22 run 39672461921 (`main` `4f60f99`; no migration): SaaS P0
-  (PR #109) and PR #108 (two L3 reviews): record a past lesson; save now, sign later (To sign queue, `signLesson`;
-  FD23 only signed, after every earlier app lesson is signed); Worker, rollback Worker, bookmark: the run's summary.
-  #23 run 39680183179 (`main` `438a8f8`; `0014` `instructors.adi_signature`): saved ADI signature, own tap only (PR #115); a
-  corrected signed lesson may be left unsigned; Worker `d716940c-62d9-4830-95ad-ac23e8ee6301`. #24 run 39730474484
-  (`main` `002b835`; `0015` learner drafts, `0016` `paper_import_drafts`): learner drafts (PR #118), saved CSV drafts
-  (PR #119); Worker `83d61f30-0d51-4dbd-be0d-dbe7ff5b529a`, rollback Worker `d716940c-62d9-4830-95ad-ac23e8ee6301`.
-- **Real-device / Tony checks:** iPad layout, route reminders and address suggestions accepted by Tony on real devices (not automated).
-- **GPS phase 1 (PR #84, in Production #18):** `lib/gps` + page `/gps` (synthetic default, Real GPS behind a per-session consent box, nothing uploaded, noindex); qa-browser `gps.mjs`. Design: `docs/superpowers/specs/2026-10-13-gps-tracking-design.md`. A synthetic PASS is not iPhone background-GPS evidence; phase 1b (Tony's real drive on Staging `/gps`) is next.
-- **Still open:** `scripts/check-signature-row-limits.mjs` not yet run against a deployed
-  D1 (Staging only, never Production); notify-tick (lesson notifications) waits for Website
-  PR #47 rework and Tony's approval of the new endpoint + secret (Production OFF); intake
-  P4; `docs/tasks` memory scheme + Memory Guard changes (Handbook §9); items in
-  `docs/BACKLOG.md`.
+## Repository and CI
 
-## Repository
-
-- **main:** everything released to Production up to #14; `git fetch` for its head.
-  Release B source `d47350bcb65fa46d3135d1dbeec52882f7012886`; rollback baseline before
-  Release A `8bae4e4c211a78b2e682d8b04744f102fa1a4328`.
-- **staging:** same product code as `main` (`main` also carries 3 workflow files merged
-  there directly). Its HEAD moves; do not record an exact SHA here.
-
-## CI
-
-- Latest `staging` GitHub Actions run: **SUCCESS**. 2 poppler tests skip without `pdftotext`; they hard-fail only with `REQUIRE_POPPLER=1`,
-  set in `ci.yml` only).
-- `npm test` needs `--experimental-strip-types` (already in `package.json`).
-- **Workers Builds** runs `node scripts/check-project-memory.mjs && npm run
-  typecheck && npm test && npm run cf:build && node scripts/check-project-memory.mjs`
-  with CI set and no poppler-utils. Anything that fails `npm test` there
-  leaves Staging on the old version. Before merging, simulate it locally (CI=1, `pdftotext` off PATH).
+- Main's released source is `618c6bed647d406b6b2775f4518a82afcfb6cb75` (Release #25). Staging is a moving integration branch; fetch its current head before an operation and do not store its ordinary moving SHA as durable state.
+- Main CI and Production Release #25 PASS; last recorded Staging CI PASS. Feature PR run links and exact code/test SHAs are listed above.
+- Workers Builds must run Memory Guard, typecheck, `npm test`, production build and Memory Guard again. `npm test` uses `--experimental-strip-types`. Workers Builds runs without Poppler utilities, so Poppler-only tests skip unless `REQUIRE_POPPLER=1` is explicitly set by the separate CI workflow.
+- Standard flow: `feature/* → staging → main → Production`. Each promotion requires its own review, test and environment gates.
 
 ## Environments
 
 **Staging**
-- Workers Builds deploys every `staging` push to Worker
-  `instructor-assistant`. The agent's token can read deployment metadata, not
-  the commit mapping, so the live commit is inferred from push time.
-- D1 migration level: `0013`. Apply a migration to Staging D1 BEFORE merging
-  code that needs it to `staging`, with the manual workflow `Staging D1
-  Migrate` (`staging-migrate.yml`, on `main`; inputs `ref` = a branch,
-  `confirm` = `staging`).
-- Cloudflare Access: enabled. Integration enabled: YES (non-Production).
+- Worker `instructor-assistant`; D1 migration level last recorded as `0013`.
+- Cloudflare Access enabled; Integration V1 enabled only in the non-Production environment.
+- Verify the live Worker commit before treating a candidate as deployed; current GitHub evidence cannot establish the mapping.
 
 **Production**
-- Releases: manual workflow `Production Release`
-  (`.github/workflows/production-release.yml`, `main` only,
-  `confirm=production`); token only in GitHub Secrets; each run records the
-  rollback version and a D1 Time Travel restore point. See
-  `docs/RELEASE_B_RUNBOOK.md`.
-- D1 migration level: `0012`. Cloudflare Access: enabled (Tony + Anna only).
-- Integration enabled: **YES**, `ACTGDS_INTEGRATION_ENV=production`, Receiver
-  `https://actgds.com/api/integrations/instructor-assistant/events`,
-  `ACTGDS_WEBHOOK_SECRET` set by Tony. Outbox Cron `*/5`. No backfill.
-- Real end-to-end link verified 2026-10-10 (detail: git history, actgds.com Issue #3).
-- `APP_MODE = "private"` in `[vars]` and `[env.production.vars]` is required (missing → 503
-  everywhere); pinned by `tests/wrangler-app-mode.test.ts`.
+- Worker `instructor-assistant-production`; Release #25 version `a46d73fa-0349-4517-a4da-9b09004c4403`.
+- D1 migration level `0016`; Release #25 applied no migration.
+- Cloudflare Access enabled (Tony and Anna). Integration V1 is enabled with `ACTGDS_INTEGRATION_ENV=production`; Outbox Cron is `*/5`. `APP_MODE = "private"` must remain in both `[vars]` and `[env.production.vars]`.
 
 ## Current Product
 
-- Learner + lesson management, CBT&A competencies 1-22, Review 1-17, Review
-  1-22, Final Drive 23; derived-only duration/km/cumulative totals, lesson
-  numbering. History Edit recalculates downstream totals and milestones.
-- Learner list: My learners / All / Archived, search, Archive / Restore (no
-  Integration event). Learner edit (owner only; `PATCH /api/learners/[id]`,
-  previous values kept in `learner_revisions`, no ACTGDS event; revisions not
-  displayed). Lesson edit only by the lesson's own instructor (CoP 9.2); each
-  edit snapshots the old values (`lesson_revisions`); History shows "Edited N
-  times", PDF marks "(amended)".
-- Paper Records Import (P1b) and PDF cumulative line per page (P1a); paper and
-  prior-instructor rows never emit Integration events.
-- CBT&A chronology: a lesson may Assess a gated item only if its prerequisites
-  were Achieved in EARLIER lessons; enforced server-side, legacy data never
-  rewritten (Review / Final Drive validity derived by lesson order). Save
-  errors show jump links.
-- CBT&A Checklist PDF export with an embedded compact font subset (about 0.2
-  MB typical, was ~14 MB); Export shows "PDF ready: <size> (compact font)".
-  Full 16 MB font only for rare CJK characters. Access-gated sign-in; "Copy
-  Integration ID" for manual ACTGDS CRM linking.
-- Transfer a learner to another instructor (3c T1, `0011`); iPad layout (fixed 640×320
-  signature canvas, 700k-char limit); Address suggestions from a bundled G-NAF street index
-  (`0012`, 3 nullable suburb/state/postcode columns); "Competency 23 from" + PDF Eligibility
-  auto-fill; Competency 23 route reminders (R10a). None of these sends anything to ACTGDS.
-  On the branch only: overseas / interstate licence fields (`0013`) feeding the Competency 23
-  reminders (Tony's school rule: interstate learner time counts; interstate or overseas FULL
-  licence held 12 months removes the wait; overseas learner does not count; expiry not read).
-- Working rule: `AGENTS.md` §13, standing authorizations §14 (new-endpoint/secret
-  exclusion 2026-10-12), model choice §9; two-repo Operating Handbook
-  `docs/OPERATING_HANDBOOK.md` approved by Tony 2026-10-12 (§16).
+- Learner and lesson management; CBT&A competencies 1–22, Review 1–17, Review 1–22 and Final Drive 23. Duration, distance, cumulative totals and lesson numbers are derived.
+- Learner lifecycle (My learners / All / Archived, search, Archive / Restore), owner-only learner edits with revision history, instructor-owned lesson edits with revision history, paper-record import and cumulative PDF export.
+- Transfer between instructors, iPad signature layout, G-NAF address suggestions, competency 23 route reminders and instructor picker (Tony ADI604, Anna ADI358).
+- Overseas/interstate licence fields from migration `0013` support the Competency 23 wait rules. Photo OCR intake remains in PR #131, not released.
 
 ## Integration V1
 
-- **Contract:** `actgds-instructor-assistant/v1`, event `lesson.upserted`.
-  Schema hash `c43d28164bb1c5c0e316e2d2f1cee77ad627508ef7dca4d58516adab8852b7e6`
-  (`jq -cS . docs/integrations/lesson-upserted-v1.schema.json | sha256sum`).
-- **Cross-repo compatibility:** PASS.
-- **Coordinated non-Production Integration V1 QA: PASS** (Issue #3, comment
-  5880411046; blockers: NONE).
-- Migration `0005` was not applied to Production until the rollout; it is now
-  applied on Staging and Production.
-- **Production rollout is NOT authorized for any contract change** without
-  Tony's separate explicit authorization; the V1 rollout itself is done.
-- ACTGDS side (not this repo): My Driving (student page) is live in Production (released by Work). Tony's display polish list (readable competency
-  names, separate "achieved this lesson" vs overall progress, show "not
-  achieved", lesson number and cumulative totals in the Admin Instructor
-  Assistant card, clearer manual lesson-note block, less double entry,
-  consistent language) goes to Work. "Synced at" = when ACTGDS received the
-  event (correct).
-
-Detail: `docs/integrations/actgds-instructor-assistant-v1.md`; coordination
-record: `tony-kunliu/actgds.com` Issue #3.
+- Contract: `actgds-instructor-assistant/v1`, event `lesson.upserted`.
+- Canonical schema SHA256: `c43d28164bb1c5c0e316e2d2f1cee77ad627508ef7dca4d58516adab8852b7e6`.
+- Cross-repo compatibility PASS; coordinated non-Production Integration V1 QA PASS (ACTGDS Issue #3 comment 5880411046).
+- Integration enabled: YES in Staging and Production. SaaS has no environment: Integration enabled: NO there, and migration 0005 not applied to any SaaS D1.
+- Migration 0005 is applied in Staging and Production for V1. Production rollout is not authorized for any contract change; the V1 rollout itself is complete.
+- The systems keep separate databases. Cross-system identity uses only a human-linked, versioned `learner_id`; never auto-match by name, phone or email. See `docs/integrations/` and ACTGDS Issue #3.
 
 ## Known Issues
 
-- `lib/db.ts` runs `SCHEMA_SQL` on every local file-DB open; it fails on
-  reopen (0003 ALTER) and re-runs the 0006 rebuild. Use `:memory:` or
-  `wrangler d1 migrations apply`.
-- Legacy data may hold 18-22 assessed too early; tolerated, never rewritten.
-- Cloudflare's `returnTo` on `/cdn-cgi/access/logout` (same-origin absolute URL → 302, else 400) is observed, not documented.
-- PDF font coverage gap (accepted by Tony: names are normally English only):
-  Vietnamese, Greek, Cyrillic, kana, Hangul, Latin Ext-B, box drawing and some
-  symbols print as boxes after the user confirms the warning.
-- Minor learner-edit review follow-ups are in `docs/BACKLOG.md`.
-- SaaS: never deploy a saas environment on P0 alone (per-learner routes get the ownership guard in P1);
-  `worker/scheduled-entry.ts` does not check `APP_MODE` (add when `[env.saas]` is created).
-- qa-browser route-line check failed only on Canberra Sundays (`r3-day` id, correct behaviour); fix on `fix/qa-route-reminder-order`, verify on Sun 2026-10-25.
-- `app/manifest.ts` still carries the pre-redesign `background_color` / `theme_color`
-  (`#f4f2ee` / `#1d1d1f`), not the shared tokens (affects the installed-PWA splash only).
+- `lib/db.ts` local file-DB reopen can fail after schema initialization; use `:memory:` or Wrangler D1 migrations for local tests.
+- Legacy data may contain CBT&A items 18–22 assessed too early; tolerated and never rewritten.
+- Cloudflare Access `returnTo` behaviour on `/cdn-cgi/access/logout` is observed but not documented.
+- Accepted PDF font coverage gaps remain for some Vietnamese, Greek, Cyrillic, kana, Hangul and uncommon symbols.
+- `scripts/check-signature-row-limits.mjs` has not been run against Staging D1; never run it against Production without a separate approved task.
+- SaaS has no deployed environment; before creating one, the scheduled entry must also enforce `APP_MODE`.
+- Minor learner-edit review follow-ups remain in `docs/BACKLOG.md`.
 
 ## Next
 

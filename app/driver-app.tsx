@@ -15,6 +15,9 @@ import {
   type Totals,
 } from "@/lib/calc.ts";
 import { CORE_COMPETENCY_IDS, FINAL_DRIVE_23, REVIEW_1_17, REVIEW_1_22, invalidationNotice, type AssessmentResult, type LearnerProgress, type MilestoneInvalidation } from "@/lib/competency.ts";
+import { LessonGpsCapture } from "@/lib/gps/lesson-capture.ts";
+import { lessonCommentsWithGps, lessonLocationWithGps, ownsGpsSession, type LessonGpsDraft } from "@/lib/gps/lesson-gps-draft.ts";
+import { casTombstone, casWriteDraft, NO_DRAFT_REV, parseStoredDraft, storedRev, tabIdentity } from "@/lib/lesson-draft-store.ts";
 import { cardMeta, cardReminders, collapsedCards, emptySummary, gateChips, glance, initials, lastLessonLine, listCollapsed, optionLabel, summaryFromProgress, type LearnerListSummary } from "@/lib/learner-card.ts";
 import { derivedStats, learnerHeaderMeta, lessonDateLine, lessonPhase, odometerCarriedNote, showsSaveBar } from "@/lib/lesson-view.ts";
 import { accessLogoutUrl } from "@/lib/access-logout.ts";
@@ -46,6 +49,7 @@ import AddressInput from "./address-input.tsx";
 import { addressPartChips, formSubline, moreLockedMessage, moreSection, nameIssue, saveLabel } from "@/lib/learner-form-view.ts";
 import { instructorLabel } from "@/lib/instructor-label.ts";
 import { matchLearnersByName, parseAssistantDraft } from "@/lib/assistant-draft.ts";
+import { requestErrorMessage, trialBanner } from "@/lib/saas/trial-banner.ts";
 import ThemeToggle from "./theme-switch.tsx";
 
 type LessonDraft = {
@@ -61,6 +65,16 @@ type LessonDraft = {
   comments: string;
   adiSignature: string;
   learnerSignature: string;
+  /** Device-local GPS session for this lesson (private edition only). Never sent to the server; only the
+      derived notes line is appended to Comments at save time. */
+  lessonGps?: LessonGpsDraft;
+  /** Stable id for this lesson-in-progress draft: the same lesson keeps it across tabs and edits, a new
+      lesson gets a new one. Used after a save to tell a replacement of the same lesson apart from a
+      genuinely new lesson started in another tab. Never sent to the server. */
+  draftId?: string;
+  /** Set when this draft's lesson was already saved (as this number): saving it again would create a
+      duplicate lesson. Never sent to the server. */
+  savedLessonNo?: number;
 };
 
 type LearnerDraft = {
@@ -165,8 +179,15 @@ const emptyLearner: LearnerDraft = {
   instructorId: "",
 };
 
+function newDraftId(): string {
+  return typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+    ? crypto.randomUUID()
+    : `draft-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
 function freshLesson(startOdometer: number | null): LessonDraft {
   return {
+    draftId: newDraftId(),
     lessonDate: localNow().date,
     startTime: "",
     finishTime: "",
@@ -233,17 +254,20 @@ const storage = {
   },
 };
 const draftKey = (learnerId: string) => `actgds-driver:draft:${learnerId}`;
+const staleGpsDraftMessage = "This lesson draft changed in another tab. Reopen the learner to see the current draft.";
 const LAST_LEARNER_KEY = "actgds-driver:last-learner";
 const LAST_INSTRUCTOR_KEY = "actgds-driver:last-instructor";
 
 async function api<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, init);
   const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.error || "Request failed.");
+  // A 402 trial_expired (SaaS edition only, never sent in private) reads as a friendly sentence, never the raw code.
+  if (!response.ok) throw new Error(requestErrorMessage(response.status, data));
   return data as T;
 }
 
-export default function DriverApp() {
+/** `mode` comes from the server page (app/page.tsx) so the SaaS edition never flashes the private edition's header; omitted = private. */
+export default function DriverApp({ mode = "private" }: { mode?: "private" | "saas" }) {
   const [learners, setLearners] = useState<Learner[]>([]);
   // Per-learner card data (lessons, hours, competencies, gates) from GET /api/learners; refreshed from the detail of the open learner.
   const [summaries, setSummaries] = useState<Record<string, LearnerListSummary>>({});
@@ -271,6 +295,21 @@ export default function DriverApp() {
   const [selectedId, setSelectedId] = useState("");
   const [detail, setDetail] = useState<Detail | null>(null);
   const [draft, setDraft] = useState<LessonDraft | null>(null);
+  // GPS + draft ownership (lib/lesson-draft-store.ts): this tab's id claims the GPS session it starts, and
+  // `draftRev` is the last draft revision this tab has seen. A tab that is behind must not write, stop,
+  // collect or delete another tab's session — it reloads instead.
+  const tabIdRef = useRef<string | null>(null);
+  if (tabIdRef.current === null) tabIdRef.current = tabIdentity().tabId;
+  const draftRev = useRef<number>(NO_DRAFT_REV);
+  const draftStale = useRef(false);
+  /** The exact stored string this tab last read or wrote for the current draft key. A revision check alone
+      cannot catch a raw write that preserves the revision (e.g. another tab editing the stored JSON by
+      hand): the raw string is the second layer, and any difference means "changed in another tab". */
+  const lastStoredRaw = useRef<string | null>(null);
+  const storedIsCurrent = (key: string) => storage.get(key) === lastStoredRaw.current;
+  const gpsCapture = useRef<LessonGpsCapture | null>(null);
+  const [gpsConsent, setGpsConsent] = useState(false);
+  const [gpsStatus, setGpsStatus] = useState<{ id: string; text: string } | null>(null);
   const [addingLearner, setAddingLearner] = useState(false);
   // True while the learner form edits the selected learner (instead of creating one).
   const [editingLearner, setEditingLearner] = useState(false);
@@ -362,6 +401,9 @@ export default function DriverApp() {
   const [logoutUrl, setLogoutUrl] = useState(() => accessLogoutUrl(null));
   useEffect(() => setLogoutUrl(accessLogoutUrl(window.location.origin)), []);
   const [signedInInstructorId, setSignedInInstructorId] = useState<string | null>(null);
+  // SaaS edition (spec 2026-10-21-saas-edition-design §8), from /api/me: every saas-only branch below hangs off `isSaas`.
+  const [appMode, setAppMode] = useState<"private" | "saas">(mode);
+  const [trialEndsAt, setTrialEndsAt] = useState<string | null>(null);
   // Nothing identity-dependent (view, learner list) is shown until /api/me has resolved, so a device's leftover state can never flash or pick "All".
   const [ready, setReady] = useState(false);
   const [view, setView] = useState<PickerView>("mine");
@@ -387,6 +429,11 @@ export default function DriverApp() {
   const totals = detail?.totals ?? EMPTY_TOTALS;
 
   const loadLearner = useCallback(async (id: string) => {
+    if (id !== selectedRef.current) {
+      void gpsCapture.current?.stop();
+      setGpsConsent(false);
+      setGpsStatus(null);
+    }
     selectedRef.current = id;
     setSaveIssues(null);
     setSelectedId(id);
@@ -407,8 +454,13 @@ export default function DriverApp() {
       if (selectedRef.current !== id) return;
       setDetail(data);
       setSummaries((current) => ({ ...current, [id]: summaryFromDetail(data) }));
-      const saved = storage.get(draftKey(id));
-      setDraft(saved ? { ...freshLesson(data.totals.lastFinishOdometer), ...JSON.parse(saved) } : freshLesson(data.totals.lastFinishOdometer));
+      const raw = storage.get(draftKey(id));
+      const parsed = parseStoredDraft(raw);
+      draftRev.current = parsed.kind === "empty" ? NO_DRAFT_REV : parsed.rev;
+      draftStale.current = false;
+      lastStoredRaw.current = raw;
+      const savedDraft = parsed.kind === "draft" ? (parsed.draft as LessonDraft | null) : null;
+      setDraft(savedDraft ? { ...freshLesson(data.totals.lastFinishOdometer), ...savedDraft } : freshLesson(data.totals.lastFinishOdometer));
     } catch (error) {
       setStatus({ kind: "error", text: (error as Error).message });
     }
@@ -421,13 +473,17 @@ export default function DriverApp() {
         const [learnerData, instructorData, meData] = await Promise.all([
           api<{ learners: Learner[]; summaries: Record<string, LearnerListSummary> }>("/api/learners"),
           api<{ instructors: Instructor[] }>("/api/instructors"),
-          api<{ instructor: { id: string; fullName: string } | null }>("/api/me"),
+          api<{ instructor: { id: string; fullName: string } | null; mode?: "private" | "saas"; trialEndsAt?: string | null }>("/api/me"),
         ]);
         setLearners(learnerData.learners);
         setSummaries((current) => ({ ...current, ...learnerData.summaries }));
         setInstructors(instructorData.instructors);
         setSignedInAs(meData.instructor?.fullName ?? null);
         setSignedInInstructorId(meData.instructor?.id ?? null);
+        if (meData.mode === "saas") {
+          setAppMode("saas");
+          setTrialEndsAt(meData.trialEndsAt ?? null);
+        }
         const start = initialSelection({ signedInInstructorId: meData.instructor?.id ?? null, activeLearners: learnerData.learners, lastLearnerId: storage.get(LAST_LEARNER_KEY) });
         setView(start.view);
         setReady(true);
@@ -460,11 +516,84 @@ export default function DriverApp() {
     if (addingLearner) learnerFormRef.current?.scrollIntoView({ block: "start" });
   }, [addingLearner, editingLearner]);
 
-  // Keep the in-progress lesson on this device in case the page reloads mid-lesson.
+  // Keep the in-progress lesson on this device in case the page reloads mid-lesson. Writes are
+  // compare-and-swap on the draft revision: a tab that has not seen the latest revision cannot overwrite
+  // another tab's newer draft, and once stale it stops writing until the learner is reopened.
   useEffect(() => {
     if (!selectedId || !draft) return;
-    if (draft.startTime) storage.set(draftKey(selectedId), JSON.stringify(draft));
+    if (!draft.startTime || draftStale.current) return;
+    const key = draftKey(selectedId);
+    const raw = storage.get(key);
+    if (raw !== lastStoredRaw.current) {
+      // Another tab changed the stored draft (even without bumping the revision): stop writing.
+      draftStale.current = true;
+      setStatus({ kind: "warn", text: staleGpsDraftMessage });
+      return;
+    }
+    const stored = parseStoredDraft(raw);
+    if (stored.kind === "draft" && JSON.stringify(stored.draft) === JSON.stringify(draft)) {
+      draftRev.current = stored.rev;
+      return;
+    }
+    const result = casWriteDraft(storage, key, draftRev.current, tabIdRef.current ?? "", draft);
+    if (result.ok) {
+      draftRev.current = result.rev;
+      lastStoredRaw.current = result.raw;
+    } else {
+      draftStale.current = true;
+      setStatus({ kind: "warn", text: staleGpsDraftMessage });
+    }
   }, [selectedId, draft]);
+
+  // GPS is a private-edition opt-in. The raw points stay in a separate device-only draft store.
+  useEffect(() => {
+    if (appMode !== "private" || !signedInInstructorId) return;
+    const capture = gpsCapture.current ??= new LessonGpsCapture();
+    void capture.prune();
+    const stopIfEndedInAnotherTab = (event: StorageEvent) => {
+      if (!event.key || event.key !== draftKey(selectedRef.current) || !event.oldValue) return;
+      try {
+        const previous = parseStoredDraft(event.oldValue);
+        const current = parseStoredDraft(event.newValue);
+        const prevGps = previous.kind === "draft" ? (previous.draft as LessonDraft | null)?.lessonGps : undefined;
+        const curGps = current.kind === "draft" ? (current.draft as LessonDraft | null)?.lessonGps : undefined;
+        // Another tab ended or replaced the session this tab owns: stop recording it here. A session owned
+        // by another tab is never touched.
+        if (prevGps && ownsGpsSession(prevGps, tabIdRef.current ?? "") && (!curGps || curGps.id !== prevGps.id)) {
+          void capture.stop(prevGps.id);
+          setGpsStatus((status) => status?.id === prevGps.id ? null : status);
+        }
+        // Storage events only arrive from other tabs: any newer revision makes this tab stale.
+        if (current.kind !== "empty" && current.rev > draftRev.current) draftStale.current = true;
+      } catch { /* Ignore storage unavailable to this lesson draft. */ }
+    };
+    window.addEventListener("storage", stopIfEndedInAnotherTab);
+    return () => {
+      window.removeEventListener("storage", stopIfEndedInAnotherTab);
+      void capture.stop();
+    };
+  }, [appMode, signedInInstructorId]);
+
+  const lessonGps = appMode === "private" && draft?.lessonGps?.instructorId === signedInInstructorId ? draft?.lessonGps : undefined;
+  const finishTime = draft?.finishTime;
+  useEffect(() => {
+    if (saving || !lessonGps || lessonGps.notes !== undefined || !finishTime || !gpsCapture.current) return;
+    // Only the tab that owns the session collects it; collect() itself is idempotent (persisted marker).
+    if (!ownsGpsSession(lessonGps, tabIdRef.current ?? "")) return;
+    if (lessonGps.status !== "ended" && lessonGps.status !== "recording") return;
+    let cancelled = false;
+    const id = lessonGps.id;
+    const key = draftKey(selectedId);
+    void gpsCapture.current.collect(id, lessonGps.endedAt ?? Date.now()).then((notes) => {
+      if (cancelled || !storedIsCurrent(key) || storedRev(storage, key) !== draftRev.current) return;
+      setDraft((current) => {
+        if (!current || current.lessonGps?.id !== id) return current;
+        const needsReview = Boolean(current.adiSignature || current.learnerSignature);
+        return { ...current, lessonGps: { ...current.lessonGps, notes, status: "collected", needsReview } };
+      });
+    });
+    return () => { cancelled = true; };
+  }, [lessonGps, finishTime, selectedId, saving]);
 
   // Tick the elapsed-time display while a lesson is running.
   useEffect(() => {
@@ -472,14 +601,66 @@ export default function DriverApp() {
     return () => window.clearInterval(timer);
   }, []);
 
-  const setField = (key: keyof LessonDraft, value: string) =>
-    setDraft((current) => (current ? { ...current, [key]: value } : current));
+  const setField = (key: Exclude<keyof LessonDraft, "lessonGps">, value: string) => {
+    if (key === "startTime" && !value && draft && lessonGps) {
+      // Clearing Start returns to Ready: only the owning tab may close the session, and only while it
+      // still holds the latest draft revision.
+      if (!ownsGpsSession(lessonGps, tabIdRef.current ?? "") || !storedIsCurrent(draftKey(selectedId)) || storedRev(storage, draftKey(selectedId)) !== draftRev.current) {
+        setStatus({ kind: "warn", text: staleGpsDraftMessage });
+        return;
+      }
+      void gpsCapture.current?.remove(lessonGps.id);
+      setGpsStatus(null);
+      setDraft({ ...draft, startTime: "", lessonGps: undefined });
+      return;
+    }
+    if (key === "finishTime" && value && lessonGps && !lessonGps.endedAt) {
+      if (ownsGpsSession(lessonGps, tabIdRef.current ?? "")) void gpsCapture.current?.stop(lessonGps.id);
+      const endedAt = Date.now();
+      setDraft((current) => current ? { ...current, finishTime: value, lessonGps: { ...lessonGps, endedAt, status: "ended" } } : current);
+      return;
+    }
+    setDraft((current) => current ? { ...current, [key]: value } : current);
+  };
 
   const startLesson = () => {
+    if (!draft) return;
+    const key = draftKey(selectedId);
+    if (!storedIsCurrent(key) || storedRev(storage, key) !== draftRev.current) {
+      setStatus({ kind: "warn", text: staleGpsDraftMessage });
+      return;
+    }
+    // A session owned by another tab is never removed from here.
+    if (lessonGps && !ownsGpsSession(lessonGps, tabIdRef.current ?? "")) {
+      setStatus({ kind: "warn", text: staleGpsDraftMessage });
+      return;
+    }
+    if (lessonGps) void gpsCapture.current?.remove(lessonGps.id);
+    else void gpsCapture.current?.stop();
+    setGpsStatus(null);
     const now = localNow();
     scrollToLesson.current = true;
     setStatus(null);
-    setDraft((current) => (current ? { ...current, lessonDate: now.date, startTime: now.time, finishTime: "" } : current));
+    let nextGps: LessonGpsDraft | undefined;
+    if (gpsConsent && appMode === "private" && signedInInstructorId && gpsCapture.current && typeof crypto.randomUUID === "function") {
+      const id = crypto.randomUUID();
+      nextGps = { id, instructorId: signedInInstructorId, tabId: tabIdRef.current ?? "", startedAt: Date.now(), status: "recording" };
+      // Claim the session in storage before the recorder starts, so a second tab sees the claim.
+      const firstDraft = { ...draft, lessonDate: now.date, startTime: now.time, finishTime: "", lessonGps: nextGps };
+      const claimed = casWriteDraft(storage, key, draftRev.current, tabIdRef.current ?? "", firstDraft);
+      if (!claimed.ok) {
+        setStatus({ kind: "warn", text: staleGpsDraftMessage });
+        return;
+      }
+      draftRev.current = claimed.rev;
+      lastStoredRaw.current = claimed.raw;
+      setGpsStatus({ id, text: "Waiting for GPS…" });
+      gpsCapture.current.start(id, (text) => setGpsStatus((current) =>
+        current?.id !== id || current.text === text ? current : { id, text },
+      ));
+    }
+    setGpsConsent(false);
+    setDraft((current) => (current ? { ...current, lessonDate: now.date, startTime: now.time, finishTime: "", lessonGps: nextGps } : current));
   };
 
   // Record a past lesson (Tony 2026-10-22): a lesson written up afterwards takes its date and times as typed, not from
@@ -502,12 +683,30 @@ export default function DriverApp() {
 
   const endLesson = () => {
     focusFinishOdo.current = true;
-    setDraft((current) => (current ? { ...current, finishTime: localNow().time } : current));
+    const endedAt = Date.now();
+    const finishTime = localNow().time;
+    if (lessonGps && ownsGpsSession(lessonGps, tabIdRef.current ?? "")) void gpsCapture.current?.stop(lessonGps.id);
+    setDraft((current) => (current ? {
+      ...current, finishTime,
+      lessonGps: lessonGps ? { ...lessonGps, endedAt, status: "ended" } : current.lessonGps,
+    } : current));
   };
 
   const discardLesson = () => {
     if (!detail || !window.confirm("Discard this lesson? Nothing will be saved.")) return;
-    storage.remove(draftKey(detail.learner.id));
+    const key = draftKey(detail.learner.id);
+    if (!storedIsCurrent(key) || storedRev(storage, key) !== draftRev.current) {
+      setStatus({ kind: "warn", text: staleGpsDraftMessage });
+      return;
+    }
+    if (lessonGps && ownsGpsSession(lessonGps, tabIdRef.current ?? "")) void gpsCapture.current?.remove(lessonGps.id);
+    setGpsStatus(null);
+    // A tombstone, not a delete: a stale tab's autosave can never bring this draft back.
+    const result = casTombstone(storage, key, draftRev.current, tabIdRef.current ?? "");
+    if (result.ok) {
+      draftRev.current = result.rev;
+      lastStoredRaw.current = result.raw;
+    }
     setDraft(freshLesson(detail.totals.lastFinishOdometer));
     setSaveIssues(null);
     setStatus(null);
@@ -688,8 +887,30 @@ export default function DriverApp() {
     }
   };
 
+  // One save per learner at a time across tabs: the lock makes the read → POST → tombstone sequence
+  // atomic in this browser, so two tabs can never create the same lesson twice. Without locks the
+  // revision check below is the fallback.
   const saveLesson = async (signLater = false) => {
     if (!detail || !draft) return;
+    if (typeof navigator !== "undefined" && navigator.locks) {
+      await navigator.locks.request(`actgds-driver:save:${detail.learner.id}`, () => saveLessonLocked(signLater));
+      return;
+    }
+    await saveLessonLocked(signLater);
+  };
+
+  const saveLessonLocked = async (signLater = false) => {
+    if (!detail || !draft) return;
+    const key = draftKey(detail.learner.id);
+    if (!storedIsCurrent(key) || storedRev(storage, key) !== draftRev.current) {
+      setStatus({ kind: "warn", text: staleGpsDraftMessage });
+      return;
+    }
+    if (draft.savedLessonNo !== undefined || lessonGps?.savedLessonNo !== undefined) {
+      const savedNo = draft.savedLessonNo ?? lessonGps?.savedLessonNo;
+      setStatus({ kind: "warn", text: `Lesson #${savedNo} already exists. Use the lesson history to apply these draft edits to the saved lesson.` });
+      return;
+    }
     const problems = validateLessonDraftFields(draft, "new", { signLater });
     if (problems.length) {
       setSaveIssues({ source: "client", issues: problems, snapshot: draft, signLater });
@@ -699,22 +920,73 @@ export default function DriverApp() {
     setSaving(true);
     setStatus(null);
     try {
+      const { lessonGps: _localCapture, savedLessonNo: _alreadySaved, draftId: _draftId, ...fields } = draft;
+      // Only save the text shown in the checklist. A slow GPS read cannot add notes after signing or saving.
+      const comments = lessonCommentsWithGps(fields.comments, lessonGps);
+      const location = lessonLocationWithGps(fields.location, lessonGps);
       const result = await api<{ lesson: Lesson; totals: Totals; progress: LearnerProgress; completion: CompletionSummary | null }>(
         `/api/learners/${encodeURIComponent(detail.learner.id)}/lessons`,
-        { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...draft, signLater }) },
+        { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...fields, comments, location, signLater }) },
       );
-      storage.remove(draftKey(detail.learner.id));
+      const latest = parseStoredDraft(storage.get(key));
+      const latestRev = latest.kind === "empty" ? NO_DRAFT_REV : latest.rev;
+      const latestDraft = latest.kind === "draft" ? (latest.draft as LessonDraft | null) : null;
+      // The draft was replaced while the save was in flight. Same draft id (or, for drafts written before
+      // ids existed, same date + start time) = the same lesson, edited elsewhere: stamp the saved number
+      // so it cannot be saved a second time, then show it as the current draft. A different draft id and
+      // different times = a genuinely new lesson started in another tab: show it untouched, never delete it.
+      const sameLesson = latestDraft !== null && (
+        (latestDraft.draftId !== undefined && draft.draftId !== undefined && latestDraft.draftId === draft.draftId) ||
+        latestDraft.lessonDate === draft.lessonDate && latestDraft.startTime === draft.startTime
+      );
+      const sameSession = Boolean(sameLesson && latestDraft?.lessonGps && lessonGps && latestDraft.lessonGps.id === lessonGps.id);
+      let adopted: LessonDraft | null = null;
+      if (latest.kind === "draft" && latestDraft && sameLesson) {
+        const stamped: LessonDraft = {
+          ...latestDraft,
+          savedLessonNo: result.lesson.lessonNo,
+          lessonGps: sameSession && latestDraft.lessonGps
+            ? { ...latestDraft.lessonGps, savedLessonNo: result.lesson.lessonNo }
+            : latestDraft.lessonGps,
+        };
+        const written = casWriteDraft(storage, key, latestRev, tabIdRef.current ?? "", stamped);
+        if (written.ok) {
+          draftRev.current = written.rev;
+          lastStoredRaw.current = written.raw;
+          adopted = stamped;
+        } else {
+          // The stamp lost a race with yet another tab's write: the replacement stays in storage as-is
+          // and the instructor reopens the learner to see it. Adopting a stamp that never persisted
+          // would block the next save with a phantom "already exists".
+          draftRev.current = latestRev;
+        }
+      } else if (latest.kind === "draft" && latestDraft && latestRev !== draftRev.current) {
+        draftRev.current = latestRev;
+        lastStoredRaw.current = storage.get(key);
+        adopted = latestDraft;
+      } else if (latest.kind === "draft" && latestRev === draftRev.current) {
+        const tombstoned = casTombstone(storage, key, draftRev.current, tabIdRef.current ?? "");
+        if (tombstoned.ok) {
+          draftRev.current = tombstoned.rev;
+          lastStoredRaw.current = tombstoned.raw;
+        }
+      }
+      if (lessonGps && ownsGpsSession(lessonGps, tabIdRef.current ?? "") && !sameSession) void gpsCapture.current?.remove(lessonGps.id);
+      setGpsStatus((current) => current?.id === lessonGps?.id ? null : current);
       setSaveIssues(null);
       const next: Detail = { ...detail, totals: result.totals, progress: result.progress, completion: result.completion, lessons: [result.lesson, ...detail.lessons] };
       setDetail(next);
       setSummaries((current) => ({ ...current, [detail.learner.id]: summaryFromDetail(next) }));
-      setDraft(freshLesson(result.totals.lastFinishOdometer));
+      if (result.lesson.signatureStatus === "unsigned") loadUnsigned();
+      if (selectedRef.current !== detail.learner.id) return;
+      // Adopt the replacement draft if one arrived while saving; otherwise start fresh.
+      setDraft(adopted ? { ...freshLesson(result.totals.lastFinishOdometer), ...adopted } : freshLesson(result.totals.lastFinishOdometer));
       if (result.lesson.signatureStatus === "unsigned") {
-        loadUnsigned();
         setStatus({ kind: "warn", text: `Lesson #${result.lesson.lessonNo} saved, not signed yet. Sign it later from "To sign" at the top.` });
       } else setStatus({ kind: "ok", text: `Lesson #${result.lesson.lessonNo} saved.` });
       window.scrollTo({ top: 0, behavior: "smooth" });
     } catch (error) {
+      if (selectedRef.current !== detail.learner.id) return;
       setSaveIssues({ source: "server", issues: [issueFromServerMessage((error as Error).message)], snapshot: draft });
       setSaveAttempt((n) => n + 1);
     } finally {
@@ -845,6 +1117,9 @@ export default function DriverApp() {
   };
 
   const clearSelection = () => {
+    void gpsCapture.current?.stop();
+    setGpsConsent(false);
+    setGpsStatus(null);
     selectedRef.current = "";
     setSelectedId("");
     setDetail(null);
@@ -1060,21 +1335,34 @@ export default function DriverApp() {
     if (!f.lessonDate || !f.startTime) return setPasteProblems([...notes, "A lesson draft needs its Date and Start time. Add them and paste again."]);
     const learner = matches[0];
     let running = learner.id === selectedId && Boolean(draft?.startTime);
+    let replacedGps = learner.id === selectedId ? lessonGps : undefined;
     try {
-      const existing = storage.get(draftKey(learner.id));
-      if (existing && (JSON.parse(existing) as Partial<LessonDraft>).startTime) running = true;
+      const existing = parseStoredDraft(storage.get(draftKey(learner.id)));
+      if (existing.kind === "draft" && existing.draft) {
+        const previousDraft = existing.draft as Partial<LessonDraft>;
+        if (previousDraft.startTime) running = true;
+        if (previousDraft.lessonGps?.instructorId === signedInInstructorId) replacedGps ??= previousDraft.lessonGps;
+      }
     } catch { running = true; }
     if (running && !window.confirm(`${learner.fullName} already has a lesson in progress on this device. Replace it with the assistant's draft?`)) return;
     const saved: Partial<LessonDraft> = {
+      draftId: newDraftId(),
       lessonDate: f.lessonDate, taughtIds: f.taughtIds, assessedIds: f.assessedIds, achievedResults: f.achievedResults,
       location: f.location, comments: f.comments, adiSignature: "", learnerSignature: "",
     };
     // Empty values are left out, so the carried start odometer (from the last lesson) is kept.
     for (const key of ["startTime", "finishTime", "startOdometer", "finishOdometer"] as const) if (f[key]) saved[key] = f[key];
     if (!f.finishTime) notes.push("Finish time is missing: use End Lesson or Edit date / times.");
-    const json = JSON.stringify(saved);
-    storage.set(draftKey(learner.id), json);
-    if (storage.get(draftKey(learner.id)) !== json) return setPasteProblems(["This device would not keep the draft (browser storage is blocked or full). Nothing was changed."]);
+    // Write through the envelope so a stale tab cannot resurrect the replaced draft.
+    const pasteKey = draftKey(learner.id);
+    const pasteRev = storedRev(storage, pasteKey);
+    const written = casWriteDraft(storage, pasteKey, pasteRev, tabIdRef.current ?? "", saved);
+    if (!written.ok) return setPasteProblems(["This lesson draft changed in another tab. Reopen the learner to see the current draft."]);
+    if (storedRev(storage, pasteKey) !== written.rev) return setPasteProblems(["This device would not keep the draft (browser storage is blocked or full). Nothing was changed."]);
+    if (replacedGps && ownsGpsSession(replacedGps, tabIdRef.current ?? "")) {
+      void gpsCapture.current?.remove(replacedGps.id);
+      setGpsStatus((current) => current?.id === replacedGps.id ? null : current);
+    }
     if (activeView === "archived") chooseView("mine");
     pickLearner(learner.id);
     closePaste();
@@ -1123,9 +1411,13 @@ export default function DriverApp() {
       return { ...current, loggedHours: digits, loggedHoursOn: hoursOnTouched && current.loggedHoursOn ? current.loggedHoursOn : localNow().date };
     });
 
-  // No Access identity (local dev) means "My learners" has no meaning.
-  const views = availableViews(signedInInstructorId);
-  const activeView: PickerView = views.includes(view) ? view : "all";
+  const isSaas = appMode === "saas";
+  // SaaS: the trial line on every render (`clock` re-renders every 15 s); once expired every control that writes is disabled, with the banner saying why.
+  const trial = isSaas ? trialBanner(trialEndsAt ?? "", new Date()) : null;
+  const trialExpired = trial?.kind === "expired";
+  // No Access identity (local dev) means "My learners" has no meaning. SaaS: an account sees only its own learners, so no "All".
+  const views = isSaas ? availableViews(signedInInstructorId).filter((v) => v !== "all") : availableViews(signedInInstructorId);
+  const activeView: PickerView = views.includes(view) ? view : isSaas ? "mine" : "all";
   // The list = exactly this view's members (search narrows it); the open learner is never injected into a view they don't belong to.
   const viewMembers = viewLearners(learners, archivedLearners ?? [], activeView, signedInInstructorId);
   const searchResults = filterLearners(viewMembers, { scope: "all", instructorId: signedInInstructorId, query }).sort((a, b) => Number(Boolean(b.draftAt)) - Number(Boolean(a.draftAt)));
@@ -1150,7 +1442,7 @@ export default function DriverApp() {
   const listDetailsFailed = activeView === "archived" && !archivedSummariesLoaded && archivedSummariesError !== null;
   const viewGlance = glance(cardsOf(viewMembers).filter((c) => c.summary !== null).map((c) => ({ summary: c.summary as LearnerListSummary, reminders: c.reminders })));
   const emptyListText = query.trim()
-    ? `No matching learners${activeView === "mine" ? ' — try "All"' : ""}.`
+    ? `No matching learners${activeView === "mine" && !isSaas ? ' — try "All"' : ""}.`
     : activeView === "archived" ? "No archived learners." : "No learners here yet.";
   const panel = detail ? learnerPanel({ archivedAt: detail.learner.archivedAt, completed: detail.progress.completed, draftAt: detail.learner.draftAt ?? null }) : "active";
   const archivedReason = detail ? archiveReasonText(detail.learner.archiveReason, detail.learner.archiveNote) : null;
@@ -1169,7 +1461,7 @@ export default function DriverApp() {
       </label>
       <div className="archive-actions">
         <button type="button" className="btn ghost" disabled={saving} onClick={() => setArchiveDraft(null)} data-testid="archive-cancel">Cancel</button>
-        <button type="button" className="btn primary" disabled={saving || phase !== "ready"} onClick={() => void setLearnerArchived(true)} data-testid="archive-confirm">Archive learner</button>
+        <button type="button" className="btn primary" disabled={saving || phase !== "ready" || trialExpired} onClick={() => void setLearnerArchived(true)} data-testid="archive-confirm">Archive learner</button>
       </div>
     </div>
   ) : null;
@@ -1177,7 +1469,7 @@ export default function DriverApp() {
   // Transfer (3c T1): the learner's own instructor, or anyone active when that instructor is inactive (not in the
   // active-only instructors list). Never for an archived learner (restore first). The server enforces the same rules.
   const homeInactive = Boolean(detail) && instructors.length > 0 && !instructors.some((i) => i.id === detail?.learner.instructorId);
-  const canTransfer = Boolean(detail) && panel !== "archived" && panel !== "draft" && (!signedInInstructorId || signedInInstructorId === detail?.learner.instructorId || homeInactive);
+  const canTransfer = !isSaas && Boolean(detail) && panel !== "archived" && panel !== "draft" && (!signedInInstructorId || signedInInstructorId === detail?.learner.instructorId || homeInactive);
   const transferTargets = detail ? instructors.filter((i) => i.id !== detail.learner.instructorId) : [];
   const openTransferPanel = () => {
     setArchiveDraft(null);
@@ -1300,13 +1592,14 @@ export default function DriverApp() {
         <div className="brand">
           <img src="/icon.svg" width={34} height={34} alt="" />
           <div className="brand-name">
-            <strong>ACTGDS Instructor</strong>
+            <strong>{isSaas ? "Instructor Assistant" : "ACTGDS Instructor"}</strong>
             <small>CBT&amp;A Lesson Checklist</small>
           </div>
           {signedInAs ? (
-            <div className="signed-in-as">
+            <div className={isSaas ? "signed-in-as saas" : "signed-in-as"}>
               <span>Signed in as {signedInAs}</span>
-              <a href={logoutUrl} className="signout-link" data-testid="signout-link">Sign out</a>
+              {isSaas ? <a href="/account" className="signout-link" data-testid="account-link">Account</a> : null}
+              <a href={logoutUrl} className="signout-link" data-testid="signout-link" onClick={() => void gpsCapture.current?.stop()}>Sign out</a>
             </div>
           ) : null}
           <ThemeToggle />
@@ -1317,12 +1610,19 @@ export default function DriverApp() {
             {ready ? <span className="headline-sub" data-testid="view-subline">{viewSubline}</span> : null}
           </div>
           {ready ? (
-            <button type="button" className="btn gold new-learner" onClick={() => (addingLearner ? closeLearnerForm() : openAddLearner())} data-testid="new-learner">
+            <button type="button" className="btn gold new-learner" disabled={trialExpired && !addingLearner} onClick={() => (addingLearner ? closeLearnerForm() : openAddLearner())} data-testid="new-learner">
               {addingLearner ? "Cancel" : "+ New learner"}
             </button>
           ) : null}
         </div>
       </header>
+
+      {trial ? (
+        <a href="/account" className={`trial-banner ${trial.kind}`} data-testid="trial-banner" data-kind={trial.kind}>
+          <span>{trial.text}</span>
+          {trialExpired ? <small data-testid="trial-readonly-note">Adding or changing learners, lessons and signatures is switched off. History and PDF export still work.</small> : null}
+        </a>
+      ) : null}
 
       <section className="card picker" data-selected={selectedId}>
         {!ready ? (
@@ -1343,7 +1643,8 @@ export default function DriverApp() {
             enterKeyHint="search"
           />
         </label>
-        {pasteOpen ? (
+        {/* "Paste from assistant" reads ACTGDS's own assistant format (ACTGDS-DRAFT): private edition only. */}
+        {isSaas ? null : pasteOpen ? (
           <div className="paste-draft" data-testid="paste-draft">
             <label className="field">
               <span>Paste the assistant&rsquo;s draft (it starts with ACTGDS-DRAFT)</span>
@@ -1356,16 +1657,16 @@ export default function DriverApp() {
             ) : null}
             <div className="paste-actions">
               <button type="button" className="btn primary" disabled={!pasteText.trim() || saving} onClick={() => void applyAssistantDraft()} data-testid="paste-draft-use">Fill in the form</button>
-              {pasteIsLearner ? <button type="button" className="btn ghost" disabled={saving} onClick={() => void applyAssistantDraft(true)} data-testid="paste-draft-save-draft">Save as draft now</button> : null}
+              {pasteIsLearner ? <button type="button" className="btn ghost" disabled={saving || trialExpired} onClick={() => void applyAssistantDraft(true)} data-testid="paste-draft-save-draft">Save as draft now</button> : null}
               <button type="button" className="btn ghost" onClick={closePaste}>Cancel</button>
             </div>
             <p className="hint-note">&ldquo;Fill in the form&rdquo; saves nothing: you check it, then save it.{pasteIsLearner ? " \u201cSave as draft now\u201d keeps this learner as a draft to review later." : ""}</p>
           </div>
         ) : (
-          <button type="button" className="link paste-link" onClick={() => setPasteOpen(true)} disabled={saving} data-testid="paste-draft-open">Paste from assistant</button>
+          <button type="button" className="link paste-link" onClick={() => setPasteOpen(true)} disabled={saving || trialExpired} data-testid="paste-draft-open">Paste from assistant</button>
         )}
         {unsigned.length && !signQueue ? (
-          <button type="button" className="to-sign" onClick={() => setSignQueue({ startLessonId: null })} data-testid="to-sign-open">
+          <button type="button" className="to-sign" disabled={trialExpired} onClick={() => setSignQueue({ startLessonId: null })} data-testid="to-sign-open">
             To sign: {unsigned.length} {unsigned.length === 1 ? "lesson" : "lessons"}
           </button>
         ) : null}
@@ -1374,6 +1675,7 @@ export default function DriverApp() {
             key={signQueue.startLessonId ?? "queue"}
             items={unsigned}
             startLessonId={signQueue.startLessonId}
+            readOnly={trialExpired}
             onSigned={(item) => {
               setUnsigned((current) => current.filter((i) => i.lessonId !== item.lessonId));
               if (detail?.learner.id === item.learnerId) void refreshDetail(item.learnerId);
@@ -1467,7 +1769,7 @@ export default function DriverApp() {
               (Transfer + Archive, Tony's decision 3) and one primary action in a sticky bottom bar. Same fields, same payloads. */}
           <div className="form-head">
             <h2>{editingLearner ? "Edit learner" : "New learner"}</h2>
-            <p className="form-sub">{formSubline(editingLearner)}</p>
+            <p className="form-sub">{formSubline(editingLearner, isSaas)}</p>
           </div>
           <div className="fsections">
             <section className="lblock fsect" aria-labelledby="fsect-student" data-testid="fsect-student">
@@ -1588,7 +1890,7 @@ export default function DriverApp() {
                       <option value="full">Full</option>
                     </select>
                   </label>
-                ) : (
+                ) : isSaas ? null : (
                   <label className="field full"><span>Instructor <span className="req" aria-hidden="true">*</span></span>
                     <select value={learnerDraft.instructorId} onChange={(e) => learnerField("instructorId", e.target.value)}>
                       <option value="">Select instructor…</option>
@@ -1615,7 +1917,7 @@ export default function DriverApp() {
                   ) : null}
                   {more.archive ? (
                     archiveDraft ? archivePanel : (
-                      <button type="button" className="link archive-link" disabled={saving || moreLocked} onClick={openArchivePanel}>
+                      <button type="button" className="link archive-link" disabled={saving || moreLocked || trialExpired} onClick={openArchivePanel}>
                         Archive learner…
                       </button>
                     )
@@ -1633,14 +1935,14 @@ export default function DriverApp() {
               </label>
               <p className="hint-note">&ldquo;Save as draft&rdquo; keeps whatever is filled in, even if it is incomplete or wrong; a value the app cannot use is left out and written to these notes.</p>
               {/* mouseDown keeps the focus in the notes box: a blur would re-pin the sticky Save bar over this button mid-tap and swallow the tap. */}
-              <button type="button" className="btn ghost block save-draft" disabled={saving} onMouseDown={(e) => e.preventDefault()} onClick={() => void saveAsDraft()} data-testid="save-learner-draft">
+              <button type="button" className="btn ghost block save-draft" disabled={saving || trialExpired} onMouseDown={(e) => e.preventDefault()} onClick={() => void saveAsDraft()} data-testid="save-learner-draft">
                 {editingLearner ? "Save draft" : "Save as draft"}
               </button>
             </details>
           ) : null}
           {/* One primary action, pinned above the home indicator; un-pinned while a field has focus (globals.css), like the lesson's bar. */}
           <div className="learner-actions" data-testid="learner-actions">
-            <button type="button" className="btn save" disabled={saving} onClick={submitLearnerForm} data-testid="save-learner">
+            <button type="button" className="btn save" disabled={saving || trialExpired} onClick={submitLearnerForm} data-testid="save-learner">
               {saveLabel({ editing: editingLearner, saving, draft: editingLearner && Boolean(detail?.learner.draftAt) })}
             </button>
             <button type="button" className="link learner-cancel" disabled={saving} onClick={closeLearnerForm} data-testid={editingLearner ? "cancel-edit-learner" : "cancel-new-learner"}>Cancel</button>
@@ -1690,7 +1992,7 @@ export default function DriverApp() {
               <div className="reminders" data-testid="transfer-check">
                 <p className="reminder amber transfer-check" data-tone="amber">
                   <span>{recordsCheckText(recordsCheck.fromName)}</span>
-                  <button type="button" className="btn ghost small" disabled={saving} onClick={() => void markRecordsChecked()} data-testid="transfer-checked">Checked</button>
+                  <button type="button" className="btn ghost small" disabled={saving || trialExpired} onClick={() => void markRecordsChecked()} data-testid="transfer-checked">Checked</button>
                 </p>
               </div>
             ) : null}
@@ -1703,7 +2005,15 @@ export default function DriverApp() {
                     {showBookingLink ? <BookingLink /> : null}
                   </div>
                 ) : null}
-                <button type="button" className="btn huge go" onClick={startLesson}>Start Lesson #{lessonNo}</button>
+                {!isSaas && signedInInstructorId && !pastLesson ? (
+                  <label className="lesson-gps-choice">
+                    <input type="checkbox" checked={gpsConsent} onChange={(event) => setGpsConsent(event.target.checked)} data-testid="lesson-gps-consent" />
+                    <span>Record GPS with the learner&rsquo;s agreement
+                      <small>Review the estimates before saving. Raw locations stay on this device and are cleared when you save, discard, or next open the app after a day.</small>
+                    </span>
+                  </label>
+                ) : null}
+                <button type="button" className="btn huge go" disabled={trialExpired} onClick={startLesson}>Start Lesson #{lessonNo}</button>
                 <p className="phase-note">Date and start time are taken from the clock. Competencies and signatures appear after you start.</p>
                 {pastLesson ? (
                   <div className="past-lesson" data-testid="past-lesson">
@@ -1714,24 +2024,27 @@ export default function DriverApp() {
                     </div>
                     {pastLesson.error ? <p className="hint danger" role="alert" data-testid="past-lesson-error">{pastLesson.error}</p> : null}
                     <div className="paste-actions">
-                      <button type="button" className="btn primary" onClick={usePastLesson} data-testid="past-lesson-use">Continue</button>
+                      <button type="button" className="btn primary" disabled={trialExpired} onClick={usePastLesson} data-testid="past-lesson-use">Continue</button>
                       <button type="button" className="btn ghost" onClick={() => setPastLesson(null)}>Cancel</button>
                     </div>
                   </div>
                 ) : (
-                  <button type="button" className="link paste-link" onClick={openPastLesson} data-testid="past-lesson-open">Record a past lesson</button>
+                  <button type="button" className="link paste-link" disabled={trialExpired} onClick={openPastLesson} data-testid="past-lesson-open">Record a past lesson</button>
                 )}
               </div>
             ) : null}
-            {/* Needed only when linking the learner in the ACTGDS CRM: folded away, one tap to open and copy. */}
-            <details className="meta integration-id" key={`iid-${detail.learner.id}`}>
-              <summary>Integration ID</summary>
-              <code>{detail.learner.id}</code>
-              <button type="button" className="link" onClick={() => void copyIntegrationId(detail.learner.id)}>Copy ID</button>
-            </details>
+            {/* Needed only when linking the learner in the ACTGDS CRM: folded away, one tap to open and copy. The ACTGDS Website link
+                (Integration ID) is a private-edition feature: not shown in the SaaS edition. */}
+            {isSaas ? null : (
+              <details className="meta integration-id" key={`iid-${detail.learner.id}`}>
+                <summary>Integration ID</summary>
+                <code>{detail.learner.id}</code>
+                <button type="button" className="link" onClick={() => void copyIntegrationId(detail.learner.id)}>Copy ID</button>
+              </details>
+            )}
             {panel === "draft" ? null : <ExportPdfButton key={detail.learner.id} learnerId={detail.learner.id} lessonCount={history.lessons.length} />}
             {canEditLearner ? (
-              <button type="button" className="btn ghost block edit-learner-btn" disabled={saving} onClick={openEditLearner} data-testid="edit-learner">Edit learner</button>
+              <button type="button" className="btn ghost block edit-learner-btn" disabled={saving || trialExpired} onClick={openEditLearner} data-testid="edit-learner">Edit learner</button>
             ) : null}
             {canTransfer && !canEditLearner ? (
               transferDraft ? transferPanel : (
@@ -1744,7 +2057,7 @@ export default function DriverApp() {
                 Edit learner keeps the page-level link exactly as before; the owner finds it under Edit learner > More. */}
             {panel === "active" && !canEditLearner ? (
               archiveDraft ? archivePanel : (
-                <button type="button" className="link archive-link" disabled={saving || phase !== "ready"} onClick={openArchivePanel}>
+                <button type="button" className="link archive-link" disabled={saving || phase !== "ready" || trialExpired} onClick={openArchivePanel}>
                   Archive learner…
                 </button>
               )
@@ -1753,7 +2066,7 @@ export default function DriverApp() {
               <div className="lifecycle draft" data-testid="draft-banner">
                 <p><b>Draft</b> — not a record yet. Lessons and imports unlock after you confirm it.</p>
                 {detail.learner.draftNotes ? <p className="draft-notes" data-testid="draft-notes">{detail.learner.draftNotes}</p> : <p className="meta">No notes. Check the details against the original, then confirm.</p>}
-                {canEditLearner ? <button type="button" className="btn primary" disabled={saving} onClick={openEditLearner} data-testid="draft-review">Review and confirm</button> : <p className="meta">Only {detail.learner.instructorName || "the learner's instructor"} can review this draft.</p>}
+                {canEditLearner ? <button type="button" className="btn primary" disabled={saving || trialExpired} onClick={openEditLearner} data-testid="draft-review">Review and confirm</button> : <p className="meta">Only {detail.learner.instructorName || "the learner's instructor"} can review this draft.</p>}
               </div>
             ) : null}
             {panel === "archived" ? (
@@ -1782,7 +2095,7 @@ export default function DriverApp() {
                     </ol>
                   )}
                 </details>
-                <button type="button" className="btn primary block" disabled={saving} onClick={() => void setLearnerArchived(false)}>Restore learner</button>
+                <button type="button" className="btn primary block" disabled={saving || trialExpired} onClick={() => void setLearnerArchived(false)}>Restore learner</button>
               </div>
             ) : null}
             </div>
@@ -1791,7 +2104,11 @@ export default function DriverApp() {
           <CompetencyProgressCard progress={detail.progress} completion={detail.completion} invalidated={invalidation} />
 
           {detail.lessons.length === 0 && (panel === "active" || panel === "draft") ? (
-            <PaperImportPanel key={detail.learner.id} learnerId={detail.learner.id} canImport={panel === "active"} onImported={() => loadLearner(detail.learner.id)} />
+            trialExpired ? (
+              <p className="status info" data-testid="paper-import-trial-ended">Importing paper records is switched off: your free trial has ended.</p>
+            ) : (
+              <PaperImportPanel key={detail.learner.id} learnerId={detail.learner.id} canImport={panel === "active"} onImported={() => loadLearner(detail.learner.id)} />
+            )
           ) : null}
 
           {panel === "completed" ? (
@@ -1802,7 +2119,7 @@ export default function DriverApp() {
               </p>
               <div className="lifecycle suggest" data-testid="archive-suggestion">
                 <p>You can archive {detail.learner.fullName} to keep your daily list short — nothing is deleted and you can restore any time. Or just leave them active.</p>
-                {archiveDraft ? archivePanel : <button type="button" className="btn ghost small" disabled={saving} onClick={openArchivePanel}>Archive learner…</button>}
+                {archiveDraft ? archivePanel : <button type="button" className="btn ghost small" disabled={saving || trialExpired} onClick={openArchivePanel}>Archive learner…</button>}
               </div>
             </section>
           ) : null}
@@ -1828,6 +2145,7 @@ export default function DriverApp() {
                 <>
                   <button type="button" className="btn huge stop" onClick={endLesson}>End Lesson</button>
                   <p className="phase-note">Finish odometer unlocks after End Lesson.</p>
+                  {lessonGps ? <p className="phase-note" role="status" data-testid="lesson-gps-running">{lessonGps.endedAt ? "GPS recording has stopped. Review the saved points when you end the lesson." : gpsStatus?.id === lessonGps.id ? gpsStatus.text : "GPS was interrupted. Any saved points will be reviewed when you end the lesson."}</p> : null}
                 </>
               ) : null}
             </div>
@@ -1866,7 +2184,7 @@ export default function DriverApp() {
             {phase !== "ready" ? (
               <>
                 <div className="lblock" id="lesson-field-competency" data-testid="competency-block">
-                  <div className="card-head"><h3>Competencies</h3><small>Tap a number · official CBT&amp;A list</small></div>
+                  <div className="card-head"><h3>{phase === "ended" ? "CBT&A checklist" : "Competencies"}</h3><small>Tap a number · official CBT&amp;A list</small></div>
                   <CompetencyPicker
                     progress={detail.progress}
                     taughtIds={draft.taughtIds}
@@ -1887,16 +2205,53 @@ export default function DriverApp() {
                 ) : null}
 
                 <div className="lblock" data-testid="notes-block">
+                  {phase === "ended" && lessonGps ? (
+                    <div className="lesson-gps-review" role="status" data-testid="lesson-gps-review">
+                      {lessonGps.notes === undefined ? "Preparing GPS notes… You can save without them." : lessonGps.notes === null ? "No usable GPS route was captured. You can still finish the checklist." : (
+                        <>
+                          <p>{lessonGps.notes.line}</p>
+                          {lessonGps.needsReview ? (
+                            <>
+                              <small>GPS notes arrived after a signature. Clear the signatures before adding the notes.</small>
+                              <button type="button" className="btn ghost small" disabled={Boolean(draft.adiSignature || draft.learnerSignature)} onClick={() => setDraft((current) => current?.lessonGps?.id === lessonGps.id ? { ...current, lessonGps: { ...lessonGps, needsReview: false, commentsEdited: false } } : current)}>Add GPS notes to Comments</button>
+                            </>
+                          ) : (
+                            <small>{lessonGps.commentsEdited ? "Review your edited Comments before saving." : lessonCommentsWithGps(draft.comments, lessonGps) === draft.comments ? "Comments are full. You can copy the GPS notes you want to keep." : `Review or edit the GPS notes in Comments${lessonLocationWithGps(draft.location, lessonGps) !== draft.location ? " and the GPS route in Location" : ""} before saving.`}</small>
+                          )}
+                          {lessonGps.notes.details.length ? (
+                            <details>
+                              <summary>Review GPS observations</summary>
+                              <ul>{lessonGps.notes.details.map((line, index) => <li key={index}>{line}</li>)}</ul>
+                            </details>
+                          ) : null}
+                          <small><a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">© OpenStreetMap contributors</a></small>
+                          <small>GPS distance is an estimate; the odometer is the official record.</small>
+                        </>
+                      )}
+                    </div>
+                  ) : null}
                   <div className="grid">
-                    <label className="field full"><span>Location</span><input value={draft.location} onChange={(e) => setField("location", e.target.value)} placeholder="Belconnen, Gungahlin…" /></label>
-                    <label className="field full"><span>Comments</span><textarea rows={2} value={draft.comments} onChange={(e) => setField("comments", e.target.value)} /></label>
+                    <label className="field full"><span>Location</span><input value={lessonLocationWithGps(draft.location, lessonGps)} onChange={(e) => {
+                      const location = e.target.value;
+                      setDraft((current) => current ? {
+                        ...current, location,
+                        lessonGps: lessonGps?.notes ? { ...lessonGps, locationEdited: true } : current.lessonGps,
+                      } : current);
+                    }} placeholder="Belconnen, Gungahlin…" /></label>
+                    <label className="field full"><span>Comments</span><textarea rows={2} value={lessonCommentsWithGps(draft.comments, lessonGps)} onChange={(event) => {
+                      const comments = event.target.value;
+                      setDraft((current) => current ? {
+                        ...current, comments,
+                        lessonGps: lessonGps?.notes ? { ...lessonGps, commentsEdited: true } : current.lessonGps,
+                      } : current);
+                    }} /></label>
                   </div>
                 </div>
 
                 <div className="lblock" data-testid="signatures-block">
                   <div className="card-head"><h3>Signatures</h3><small>{draft.assessedIds.includes(FINAL_DRIVE_23) ? "both required to save" : "both now, or both later"}</small></div>
                   <div className="sigs">
-                    <div id="lesson-field-adi-signature"><SignaturePad label="ADI signature" value={draft.adiSignature} onChange={(value) => setField("adiSignature", value)} /><SavedSignature value={draft.adiSignature} onUse={(value) => setField("adiSignature", value)} /></div>
+                    <div id="lesson-field-adi-signature"><SignaturePad label="ADI signature" value={draft.adiSignature} onChange={(value) => setField("adiSignature", value)} /><SavedSignature value={draft.adiSignature} onUse={(value) => setField("adiSignature", value)} disabled={trialExpired} /></div>
                     <div id="lesson-field-learner-signature"><SignaturePad label="Learner signature" value={draft.learnerSignature} onChange={(value) => setField("learnerSignature", value)} /></div>
                   </div>
                 </div>
@@ -1904,11 +2259,11 @@ export default function DriverApp() {
                 <SaveErrorSummary issues={shownSaveIssues} prefix="lesson" attempt={saveAttempt} />
                 {showsSaveBar(phase) ? (
                   <div className="lesson-actions" data-testid="lesson-actions">
-                    <button type="button" className="btn save" disabled={saving} onClick={() => void saveLesson()}>
+                    <button type="button" className="btn save" disabled={saving || trialExpired} onClick={() => void saveLesson()}>
                       {saving ? "Saving…" : `Save Lesson #${lessonNo}`}
                     </button>
                     {!draft.adiSignature && !draft.learnerSignature && !draft.assessedIds.includes(FINAL_DRIVE_23) ? (
-                      <button type="button" className="btn ghost sign-later" disabled={saving} onClick={() => void saveLesson(true)} data-testid="save-sign-later">Save without signatures (sign later)</button>
+                      <button type="button" className="btn ghost sign-later" disabled={saving || trialExpired} onClick={() => void saveLesson(true)} data-testid="save-sign-later">Save without signatures (sign later)</button>
                     ) : null}
                     <button type="button" className="link danger" onClick={discardLesson}>Discard this lesson</button>
                   </div>
@@ -1988,7 +2343,7 @@ export default function DriverApp() {
                                   <p className="hint danger">Content changed — both signatures were cleared. Please redraw both before saving (Final Drive 23 is signed when it is saved).</p>
                                 )
                               ) : null}
-                              <div id="edit-field-adi-signature"><SignaturePad label="ADI signature" value={editDraft.adiSignature} onChange={(value) => setEditFieldValue((d) => ({ ...d, adiSignature: value }))} /><SavedSignature value={editDraft.adiSignature} onUse={(value) => setEditFieldValue((d) => ({ ...d, adiSignature: value }))} /></div>
+                              <div id="edit-field-adi-signature"><SignaturePad label="ADI signature" value={editDraft.adiSignature} onChange={(value) => setEditFieldValue((d) => ({ ...d, adiSignature: value }))} /><SavedSignature value={editDraft.adiSignature} onUse={(value) => setEditFieldValue((d) => ({ ...d, adiSignature: value }))} disabled={trialExpired} /></div>
                               <div id="edit-field-learner-signature"><SignaturePad label="Learner signature" value={editDraft.learnerSignature} onChange={(value) => setEditFieldValue((d) => ({ ...d, learnerSignature: value }))} /></div>
 
                             </>
@@ -2000,7 +2355,7 @@ export default function DriverApp() {
                           </label>
 
                           <SaveErrorSummary issues={shownEditIssues} prefix="edit" attempt={editAttempt} />
-                          <button type="button" className="btn huge save" disabled={saving} onClick={() => void saveEditLesson()}>
+                          <button type="button" className="btn huge save" disabled={saving || trialExpired} onClick={() => void saveEditLesson()}>
                             {saving ? "Saving…" : "Save changes"}
                           </button>
                           <button type="button" className="link" onClick={cancelEditLesson}>Cancel</button>
@@ -2013,13 +2368,13 @@ export default function DriverApp() {
                         <span className="h-no">#{lesson.lessonNo}</span>
                         {lesson.recordSource === "paper_import" ? <span className="h-paper" data-testid="paper-badge">Paper record</span> : null}
                         {lesson.recordSource === "app" && lesson.signatureStatus === "unsigned" && panel !== "archived" && (!signedInInstructorId || lesson.instructorId === signedInInstructorId) ? (
-                          <button type="button" className="h-unsigned" data-testid="unsigned-badge" onClick={() => setSignQueue({ startLessonId: lesson.id })}>Not signed · Sign now</button>
+                          <button type="button" className="h-unsigned" data-testid="unsigned-badge" disabled={trialExpired} onClick={() => setSignQueue({ startLessonId: lesson.id })}>Not signed · Sign now</button>
                         ) : null}
                         <span>{lesson.lessonDate} · {lesson.startTime ?? "—"}–{lesson.finishTime ?? "—"}</span>
                         {signedInInstructorId && lesson.instructorId !== signedInInstructorId ? (
                           <span className="h-readonly" data-testid="history-readonly">Recorded by {instructors.find((i) => i.id === lesson.instructorId)?.fullName ?? "another instructor"}</span>
                         ) : (
-                          <button type="button" className="link h-edit" onClick={() => void startEditLesson(lesson.id)}>Edit</button>
+                          <button type="button" className="link h-edit" disabled={trialExpired} onClick={() => void startEditLesson(lesson.id)}>Edit</button>
                         )}
                       </div>
                       <div className="h-nums">
@@ -2090,7 +2445,10 @@ export default function DriverApp() {
         </>
       ) : null}
 
-      <footer className="foot">ACT Golden Driving School · Internal instructor tool<br /><span data-testid="gnaf-attribution">{GNAF_ATTRIBUTION}</span></footer>
+      {/* SaaS: no school line, but the G-NAF attribution stays (licence condition of the street suggestions). */}
+      {isSaas ? (
+        <footer className="foot"><span data-testid="gnaf-attribution">{GNAF_ATTRIBUTION}</span></footer>
+      ) : <footer className="foot">ACT Golden Driving School · Internal instructor tool<br /><span data-testid="gnaf-attribution">{GNAF_ATTRIBUTION}</span></footer>}
     </main>
   );
 }

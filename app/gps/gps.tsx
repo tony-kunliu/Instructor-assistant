@@ -4,11 +4,12 @@
 // (IndexedDB "ia-gps"); nothing is uploaded, nothing touches lessons. Two sources: a synthetic drive (default; no
 // location API is called) and this device's GPS behind an explicit, never-persisted, per-session consent.
 import { useCallback, useEffect, useRef, useState } from "react";
+import { browserDoc, browserEnv, deviceDeps, wakeLockDep } from "@/lib/gps/browser.ts";
 import ThemeToggle from "@/app/theme-switch.tsx";
 import { analyzeSession, type Report } from "@/lib/gps/analysis.ts";
 import { loadEarlierSummaries, EARLIER_SUMMARY_LIMIT } from "@/lib/gps/earlier.ts";
 import { coverageText, distanceText, fmtMs, recordedText } from "@/lib/gps/format.ts";
-import { Recorder, describeGeoError, recoverSession, type DocLike, type GeoLike, type RecorderDeps, type Snapshot, type WakeLockLike } from "@/lib/gps/recorder.ts";
+import { Recorder, describeGeoError, recoverSession, type RecorderDeps, type Snapshot } from "@/lib/gps/recorder.ts";
 import { FaultInjectingStore, IndexedDbStore } from "@/lib/gps/store.ts";
 import { summarizeTrack, type TrackSummary } from "@/lib/gps/summary.ts";
 import { DEFAULT_DRIVE, syntheticDriver, type SyntheticDriver } from "@/lib/gps/synthetic.ts";
@@ -30,56 +31,12 @@ const clock = (ms: number) => {
 const km = (m: number) => `${(m / 1000).toFixed(1)} km`;
 const when = (t: number) => new Date(t).toLocaleString("en-AU", { timeZone: "Australia/Sydney", hour12: false });
 
-const browserDoc = (): DocLike => ({
-  visibility: () => (document.visibilityState === "visible" ? "visible" : "hidden"),
-  onVisibility: (cb) => { document.addEventListener("visibilitychange", cb); return () => document.removeEventListener("visibilitychange", cb); },
-  onLifecycle: (cb) => {
-    const handlers: [EventTarget, string, () => void][] = [
-      [window, "pagehide", () => cb("pagehide")], [window, "pageshow", () => cb("pageshow")],
-      [document, "freeze", () => cb("freeze")], [document, "resume", () => cb("lifecycle_resume")],
-    ];
-    for (const [target, name, fn] of handlers) target.addEventListener(name, fn);
-    return () => { for (const [target, name, fn] of handlers) target.removeEventListener(name, fn); };
-  },
-});
-
-function wakeLockDep(): WakeLockLike | null {
-  const nav = navigator as Navigator & { wakeLock?: { request(type: "screen"): Promise<EventTarget & { release(): Promise<void> }> } };
-  return nav.wakeLock
-    ? { request: async () => { const s = await nav.wakeLock!.request("screen"); return { release: () => s.release(), onrelease: (cb) => s.addEventListener("release", cb) }; } }
-    : null;
-}
-
-function envDep(source: Source, geolocationSupported: boolean): RecorderDeps["env"] {
-  const nav = navigator as Navigator & { standalone?: boolean };
-  return {
-    userAgent: navigator.userAgent,
-    standalone: Boolean(nav.standalone) || window.matchMedia("(display-mode: standalone)").matches,
-    wakeLockSupported: "wakeLock" in navigator,
-    geolocationSupported,
-    source,
-  };
-}
-
-/** Real device: navigator.geolocation is looked up only here, only after consent, only when Start is tapped. */
-function deviceDeps(store: FaultInjectingStore): RecorderDeps {
-  const geo: GeoLike | null = "geolocation" in navigator ? (navigator.geolocation as unknown as GeoLike) : null;
-  return {
-    geo, wakeLock: wakeLockDep(), doc: browserDoc(), store,
-    now: () => Date.now(),
-    setInterval: (fn, ms) => window.setInterval(fn, ms),
-    clearInterval: (id) => window.clearInterval(id as number),
-    env: envDep("device", geo !== null),
-    newId: () => crypto.randomUUID(),
-  };
-}
-
 /** Synthetic drive: the driver is the geolocation AND the clock, so the whole session runs `speedup`× faster. */
 function syntheticDeps(store: FaultInjectingStore, driver: SyntheticDriver): RecorderDeps {
   return {
     geo: driver, wakeLock: wakeLockDep(), doc: browserDoc(), store,
     now: driver.clock.now, setInterval: driver.clock.setInterval, clearInterval: driver.clock.clearInterval,
-    env: envDep("synthetic", true),
+    env: browserEnv("synthetic", true),
     newId: () => crypto.randomUUID(),
   };
 }

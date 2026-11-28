@@ -1,43 +1,20 @@
 # TASK.md
 
-_Last updated: 2026-10-21_
+_Last updated: 2026-11-28_
 
-This file describes **current task only**. Completed work's detail
-lives in git log and closed PRs, not here.
+This file describes the current task only. Completed work history lives in Git history and closed PRs.
 
-**SaaS edition P0 (2026-10-21):** `Current Task:` Completed; in Production (#22, run 39672461921, no migration). `Next Recommended Task:` P1 (plan Tasks 3-5), only on Tony's go. `Waiting on Other Repo:` NONE. `Tony Manual Action Required:` real-login look at Production (learner list opens, Record a past lesson); report any 503.
+**Current Task:** Lesson GPS v2 — **Completed on `feature/lesson-gps-v2` (commit `812d5be`, local only, not pushed)**. Ports #130's lesson-GPS core with the cross-tab draft lifecycle rewritten (CAS envelope + tombstones, tab ownership, idempotent collect, Web Lock save); adds turn detection, junction list, signal waits, speed stats, and new manoeuvre detection (reversing, three-point turns, possible lane changes, stops/moving-off with approach deceleration); GPS notes now carry a time-ordered evidence trail and a route summary for the form's Location column (auto-fills only when empty); adds the competency suggestion list as pure data (11 of 22 competencies, instructor confirms, never auto-Achieves). Design doc `docs/gps-cbt-mapping.md` is written against ACT form 10,044 (7/2002), per-column source/definition/boundary; the checklist PDF export was verified against the same template (no discrepancy). Tests 929 pass (7 new), tsc clean, `cf:build` passes. Nothing pushed to GitHub; nothing merged or deployed.
 
-**Picker correction (2026-10-18):** `Current Task:` Completed. Data fixed in both environments; labels and #92 (ADI PATCH own-only) released to Production (#18, run 39132693394, no migration).
-`Next Recommended Task:` PR `fix/qa-route-reminder-order` (qa-only); GPS phase 1b real drive. `Waiting on Other Repo:` NONE. `Tony Manual Action Required:` real-login look at the picker on Production.
+**Active delivery gates:**
 
-**Current Task:** P4 GPS phase 1, isolated default-OFF GPS recorder (`feature/gps-p4-recorder`) — **Merged to `staging` (PR #84, 62923cf), deployed to Staging** (L2 isolated: new `/gps` page + pure `lib/gps`; no D1, migration, API or lesson change; nothing uploaded). Delivered / not-done list: `docs/superpowers/specs/2026-10-13-gps-tracking-design.md` §8-§9. Reviewed per Handbook §2 L2 (PASS, 7 Minors fixed).
+- **PR #132 — Today’s lessons:** HEAD `b8b8da504fc82507f51b914b1d6d053e85944991`; exact-HEAD CI PASS; focused Browser QA PASS at `333947b`, with only project-memory docs changed afterwards. Fresh L3 review of exact HEAD is pending (ACTGDS Issue #3 comment 7102354803). No live Google OAuth/calendar access.
+- **PR #131 — licence photo:** HEAD `977e357998eaf4394e2ca268b03f993f61ba70bf`; exact-HEAD CI PASS; Browser QA PASS at `360a2c7`, with only project-memory docs changed afterwards. Fresh L3 review of exact HEAD is pending (Issue #3 comment 7093882548). Real iPhone camera / ACT card acceptance remains before release.
+- **PR #130 — lesson GPS:** Draft; CI PASS. Superseded by `feature/lesson-gps-v2` — recommend closing once the v2 PR is open. Background recording through lock screen and app switching remains an unmet release gate.
+- **PR #133 — isolated iOS GPS:** Draft; CI and Xcode project build PASS. Artifact 14810301175 is unsigned and not installable as supplied. Tony will arrange signing/install and his own test when available.
 
-**Side task (dot / Tony "keep iterating", 2026-10-16):** `chore/manifest-colours` (draft PR #86) — the installed app's
-`app/manifest.ts` colours move to the light tokens (`--paper` #f6f3eb, `--navy` #0b1b2b); `tests/manifest-colours.test.ts`
-keeps manifest, stylesheet and `/gps` manifest in step; `scripts/qa-browser/manifest.mjs` checks both manifests as served
-(content type, colours, icon, links, theme-color metas) at phone + iPad widths, light + dark. Tier recorded: **L2
-presentation-only** (author "L1/L2", reviewer L2 under the §2 doubt rule). No data, schema, contract or permission change.
-Draft, not merged; needs Tony's go. Unlocated: the first full unit run was 762/763 (name not captured; 7 later runs clean).
+**Next Recommended Task:** Independent review of `feature/lesson-gps-v2` (commit `812d5be`), then open a PR to staging (push needs Tony's approval card). After that, build the suggestion tick UI: Taught / Assessed / Achieved confirmation from `lib/gps/competency-suggestions.ts` (data is ready; no UI yet). Do not merge Main/Staging wholesale: they are diverged. Then continue the already-requested exact-HEAD L3 reviews for PR #132 and #131; do not change those candidate branches while review is pending.
 
-**Next Recommended Task:** Tony's real-phone drive (phase 1b) on Staging
-`/gps` from the Home Screen — Real GPS, 20-30 min with a 5 min screen lock and 5 min in another app, copy the
-summary + feasibility JSON back; the verdict decides web vs native shell. Then phase 2 (lesson hook-in,
-`lesson_tracks` migration, consent record, 90-day Cron, R10 line) only on Tony's separate approval (new table =
-ALWAYS-ASK 1). PR #83 (learner form + Transfer / Archive in "More") is merged to `staging` (bc1e0cb) and awaits Tony's phone
-check + Production release. Still queued: intake P4 (iOS Scan Text + local parser), `docs/tasks` memory scheme,
-`scripts/check-signature-row-limits.mjs` on Staging D1.
+**Waiting on Other Repo:** NONE for this task. No shared contract or cross-repo interface change is proposed.
 
-**Waiting on Other Repo:** ACTGDS: notify-tick waits for Website PR #47 rework and Tony's explicit approval of the
-new endpoint + secret (Production stays OFF). Nothing blocks this repo.
-
-**Side task (dot / Tony, 2026-10-16):** `feature/gps-earlier-summaries` — `/gps` "Earlier recordings": the newest five rows show
-one line (`16.99 km · Recorded 27.1 min · Coverage 97.4%`), the Results card's own numbers via `lib/gps/format.ts`: a read-only
-in-memory projection (`lib/gps/earlier.ts`, existing `summarizeTrack`; a malformed record degrades alone). No capture, write,
-consent, lesson, API or location change. Tier L2. Draft PR #87 to `staging`.
-
-**Tony Manual Action Required:** none for this step. Later: the phase-1b real-phone drive; approve the consent
-wording (design §6) and the `lesson_tracks` table before phase 2. Optional, still open: hide the ACT
-"Jerrabomberra" district in Address suggestions; the 30-minute tooling checklist.
-
-**CI note:** poppler tests are opt-in hard failures (`REQUIRE_POPPLER=1`, `ci.yml` only); Cloudflare Workers
-Builds skip them. Simulate the Workers Builds command locally before merging (see STATUS.md CI).
+**Tony Manual Action Required:** Approve the push of `feature/lesson-gps-v2` (approval card) when the PR is opened; decide whether to close PR #130 (superseded by v2). Later, Tony's real-iPhone GPS test (background/lock-screen recording) is the only check automation cannot do.
