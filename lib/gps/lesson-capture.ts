@@ -15,8 +15,16 @@ export class LessonGpsCapture {
     this.store = store;
   }
 
-  start(id: string, onStatus: (text: string) => void) {
-    void this.stop();
+  /**
+   * Serialise with any session still stopping before starting a new recorder: wait until its watch
+   * is cleared and its Web Lock released, so two watches never run at once. (start() used to
+   * fire-and-forget the previous stop, so a new recorder could start while the old watch was still
+   * live.) Awaiting the in-flight stops also serialises two start() calls made in quick succession:
+   * the second one stops the first one's session before recording under its own id.
+   */
+  async start(id: string, onStatus: (text: string) => void): Promise<void> {
+    await Promise.all(this.stopping.values());
+    await this.stop();
     try {
       if (typeof navigator === "undefined" || !navigator.locks) {
         onStatus("GPS is unavailable in this browser. The lesson can continue.");
@@ -66,6 +74,10 @@ export class LessonGpsCapture {
    * session, so a second collect (same tab, another tab, or after a reload) re-derives the same notes from
    * the same stored fixes and never creates a second lesson record by itself. The lesson record itself is
    * guarded separately by the draft's `savedLessonNo` + revision check at save time.
+   *
+   * The per-id cache assumes a session's `endedAt` never changes once set: a session is ended once, and
+   * the same id is never re-ended at a different time, so caching by id alone cannot serve notes derived
+   * for a different end time.
    */
   collect(id: string, endedAt: number): Promise<LessonGpsNotes | null> {
     const existing = this.results.get(id);

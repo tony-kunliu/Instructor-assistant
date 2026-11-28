@@ -28,10 +28,10 @@ GPS 建议 + 确认（GPS 出清单，教练勾选后才写入）、推导（由
 
 | 列（纸质表） | 子项 | 来源 | 数据定义 | 边界 |
 |---|---|---|---|---|
-| Date and lesson no. | Date（日期） | GPS 自动 + 时钟 | 课程开始的日期（堪培拉时间）；GPS 会话开始日期可交叉核对 | 以课程草稿的时钟为准，GPS 只核对 |
+| Date and lesson no. | Date（日期） | 时钟 | 课程开始的日期（堪培拉时间） | 以课程草稿的时钟为准 |
 | | Lesson no.（课号） | 推导 | 按保存顺序递增，永不手填 | — |
-| Time & total hrs | Start（开始） | GPS 自动 + 时钟 | 点 Start Lesson 的时间；GPS 会话开始时间可交叉核对 | 以草稿时钟为准 |
-| | Finish（结束） | GPS 自动 + 时钟 | 点 End Lesson 的时间；GPS 会话结束时间可交叉核对 | 以草稿时钟为准 |
+| Time & total hrs | Start（开始） | 时钟 | 点 Start Lesson 的时间 | 以草稿时钟为准 |
+| | Finish（结束） | 时钟 | 点 End Lesson 的时间 | 以草稿时钟为准 |
 | | Total hrs（总时长） | 推导 | Finish − Start | 永远算出来，不手填 |
 | Odometer & total kms | Start（起始里程表） | 手动 | 教练读码表输入 | **GPS 给不了里程表读数** |
 | | Finish（结束里程表） | 手动 | 教练读码表输入 | **GPS 给不了里程表读数** |

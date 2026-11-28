@@ -164,8 +164,9 @@ try {
   assert.equal(await page.evaluate((key) => localStorage.getItem(key), localDraftKey), finishedDraft);
   await other.getByRole("button", { name: "Discard this lesson", exact: true }).click();
   await other.waitForFunction(storedIsTombstone, localDraftKey);
+  const tombstoneRaw = await other.evaluate((key) => localStorage.getItem(key), localDraftKey);
   await comments.fill("Stale tab text must stay local.");
-  assert.equal(await page.evaluate((key) => localStorage.getItem(key), localDraftKey), null);
+  assert.equal(await page.evaluate((key) => localStorage.getItem(key), localDraftKey), tombstoneRaw);
   await other.evaluate((key) => localStorage.setItem(key, JSON.stringify({
     lessonDate: "2026-10-20", startTime: "10:00", finishTime: "",
     comments: "Replacement draft survives stale tab controls.",

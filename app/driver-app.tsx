@@ -16,7 +16,7 @@ import {
 } from "@/lib/calc.ts";
 import { CORE_COMPETENCY_IDS, FINAL_DRIVE_23, REVIEW_1_17, REVIEW_1_22, invalidationNotice, type AssessmentResult, type LearnerProgress, type MilestoneInvalidation } from "@/lib/competency.ts";
 import { LessonGpsCapture } from "@/lib/gps/lesson-capture.ts";
-import { lessonCommentsWithGps, lessonLocationWithGps, ownsGpsSession, type LessonGpsDraft } from "@/lib/gps/lesson-gps-draft.ts";
+import { gpsSessionEndedElsewhere, lessonCommentsWithGps, lessonLocationWithGps, ownsGpsSession, withGpsNotes, type LessonGpsDraft } from "@/lib/gps/lesson-gps-draft.ts";
 import { casTombstone, casWriteDraft, NO_DRAFT_REV, parseStoredDraft, storedRev, tabIdentity } from "@/lib/lesson-draft-store.ts";
 import { cardMeta, cardReminders, collapsedCards, emptySummary, gateChips, glance, initials, lastLessonLine, listCollapsed, optionLabel, summaryFromProgress, type LearnerListSummary } from "@/lib/learner-card.ts";
 import { derivedStats, learnerHeaderMeta, lessonDateLine, lessonPhase, odometerCarriedNote, showsSaveBar } from "@/lib/lesson-view.ts";
@@ -306,6 +306,9 @@ export default function DriverApp({ mode = "private" }: { mode?: "private" | "sa
       cannot catch a raw write that preserves the revision (e.g. another tab editing the stored JSON by
       hand): the raw string is the second layer, and any difference means "changed in another tab". */
   const lastStoredRaw = useRef<string | null>(null);
+  /** Mirror of the in-memory draft for the storage listener below: its closure is created once per
+      appMode/instructor, so it reads the current draft through this ref instead of a stale render value. */
+  const draftRef = useRef<LessonDraft | null>(null);
   const storedIsCurrent = (key: string) => storage.get(key) === lastStoredRaw.current;
   const gpsCapture = useRef<LessonGpsCapture | null>(null);
   const [gpsConsent, setGpsConsent] = useState(false);
@@ -545,6 +548,10 @@ export default function DriverApp({ mode = "private" }: { mode?: "private" | "sa
     }
   }, [selectedId, draft]);
 
+  // Mirror the in-memory draft for the storage listener: it needs the current draft to tell a
+  // notes-only write-back apart from a real edit by another tab.
+  useEffect(() => { draftRef.current = draft; });
+
   // GPS is a private-edition opt-in. The raw points stay in a separate device-only draft store.
   useEffect(() => {
     if (appMode !== "private" || !signedInInstructorId) return;
@@ -562,6 +569,48 @@ export default function DriverApp({ mode = "private" }: { mode?: "private" | "sa
         if (prevGps && ownsGpsSession(prevGps, tabIdRef.current ?? "") && (!curGps || curGps.id !== prevGps.id)) {
           void capture.stop(prevGps.id);
           setGpsStatus((status) => status?.id === prevGps.id ? null : status);
+        }
+        // Another tab ended the lesson this tab is recording (same session, now with an endedAt): stop
+        // the watch here, collect the notes, and write them back into the stored draft so the ending
+        // tab's review panel can show them. This tab's own copy has no finishTime, so its collect
+        // effect never runs — without this the recording runs on as an orphan and the notes never arrive.
+        // This tab stays stale for writing afterwards: it must not autosave over the ending tab's draft.
+        if (gpsSessionEndedElsewhere(prevGps, curGps, tabIdRef.current ?? "")) {
+          const endedAt = curGps.endedAt;
+          void (async () => {
+            await capture.stop(curGps.id);
+            setGpsStatus((status) => status?.id === curGps.id ? null : status);
+            const notes = await capture.collect(curGps.id, endedAt);
+            const key = draftKey(selectedRef.current);
+            const stored = parseStoredDraft(storage.get(key));
+            if (stored.kind !== "draft") return;
+            const storedDraft = stored.draft as LessonDraft | null;
+            if (!storedDraft) return;
+            const merged = withGpsNotes(storedDraft, curGps.id, notes);
+            if (!merged) return;
+            // CAS on the revision actually stored: another tab may have written since the event fired.
+            // A failed CAS just means the notes were already written back or the draft moved on.
+            casWriteDraft(storage, key, stored.rev, tabIdRef.current ?? "", merged);
+          })();
+        }
+        // The owning tab wrote the collected notes back: show them in this tab's review panel. Merge
+        // them into the in-memory draft for display only — and if the notes are the only change since
+        // this tab last wrote, adopt the new revision so the finished lesson can still be saved or
+        // discarded here instead of going stale on a change this tab already holds. (The comparison
+        // relies on the same key order the autosave effect's JSON comparison relies on.)
+        if (curGps?.notes !== undefined && curGps.id === prevGps?.id && current.kind === "draft") {
+          const inMemory = draftRef.current;
+          if (inMemory) {
+            const merged = withGpsNotes(inMemory, curGps.id, curGps.notes);
+            if (merged) {
+              setDraft(merged);
+              if (JSON.stringify(merged) === JSON.stringify(current.draft)) {
+                draftRev.current = current.rev;
+                lastStoredRaw.current = event.newValue;
+                draftStale.current = false;
+              }
+            }
+          }
         }
         // Storage events only arrive from other tabs: any newer revision makes this tab stale.
         if (current.kind !== "empty" && current.rev > draftRev.current) draftStale.current = true;
@@ -655,7 +704,7 @@ export default function DriverApp({ mode = "private" }: { mode?: "private" | "sa
       draftRev.current = claimed.rev;
       lastStoredRaw.current = claimed.raw;
       setGpsStatus({ id, text: "Waiting for GPS…" });
-      gpsCapture.current.start(id, (text) => setGpsStatus((current) =>
+      void gpsCapture.current.start(id, (text) => setGpsStatus((current) =>
         current?.id !== id || current.text === text ? current : { id, text },
       ));
     }
@@ -931,13 +980,17 @@ export default function DriverApp({ mode = "private" }: { mode?: "private" | "sa
       const latest = parseStoredDraft(storage.get(key));
       const latestRev = latest.kind === "empty" ? NO_DRAFT_REV : latest.rev;
       const latestDraft = latest.kind === "draft" ? (latest.draft as LessonDraft | null) : null;
-      // The draft was replaced while the save was in flight. Same draft id (or, for drafts written before
-      // ids existed, same date + start time) = the same lesson, edited elsewhere: stamp the saved number
-      // so it cannot be saved a second time, then show it as the current draft. A different draft id and
-      // different times = a genuinely new lesson started in another tab: show it untouched, never delete it.
+      // The draft was replaced while the save was in flight. Same draft id = the same lesson, edited
+      // elsewhere: stamp the saved number so it cannot be saved a second time, then show it as the
+      // current draft. When both sides carry a draft id, only the id decides — two different drafts
+      // for the same learner can share a date and start time, and the old date+time fallback would
+      // stamp the wrong one. Drafts written before ids existed have no id on one or both sides, so
+      // only then does the date + start time fallback apply. A different draft id and different
+      // times = a genuinely new lesson started in another tab: show it untouched, never delete it.
       const sameLesson = latestDraft !== null && (
-        (latestDraft.draftId !== undefined && draft.draftId !== undefined && latestDraft.draftId === draft.draftId) ||
-        latestDraft.lessonDate === draft.lessonDate && latestDraft.startTime === draft.startTime
+        latestDraft.draftId !== undefined && draft.draftId !== undefined
+          ? latestDraft.draftId === draft.draftId
+          : latestDraft.lessonDate === draft.lessonDate && latestDraft.startTime === draft.startTime
       );
       const sameSession = Boolean(sameLesson && latestDraft?.lessonGps && lessonGps && latestDraft.lessonGps.id === lessonGps.id);
       let adopted: LessonDraft | null = null;
