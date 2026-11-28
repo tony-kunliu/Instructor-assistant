@@ -1,5 +1,4 @@
-// P4 GPS recorder (isolated, default OFF). Device-local only: nothing in lib/gps is imported by the lesson app
-// (app/driver-app.tsx, lib/repo.ts) and nothing here uploads anything. Design: docs/superpowers/specs/2026-10-13-gps-tracking-design.md.
+// Device-local GPS recording. Raw fixes are shared by the lesson draft recorder and the separate /gps diagnostics.
 
 export type Visibility = "visible" | "hidden";
 
@@ -58,6 +57,8 @@ export type SessionMeta = {
   stoppedAt?: number;
   /** Set when the session was closed by recovery (page killed/reloaded without Stop). */
   recoveredAt?: number;
+  /** Set when a lesson collect() has derived notes from this session: the same session is never collected twice. */
+  collectedAt?: number;
   pauses?: Pause[];
   env: SessionEnv;
 };

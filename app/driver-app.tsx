@@ -15,6 +15,9 @@ import {
   type Totals,
 } from "@/lib/calc.ts";
 import { CORE_COMPETENCY_IDS, FINAL_DRIVE_23, REVIEW_1_17, REVIEW_1_22, invalidationNotice, type AssessmentResult, type LearnerProgress, type MilestoneInvalidation } from "@/lib/competency.ts";
+import { LessonGpsCapture } from "@/lib/gps/lesson-capture.ts";
+import { lessonCommentsWithGps, lessonLocationWithGps, ownsGpsSession, type LessonGpsDraft } from "@/lib/gps/lesson-gps-draft.ts";
+import { casTombstone, casWriteDraft, NO_DRAFT_REV, parseStoredDraft, storedRev, tabIdentity } from "@/lib/lesson-draft-store.ts";
 import { cardMeta, cardReminders, collapsedCards, emptySummary, gateChips, glance, initials, lastLessonLine, listCollapsed, optionLabel, summaryFromProgress, type LearnerListSummary } from "@/lib/learner-card.ts";
 import { derivedStats, learnerHeaderMeta, lessonDateLine, lessonPhase, odometerCarriedNote, showsSaveBar } from "@/lib/lesson-view.ts";
 import { accessLogoutUrl } from "@/lib/access-logout.ts";
@@ -62,6 +65,16 @@ type LessonDraft = {
   comments: string;
   adiSignature: string;
   learnerSignature: string;
+  /** Device-local GPS session for this lesson (private edition only). Never sent to the server; only the
+      derived notes line is appended to Comments at save time. */
+  lessonGps?: LessonGpsDraft;
+  /** Stable id for this lesson-in-progress draft: the same lesson keeps it across tabs and edits, a new
+      lesson gets a new one. Used after a save to tell a replacement of the same lesson apart from a
+      genuinely new lesson started in another tab. Never sent to the server. */
+  draftId?: string;
+  /** Set when this draft's lesson was already saved (as this number): saving it again would create a
+      duplicate lesson. Never sent to the server. */
+  savedLessonNo?: number;
 };
 
 type LearnerDraft = {
@@ -166,8 +179,15 @@ const emptyLearner: LearnerDraft = {
   instructorId: "",
 };
 
+function newDraftId(): string {
+  return typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+    ? crypto.randomUUID()
+    : `draft-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
 function freshLesson(startOdometer: number | null): LessonDraft {
   return {
+    draftId: newDraftId(),
     lessonDate: localNow().date,
     startTime: "",
     finishTime: "",
@@ -234,6 +254,7 @@ const storage = {
   },
 };
 const draftKey = (learnerId: string) => `actgds-driver:draft:${learnerId}`;
+const staleGpsDraftMessage = "This lesson draft changed in another tab. Reopen the learner to see the current draft.";
 const LAST_LEARNER_KEY = "actgds-driver:last-learner";
 const LAST_INSTRUCTOR_KEY = "actgds-driver:last-instructor";
 
@@ -274,6 +295,21 @@ export default function DriverApp({ mode = "private" }: { mode?: "private" | "sa
   const [selectedId, setSelectedId] = useState("");
   const [detail, setDetail] = useState<Detail | null>(null);
   const [draft, setDraft] = useState<LessonDraft | null>(null);
+  // GPS + draft ownership (lib/lesson-draft-store.ts): this tab's id claims the GPS session it starts, and
+  // `draftRev` is the last draft revision this tab has seen. A tab that is behind must not write, stop,
+  // collect or delete another tab's session — it reloads instead.
+  const tabIdRef = useRef<string | null>(null);
+  if (tabIdRef.current === null) tabIdRef.current = tabIdentity().tabId;
+  const draftRev = useRef<number>(NO_DRAFT_REV);
+  const draftStale = useRef(false);
+  /** The exact stored string this tab last read or wrote for the current draft key. A revision check alone
+      cannot catch a raw write that preserves the revision (e.g. another tab editing the stored JSON by
+      hand): the raw string is the second layer, and any difference means "changed in another tab". */
+  const lastStoredRaw = useRef<string | null>(null);
+  const storedIsCurrent = (key: string) => storage.get(key) === lastStoredRaw.current;
+  const gpsCapture = useRef<LessonGpsCapture | null>(null);
+  const [gpsConsent, setGpsConsent] = useState(false);
+  const [gpsStatus, setGpsStatus] = useState<{ id: string; text: string } | null>(null);
   const [addingLearner, setAddingLearner] = useState(false);
   // True while the learner form edits the selected learner (instead of creating one).
   const [editingLearner, setEditingLearner] = useState(false);
@@ -393,6 +429,11 @@ export default function DriverApp({ mode = "private" }: { mode?: "private" | "sa
   const totals = detail?.totals ?? EMPTY_TOTALS;
 
   const loadLearner = useCallback(async (id: string) => {
+    if (id !== selectedRef.current) {
+      void gpsCapture.current?.stop();
+      setGpsConsent(false);
+      setGpsStatus(null);
+    }
     selectedRef.current = id;
     setSaveIssues(null);
     setSelectedId(id);
@@ -413,8 +454,13 @@ export default function DriverApp({ mode = "private" }: { mode?: "private" | "sa
       if (selectedRef.current !== id) return;
       setDetail(data);
       setSummaries((current) => ({ ...current, [id]: summaryFromDetail(data) }));
-      const saved = storage.get(draftKey(id));
-      setDraft(saved ? { ...freshLesson(data.totals.lastFinishOdometer), ...JSON.parse(saved) } : freshLesson(data.totals.lastFinishOdometer));
+      const raw = storage.get(draftKey(id));
+      const parsed = parseStoredDraft(raw);
+      draftRev.current = parsed.kind === "empty" ? NO_DRAFT_REV : parsed.rev;
+      draftStale.current = false;
+      lastStoredRaw.current = raw;
+      const savedDraft = parsed.kind === "draft" ? (parsed.draft as LessonDraft | null) : null;
+      setDraft(savedDraft ? { ...freshLesson(data.totals.lastFinishOdometer), ...savedDraft } : freshLesson(data.totals.lastFinishOdometer));
     } catch (error) {
       setStatus({ kind: "error", text: (error as Error).message });
     }
@@ -470,11 +516,84 @@ export default function DriverApp({ mode = "private" }: { mode?: "private" | "sa
     if (addingLearner) learnerFormRef.current?.scrollIntoView({ block: "start" });
   }, [addingLearner, editingLearner]);
 
-  // Keep the in-progress lesson on this device in case the page reloads mid-lesson.
+  // Keep the in-progress lesson on this device in case the page reloads mid-lesson. Writes are
+  // compare-and-swap on the draft revision: a tab that has not seen the latest revision cannot overwrite
+  // another tab's newer draft, and once stale it stops writing until the learner is reopened.
   useEffect(() => {
     if (!selectedId || !draft) return;
-    if (draft.startTime) storage.set(draftKey(selectedId), JSON.stringify(draft));
+    if (!draft.startTime || draftStale.current) return;
+    const key = draftKey(selectedId);
+    const raw = storage.get(key);
+    if (raw !== lastStoredRaw.current) {
+      // Another tab changed the stored draft (even without bumping the revision): stop writing.
+      draftStale.current = true;
+      setStatus({ kind: "warn", text: staleGpsDraftMessage });
+      return;
+    }
+    const stored = parseStoredDraft(raw);
+    if (stored.kind === "draft" && JSON.stringify(stored.draft) === JSON.stringify(draft)) {
+      draftRev.current = stored.rev;
+      return;
+    }
+    const result = casWriteDraft(storage, key, draftRev.current, tabIdRef.current ?? "", draft);
+    if (result.ok) {
+      draftRev.current = result.rev;
+      lastStoredRaw.current = result.raw;
+    } else {
+      draftStale.current = true;
+      setStatus({ kind: "warn", text: staleGpsDraftMessage });
+    }
   }, [selectedId, draft]);
+
+  // GPS is a private-edition opt-in. The raw points stay in a separate device-only draft store.
+  useEffect(() => {
+    if (appMode !== "private" || !signedInInstructorId) return;
+    const capture = gpsCapture.current ??= new LessonGpsCapture();
+    void capture.prune();
+    const stopIfEndedInAnotherTab = (event: StorageEvent) => {
+      if (!event.key || event.key !== draftKey(selectedRef.current) || !event.oldValue) return;
+      try {
+        const previous = parseStoredDraft(event.oldValue);
+        const current = parseStoredDraft(event.newValue);
+        const prevGps = previous.kind === "draft" ? (previous.draft as LessonDraft | null)?.lessonGps : undefined;
+        const curGps = current.kind === "draft" ? (current.draft as LessonDraft | null)?.lessonGps : undefined;
+        // Another tab ended or replaced the session this tab owns: stop recording it here. A session owned
+        // by another tab is never touched.
+        if (prevGps && ownsGpsSession(prevGps, tabIdRef.current ?? "") && (!curGps || curGps.id !== prevGps.id)) {
+          void capture.stop(prevGps.id);
+          setGpsStatus((status) => status?.id === prevGps.id ? null : status);
+        }
+        // Storage events only arrive from other tabs: any newer revision makes this tab stale.
+        if (current.kind !== "empty" && current.rev > draftRev.current) draftStale.current = true;
+      } catch { /* Ignore storage unavailable to this lesson draft. */ }
+    };
+    window.addEventListener("storage", stopIfEndedInAnotherTab);
+    return () => {
+      window.removeEventListener("storage", stopIfEndedInAnotherTab);
+      void capture.stop();
+    };
+  }, [appMode, signedInInstructorId]);
+
+  const lessonGps = appMode === "private" && draft?.lessonGps?.instructorId === signedInInstructorId ? draft?.lessonGps : undefined;
+  const finishTime = draft?.finishTime;
+  useEffect(() => {
+    if (saving || !lessonGps || lessonGps.notes !== undefined || !finishTime || !gpsCapture.current) return;
+    // Only the tab that owns the session collects it; collect() itself is idempotent (persisted marker).
+    if (!ownsGpsSession(lessonGps, tabIdRef.current ?? "")) return;
+    if (lessonGps.status !== "ended" && lessonGps.status !== "recording") return;
+    let cancelled = false;
+    const id = lessonGps.id;
+    const key = draftKey(selectedId);
+    void gpsCapture.current.collect(id, lessonGps.endedAt ?? Date.now()).then((notes) => {
+      if (cancelled || !storedIsCurrent(key) || storedRev(storage, key) !== draftRev.current) return;
+      setDraft((current) => {
+        if (!current || current.lessonGps?.id !== id) return current;
+        const needsReview = Boolean(current.adiSignature || current.learnerSignature);
+        return { ...current, lessonGps: { ...current.lessonGps, notes, status: "collected", needsReview } };
+      });
+    });
+    return () => { cancelled = true; };
+  }, [lessonGps, finishTime, selectedId, saving]);
 
   // Tick the elapsed-time display while a lesson is running.
   useEffect(() => {
@@ -482,14 +601,66 @@ export default function DriverApp({ mode = "private" }: { mode?: "private" | "sa
     return () => window.clearInterval(timer);
   }, []);
 
-  const setField = (key: keyof LessonDraft, value: string) =>
-    setDraft((current) => (current ? { ...current, [key]: value } : current));
+  const setField = (key: Exclude<keyof LessonDraft, "lessonGps">, value: string) => {
+    if (key === "startTime" && !value && draft && lessonGps) {
+      // Clearing Start returns to Ready: only the owning tab may close the session, and only while it
+      // still holds the latest draft revision.
+      if (!ownsGpsSession(lessonGps, tabIdRef.current ?? "") || !storedIsCurrent(draftKey(selectedId)) || storedRev(storage, draftKey(selectedId)) !== draftRev.current) {
+        setStatus({ kind: "warn", text: staleGpsDraftMessage });
+        return;
+      }
+      void gpsCapture.current?.remove(lessonGps.id);
+      setGpsStatus(null);
+      setDraft({ ...draft, startTime: "", lessonGps: undefined });
+      return;
+    }
+    if (key === "finishTime" && value && lessonGps && !lessonGps.endedAt) {
+      if (ownsGpsSession(lessonGps, tabIdRef.current ?? "")) void gpsCapture.current?.stop(lessonGps.id);
+      const endedAt = Date.now();
+      setDraft((current) => current ? { ...current, finishTime: value, lessonGps: { ...lessonGps, endedAt, status: "ended" } } : current);
+      return;
+    }
+    setDraft((current) => current ? { ...current, [key]: value } : current);
+  };
 
   const startLesson = () => {
+    if (!draft) return;
+    const key = draftKey(selectedId);
+    if (!storedIsCurrent(key) || storedRev(storage, key) !== draftRev.current) {
+      setStatus({ kind: "warn", text: staleGpsDraftMessage });
+      return;
+    }
+    // A session owned by another tab is never removed from here.
+    if (lessonGps && !ownsGpsSession(lessonGps, tabIdRef.current ?? "")) {
+      setStatus({ kind: "warn", text: staleGpsDraftMessage });
+      return;
+    }
+    if (lessonGps) void gpsCapture.current?.remove(lessonGps.id);
+    else void gpsCapture.current?.stop();
+    setGpsStatus(null);
     const now = localNow();
     scrollToLesson.current = true;
     setStatus(null);
-    setDraft((current) => (current ? { ...current, lessonDate: now.date, startTime: now.time, finishTime: "" } : current));
+    let nextGps: LessonGpsDraft | undefined;
+    if (gpsConsent && appMode === "private" && signedInInstructorId && gpsCapture.current && typeof crypto.randomUUID === "function") {
+      const id = crypto.randomUUID();
+      nextGps = { id, instructorId: signedInInstructorId, tabId: tabIdRef.current ?? "", startedAt: Date.now(), status: "recording" };
+      // Claim the session in storage before the recorder starts, so a second tab sees the claim.
+      const firstDraft = { ...draft, lessonDate: now.date, startTime: now.time, finishTime: "", lessonGps: nextGps };
+      const claimed = casWriteDraft(storage, key, draftRev.current, tabIdRef.current ?? "", firstDraft);
+      if (!claimed.ok) {
+        setStatus({ kind: "warn", text: staleGpsDraftMessage });
+        return;
+      }
+      draftRev.current = claimed.rev;
+      lastStoredRaw.current = claimed.raw;
+      setGpsStatus({ id, text: "Waiting for GPS…" });
+      gpsCapture.current.start(id, (text) => setGpsStatus((current) =>
+        current?.id !== id || current.text === text ? current : { id, text },
+      ));
+    }
+    setGpsConsent(false);
+    setDraft((current) => (current ? { ...current, lessonDate: now.date, startTime: now.time, finishTime: "", lessonGps: nextGps } : current));
   };
 
   // Record a past lesson (Tony 2026-10-22): a lesson written up afterwards takes its date and times as typed, not from
@@ -512,12 +683,30 @@ export default function DriverApp({ mode = "private" }: { mode?: "private" | "sa
 
   const endLesson = () => {
     focusFinishOdo.current = true;
-    setDraft((current) => (current ? { ...current, finishTime: localNow().time } : current));
+    const endedAt = Date.now();
+    const finishTime = localNow().time;
+    if (lessonGps && ownsGpsSession(lessonGps, tabIdRef.current ?? "")) void gpsCapture.current?.stop(lessonGps.id);
+    setDraft((current) => (current ? {
+      ...current, finishTime,
+      lessonGps: lessonGps ? { ...lessonGps, endedAt, status: "ended" } : current.lessonGps,
+    } : current));
   };
 
   const discardLesson = () => {
     if (!detail || !window.confirm("Discard this lesson? Nothing will be saved.")) return;
-    storage.remove(draftKey(detail.learner.id));
+    const key = draftKey(detail.learner.id);
+    if (!storedIsCurrent(key) || storedRev(storage, key) !== draftRev.current) {
+      setStatus({ kind: "warn", text: staleGpsDraftMessage });
+      return;
+    }
+    if (lessonGps && ownsGpsSession(lessonGps, tabIdRef.current ?? "")) void gpsCapture.current?.remove(lessonGps.id);
+    setGpsStatus(null);
+    // A tombstone, not a delete: a stale tab's autosave can never bring this draft back.
+    const result = casTombstone(storage, key, draftRev.current, tabIdRef.current ?? "");
+    if (result.ok) {
+      draftRev.current = result.rev;
+      lastStoredRaw.current = result.raw;
+    }
     setDraft(freshLesson(detail.totals.lastFinishOdometer));
     setSaveIssues(null);
     setStatus(null);
@@ -698,8 +887,30 @@ export default function DriverApp({ mode = "private" }: { mode?: "private" | "sa
     }
   };
 
+  // One save per learner at a time across tabs: the lock makes the read → POST → tombstone sequence
+  // atomic in this browser, so two tabs can never create the same lesson twice. Without locks the
+  // revision check below is the fallback.
   const saveLesson = async (signLater = false) => {
     if (!detail || !draft) return;
+    if (typeof navigator !== "undefined" && navigator.locks) {
+      await navigator.locks.request(`actgds-driver:save:${detail.learner.id}`, () => saveLessonLocked(signLater));
+      return;
+    }
+    await saveLessonLocked(signLater);
+  };
+
+  const saveLessonLocked = async (signLater = false) => {
+    if (!detail || !draft) return;
+    const key = draftKey(detail.learner.id);
+    if (!storedIsCurrent(key) || storedRev(storage, key) !== draftRev.current) {
+      setStatus({ kind: "warn", text: staleGpsDraftMessage });
+      return;
+    }
+    if (draft.savedLessonNo !== undefined || lessonGps?.savedLessonNo !== undefined) {
+      const savedNo = draft.savedLessonNo ?? lessonGps?.savedLessonNo;
+      setStatus({ kind: "warn", text: `Lesson #${savedNo} already exists. Use the lesson history to apply these draft edits to the saved lesson.` });
+      return;
+    }
     const problems = validateLessonDraftFields(draft, "new", { signLater });
     if (problems.length) {
       setSaveIssues({ source: "client", issues: problems, snapshot: draft, signLater });
@@ -709,22 +920,73 @@ export default function DriverApp({ mode = "private" }: { mode?: "private" | "sa
     setSaving(true);
     setStatus(null);
     try {
+      const { lessonGps: _localCapture, savedLessonNo: _alreadySaved, draftId: _draftId, ...fields } = draft;
+      // Only save the text shown in the checklist. A slow GPS read cannot add notes after signing or saving.
+      const comments = lessonCommentsWithGps(fields.comments, lessonGps);
+      const location = lessonLocationWithGps(fields.location, lessonGps);
       const result = await api<{ lesson: Lesson; totals: Totals; progress: LearnerProgress; completion: CompletionSummary | null }>(
         `/api/learners/${encodeURIComponent(detail.learner.id)}/lessons`,
-        { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...draft, signLater }) },
+        { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...fields, comments, location, signLater }) },
       );
-      storage.remove(draftKey(detail.learner.id));
+      const latest = parseStoredDraft(storage.get(key));
+      const latestRev = latest.kind === "empty" ? NO_DRAFT_REV : latest.rev;
+      const latestDraft = latest.kind === "draft" ? (latest.draft as LessonDraft | null) : null;
+      // The draft was replaced while the save was in flight. Same draft id (or, for drafts written before
+      // ids existed, same date + start time) = the same lesson, edited elsewhere: stamp the saved number
+      // so it cannot be saved a second time, then show it as the current draft. A different draft id and
+      // different times = a genuinely new lesson started in another tab: show it untouched, never delete it.
+      const sameLesson = latestDraft !== null && (
+        (latestDraft.draftId !== undefined && draft.draftId !== undefined && latestDraft.draftId === draft.draftId) ||
+        latestDraft.lessonDate === draft.lessonDate && latestDraft.startTime === draft.startTime
+      );
+      const sameSession = Boolean(sameLesson && latestDraft?.lessonGps && lessonGps && latestDraft.lessonGps.id === lessonGps.id);
+      let adopted: LessonDraft | null = null;
+      if (latest.kind === "draft" && latestDraft && sameLesson) {
+        const stamped: LessonDraft = {
+          ...latestDraft,
+          savedLessonNo: result.lesson.lessonNo,
+          lessonGps: sameSession && latestDraft.lessonGps
+            ? { ...latestDraft.lessonGps, savedLessonNo: result.lesson.lessonNo }
+            : latestDraft.lessonGps,
+        };
+        const written = casWriteDraft(storage, key, latestRev, tabIdRef.current ?? "", stamped);
+        if (written.ok) {
+          draftRev.current = written.rev;
+          lastStoredRaw.current = written.raw;
+          adopted = stamped;
+        } else {
+          // The stamp lost a race with yet another tab's write: the replacement stays in storage as-is
+          // and the instructor reopens the learner to see it. Adopting a stamp that never persisted
+          // would block the next save with a phantom "already exists".
+          draftRev.current = latestRev;
+        }
+      } else if (latest.kind === "draft" && latestDraft && latestRev !== draftRev.current) {
+        draftRev.current = latestRev;
+        lastStoredRaw.current = storage.get(key);
+        adopted = latestDraft;
+      } else if (latest.kind === "draft" && latestRev === draftRev.current) {
+        const tombstoned = casTombstone(storage, key, draftRev.current, tabIdRef.current ?? "");
+        if (tombstoned.ok) {
+          draftRev.current = tombstoned.rev;
+          lastStoredRaw.current = tombstoned.raw;
+        }
+      }
+      if (lessonGps && ownsGpsSession(lessonGps, tabIdRef.current ?? "") && !sameSession) void gpsCapture.current?.remove(lessonGps.id);
+      setGpsStatus((current) => current?.id === lessonGps?.id ? null : current);
       setSaveIssues(null);
       const next: Detail = { ...detail, totals: result.totals, progress: result.progress, completion: result.completion, lessons: [result.lesson, ...detail.lessons] };
       setDetail(next);
       setSummaries((current) => ({ ...current, [detail.learner.id]: summaryFromDetail(next) }));
-      setDraft(freshLesson(result.totals.lastFinishOdometer));
+      if (result.lesson.signatureStatus === "unsigned") loadUnsigned();
+      if (selectedRef.current !== detail.learner.id) return;
+      // Adopt the replacement draft if one arrived while saving; otherwise start fresh.
+      setDraft(adopted ? { ...freshLesson(result.totals.lastFinishOdometer), ...adopted } : freshLesson(result.totals.lastFinishOdometer));
       if (result.lesson.signatureStatus === "unsigned") {
-        loadUnsigned();
         setStatus({ kind: "warn", text: `Lesson #${result.lesson.lessonNo} saved, not signed yet. Sign it later from "To sign" at the top.` });
       } else setStatus({ kind: "ok", text: `Lesson #${result.lesson.lessonNo} saved.` });
       window.scrollTo({ top: 0, behavior: "smooth" });
     } catch (error) {
+      if (selectedRef.current !== detail.learner.id) return;
       setSaveIssues({ source: "server", issues: [issueFromServerMessage((error as Error).message)], snapshot: draft });
       setSaveAttempt((n) => n + 1);
     } finally {
@@ -855,6 +1117,9 @@ export default function DriverApp({ mode = "private" }: { mode?: "private" | "sa
   };
 
   const clearSelection = () => {
+    void gpsCapture.current?.stop();
+    setGpsConsent(false);
+    setGpsStatus(null);
     selectedRef.current = "";
     setSelectedId("");
     setDetail(null);
@@ -1070,21 +1335,34 @@ export default function DriverApp({ mode = "private" }: { mode?: "private" | "sa
     if (!f.lessonDate || !f.startTime) return setPasteProblems([...notes, "A lesson draft needs its Date and Start time. Add them and paste again."]);
     const learner = matches[0];
     let running = learner.id === selectedId && Boolean(draft?.startTime);
+    let replacedGps = learner.id === selectedId ? lessonGps : undefined;
     try {
-      const existing = storage.get(draftKey(learner.id));
-      if (existing && (JSON.parse(existing) as Partial<LessonDraft>).startTime) running = true;
+      const existing = parseStoredDraft(storage.get(draftKey(learner.id)));
+      if (existing.kind === "draft" && existing.draft) {
+        const previousDraft = existing.draft as Partial<LessonDraft>;
+        if (previousDraft.startTime) running = true;
+        if (previousDraft.lessonGps?.instructorId === signedInInstructorId) replacedGps ??= previousDraft.lessonGps;
+      }
     } catch { running = true; }
     if (running && !window.confirm(`${learner.fullName} already has a lesson in progress on this device. Replace it with the assistant's draft?`)) return;
     const saved: Partial<LessonDraft> = {
+      draftId: newDraftId(),
       lessonDate: f.lessonDate, taughtIds: f.taughtIds, assessedIds: f.assessedIds, achievedResults: f.achievedResults,
       location: f.location, comments: f.comments, adiSignature: "", learnerSignature: "",
     };
     // Empty values are left out, so the carried start odometer (from the last lesson) is kept.
     for (const key of ["startTime", "finishTime", "startOdometer", "finishOdometer"] as const) if (f[key]) saved[key] = f[key];
     if (!f.finishTime) notes.push("Finish time is missing: use End Lesson or Edit date / times.");
-    const json = JSON.stringify(saved);
-    storage.set(draftKey(learner.id), json);
-    if (storage.get(draftKey(learner.id)) !== json) return setPasteProblems(["This device would not keep the draft (browser storage is blocked or full). Nothing was changed."]);
+    // Write through the envelope so a stale tab cannot resurrect the replaced draft.
+    const pasteKey = draftKey(learner.id);
+    const pasteRev = storedRev(storage, pasteKey);
+    const written = casWriteDraft(storage, pasteKey, pasteRev, tabIdRef.current ?? "", saved);
+    if (!written.ok) return setPasteProblems(["This lesson draft changed in another tab. Reopen the learner to see the current draft."]);
+    if (storedRev(storage, pasteKey) !== written.rev) return setPasteProblems(["This device would not keep the draft (browser storage is blocked or full). Nothing was changed."]);
+    if (replacedGps && ownsGpsSession(replacedGps, tabIdRef.current ?? "")) {
+      void gpsCapture.current?.remove(replacedGps.id);
+      setGpsStatus((current) => current?.id === replacedGps.id ? null : current);
+    }
     if (activeView === "archived") chooseView("mine");
     pickLearner(learner.id);
     closePaste();
@@ -1321,7 +1599,7 @@ export default function DriverApp({ mode = "private" }: { mode?: "private" | "sa
             <div className={isSaas ? "signed-in-as saas" : "signed-in-as"}>
               <span>Signed in as {signedInAs}</span>
               {isSaas ? <a href="/account" className="signout-link" data-testid="account-link">Account</a> : null}
-              <a href={logoutUrl} className="signout-link" data-testid="signout-link">Sign out</a>
+              <a href={logoutUrl} className="signout-link" data-testid="signout-link" onClick={() => void gpsCapture.current?.stop()}>Sign out</a>
             </div>
           ) : null}
           <ThemeToggle />
@@ -1727,6 +2005,14 @@ export default function DriverApp({ mode = "private" }: { mode?: "private" | "sa
                     {showBookingLink ? <BookingLink /> : null}
                   </div>
                 ) : null}
+                {!isSaas && signedInInstructorId && !pastLesson ? (
+                  <label className="lesson-gps-choice">
+                    <input type="checkbox" checked={gpsConsent} onChange={(event) => setGpsConsent(event.target.checked)} data-testid="lesson-gps-consent" />
+                    <span>Record GPS with the learner&rsquo;s agreement
+                      <small>Review the estimates before saving. Raw locations stay on this device and are cleared when you save, discard, or next open the app after a day.</small>
+                    </span>
+                  </label>
+                ) : null}
                 <button type="button" className="btn huge go" disabled={trialExpired} onClick={startLesson}>Start Lesson #{lessonNo}</button>
                 <p className="phase-note">Date and start time are taken from the clock. Competencies and signatures appear after you start.</p>
                 {pastLesson ? (
@@ -1859,6 +2145,7 @@ export default function DriverApp({ mode = "private" }: { mode?: "private" | "sa
                 <>
                   <button type="button" className="btn huge stop" onClick={endLesson}>End Lesson</button>
                   <p className="phase-note">Finish odometer unlocks after End Lesson.</p>
+                  {lessonGps ? <p className="phase-note" role="status" data-testid="lesson-gps-running">{lessonGps.endedAt ? "GPS recording has stopped. Review the saved points when you end the lesson." : gpsStatus?.id === lessonGps.id ? gpsStatus.text : "GPS was interrupted. Any saved points will be reviewed when you end the lesson."}</p> : null}
                 </>
               ) : null}
             </div>
@@ -1897,7 +2184,7 @@ export default function DriverApp({ mode = "private" }: { mode?: "private" | "sa
             {phase !== "ready" ? (
               <>
                 <div className="lblock" id="lesson-field-competency" data-testid="competency-block">
-                  <div className="card-head"><h3>Competencies</h3><small>Tap a number · official CBT&amp;A list</small></div>
+                  <div className="card-head"><h3>{phase === "ended" ? "CBT&A checklist" : "Competencies"}</h3><small>Tap a number · official CBT&amp;A list</small></div>
                   <CompetencyPicker
                     progress={detail.progress}
                     taughtIds={draft.taughtIds}
@@ -1918,9 +2205,46 @@ export default function DriverApp({ mode = "private" }: { mode?: "private" | "sa
                 ) : null}
 
                 <div className="lblock" data-testid="notes-block">
+                  {phase === "ended" && lessonGps ? (
+                    <div className="lesson-gps-review" role="status" data-testid="lesson-gps-review">
+                      {lessonGps.notes === undefined ? "Preparing GPS notes… You can save without them." : lessonGps.notes === null ? "No usable GPS route was captured. You can still finish the checklist." : (
+                        <>
+                          <p>{lessonGps.notes.line}</p>
+                          {lessonGps.needsReview ? (
+                            <>
+                              <small>GPS notes arrived after a signature. Clear the signatures before adding the notes.</small>
+                              <button type="button" className="btn ghost small" disabled={Boolean(draft.adiSignature || draft.learnerSignature)} onClick={() => setDraft((current) => current?.lessonGps?.id === lessonGps.id ? { ...current, lessonGps: { ...lessonGps, needsReview: false, commentsEdited: false } } : current)}>Add GPS notes to Comments</button>
+                            </>
+                          ) : (
+                            <small>{lessonGps.commentsEdited ? "Review your edited Comments before saving." : lessonCommentsWithGps(draft.comments, lessonGps) === draft.comments ? "Comments are full. You can copy the GPS notes you want to keep." : `Review or edit the GPS notes in Comments${lessonLocationWithGps(draft.location, lessonGps) !== draft.location ? " and the GPS route in Location" : ""} before saving.`}</small>
+                          )}
+                          {lessonGps.notes.details.length ? (
+                            <details>
+                              <summary>Review GPS observations</summary>
+                              <ul>{lessonGps.notes.details.map((line, index) => <li key={index}>{line}</li>)}</ul>
+                            </details>
+                          ) : null}
+                          <small><a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">© OpenStreetMap contributors</a></small>
+                          <small>GPS distance is an estimate; the odometer is the official record.</small>
+                        </>
+                      )}
+                    </div>
+                  ) : null}
                   <div className="grid">
-                    <label className="field full"><span>Location</span><input value={draft.location} onChange={(e) => setField("location", e.target.value)} placeholder="Belconnen, Gungahlin…" /></label>
-                    <label className="field full"><span>Comments</span><textarea rows={2} value={draft.comments} onChange={(e) => setField("comments", e.target.value)} /></label>
+                    <label className="field full"><span>Location</span><input value={lessonLocationWithGps(draft.location, lessonGps)} onChange={(e) => {
+                      const location = e.target.value;
+                      setDraft((current) => current ? {
+                        ...current, location,
+                        lessonGps: lessonGps?.notes ? { ...lessonGps, locationEdited: true } : current.lessonGps,
+                      } : current);
+                    }} placeholder="Belconnen, Gungahlin…" /></label>
+                    <label className="field full"><span>Comments</span><textarea rows={2} value={lessonCommentsWithGps(draft.comments, lessonGps)} onChange={(event) => {
+                      const comments = event.target.value;
+                      setDraft((current) => current ? {
+                        ...current, comments,
+                        lessonGps: lessonGps?.notes ? { ...lessonGps, commentsEdited: true } : current.lessonGps,
+                      } : current);
+                    }} /></label>
                   </div>
                 </div>
 
